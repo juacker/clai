@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { getUserInfo } from '../api/client';
 import UserAvatar from '../components/UserAvatar';
+import SpaceRoomSelector from '../components/SpaceRoomSelector';
+import { SpaceRoomProvider } from '../contexts/SpaceRoomContext';
 import styles from './MainLayout.module.css';
 
 const MainLayout = () => {
@@ -43,18 +45,23 @@ const MainLayout = () => {
   }
 
   return (
-    <div className={styles.mainLayout}>
-      {userInfo && (
-        <div className={styles.avatarWrapper}>
-          <UserAvatar
-            avatarUrl={userInfo.avatarURL}
-            userName={userInfo.name}
-            size="medium"
-          />
+    <SpaceRoomProvider>
+      <div className={styles.mainLayout}>
+        <div className={styles.spaceRoomWrapper}>
+          <SpaceRoomSelector />
         </div>
-      )}
-      <Outlet context={{ userInfo }} />
-    </div>
+        {userInfo && (
+          <div className={styles.avatarWrapper}>
+            <UserAvatar
+              avatarUrl={userInfo.avatarURL}
+              userName={userInfo.name}
+              size="medium"
+            />
+          </div>
+        )}
+        <Outlet context={{ userInfo }} />
+      </div>
+    </SpaceRoomProvider>
   );
 };
 

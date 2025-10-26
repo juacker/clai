@@ -5,6 +5,16 @@
   overflow: hidden;
 }
 
+/* Space/Room Selector Wrapper - Mobile First */
+.spaceRoomWrapper {
+  position: fixed;
+  z-index: 999;
+  transition: all 0.3s ease;
+  /* Mobile: top-left positioning */
+  top: 16px;
+  left: 16px;
+}
+
 .avatarWrapper {
   position: fixed;
   z-index: 1000;
@@ -22,6 +32,12 @@
     right: 20px;
     bottom: auto;
     left: auto;
+  }
+
+  /* On mobile, adjust space/room wrapper for safe areas */
+  .spaceRoomWrapper {
+    top: max(16px, env(safe-area-inset-top, 16px));
+    left: max(16px, env(safe-area-inset-left, 16px));
   }
 }
 

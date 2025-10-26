@@ -1,0 +1,456 @@
+/* Mobile-First Approach: Default styles for mobile */
+
+/* Container */
+.selector {
+  position: relative;
+  z-index: 100;
+}
+
+/* Desktop Selector (hidden on mobile) */
+.desktopSelector {
+  display: none;
+}
+
+/* Mobile Button - Visible by default */
+.mobileButton {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  width: 100%;
+  max-width: 280px;
+}
+
+.mobileButton:active {
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.mobileButtonContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+}
+
+.mobileButtonText {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1a1a1a;
+}
+
+.mobileButtonSpace {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #1a1a1a;
+}
+
+.mobileButtonSeparator {
+  color: #666;
+  flex-shrink: 0;
+}
+
+.mobileButtonRoom {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #666;
+}
+
+/* Loading State */
+.loading {
+  padding: 8px 12px;
+  font-size: 14px;
+  color: #666;
+}
+
+/* Mobile Drawer */
+.drawerOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.drawer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-radius: 16px 16px 0 0;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.drawerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
+}
+
+.drawerTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+.drawerClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #666;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.drawerClose:active {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.drawerContent {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
+}
+
+.drawerSection {
+  margin-bottom: 24px;
+}
+
+.drawerSection:last-child {
+  margin-bottom: 0;
+}
+
+.drawerSectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+  margin: 0 0 12px 0;
+  padding: 0 8px;
+}
+
+.drawerList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drawerItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 12px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  width: 100%;
+  min-height: 56px;
+}
+
+.drawerItem:active {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.drawerItemActive {
+  background: rgba(0, 123, 255, 0.08);
+}
+
+.drawerItemActive:active {
+  background: rgba(0, 123, 255, 0.12);
+}
+
+.drawerItemContent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.drawerItemName {
+  font-size: 15px;
+  font-weight: 500;
+  color: #1a1a1a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawerItemActive .drawerItemName {
+  color: #007bff;
+}
+
+.drawerItemDesc {
+  font-size: 13px;
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawerItem svg {
+  flex-shrink: 0;
+  color: #007bff;
+}
+
+/* Desktop Styles - Applied on larger screens */
+@media (min-width: 769px) {
+  /* Hide mobile elements */
+  .mobileButton,
+  .drawerOverlay,
+  .drawer {
+    display: none;
+  }
+
+  /* Show desktop selector */
+  .desktopSelector {
+    display: block;
+  }
+
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .separator {
+    color: #999;
+    font-weight: 300;
+    user-select: none;
+  }
+
+  .dropdownWrapper {
+    position: relative;
+  }
+
+  .breadcrumbButton {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 14px;
+  }
+
+  .breadcrumbButton:hover {
+    background: rgba(0, 0, 0, 0.05);
+  }
+
+  .breadcrumbButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .breadcrumbButton:disabled:hover {
+    background: none;
+  }
+
+  .breadcrumbLabel {
+    font-size: 12px;
+    color: #666;
+    font-weight: 500;
+  }
+
+  .breadcrumbValue {
+    font-weight: 600;
+    color: #1a1a1a;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chevron {
+    color: #666;
+    transition: transform 0.2s ease;
+  }
+
+  .chevronUp {
+    transform: rotate(180deg);
+  }
+
+  /* Dropdown Menu */
+  .dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    min-width: 280px;
+    max-width: 400px;
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+    animation: dropdownFadeIn 0.2s ease;
+    z-index: 1000;
+  }
+
+  @keyframes dropdownFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .dropdownHeader {
+    padding: 12px 16px;
+    background: rgba(0, 0, 0, 0.02);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #666;
+  }
+
+  .dropdownList {
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 4px;
+  }
+
+  .dropdownItem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: left;
+    width: 100%;
+  }
+
+  .dropdownItem:hover {
+    background: rgba(0, 0, 0, 0.05);
+  }
+
+  .dropdownItemActive {
+    background: rgba(0, 123, 255, 0.08);
+  }
+
+  .dropdownItemActive:hover {
+    background: rgba(0, 123, 255, 0.12);
+  }
+
+  .dropdownItemContent {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .dropdownItemName {
+    font-size: 14px;
+    font-weight: 500;
+    color: #1a1a1a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dropdownItemActive .dropdownItemName {
+    color: #007bff;
+  }
+
+  .dropdownItemDesc {
+    font-size: 12px;
+    color: #666;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dropdownItem svg {
+    flex-shrink: 0;
+    color: #007bff;
+  }
+}
+
+/* Fine-tune for touch devices on desktop screens */
+@media (min-width: 769px) and (pointer: coarse) {
+  .breadcrumbButton,
+  .dropdownItem {
+    min-height: 44px;
+  }
+}
+
+/* iOS Safe Area Support */
+.platform-ios .drawer {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.platform-ios .mobileButton {
+  margin-top: max(8px, env(safe-area-inset-top, 8px));
+}
+
