@@ -48,7 +48,7 @@ const MainLayout = () => {
     <SpaceRoomProvider>
       <div className={styles.mainLayout}>
         <div className={styles.spaceRoomWrapper}>
-          <SpaceRoomSelector />
+          <SpaceRoomSelector userInfo={userInfo} />
         </div>
         {userInfo && (
           <div className={styles.avatarWrapper}>
