@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import { getUserInfo } from '../api/client';
 import UserAvatar from '../components/UserAvatar';
 import SpaceRoomSelector from '../components/SpaceRoomSelector';
+import TerminalEmulator from '../components/TerminalEmulator';
 import { SpaceRoomProvider } from '../contexts/SpaceRoomContext';
 import styles from './MainLayout.module.css';
 
@@ -47,9 +48,14 @@ const MainLayout = () => {
   return (
     <SpaceRoomProvider>
       <div className={styles.mainLayout}>
+        {/* Mobile: SpaceRoomSelector (button + drawer) */}
         <div className={styles.spaceRoomWrapper}>
-          <SpaceRoomSelector userInfo={userInfo} />
+          <SpaceRoomSelector />
         </div>
+
+        {/* Desktop: TerminalEmulator (shell command bar) */}
+        <TerminalEmulator userInfo={userInfo} />
+
         {userInfo && (
           <div className={styles.avatarWrapper}>
             <UserAvatar
