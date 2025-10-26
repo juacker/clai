@@ -26,10 +26,9 @@
   position: fixed;
   z-index: 1000;
   transition: all 0.3s ease;
-  /* Default: Desktop positioning - bottom left (matches Netdata Cloud) */
-  /* Account for command bar on desktop (48px bar height + 20px spacing) */
-  bottom: 68px;
-  left: 20px;
+  /* Default: Desktop and Mobile positioning - top right */
+  top: 20px;
+  right: 20px;
 }
 
 /* Mobile-first approach: Use media queries for reliable mobile detection */
@@ -69,22 +68,22 @@
   }
 }
 
-/* Desktop override - ensure desktop stays bottom-left, accounting for command bar */
+/* Desktop: keep top-right positioning (same as mobile) */
 @media (min-width: 769px) and (pointer: fine) {
   .avatarWrapper {
-    bottom: 68px; /* 48px command bar + 20px spacing */
-    left: 20px;
-    top: auto;
-    right: auto;
+    top: 20px;
+    right: 20px;
+    bottom: auto;
+    left: auto;
   }
 }
 
 /* JavaScript-enhanced positioning (optional, fallback to CSS if JS fails) */
 .device-desktop .avatarWrapper {
-  bottom: 68px; /* 48px command bar + 20px spacing */
-  left: 20px;
-  top: auto;
-  right: auto;
+  top: 20px;
+  right: 20px;
+  bottom: auto;
+  left: auto;
 }
 
 .device-mobile .avatarWrapper {
