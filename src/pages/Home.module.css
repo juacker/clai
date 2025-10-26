@@ -1,10 +1,66 @@
 .homePage {
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 60px 40px 40px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
 }
 
-.error {
-  color: #ff6b6b;
-  font-style: italic;
+.welcomeSection {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.welcomeSection h1 {
+  font-size: 3.5em;
+  margin-bottom: 20px;
+  color: #0f0f0f;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.greeting {
+  font-size: 1.5em;
+  color: #666;
+  margin-top: 10px;
+}
+
+.userName {
+  color: #667eea;
+  font-weight: 600;
+}
+
+.contentSection {
+  text-align: center;
+  max-width: 600px;
+}
+
+.description {
+  font-size: 1.3em;
+  color: #999;
+  line-height: 1.6;
+  font-weight: 300;
+}
+
+/* Responsive design for mobile */
+@media (max-width: 768px) {
+  .homePage {
+    padding: 40px 20px 20px;
+  }
+
+  .welcomeSection h1 {
+    font-size: 2.5em;
+  }
+
+  .greeting {
+    font-size: 1.2em;
+  }
+
+  .description {
+    font-size: 1.1em;
+  }
 }

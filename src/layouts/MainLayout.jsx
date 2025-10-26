@@ -1,11 +1,59 @@
-import React from 'react';
-import { Outlet } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Outlet, useNavigate } from 'react-router-dom';
+import { getUserInfo } from '../api/client';
+import UserAvatar from '../components/UserAvatar';
 import styles from './MainLayout.module.css';
 
 const MainLayout = () => {
+  const [userInfo, setUserInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      try {
+        const token = localStorage.getItem('netdata_token');
+
+        if (!token) {
+          navigate('/login');
+          return;
+        }
+
+        const info = await getUserInfo(token);
+        setUserInfo(info);
+      } catch (err) {
+        console.error('Error fetching user info:', err);
+        navigate('/login');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserInfo();
+  }, [navigate]);
+
+  if (loading) {
+    return (
+      <div className={styles.mainLayout}>
+        <div className={styles.loadingContainer}>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.mainLayout}>
-      <Outlet />
+      {userInfo && (
+        <div className={styles.avatarWrapper}>
+          <UserAvatar
+            avatarUrl={userInfo.avatarURL}
+            userName={userInfo.name}
+            size="medium"
+          />
+        </div>
+      )}
+      <Outlet context={{ userInfo }} />
     </div>
   );
 };
