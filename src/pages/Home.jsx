@@ -1,37 +1,52 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getUserInfo } from '../api/client';
 import styles from './Home.module.css';
 
 const Home = () => {
   const [userName, setUserName] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchUserInfo = async () => {
       try {
-        // TODO: Replace with actual token once authentication is implemented
-        const token = 'YOUR_TOKEN_HERE';
+        // Get token from localStorage
+        const token = localStorage.getItem('netdata_token');
+
+        if (!token) {
+          // No token found, redirect to login
+          navigate('/login');
+          return;
+        }
+
         const userInfo = await getUserInfo(token);
         setUserName(userInfo.name);
-        setError(null);
       } catch (err) {
         console.error('Error fetching user info:', err);
-        setError(err.message);
+        // Authentication error, redirect to login
+        navigate('/login');
       } finally {
         setLoading(false);
       }
     };
 
     fetchUserInfo();
-  }, []);
+  }, [navigate]);
+
+  if (loading) {
+    return (
+      <div className={styles.homePage}>
+        <h1>Welcome to Netdata AI</h1>
+        <p>Loading user information...</p>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.homePage}>
       <h1>Welcome to Netdata AI</h1>
-      {loading && <p>Loading user information...</p>}
-      {error && <p className={styles.error}>Unable to load user information. Authentication required.</p>}
-      {!loading && !error && userName && <p>Hello {userName}</p>}
+      {userName && <p>Hello {userName}</p>}
     </div>
   );
 };

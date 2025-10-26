@@ -9,6 +9,25 @@ const client = axios.create({
   },
 });
 
+// Add response interceptor to handle authentication errors globally
+client.interceptors.response.use(
+  (response) => {
+    // If the response is successful, just return it
+    return response;
+  },
+  (error) => {
+    // Check if the error is an authentication error (401 Unauthorized or 403 Forbidden)
+    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+      // Clear the stored token
+      localStorage.removeItem('netdata_token');
+      // Redirect to login page
+      window.location.href = '/login';
+    }
+    // Return the error to be handled by the calling code
+    return Promise.reject(error);
+  }
+);
+
 /**
  * Get user information from Netdata Cloud
  * @param {string} token - Authentication token (Bearer token)
