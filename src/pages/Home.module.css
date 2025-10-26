@@ -1,0 +1,10 @@
+.homePage {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.error {
+  color: #ff6b6b;
+  font-style: italic;
+}

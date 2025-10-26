@@ -1,11 +1,12 @@
-import "./App.css";
+import React from 'react';
+import { BrowserRouter as Router } from 'react-router-dom';
+import AppRoutes from './Routes';
 
 function App() {
   return (
-    <main className="container">
-      <h1>Welcome to Netdata AI</h1>
-      <p>Your application starts here.</p>
-    </main>
+    <Router>
+      <AppRoutes />
+    </Router>
   );
 }
 
