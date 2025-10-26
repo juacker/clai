@@ -7,9 +7,80 @@
 
 .avatarWrapper {
   position: fixed;
+  z-index: 1000;
+  transition: all 0.3s ease;
+  /* Default: Desktop positioning - bottom left (matches Netdata Cloud) */
   bottom: 20px;
   left: 20px;
-  z-index: 1000;
+}
+
+/* Mobile-first approach: Use media queries for reliable mobile detection */
+/* Mobile devices: top right positioning (avoids navigation bars) */
+@media (max-width: 768px) {
+  .avatarWrapper {
+    top: 48px;  /* Account for status bar on Android */
+    right: 20px;
+    bottom: auto;
+    left: auto;
+  }
+}
+
+/* Alternative mobile detection using pointer type */
+@media (pointer: coarse) {
+  .avatarWrapper {
+    top: 48px;
+    right: 20px;
+    bottom: auto;
+    left: auto;
+  }
+}
+
+/* Touch devices without precise pointer */
+@media (hover: none) {
+  .avatarWrapper {
+    top: 48px;
+    right: 20px;
+    bottom: auto;
+    left: auto;
+  }
+}
+
+/* Desktop override - ensure desktop stays bottom-left */
+@media (min-width: 769px) and (pointer: fine) {
+  .avatarWrapper {
+    bottom: 20px;
+    left: 20px;
+    top: auto;
+    right: auto;
+  }
+}
+
+/* JavaScript-enhanced positioning (optional, fallback to CSS if JS fails) */
+.device-desktop .avatarWrapper {
+  bottom: 20px;
+  left: 20px;
+  top: auto;
+  right: auto;
+}
+
+.device-mobile .avatarWrapper {
+  top: 48px;
+  right: 20px;
+  bottom: auto;
+  left: auto;
+}
+
+/* Platform-specific adjustments for safe areas */
+.platform-ios.device-mobile .avatarWrapper {
+  /* Account for iOS notch and safe areas */
+  top: max(48px, env(safe-area-inset-top, 48px));
+  right: max(20px, env(safe-area-inset-right, 20px));
+}
+
+.platform-android.device-mobile .avatarWrapper {
+  /* Account for Android status bar (typically 24-28dp) plus padding */
+  top: 48px;
+  right: 20px;
 }
 
 .loadingContainer {
@@ -19,4 +90,3 @@
   height: 100vh;
   color: #666;
 }
-
