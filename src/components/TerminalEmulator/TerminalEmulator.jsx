@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useSpaceRoom } from '../../contexts/SpaceRoomContext';
 import { useCommand } from '../../contexts/CommandContext';
 import { parseCommand, isNavigationCommand, extractNavigationTarget } from '../../utils/commandParser';
-import { COMMAND_TYPES } from '../../utils/commandTypes';
 import styles from './TerminalEmulator.module.css';
 
 const TerminalEmulator = ({ userInfo }) => {
@@ -133,11 +132,32 @@ const TerminalEmulator = ({ userInfo }) => {
     }
   };
 
-  // Focus input on mount and when clicking terminal
+  // Focus input on mount
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
     }
+  }, []);
+
+  // Global keyboard shortcut to focus terminal (Ctrl+L or Cmd+L)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Check for Ctrl+L (Windows/Linux) or Cmd+L (Mac)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+        e.preventDefault();
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }
+    };
+
+    // Add global event listener
+    document.addEventListener('keydown', handleKeyDown);
+
+    // Cleanup on unmount
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const handleTerminalClick = () => {
