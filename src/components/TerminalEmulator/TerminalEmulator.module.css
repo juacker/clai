@@ -219,6 +219,72 @@
   }
 }
 
+/* Terminal Input Wrapper */
+.terminalInputWrapper {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+
+/* Terminal Input - hidden native cursor */
+.terminalInput {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: transparent;
+  caret-color: transparent;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 20px;
+  padding: 0;
+  margin: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+}
+
+.terminalInput::placeholder {
+  color: transparent;
+}
+
+/* Terminal Input Display - shows the actual text and cursor */
+.terminalInputDisplay {
+  pointer-events: none;
+  user-select: none;
+  color: #e0e0e0;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: pre;
+  position: relative;
+  z-index: 1;
+}
+
+/* Fat block cursor - Linux terminal style */
+.fatCursor {
+  display: inline-block;
+  width: 0.7em;
+  height: 1.3em;
+  background: #00d4aa;
+  vertical-align: text-bottom;
+  margin-left: 0;
+  animation: cursorBlink 1s step-end infinite;
+  position: relative;
+  top: -0.1em;
+  font-weight: bold;
+}
+
+@keyframes cursorBlink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
 /* Loading State */
 .loadingText {
   color: #888;
