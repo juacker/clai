@@ -157,23 +157,26 @@ export const CommandProvider = ({ children }) => {
   const setOutput = useCallback((output) => {
     setCommandOutput(output);
 
-    // Update current command status to success
-    if (currentCommand) {
+    // Update current command status to success using functional updates
+    setCurrentCommand(prev => {
+      if (!prev) return prev;
+
       const updatedCommand = {
-        ...currentCommand,
+        ...prev,
         status: COMMAND_STATUS.SUCCESS,
         completedAt: Date.now()
       };
-      setCurrentCommand(updatedCommand);
 
       // Update in history
-      setCommandHistory(prev =>
-        prev.map(cmd =>
+      setCommandHistory(history =>
+        history.map(cmd =>
           cmd.id === updatedCommand.id ? updatedCommand : cmd
         )
       );
-    }
-  }, [currentCommand]);
+
+      return updatedCommand;
+    });
+  }, []);
 
   /**
    * Set error for the current command

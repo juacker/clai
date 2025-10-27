@@ -2,6 +2,7 @@
  * Echo Component
  *
  * Displays text passed as arguments to the echo command.
+ * Shows only the text, as large as possible to fill all available space.
  * Example: "echo hello world" will display "hello world"
  */
 
@@ -25,19 +26,7 @@ const Echo = ({ command }) => {
 
   return (
     <div className={styles.echoContainer}>
-      <div className={styles.echoOutput}>
-        <span className={styles.echoPrompt}>$</span>
-        <span className={styles.echoText}>{text}</span>
-      </div>
-
-      <div className={styles.echoMeta}>
-        <span className={styles.echoCommand}>
-          Command: {command?.raw}
-        </span>
-        <span className={styles.echoTimestamp}>
-          {new Date(command?.timestamp).toLocaleTimeString()}
-        </span>
-      </div>
+      <span className={styles.echoText}>{text}</span>
     </div>
   );
 };

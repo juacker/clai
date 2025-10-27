@@ -1,13 +1,24 @@
 .homePage {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 60px 40px 40px;
+  width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+/* Default dashboard mode - centered content */
+.homePage:not(.commandMode) {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 60px 40px 40px;
   justify-content: center;
   align-items: center;
-  overflow: hidden;
+}
+
+/* Command mode - full space available */
+.homePage.commandMode {
+  padding: 0;
+  margin: 0;
 }
 
 .welcomeSection {
@@ -48,7 +59,7 @@
 
 /* Responsive design for mobile */
 @media (max-width: 768px) {
-  .homePage {
+  .homePage:not(.commandMode) {
     padding: 40px 20px 20px;
   }
 
