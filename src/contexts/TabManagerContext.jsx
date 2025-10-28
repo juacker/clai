@@ -45,6 +45,36 @@ const createTile = (commandId = null) => ({
 });
 
 /**
+ * Extract the number from a tab title (e.g., "Tab 3" -> 3)
+ * @param {string} title - Tab title
+ * @returns {number|null} The extracted number or null if not found
+ */
+const extractTabNumber = (title) => {
+  const match = title.match(/^Tab (\d+)$/);
+  return match ? parseInt(match[1], 10) : null;
+};
+
+/**
+ * Find the next available tab number based on existing tabs
+ * @param {Array} tabs - Array of existing tabs
+ * @returns {number} The next available tab number
+ */
+const getNextTabNumber = (tabs) => {
+  if (tabs.length === 0) return 1;
+
+  // Extract all tab numbers from existing tabs
+  const tabNumbers = tabs
+    .map(tab => extractTabNumber(tab.title))
+    .filter(num => num !== null);
+
+  // If no numbered tabs exist, start with 1
+  if (tabNumbers.length === 0) return 1;
+
+  // Find the maximum number and add 1
+  return Math.max(...tabNumbers) + 1;
+};
+
+/**
  * Create a new tab structure
  */
 const createTab = (title = null, commandId = null) => ({
@@ -165,14 +195,16 @@ export const TabManagerProvider = ({ children }) => {
    * @returns {Object} The created tab
    */
   const createNewTab = useCallback((title = null, commandId = null) => {
-    const newTab = createTab(title, commandId);
+    // Calculate next available tab number if no title provided
+    const tabTitle = title || `Tab ${getNextTabNumber(tabs)}`;
+    const newTab = createTab(tabTitle, commandId);
 
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newTab.id);
     setActiveTileId(newTab.rootTile.id);
 
     return newTab;
-  }, []);
+  }, [tabs]);
 
   /**
    * Close a tab
