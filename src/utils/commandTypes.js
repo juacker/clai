@@ -12,7 +12,8 @@ export const COMMAND_CATEGORIES = {
   VISUALIZATION: 'visualization',
   DATA: 'data',
   SYSTEM: 'system',
-  HELP: 'help'
+  HELP: 'help',
+  LAYOUT: 'layout'
 };
 
 // Command Types
@@ -44,6 +45,20 @@ export const COMMAND_TYPES = {
   HELP: 'help',
   VERSION: 'version',
   SETTINGS: 'settings',
+
+  // Layout commands (Tab & Tile management)
+  TAB: 'tab',
+  TAB_CLOSE: 'tab-close',
+  TAB_RENAME: 'tab-rename',
+  TAB_LIST: 'tab-list',
+  TAB_RESET: 'tab-reset',
+  TAB_DUPLICATE: 'tab-duplicate',
+  SPLIT_V: 'split-v',
+  SPLIT_H: 'split-h',
+  TILE: 'tile',
+  TILE_CLOSE: 'tile-close',
+  TILE_RESIZE: 'tile-resize',
+  RESET_ALL: 'reset-all',
 
   // Unknown command
   UNKNOWN: 'unknown'
@@ -277,6 +292,127 @@ export const COMMAND_METADATA = {
       'settings notifications'
     ],
     handledBy: 'CommandContext'
+  },
+  [COMMAND_TYPES.TAB]: {
+    name: 'tab',
+    category: COMMAND_CATEGORIES.LAYOUT,
+    description: 'Create or switch tabs',
+    usage: 'tab [index|next|prev|title]',
+    examples: [
+      'tab',
+      'tab Production',
+      'tab 2',
+      'tab next',
+      'tab prev'
+    ],
+    handledBy: 'TabManagerContext'
+  },
+  [COMMAND_TYPES.TAB_CLOSE]: {
+    name: 'tab-close',
+    category: COMMAND_CATEGORIES.LAYOUT,
+    description: 'Close a tab',
+    usage: 'tab-close [index]',
+    examples: [
+      'tab-close',
+      'tab-close 2'
+    ],
+    handledBy: 'TabManagerContext'
+  },
+  [COMMAND_TYPES.TAB_RENAME]: {
+    name: 'tab-rename',
+    category: COMMAND_CATEGORIES.LAYOUT,
+    description: 'Rename current tab',
+    usage: 'tab-rename <title>',
+    examples: [
+      'tab-rename Production',
+      'tab-rename "My Dashboard"'
+    ],
+    handledBy: 'TabManagerContext'
+  },
+  [COMMAND_TYPES.TAB_LIST]: {
+    name: 'tab-list',
+    category: COMMAND_CATEGORIES.LAYOUT,
+    description: 'List all tabs',
+    usage: 'tab-list',
+    examples: ['tab-list'],
+    handledBy: 'TabManagerContext'
+  },
+  [COMMAND_TYPES.TAB_RESET]: {
+    name: 'tab-reset',
+    category: COMMAND_CATEGORIES.LAYOUT,
+    description: 'Reset current tab layout',
+    usage: 'tab-reset',
+    examples: ['tab-reset'],
+    handledBy: 'TabManagerContext'
+  },
+  [COMMAND_TYPES.TAB_DUPLICATE]: {
+    name: 'tab-duplicate',
+    category: COMMAND_CATEGORIES.LAYOUT,
+    description: 'Duplicate current tab',
+    usage: 'tab-duplicate',
+    examples: ['tab-duplicate'],
+    handledBy: 'TabManagerContext'
+  },
+  [COMMAND_TYPES.SPLIT_V]: {
+    name: 'split-v',
+    category: COMMAND_CATEGORIES.LAYOUT,
+    description: 'Split current tile vertically',
+    usage: 'split-v [command]',
+    examples: [
+      'split-v',
+      'split-v echo hello'
+    ],
+    handledBy: 'TabManagerContext'
+  },
+  [COMMAND_TYPES.SPLIT_H]: {
+    name: 'split-h',
+    category: COMMAND_CATEGORIES.LAYOUT,
+    description: 'Split current tile horizontally',
+    usage: 'split-h [command]',
+    examples: [
+      'split-h',
+      'split-h chart cpu'
+    ],
+    handledBy: 'TabManagerContext'
+  },
+  [COMMAND_TYPES.TILE]: {
+    name: 'tile',
+    category: COMMAND_CATEGORIES.LAYOUT,
+    description: 'Focus a specific tile',
+    usage: 'tile <index|next|prev>',
+    examples: [
+      'tile 1',
+      'tile next',
+      'tile prev'
+    ],
+    handledBy: 'TabManagerContext'
+  },
+  [COMMAND_TYPES.TILE_CLOSE]: {
+    name: 'tile-close',
+    category: COMMAND_CATEGORIES.LAYOUT,
+    description: 'Close current tile',
+    usage: 'tile-close',
+    examples: ['tile-close'],
+    handledBy: 'TabManagerContext'
+  },
+  [COMMAND_TYPES.TILE_RESIZE]: {
+    name: 'tile-resize',
+    category: COMMAND_CATEGORIES.LAYOUT,
+    description: 'Resize current tile',
+    usage: 'tile-resize <percentage>',
+    examples: [
+      'tile-resize 60',
+      'tile-resize 40'
+    ],
+    handledBy: 'TabManagerContext'
+  },
+  [COMMAND_TYPES.RESET_ALL]: {
+    name: 'reset-all',
+    category: COMMAND_CATEGORIES.LAYOUT,
+    description: 'Reset all tabs and tiles',
+    usage: 'reset-all',
+    examples: ['reset-all'],
+    handledBy: 'TabManagerContext'
   }
 };
 

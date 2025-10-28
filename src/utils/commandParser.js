@@ -305,3 +305,26 @@ export const extractNavigationTarget = (command) => {
   };
 };
 
+/**
+ * Check if a command is a layout command (tab/tile management)
+ *
+ * @param {Object} command - Command object
+ * @returns {boolean} True if it's a layout command
+ */
+export const isLayoutCommand = (command) => {
+  return [
+    COMMAND_TYPES.TAB,
+    COMMAND_TYPES.TAB_CLOSE,
+    COMMAND_TYPES.TAB_RENAME,
+    COMMAND_TYPES.TAB_LIST,
+    COMMAND_TYPES.TAB_RESET,
+    COMMAND_TYPES.TAB_DUPLICATE,
+    COMMAND_TYPES.SPLIT_V,
+    COMMAND_TYPES.SPLIT_H,
+    COMMAND_TYPES.TILE,
+    COMMAND_TYPES.TILE_CLOSE,
+    COMMAND_TYPES.TILE_RESIZE,
+    COMMAND_TYPES.RESET_ALL
+  ].includes(command.type);
+};
+

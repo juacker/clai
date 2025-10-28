@@ -9,6 +9,128 @@
   background: #1a1a1a;
   border-top: 1px solid #333;
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  max-height: 50vh;
+}
+
+/* Output Area - Expands upward from the input line */
+.outputArea {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 20px;
+  border-bottom: 1px solid #2a2a2a;
+  max-height: calc(50vh - 60px);
+  min-height: 0;
+  opacity: 1;
+  /* Smooth transitions for auto-collapse */
+  transition: opacity 1s ease, max-height 1s ease, padding 1s ease;
+}
+
+/* Collapsed state - smooth fade out and shrink */
+.outputAreaCollapsed {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
+/* Fade in animation when output area appears */
+@keyframes outputAreaFadeIn {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: calc(50vh - 60px);
+  }
+}
+
+/* Custom scrollbar for output area */
+.outputArea::-webkit-scrollbar {
+  width: 6px;
+}
+
+.outputArea::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+.outputArea::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 3px;
+}
+
+.outputArea::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Output Message */
+.outputMessage {
+  display: flex;
+  align-items: flex-start;
+  padding: 6px 0;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  animation: messageSlideIn 0.2s ease;
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.outputMessageText {
+  flex: 1;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Message type colors */
+.outputMessageInfo {
+  color: #a0a0a0;
+}
+
+.outputMessageInfo::before {
+  content: '→ ';
+  color: #4a9eff;
+  margin-right: 8px;
+}
+
+.outputMessageSuccess {
+  color: #00d4aa;
+}
+
+.outputMessageSuccess::before {
+  content: '✓ ';
+  margin-right: 8px;
+}
+
+.outputMessageError {
+  color: #ff6b6b;
+}
+
+.outputMessageError::before {
+  content: '✗ ';
+  margin-right: 8px;
+}
+
+.outputMessageWarning {
+  color: #ffd93d;
+}
+
+.outputMessageWarning::before {
+  content: '⚠ ';
+  margin-right: 8px;
 }
 
 .terminalContent {

@@ -1,19 +1,80 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useSpaceRoom } from '../../contexts/SpaceRoomContext';
 import { useCommand } from '../../contexts/CommandContext';
-import { parseCommand, isNavigationCommand, extractNavigationTarget } from '../../utils/commandParser';
+import { useTabManager } from '../../contexts/TabManagerContext';
+import { parseCommand, isNavigationCommand, isLayoutCommand, extractNavigationTarget } from '../../utils/commandParser';
 import styles from './TerminalEmulator.module.css';
 
 const TerminalEmulator = ({ userInfo }) => {
   const { spaces, selectedSpace, selectedRoom, rooms, loading, changeSpace, changeRoom } = useSpaceRoom();
   const { executeCommand, commandHistory } = useCommand();
+  const { handleLayoutCommand, tabs } = useTabManager();
   const [isSpaceDropdownOpen, setIsSpaceDropdownOpen] = useState(false);
   const [isRoomDropdownOpen, setIsRoomDropdownOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [outputMessages, setOutputMessages] = useState([]);
+  const [isOutputVisible, setIsOutputVisible] = useState(true);
+  const [isHoveringOutput, setIsHoveringOutput] = useState(false);
   const spaceDropdownRef = useRef(null);
   const roomDropdownRef = useRef(null);
   const inputRef = useRef(null);
+  const outputRef = useRef(null);
+  const autoCollapseTimerRef = useRef(null);
+
+  // Maximum number of messages to keep
+  const MAX_MESSAGES = 5;
+  // Auto-collapse delay in milliseconds
+  const AUTO_COLLAPSE_DELAY = 10000; // 10 seconds
+
+  // Helper function to add output messages
+  const addOutputMessage = (message, type = 'info') => {
+    const newMessage = {
+      id: Date.now() + Math.random(),
+      text: message,
+      type, // 'info', 'success', 'error', 'warning'
+      timestamp: new Date()
+    };
+    setOutputMessages(prev => {
+      const updated = [...prev, newMessage];
+      // Keep only the last MAX_MESSAGES messages
+      return updated.slice(-MAX_MESSAGES);
+    });
+    // Show output area and reset auto-collapse timer
+    setIsOutputVisible(true);
+    resetAutoCollapseTimer();
+  };
+
+  // Reset auto-collapse timer
+  const resetAutoCollapseTimer = () => {
+    // Clear existing timer
+    if (autoCollapseTimerRef.current) {
+      clearTimeout(autoCollapseTimerRef.current);
+    }
+    // Set new timer
+    autoCollapseTimerRef.current = setTimeout(() => {
+      // Only collapse if not hovering
+      if (!isHoveringOutput && outputMessages.length > 0) {
+        setIsOutputVisible(false);
+      }
+    }, AUTO_COLLAPSE_DELAY);
+  };
+
+  // Clear auto-collapse timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoCollapseTimerRef.current) {
+        clearTimeout(autoCollapseTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [outputMessages]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -40,25 +101,43 @@ const TerminalEmulator = ({ userInfo }) => {
     setIsRoomDropdownOpen(false);
   };
 
+  // Supported visualization command types
+  const SUPPORTED_COMMAND_TYPES = ['echo'];
+
   // Handle command execution
   const handleCommandExecution = (input) => {
     const trimmed = input.trim();
     if (!trimmed) return;
 
+    // Clear input immediately
+    setInputValue('');
+    setHistoryIndex(-1);
+
     // Parse the command
     const command = parseCommand(trimmed);
 
+    // Check if it's a layout command (tab/tile management)
+    if (isLayoutCommand(command)) {
+      const result = handleLayoutCommand(command);
+      if (result && !result.success) {
+        addOutputMessage(result.message || 'Layout command failed', 'error');
+      } else if (result && result.message) {
+        addOutputMessage(result.message, 'success');
+      }
+    }
     // Check if it's a navigation command
-    if (isNavigationCommand(command)) {
+    else if (isNavigationCommand(command)) {
       handleNavigationCommand(command);
-    } else {
-      // Execute visualization/action command with CommandContext
+    }
+    // Execute visualization/action command with CommandContext
+    else {
+      // Validate command type before executing
+      if (!SUPPORTED_COMMAND_TYPES.includes(command.type)) {
+        addOutputMessage(`Unknown command: ${trimmed}`, 'error');
+        return;
+      }
       executeCommand(command);
     }
-
-    // Clear input
-    setInputValue('');
-    setHistoryIndex(-1);
   };
 
   // Handle navigation commands (cd, ls, pwd)
@@ -74,26 +153,33 @@ const TerminalEmulator = ({ userInfo }) => {
               const room = rooms.find(r => r.name.toLowerCase() === roomName.toLowerCase());
               if (room) {
                 changeRoom(room);
+                addOutputMessage(`Changed to ${space.name}/${room.name}`, 'success');
+              } else {
+                addOutputMessage(`Room not found: ${roomName}`, 'error');
               }
+            } else {
+              addOutputMessage(`Changed to space: ${space.name}`, 'success');
             }
           } else {
-            console.warn(`Space not found: ${spaceName}`);
+            addOutputMessage(`Space not found: ${spaceName}`, 'error');
           }
         }
         break;
       }
       case 'ls': {
-        // For now, just log the spaces/rooms
-        // In the future, you could show a modal or output
-        console.log('Available spaces:', spaces.map(s => s.name));
-        if (selectedSpace) {
-          console.log('Available rooms:', rooms.map(r => r.name));
+        // List spaces and rooms
+        const spacesList = spaces.map(s => s.name).join(', ');
+        addOutputMessage(`Available spaces: ${spacesList}`, 'info');
+        if (selectedSpace && rooms.length > 0) {
+          const roomsList = rooms.map(r => `${r.name} (${r.nodeCount || 0} nodes)`).join(', ');
+          addOutputMessage(`Available rooms in ${selectedSpace.name}: ${roomsList}`, 'info');
         }
         break;
       }
       case 'pwd': {
         // Print current working directory (space/room)
-        console.log(`Current location: ${selectedSpace?.name}/${selectedRoom?.name || 'no-room'}`);
+        const location = `${selectedSpace?.name}/${selectedRoom?.name || 'no-room'}`;
+        addOutputMessage(`Current location: ${location}`, 'info');
         break;
       }
       default:
@@ -129,6 +215,9 @@ const TerminalEmulator = ({ userInfo }) => {
           setInputValue(commandHistory[newIndex]?.raw || '');
         }
       }
+    } else if (e.key === 'Escape') {
+      // Clear output on Escape
+      setOutputMessages([]);
     }
   };
 
@@ -181,7 +270,24 @@ const TerminalEmulator = ({ userInfo }) => {
   }
 
   return (
-    <div className={styles.terminal}>
+    <div className={styles.terminal} onClick={handleTerminalClick}>
+      {/* Output Messages Area - Expands upward */}
+      {outputMessages.length > 0 && (
+        <div
+          className={`${styles.outputArea} ${!isOutputVisible ? styles.outputAreaCollapsed : ''}`}
+          ref={outputRef}
+          onMouseEnter={() => setIsHoveringOutput(true)}
+          onMouseLeave={() => setIsHoveringOutput(false)}
+        >
+          {outputMessages.map((msg) => (
+            <div key={msg.id} className={`${styles.outputMessage} ${styles[`outputMessage${msg.type.charAt(0).toUpperCase() + msg.type.slice(1)}`]}`}>
+              <span className={styles.outputMessageText}>{msg.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Input Line */}
       <div className={styles.terminalContent}>
         {/* Shell Prompt with User and Path */}
         <div className={styles.shellPrompt}>
@@ -191,7 +297,10 @@ const TerminalEmulator = ({ userInfo }) => {
             <div className={styles.pathSegmentWrapper} ref={spaceDropdownRef}>
               <button
                 className={styles.pathSegment}
-                onClick={() => setIsSpaceDropdownOpen(!isSpaceDropdownOpen)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsSpaceDropdownOpen(!isSpaceDropdownOpen);
+                }}
                 aria-expanded={isSpaceDropdownOpen}
                 aria-haspopup="true"
                 title="Click to change space"
@@ -233,7 +342,10 @@ const TerminalEmulator = ({ userInfo }) => {
             <div className={styles.pathSegmentWrapper} ref={roomDropdownRef}>
               <button
                 className={styles.pathSegment}
-                onClick={() => setIsRoomDropdownOpen(!isRoomDropdownOpen)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsRoomDropdownOpen(!isRoomDropdownOpen);
+                }}
                 aria-expanded={isRoomDropdownOpen}
                 aria-haspopup="true"
                 disabled={rooms.length === 0}

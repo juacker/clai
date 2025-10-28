@@ -378,6 +378,210 @@ export const TabManagerProvider = ({ children }) => {
     return newTab;
   }, [tabs]);
 
+  /**
+   * Handle tab layout commands from terminal
+   * @param {Object} command - Parsed command object
+   * @returns {Object} Result object with success status and message
+   */
+  const handleLayoutCommand = useCallback((command) => {
+    const { type, args } = command;
+
+    try {
+      switch (type) {
+        case 'tab': {
+          // tab [index|next|prev|title]
+          const arg = args.positional[0];
+
+          if (!arg) {
+            // Create new empty tab
+            const newTab = createNewTab();
+            return {
+              success: true,
+              message: `Created new tab: ${newTab.title}`
+            };
+          }
+
+          // Check if it's a number (tab index)
+          const tabIndex = parseInt(arg, 10);
+          if (!isNaN(tabIndex)) {
+            switchToTabByIndex(tabIndex);
+            return {
+              success: true,
+              message: `Switched to tab ${tabIndex}`
+            };
+          }
+
+          // Check for next/prev
+          if (arg === 'next') {
+            switchToNextTab();
+            return {
+              success: true,
+              message: 'Switched to next tab'
+            };
+          }
+
+          if (arg === 'prev') {
+            switchToPrevTab();
+            return {
+              success: true,
+              message: 'Switched to previous tab'
+            };
+          }
+
+          // Otherwise, treat as tab title
+          const title = args.positional.join(' ');
+          const newTab = createNewTab(title);
+          return {
+            success: true,
+            message: `Created new tab: ${newTab.title}`
+          };
+        }
+
+        case 'tab-close': {
+          // tab-close [index]
+          const arg = args.positional[0];
+
+          if (tabs.length === 0) {
+            return {
+              success: false,
+              message: 'No tabs to close'
+            };
+          }
+
+          if (!arg) {
+            // Close active tab
+            if (activeTabId) {
+              const tab = tabs.find(t => t.id === activeTabId);
+              closeTab(activeTabId);
+              return {
+                success: true,
+                message: `Closed tab: ${tab?.title || 'Unknown'}`
+              };
+            }
+          } else {
+            // Close tab by index
+            const tabIndex = parseInt(arg, 10);
+            if (!isNaN(tabIndex) && tabIndex > 0 && tabIndex <= tabs.length) {
+              const tab = tabs[tabIndex - 1];
+              closeTab(tab.id);
+              return {
+                success: true,
+                message: `Closed tab: ${tab.title}`
+              };
+            } else {
+              return {
+                success: false,
+                message: `Invalid tab index: ${arg}`
+              };
+            }
+          }
+          break;
+        }
+
+        case 'tab-rename': {
+          // tab-rename <title>
+          const newTitle = args.positional.join(' ');
+
+          if (!newTitle) {
+            return {
+              success: false,
+              message: 'Please provide a new title'
+            };
+          }
+
+          if (!activeTabId) {
+            return {
+              success: false,
+              message: 'No active tab to rename'
+            };
+          }
+
+          renameTab(activeTabId, newTitle);
+          return {
+            success: true,
+            message: `Renamed tab to: ${newTitle}`
+          };
+        }
+
+        case 'tab-list': {
+          // tab-list
+          if (tabs.length === 0) {
+            return {
+              success: true,
+              message: 'No tabs available'
+            };
+          }
+
+          const tabList = tabs.map((tab, index) => {
+            const isActive = tab.id === activeTabId;
+            return `${index + 1}. ${tab.title}${isActive ? ' (active)' : ''}`;
+          }).join('\n');
+
+          return {
+            success: true,
+            message: `Tabs:\n${tabList}`
+          };
+        }
+
+        case 'tab-reset': {
+          // tab-reset - Reset current tab layout (Phase 3 will implement tile reset)
+          return {
+            success: true,
+            message: 'Tab layout reset (full implementation in Phase 3)'
+          };
+        }
+
+        case 'tab-duplicate': {
+          // tab-duplicate
+          if (!activeTabId) {
+            return {
+              success: false,
+              message: 'No active tab to duplicate'
+            };
+          }
+
+          const newTab = duplicateTab(activeTabId);
+          return {
+            success: true,
+            message: `Duplicated tab: ${newTab.title}`
+          };
+        }
+
+        case 'reset-all': {
+          // reset-all - Clear all tabs
+          clearAllTabs();
+          return {
+            success: true,
+            message: 'All tabs cleared'
+          };
+        }
+
+        // Phase 3 commands (placeholders for now)
+        case 'split-v':
+        case 'split-h':
+        case 'tile':
+        case 'tile-close':
+        case 'tile-resize':
+          return {
+            success: false,
+            message: `Command '${type}' will be implemented in Phase 3 (Tiling)`
+          };
+
+        default:
+          return {
+            success: false,
+            message: `Unknown layout command: ${type}`
+          };
+      }
+    } catch (error) {
+      console.error('Error handling layout command:', error);
+      return {
+        success: false,
+        message: `Error: ${error.message}`
+      };
+    }
+  }, [tabs, activeTabId, createNewTab, switchToTabByIndex, switchToNextTab, switchToPrevTab, closeTab, renameTab, duplicateTab, clearAllTabs]);
+
   const value = {
     // State
     tabs,
@@ -402,6 +606,7 @@ export const TabManagerProvider = ({ children }) => {
 
     // Command Integration
     addCommandToActiveTile,
+    handleLayoutCommand,
 
     // Tile Management (Phase 3 will expand these)
     setActiveTile: setActiveTileId,
