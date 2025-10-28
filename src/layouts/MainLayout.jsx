@@ -6,6 +6,7 @@ import SpaceRoomSelector from '../components/SpaceRoomSelector';
 import TerminalEmulator from '../components/TerminalEmulator';
 import { SpaceRoomProvider } from '../contexts/SpaceRoomContext';
 import { CommandProvider } from '../contexts/CommandContext';
+import { TabManagerProvider } from '../contexts/TabManagerContext';
 import styles from './MainLayout.module.css';
 
 const MainLayout = () => {
@@ -49,26 +50,28 @@ const MainLayout = () => {
   return (
     <SpaceRoomProvider>
       <CommandProvider>
-        <div className={styles.mainLayout}>
-          {/* Mobile: SpaceRoomSelector (button + drawer) */}
-          <div className={styles.spaceRoomWrapper}>
-            <SpaceRoomSelector />
-          </div>
-
-          {/* Desktop: TerminalEmulator (shell command bar) */}
-          <TerminalEmulator userInfo={userInfo} />
-
-          {userInfo && (
-            <div className={styles.avatarWrapper}>
-              <UserAvatar
-                avatarUrl={userInfo.avatarURL}
-                userName={userInfo.name}
-                size="medium"
-              />
+        <TabManagerProvider>
+          <div className={styles.mainLayout}>
+            {/* Mobile: SpaceRoomSelector (button + drawer) */}
+            <div className={styles.spaceRoomWrapper}>
+              <SpaceRoomSelector />
             </div>
-          )}
-          <Outlet context={{ userInfo }} />
-        </div>
+
+            {/* Desktop: TerminalEmulator (shell command bar) */}
+            <TerminalEmulator userInfo={userInfo} />
+
+            {userInfo && (
+              <div className={styles.avatarWrapper}>
+                <UserAvatar
+                  avatarUrl={userInfo.avatarURL}
+                  userName={userInfo.name}
+                  size="medium"
+                />
+              </div>
+            )}
+            <Outlet context={{ userInfo }} />
+          </div>
+        </TabManagerProvider>
       </CommandProvider>
     </SpaceRoomProvider>
   );

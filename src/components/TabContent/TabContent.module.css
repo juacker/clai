@@ -1,0 +1,155 @@
+/**
+ * TabContent Component Styles
+ *
+ * Provides a clean container for tab content with proper spacing
+ * and responsive design for both desktop and mobile.
+ */
+
+.tabContent {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+/* Empty State */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px;
+  text-align: center;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.emptyStateIcon {
+  margin-bottom: 24px;
+  opacity: 0.4;
+}
+
+.emptyStateTitle {
+  font-size: 24px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.8);
+  margin: 0 0 12px 0;
+}
+
+.emptyStateDescription {
+  font-size: 15px;
+  color: rgba(0, 0, 0, 0.5);
+  margin: 0 0 24px 0;
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+/* Hint Section */
+.emptyStateHint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(102, 126, 234, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.hintLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.hintCommand {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  color: #667eea;
+  font-weight: 500;
+}
+
+/* Unknown Command */
+.unknownCommand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px;
+  text-align: center;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.unknownCommand p {
+  font-size: 16px;
+  margin: 0 0 12px 0;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.unknownCommand code {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 6px;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+/* Mobile Styles */
+@media (max-width: 768px) {
+  .emptyState {
+    padding: 24px;
+  }
+
+  .emptyStateIcon {
+    margin-bottom: 20px;
+  }
+
+  .emptyStateIcon svg {
+    width: 48px;
+    height: 48px;
+  }
+
+  .emptyStateTitle {
+    font-size: 20px;
+    margin-bottom: 10px;
+  }
+
+  .emptyStateDescription {
+    font-size: 14px;
+    margin-bottom: 20px;
+  }
+
+  .emptyStateHint {
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
+  }
+
+  .hintLabel {
+    font-size: 12px;
+  }
+
+  .hintCommand {
+    font-size: 12px;
+  }
+
+  .unknownCommand {
+    padding: 24px;
+  }
+
+  .unknownCommand p {
+    font-size: 14px;
+  }
+
+  .unknownCommand code {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+}
+
