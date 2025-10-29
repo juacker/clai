@@ -29,14 +29,6 @@ const ContextPanel = () => {
   const activeTab = getActiveTab();
   const tabContext = activeTab?.context;
 
-  // DEBUG: Log the tab context data
-  console.log('[ContextPanel] Debug:', {
-    activeTab,
-    tabContext,
-    selectedSpaceId: tabContext?.spaceRoom?.selectedSpaceId,
-    selectedRoomId: tabContext?.spaceRoom?.selectedRoomId,
-  });
-
   // Find the actual space and room objects from the context IDs
   const selectedSpace = useMemo(() => {
     if (!tabContext?.spaceRoom?.selectedSpaceId) return null;

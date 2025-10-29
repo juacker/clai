@@ -27,6 +27,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 1px 0;
   flex-wrap: wrap;
   max-width: 100%;
   overflow-x: auto;
