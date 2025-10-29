@@ -7,12 +7,14 @@ import TerminalEmulatorWrapper from '../components/TerminalEmulator/TerminalEmul
 import { SharedSpaceRoomDataProvider } from '../contexts/SharedSpaceRoomDataContext';
 import { CommandProvider } from '../contexts/CommandContext';
 import { TabManagerProvider } from '../contexts/TabManagerContext';
+import { usePlatform } from '../hooks/usePlatform';
 import styles from './MainLayout.module.css';
 
 const MainLayout = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { isDesktop } = usePlatform();
 
   useEffect(() => {
     const fetchUserInfo = async () => {
@@ -58,7 +60,7 @@ const MainLayout = () => {
             </div>
 
             {/* Desktop: TerminalEmulator (shell command bar) */}
-            <TerminalEmulatorWrapper userInfo={userInfo} />
+            {isDesktop && <TerminalEmulatorWrapper userInfo={userInfo} />}
 
             {userInfo && (
               <div className={styles.avatarWrapper}>
