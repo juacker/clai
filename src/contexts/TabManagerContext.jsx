@@ -257,14 +257,31 @@ export const TabManagerProvider = ({ children }) => {
   const createNewTab = useCallback((title = null, commandId = null) => {
     // Calculate next available tab number if no title provided
     const tabTitle = title || `Tab ${getNextTabNumber(tabs)}`;
-    const newTab = createTab(tabTitle, commandId);
+
+    // Inherit context from the currently active tab
+    let inheritedContext = null;
+    if (activeTabId) {
+      const activeTab = tabs.find(t => t.id === activeTabId);
+      if (activeTab?.context) {
+        // Deep clone the context to avoid reference issues
+        inheritedContext = {
+          spaceRoom: {
+            selectedSpaceId: activeTab.context.spaceRoom?.selectedSpaceId || null,
+            selectedRoomId: activeTab.context.spaceRoom?.selectedRoomId || null,
+          },
+          customContext: { ...activeTab.context.customContext },
+        };
+      }
+    }
+
+    const newTab = createTab(tabTitle, commandId, inheritedContext);
 
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newTab.id);
     setActiveTileId(newTab.rootTile.id);
 
     return newTab;
-  }, [tabs]);
+  }, [tabs, activeTabId]);
 
   /**
    * Close a tab
