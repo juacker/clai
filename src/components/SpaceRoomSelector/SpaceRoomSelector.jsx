@@ -1,10 +1,72 @@
-import React, { useState, useEffect } from 'react';
-import { useSpaceRoom } from '../../contexts/SpaceRoomContext';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useSharedSpaceRoomData } from '../../contexts/SharedSpaceRoomDataContext';
+import { useTabManager } from '../../contexts/TabManagerContext';
 import styles from './SpaceRoomSelector.module.css';
 
 const SpaceRoomSelector = () => {
-  const { spaces, selectedSpace, selectedRoom, rooms, loading, changeSpace, changeRoom } = useSpaceRoom();
+  // Get shared space/room data cache
+  const { spaces, getRoomsForSpace, getSpaceById, getRoomById, loading: sharedDataLoading } = useSharedSpaceRoomData();
+  const { getActiveTabContext, updateTabContext, activeTabId } = useTabManager();
+
+  // Get active tab context
+  const activeTabContext = getActiveTabContext();
+
+  // Derive selectedSpace and selectedRoom from active tab context
+  const selectedSpace = useMemo(() => {
+    return getSpaceById(activeTabContext?.spaceRoom?.selectedSpaceId);
+  }, [activeTabContext?.spaceRoom?.selectedSpaceId, getSpaceById]);
+
+  const selectedRoom = useMemo(() => {
+    return getRoomById(
+      activeTabContext?.spaceRoom?.selectedSpaceId,
+      activeTabContext?.spaceRoom?.selectedRoomId
+    );
+  }, [activeTabContext?.spaceRoom?.selectedSpaceId, activeTabContext?.spaceRoom?.selectedRoomId, getRoomById]);
+
+  // State for rooms in selected space
+  const [rooms, setRooms] = useState([]);
+  const [roomsLoading, setRoomsLoading] = useState(false);
+
+  // Load rooms when selected space changes
+  useEffect(() => {
+    const loadRooms = async () => {
+      if (activeTabContext?.spaceRoom?.selectedSpaceId) {
+        setRoomsLoading(true);
+        const roomsData = await getRoomsForSpace(activeTabContext.spaceRoom.selectedSpaceId);
+        setRooms(roomsData);
+        setRoomsLoading(false);
+      } else {
+        setRooms([]);
+      }
+    };
+    loadRooms();
+  }, [activeTabContext?.spaceRoom?.selectedSpaceId, getRoomsForSpace]);
+
+  const loading = sharedDataLoading || roomsLoading;
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+
+  // Helper functions to update active tab context
+  const changeSpace = (space) => {
+    if (!activeTabId) return;
+
+    updateTabContext(activeTabId, {
+      spaceRoom: {
+        selectedSpaceId: space?.id || null,
+        selectedRoomId: null, // Clear room when changing space
+      },
+    });
+  };
+
+  const changeRoom = (room) => {
+    if (!activeTabId || !activeTabContext?.spaceRoom?.selectedSpaceId) return;
+
+    updateTabContext(activeTabId, {
+      spaceRoom: {
+        selectedSpaceId: activeTabContext.spaceRoom.selectedSpaceId,
+        selectedRoomId: room?.id || null,
+      },
+    });
+  };
 
   // Close drawer on escape key
   useEffect(() => {

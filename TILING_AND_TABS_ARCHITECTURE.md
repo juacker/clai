@@ -20,6 +20,7 @@ This document describes the architecture for implementing tiling and tabs functi
 │                    MainLayout                           │
 │  ┌───────────────────────────────────────────────────┐  │
 │  │              TerminalEmulator                     │  │
+│  │  (reads context from active tab)                 │  │
 │  └───────────────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────────────┐  │
 │  │                   Home Page                       │  │
@@ -30,14 +31,30 @@ This document describes the architecture for implementing tiling and tabs functi
 │  │  │  └───────────────────────────────────────┘  │  │  │
 │  │  │  ┌───────────────────────────────────────┐  │  │  │
 │  │  │  │    Active Tab Content                 │  │  │  │
-│  │  │  │  ┌─────────────┬─────────────────┐   │  │  │  │
-│  │  │  │  │   Tile 1    │     Tile 2      │   │  │  │  │
-│  │  │  │  │  (Echo)     │   (Chart)       │   │  │  │  │
-│  │  │  │  └─────────────┴─────────────────┘   │  │  │  │
+│  │  │  │  ┌─────────────────────────────────┐  │  │  │  │
+│  │  │  │  │   TabContextProvider           │  │  │  │  │
+│  │  │  │  │   (Per-tab context isolation)  │  │  │  │  │
+│  │  │  │  │  ┌──────────┬──────────────┐   │  │  │  │  │
+│  │  │  │  │  │  Tile 1  │    Tile 2    │   │  │  │  │  │
+│  │  │  │  │  │ (Echo)   │   (Chart)    │   │  │  │  │  │
+│  │  │  │  │  └──────────┴──────────────┘   │  │  │  │  │
+│  │  │  │  └─────────────────────────────────┘  │  │  │  │
 │  │  │  └───────────────────────────────────────┘  │  │  │
 │  │  └─────────────────────────────────────────────┘  │  │
 │  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
+
+Context Hierarchy:
+MainLayout
+└── CommandProvider
+    └── TabManagerProvider
+        └── SharedSpaceRoomDataProvider (Shared cache)
+            └── TerminalEmulator (reads active tab context)
+            └── Home
+                └── TabView
+                    └── TabContent (per tab)
+                        └── TabContextProvider (per-tab isolation)
+                            └── [Tab content with tiles]
 ```
 
 ## Core Concepts

@@ -24,8 +24,8 @@
   max-height: calc(50vh - 60px);
   min-height: 0;
   opacity: 1;
-  /* Smooth transitions for auto-collapse */
-  transition: opacity 1s ease, max-height 1s ease, padding 1s ease;
+  /* Smooth transitions for auto-collapse - faster for better responsiveness */
+  transition: opacity 0.2s ease, max-height 0.2s ease, padding 0.2s ease;
 }
 
 /* Collapsed state - smooth fade out and shrink */

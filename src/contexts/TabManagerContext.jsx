@@ -77,11 +77,19 @@ const getNextTabNumber = (tabs) => {
 /**
  * Create a new tab structure
  */
-const createTab = (title = null, commandId = null) => ({
+const createTab = (title = null, commandId = null, initialContext = null) => ({
   id: generateTabId(),
   title: title || `Tab ${Date.now()}`,
   createdAt: Date.now(),
   rootTile: createTile(commandId),
+  // Tab-specific context
+  context: initialContext || {
+    spaceRoom: {
+      selectedSpaceId: null,
+      selectedRoomId: null,
+    },
+    customContext: {},
+  },
 });
 
 /**
@@ -106,20 +114,69 @@ export const TabManagerProvider = ({ children }) => {
 
   /**
    * Load tabs from localStorage on mount
+   * Includes migration for old tabs without context field
    */
   useEffect(() => {
     try {
       const savedTabs = localStorage.getItem('netdata_tabs');
       const savedActiveTabId = localStorage.getItem('netdata_active_tab_id');
 
+      // Check for old global space/room selection from SpaceRoomContext
+      const oldSelectedSpaceId = localStorage.getItem('netdata_selected_space');
+      const oldSelectedRoomId = localStorage.getItem('netdata_selected_room');
+
       if (savedTabs) {
         const parsed = JSON.parse(savedTabs);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setTabs(parsed);
-          setActiveTabId(savedActiveTabId || parsed[0].id);
+          // Migrate old tabs to new structure with context field
+          const migratedTabs = parsed.map(tab => {
+            // If tab doesn't have context field, add it with old global context
+            if (!tab.context) {
+              return {
+                ...tab,
+                context: {
+                  spaceRoom: {
+                    selectedSpaceId: oldSelectedSpaceId || null,
+                    selectedRoomId: oldSelectedRoomId || null,
+                  },
+                  customContext: {},
+                },
+              };
+            }
+            // If tab has context but missing spaceRoom, add it with old global context
+            if (!tab.context.spaceRoom) {
+              return {
+                ...tab,
+                context: {
+                  ...tab.context,
+                  spaceRoom: {
+                    selectedSpaceId: oldSelectedSpaceId || null,
+                    selectedRoomId: oldSelectedRoomId || null,
+                  },
+                },
+              };
+            }
+            // If tab has spaceRoom but no selection, use old global context
+            if (!tab.context.spaceRoom.selectedSpaceId && oldSelectedSpaceId) {
+              return {
+                ...tab,
+                context: {
+                  ...tab.context,
+                  spaceRoom: {
+                    selectedSpaceId: oldSelectedSpaceId,
+                    selectedRoomId: oldSelectedRoomId,
+                  },
+                },
+              };
+            }
+            return tab;
+          });
+
+          setTabs(migratedTabs);
+          setActiveTabId(savedActiveTabId || migratedTabs[0].id);
 
           // Set active tile to the root tile of active tab
-          const activeTab = parsed.find(t => t.id === (savedActiveTabId || parsed[0].id));
+          const activeTab = migratedTabs.find(t => t.id === (savedActiveTabId || migratedTabs[0].id));
           if (activeTab) {
             setActiveTileId(activeTab.rootTile.id);
           }
@@ -127,6 +184,9 @@ export const TabManagerProvider = ({ children }) => {
       }
     } catch (err) {
       console.error('Error loading tabs from localStorage:', err);
+      // If there's an error, clear localStorage and start fresh
+      localStorage.removeItem('netdata_tabs');
+      localStorage.removeItem('netdata_active_tab_id');
     }
   }, []);
 
@@ -350,6 +410,46 @@ export const TabManagerProvider = ({ children }) => {
     setActiveTabId(null);
     setActiveTileId(null);
   }, []);
+
+  /**
+   * Update tab context
+   * @param {string} tabId - Tab ID
+   * @param {Object} context - Partial context update
+   */
+  const updateTabContext = useCallback((tabId, context) => {
+    setTabs(prev =>
+      prev.map(tab =>
+        tab.id === tabId
+          ? {
+              ...tab,
+              context: {
+                ...tab.context,
+                ...context,
+              },
+            }
+          : tab
+      )
+    );
+  }, []);
+
+  /**
+   * Get tab context
+   * @param {string} tabId - Tab ID
+   * @returns {Object|null} Tab context or null
+   */
+  const getTabContext = useCallback((tabId) => {
+    const tab = tabs.find(t => t.id === tabId);
+    return tab?.context || null;
+  }, [tabs]);
+
+  /**
+   * Get active tab context
+   * @returns {Object|null} Active tab context or null
+   */
+  const getActiveTabContext = useCallback(() => {
+    if (!activeTabId) return null;
+    return getTabContext(activeTabId);
+  }, [activeTabId, getTabContext]);
 
   /**
    * Duplicate a tab
@@ -603,6 +703,11 @@ export const TabManagerProvider = ({ children }) => {
     // Getters
     getActiveTab,
     getTab,
+
+    // Context Management (NEW)
+    updateTabContext,
+    getTabContext,
+    getActiveTabContext,
 
     // Command Integration
     addCommandToActiveTile,

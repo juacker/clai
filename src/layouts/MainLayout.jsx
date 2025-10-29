@@ -4,7 +4,7 @@ import { getUserInfo } from '../api/client';
 import UserAvatar from '../components/UserAvatar';
 import SpaceRoomSelector from '../components/SpaceRoomSelector';
 import TerminalEmulator from '../components/TerminalEmulator';
-import { SpaceRoomProvider } from '../contexts/SpaceRoomContext';
+import { SharedSpaceRoomDataProvider } from '../contexts/SharedSpaceRoomDataContext';
 import { CommandProvider } from '../contexts/CommandContext';
 import { TabManagerProvider } from '../contexts/TabManagerContext';
 import styles from './MainLayout.module.css';
@@ -48,9 +48,9 @@ const MainLayout = () => {
   }
 
   return (
-    <SpaceRoomProvider>
-      <CommandProvider>
-        <TabManagerProvider>
+    <CommandProvider>
+      <TabManagerProvider>
+        <SharedSpaceRoomDataProvider>
           <div className={styles.mainLayout}>
             {/* Mobile: SpaceRoomSelector (button + drawer) */}
             <div className={styles.spaceRoomWrapper}>
@@ -71,9 +71,9 @@ const MainLayout = () => {
             )}
             <Outlet context={{ userInfo }} />
           </div>
-        </TabManagerProvider>
-      </CommandProvider>
-    </SpaceRoomProvider>
+        </SharedSpaceRoomDataProvider>
+      </TabManagerProvider>
+    </CommandProvider>
   );
 };
 

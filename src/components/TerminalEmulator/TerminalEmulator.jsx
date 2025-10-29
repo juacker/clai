@@ -1,14 +1,51 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useSpaceRoom } from '../../contexts/SpaceRoomContext';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useSharedSpaceRoomData } from '../../contexts/SharedSpaceRoomDataContext';
 import { useCommand } from '../../contexts/CommandContext';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import { parseCommand, isNavigationCommand, isLayoutCommand, extractNavigationTarget } from '../../utils/commandParser';
 import styles from './TerminalEmulator.module.css';
 
 const TerminalEmulator = ({ userInfo }) => {
-  const { spaces, selectedSpace, selectedRoom, rooms, loading, changeSpace, changeRoom } = useSpaceRoom();
+  // Get shared space/room data cache
+  const { spaces, getRoomsForSpace, getSpaceById, getRoomById, loading: sharedDataLoading } = useSharedSpaceRoomData();
   const { executeCommand, commandHistory } = useCommand();
-  const { handleLayoutCommand, tabs } = useTabManager();
+  const { handleLayoutCommand, tabs, getActiveTabContext, updateTabContext, activeTabId } = useTabManager();
+
+  // Get active tab context
+  const activeTabContext = getActiveTabContext();
+
+  // Derive selectedSpace and selectedRoom from active tab context
+  const selectedSpace = useMemo(() => {
+    return getSpaceById(activeTabContext?.spaceRoom?.selectedSpaceId);
+  }, [activeTabContext?.spaceRoom?.selectedSpaceId, getSpaceById]);
+
+  const selectedRoom = useMemo(() => {
+    return getRoomById(
+      activeTabContext?.spaceRoom?.selectedSpaceId,
+      activeTabContext?.spaceRoom?.selectedRoomId
+    );
+  }, [activeTabContext?.spaceRoom?.selectedSpaceId, activeTabContext?.spaceRoom?.selectedRoomId, getRoomById]);
+
+  // State for rooms in selected space
+  const [rooms, setRooms] = useState([]);
+  const [roomsLoading, setRoomsLoading] = useState(false);
+
+  // Load rooms when selected space changes
+  useEffect(() => {
+    const loadRooms = async () => {
+      if (activeTabContext?.spaceRoom?.selectedSpaceId) {
+        setRoomsLoading(true);
+        const roomsData = await getRoomsForSpace(activeTabContext.spaceRoom.selectedSpaceId);
+        setRooms(roomsData);
+        setRoomsLoading(false);
+      } else {
+        setRooms([]);
+      }
+    };
+    loadRooms();
+  }, [activeTabContext?.spaceRoom?.selectedSpaceId, getRoomsForSpace]);
+
+  const loading = sharedDataLoading || roomsLoading;
   const [isSpaceDropdownOpen, setIsSpaceDropdownOpen] = useState(false);
   const [isRoomDropdownOpen, setIsRoomDropdownOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -90,6 +127,29 @@ const TerminalEmulator = ({ userInfo }) => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Helper functions to update active tab context
+  const changeSpace = (space) => {
+    if (!activeTabId) return;
+
+    updateTabContext(activeTabId, {
+      spaceRoom: {
+        selectedSpaceId: space?.id || null,
+        selectedRoomId: null, // Clear room when changing space
+      },
+    });
+  };
+
+  const changeRoom = (room) => {
+    if (!activeTabId || !activeTabContext?.spaceRoom?.selectedSpaceId) return;
+
+    updateTabContext(activeTabId, {
+      spaceRoom: {
+        selectedSpaceId: activeTabContext.spaceRoom.selectedSpaceId,
+        selectedRoomId: room?.id || null,
+      },
+    });
+  };
 
   const handleSpaceSelect = (space) => {
     changeSpace(space);
@@ -265,8 +325,43 @@ const TerminalEmulator = ({ userInfo }) => {
     );
   }
 
+  // If no selectedSpace, show a simplified terminal (no dropdowns)
   if (!selectedSpace) {
-    return null;
+    return (
+      <div className={styles.terminal} onClick={handleTerminalClick}>
+        <div className={styles.terminalContent}>
+          {/* Shell Prompt - simplified without space/room */}
+          <div className={styles.shellPrompt}>
+            <span className={styles.userHost}>{userInfo?.email || 'user@netdata'}</span>
+          </div>
+
+          {/* Terminal Prompt Symbol */}
+          <span className={styles.terminalPrompt}>%</span>
+
+          {/* Terminal Input */}
+          <div className={styles.terminalInputWrapper}>
+            <input
+              ref={inputRef}
+              type="text"
+              className={styles.terminalInput}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onClick={(e) => e.stopPropagation()}
+              placeholder="Type a command..."
+              spellCheck={false}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+            />
+            <span className={styles.terminalInputDisplay} aria-hidden="true">
+              {inputValue}
+              <span className={styles.fatCursor}>█</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

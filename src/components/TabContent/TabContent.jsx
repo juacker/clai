@@ -1,7 +1,8 @@
 /**
  * TabContent Component
  *
- * Renders the content of the active tab.
+ * Renders the content of the active tab wrapped with TabContext.
+ * Each tab has its own isolated context (space/room selection).
  * For Phase 1: Displays a single command visualization per tab.
  * For Phase 3: Will render TileView with split layouts.
  */
@@ -9,15 +10,23 @@
 import React from 'react';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import { useCommand } from '../../contexts/CommandContext';
+import { TabContextProvider } from '../../contexts/TabContext';
 import Echo from '../Echo';
 import styles from './TabContent.module.css';
 
 const TabContent = () => {
-  const { tabs, activeTabId } = useTabManager();
+  const { tabs, activeTabId, updateTabContext } = useTabManager();
   const { commandHistory } = useCommand();
 
   // Get active tab directly from state instead of using getActiveTab()
   const activeTab = tabs.find(t => t.id === activeTabId);
+
+  // Handle context changes from TabContext
+  const handleContextChange = (context) => {
+    if (activeTab) {
+      updateTabContext(activeTab.id, context);
+    }
+  };
 
   // No active tab - show default dashboard
   if (!activeTab) {
@@ -118,10 +127,17 @@ const TabContent = () => {
     }
   };
 
+  // Wrap tab content with TabContext provider for context isolation
   return (
-    <div className={styles.tabContent}>
-      {renderCommandVisualization()}
-    </div>
+    <TabContextProvider
+      tabId={activeTab.id}
+      initialContext={activeTab.context}
+      onContextChange={handleContextChange}
+    >
+      <div className={styles.tabContent}>
+        {renderCommandVisualization()}
+      </div>
+    </TabContextProvider>
   );
 };
 
