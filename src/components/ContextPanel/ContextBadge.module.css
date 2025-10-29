@@ -29,7 +29,17 @@
   align-items: center;
   justify-content: center;
   font-size: 14px;
-  opacity: 0.8;
+  opacity: 0.9;
+  line-height: 0;
+}
+
+/* SVG icons inherit color from parent */
+.icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  transition: all 0.2s ease;
 }
 
 /* Text */

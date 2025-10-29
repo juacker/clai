@@ -75,7 +75,6 @@ const ContextPanel = () => {
             type="space"
             label="Space"
             value={selectedSpace.name}
-            icon="🌐"
           />
         )}
 
@@ -85,7 +84,6 @@ const ContextPanel = () => {
             type="room"
             label="Room"
             value={selectedRoom.name}
-            icon="📦"
           />
         )}
 
@@ -97,7 +95,6 @@ const ContextPanel = () => {
               type="custom"
               label={key}
               value={String(value)}
-              icon="⚙️"
             />
           ))}
       </div>
