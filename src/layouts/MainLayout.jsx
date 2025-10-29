@@ -49,8 +49,8 @@ const MainLayout = () => {
 
   return (
     <CommandProvider>
-      <TabManagerProvider>
-        <SharedSpaceRoomDataProvider>
+      <SharedSpaceRoomDataProvider>
+        <TabManagerProvider>
           <div className={styles.mainLayout}>
             {/* Mobile: SpaceRoomSelector (button + drawer) */}
             <div className={styles.spaceRoomWrapper}>
@@ -71,8 +71,8 @@ const MainLayout = () => {
             )}
             <Outlet context={{ userInfo }} />
           </div>
-        </SharedSpaceRoomDataProvider>
-      </TabManagerProvider>
+        </TabManagerProvider>
+      </SharedSpaceRoomDataProvider>
     </CommandProvider>
   );
 };

@@ -8,6 +8,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useCommand } from './CommandContext';
+import { useSharedSpaceRoomData } from './SharedSpaceRoomDataContext';
 
 const TabManagerContext = createContext(null);
 
@@ -109,8 +110,14 @@ export const TabManagerProvider = ({ children }) => {
   // Get current command from CommandContext
   const { currentCommand } = useCommand();
 
+  // Get shared space/room data for default initialization
+  const { spaces, getRoomsForSpace, loading: spacesLoading } = useSharedSpaceRoomData();
+
   // Track the last processed command ID to prevent re-processing on tab switches
   const lastProcessedCommandId = useRef(null);
+
+  // Track if we've initialized default context
+  const hasInitializedDefaults = useRef(false);
 
   /**
    * Load tabs from localStorage on mount
@@ -208,6 +215,74 @@ export const TabManagerProvider = ({ children }) => {
       console.error('Error saving tabs to localStorage:', err);
     }
   }, [tabs, activeTabId]);
+
+  /**
+   * Initialize default space/room context for tabs without selection
+   * Runs when spaces are loaded and tabs exist
+   */
+  useEffect(() => {
+    // Skip if already initialized, no tabs, spaces not loaded, or still loading
+    if (hasInitializedDefaults.current || tabs.length === 0 || !spaces || spaces.length === 0 || spacesLoading) {
+      return;
+    }
+
+    // Check if any tab needs default context
+    const needsDefaults = tabs.some(tab =>
+      !tab.context?.spaceRoom?.selectedSpaceId || !tab.context?.spaceRoom?.selectedRoomId
+    );
+
+    if (!needsDefaults) {
+      hasInitializedDefaults.current = true;
+      return;
+    }
+
+    // Initialize defaults: first space + "All Nodes" room
+    const initializeDefaults = async () => {
+      try {
+        const firstSpace = spaces[0];
+        if (!firstSpace) return;
+
+        // Fetch rooms for the first space
+        const rooms = await getRoomsForSpace(firstSpace.id);
+        if (!rooms || rooms.length === 0) return;
+
+        // Find "All Nodes" room (case-insensitive)
+        const allNodesRoom = rooms.find(room =>
+          room.name?.toLowerCase() === 'all nodes'
+        ) || rooms[0]; // Fallback to first room if "All Nodes" not found
+
+        console.log('[TabManagerContext] Initializing default context:', {
+          space: firstSpace.name,
+          room: allNodesRoom.name,
+        });
+
+        // Update all tabs that don't have space/room selection
+        setTabs(prev =>
+          prev.map(tab => {
+            if (!tab.context?.spaceRoom?.selectedSpaceId || !tab.context?.spaceRoom?.selectedRoomId) {
+              return {
+                ...tab,
+                context: {
+                  ...tab.context,
+                  spaceRoom: {
+                    selectedSpaceId: firstSpace.id,
+                    selectedRoomId: allNodesRoom.id,
+                  },
+                },
+              };
+            }
+            return tab;
+          })
+        );
+
+        hasInitializedDefaults.current = true;
+      } catch (error) {
+        console.error('[TabManagerContext] Error initializing default context:', error);
+      }
+    };
+
+    initializeDefaults();
+  }, [tabs, spaces, spacesLoading, getRoomsForSpace]);
 
   /**
    * When a new command is executed, add it to the active tile

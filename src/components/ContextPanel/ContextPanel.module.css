@@ -1,0 +1,162 @@
+/**
+ * ContextPanel Component Styles
+ *
+ * Displays tab context information below the TabBar with clean, minimalistic design.
+ * Follows mobile-first approach with responsive design.
+ */
+
+/* Main Panel Container (Desktop baseline) */
+.contextPanel {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.98);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 44px; /* Below TabBar */
+  z-index: 99; /* Below TabBar (100) */
+  transition: all 0.2s ease;
+  padding: 8px 16px;
+
+  /* iOS Safe Area Support */
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+
+/* Context Container - Horizontal layout for badges */
+.contextContainer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.contextContainer::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* Smooth entrance animation */
+@keyframes panelEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.contextPanel {
+  animation: panelEnter 0.3s ease;
+}
+
+/* Mobile Styles */
+@media (max-width: 768px) {
+  .contextPanel {
+    top: 48px; /* Below mobile TabBar */
+    padding: 10px 16px;
+  }
+
+  .contextContainer {
+    gap: 10px;
+  }
+}
+
+/* Touch Device Optimizations */
+@media (pointer: coarse) {
+  .contextPanel {
+    padding: 12px 16px;
+  }
+
+  .contextContainer {
+    gap: 12px;
+  }
+}
+
+/* Tablet and larger screens - more horizontal space */
+@media (min-width: 769px) {
+  .contextPanel {
+    padding: 8px 24px;
+  }
+
+  .contextContainer {
+    gap: 12px;
+  }
+}
+
+/* Large desktop - more generous spacing */
+@media (min-width: 1200px) {
+  .contextPanel {
+    padding: 10px 32px;
+  }
+
+  .contextContainer {
+    gap: 14px;
+  }
+}
+
+/* Empty state - Hide panel when no context */
+.contextPanel:empty {
+  display: none;
+}
+
+/* Accessibility - Focus within panel */
+.contextPanel:focus-within {
+  outline: 2px solid rgba(102, 126, 234, 0.3);
+  outline-offset: -2px;
+}
+
+/* Smooth scroll behavior for horizontal overflow */
+.contextContainer {
+  scroll-behavior: smooth;
+}
+
+/* Fade edges for horizontal scroll (if needed) */
+.contextPanel::before,
+.contextPanel::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  pointer-events: none;
+  z-index: 1;
+  transition: opacity 0.2s ease;
+  opacity: 0;
+}
+
+.contextPanel::before {
+  left: 0;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.98), transparent);
+}
+
+.contextPanel::after {
+  right: 0;
+  background: linear-gradient(to left, rgba(255, 255, 255, 0.98), transparent);
+}
+
+/* Show fade edges only when scrollable */
+.contextContainer:not(:hover) {
+  /* This would need JS to detect scroll */
+}
+
+/* Hover effect on desktop - subtle highlight */
+@media (hover: hover) {
+  .contextPanel:hover {
+    background: rgba(255, 255, 255, 1);
+  }
+}
+
+/* Compact mode for single tab (optional future enhancement) */
+.contextPanel.compact {
+  padding: 6px 16px;
+}
+
+.contextPanel.compact .contextContainer {
+  gap: 6px;
+}
+

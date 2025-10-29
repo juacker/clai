@@ -1,0 +1,141 @@
+/**
+ * ContextBadge Component Styles
+ *
+ * Clean, minimalistic badges for displaying context information.
+ * Follows mobile-first approach with responsive design.
+ */
+
+/* Base Badge Styles (Desktop baseline) */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  user-select: none;
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* Icon */
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+/* Text */
+.text {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+/* Badge Types */
+
+/* Space Badge - Purple/Indigo theme */
+.badgeSpace {
+  background: rgba(102, 126, 234, 0.08);
+  color: #667eea;
+  border-color: rgba(102, 126, 234, 0.15);
+}
+
+.badgeSpace .icon {
+  color: #667eea;
+}
+
+/* Room Badge - Blue theme */
+.badgeRoom {
+  background: rgba(59, 130, 246, 0.08);
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.15);
+}
+
+.badgeRoom .icon {
+  color: #3b82f6;
+}
+
+/* Custom Badge - Gray theme (default) */
+.badgeCustom {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.7);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.badgeCustom .icon {
+  color: rgba(0, 0, 0, 0.5);
+}
+
+/* Hover Effects (Desktop) */
+@media (hover: hover) {
+  .badge:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .badgeSpace:hover {
+    background: rgba(102, 126, 234, 0.12);
+    border-color: rgba(102, 126, 234, 0.2);
+  }
+
+  .badgeRoom:hover {
+    background: rgba(59, 130, 246, 0.12);
+    border-color: rgba(59, 130, 246, 0.2);
+  }
+
+  .badgeCustom:hover {
+    background: rgba(0, 0, 0, 0.06);
+    border-color: rgba(0, 0, 0, 0.12);
+  }
+}
+
+/* Mobile Styles */
+@media (max-width: 768px) {
+  .badge {
+    padding: 8px 14px;
+    font-size: 14px;
+    border-radius: 8px;
+    gap: 8px;
+  }
+
+  .icon {
+    font-size: 16px;
+  }
+}
+
+/* Touch Device Optimizations */
+@media (pointer: coarse) {
+  .badge {
+    padding: 10px 16px;
+    min-height: 36px;
+  }
+}
+
+/* Accessibility - Focus Styles */
+.badge:focus-visible {
+  outline: 2px solid rgba(102, 126, 234, 0.4);
+  outline-offset: 2px;
+}
+
+/* Animation for badge entrance */
+@keyframes badgeEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.badge {
+  animation: badgeEnter 0.2s ease;
+}
+
