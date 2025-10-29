@@ -45,6 +45,7 @@ export const COMMAND_TYPES = {
   HELP: 'help',
   VERSION: 'version',
   SETTINGS: 'settings',
+  CTX: 'ctx',
 
   // Layout commands (Tab & Tile management)
   TAB: 'tab',
@@ -292,6 +293,22 @@ export const COMMAND_METADATA = {
       'settings notifications'
     ],
     handledBy: 'CommandContext'
+  },
+  [COMMAND_TYPES.CTX]: {
+    name: 'ctx',
+    category: COMMAND_CATEGORIES.SYSTEM,
+    description: 'Manage tab context (space, room, custom variables)',
+    usage: 'ctx [subcommand] [args...]',
+    examples: [
+      'ctx',
+      'ctx space production',
+      'ctx room web-room',
+      'ctx set environment prod',
+      'ctx add tags monitoring',
+      'ctx del tags monitoring',
+      'ctx del environment'
+    ],
+    handledBy: 'Terminal'
   },
   [COMMAND_TYPES.TAB]: {
     name: 'tab',

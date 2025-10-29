@@ -172,6 +172,30 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
   }, [customContext]);
 
   /**
+   * Delete a custom context key
+   * @param {string} key - Context key to delete
+   */
+  const deleteCustomContext = useCallback((key) => {
+    setCustomContextState(prev => {
+      const newContext = { ...prev };
+      delete newContext[key];
+
+      // Notify parent of context change
+      if (onContextChange) {
+        onContextChange({
+          spaceRoom: {
+            selectedSpaceId,
+            selectedRoomId,
+          },
+          customContext: newContext,
+        });
+      }
+
+      return newContext;
+    });
+  }, [selectedSpaceId, selectedRoomId, onContextChange]);
+
+  /**
    * Clear all custom context
    */
   const clearCustomContext = useCallback(() => {
@@ -271,6 +295,7 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
     customContext,
     setCustomContext,
     getCustomContext,
+    deleteCustomContext,
     clearCustomContext,
   };
 

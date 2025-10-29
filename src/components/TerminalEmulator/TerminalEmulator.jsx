@@ -1,12 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
 import { useCommand } from '../../contexts/CommandContext';
 import { useTabManager } from '../../contexts/TabManagerContext';
+import TabContext from '../../contexts/TabContext';
 import { parseCommand, isLayoutCommand } from '../../utils/commandParser';
+import { handleContextCommand, isContextCommand } from '../../utils/contextCommandHandler';
 import styles from './TerminalEmulator.module.css';
 
 const TerminalEmulator = ({ userInfo }) => {
   const { executeCommand, commandHistory } = useCommand();
   const { handleLayoutCommand } = useTabManager();
+  // Try to get tab context, but don't throw error if not available
+  const tabContext = useContext(TabContext);
   const [inputValue, setInputValue] = useState('');
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [outputMessages, setOutputMessages] = useState([]);
@@ -74,7 +78,7 @@ const TerminalEmulator = ({ userInfo }) => {
   const SUPPORTED_COMMAND_TYPES = ['echo'];
 
   // Handle command execution
-  const handleCommandExecution = (input) => {
+  const handleCommandExecution = async (input) => {
     const trimmed = input.trim();
     if (!trimmed) return;
 
@@ -85,8 +89,27 @@ const TerminalEmulator = ({ userInfo }) => {
     // Parse the command
     const command = parseCommand(trimmed);
 
+    // Check if it's a context command (ctx)
+    if (isContextCommand(command)) {
+      // Check if TabContext is available
+      if (!tabContext) {
+        addOutputMessage('Context commands are not available yet. Please wait for the tab to load.', 'error');
+        return;
+      }
+
+      try {
+        const result = await handleContextCommand(command, tabContext);
+        if (result.success) {
+          addOutputMessage(result.message, 'success');
+        } else {
+          addOutputMessage(result.message, 'error');
+        }
+      } catch (error) {
+        addOutputMessage(`Context command error: ${error.message}`, 'error');
+      }
+    }
     // Check if it's a layout command (tab/tile management)
-    if (isLayoutCommand(command)) {
+    else if (isLayoutCommand(command)) {
       const result = handleLayoutCommand(command);
       if (result && !result.success) {
         addOutputMessage(result.message || 'Layout command failed', 'error');

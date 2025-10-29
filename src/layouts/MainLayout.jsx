@@ -3,7 +3,7 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import { getUserInfo } from '../api/client';
 import UserAvatar from '../components/UserAvatar';
 import SpaceRoomSelector from '../components/SpaceRoomSelector';
-import TerminalEmulator from '../components/TerminalEmulator';
+import TerminalEmulatorWrapper from '../components/TerminalEmulator/TerminalEmulatorWrapper';
 import { SharedSpaceRoomDataProvider } from '../contexts/SharedSpaceRoomDataContext';
 import { CommandProvider } from '../contexts/CommandContext';
 import { TabManagerProvider } from '../contexts/TabManagerContext';
@@ -58,7 +58,7 @@ const MainLayout = () => {
             </div>
 
             {/* Desktop: TerminalEmulator (shell command bar) */}
-            <TerminalEmulator userInfo={userInfo} />
+            <TerminalEmulatorWrapper userInfo={userInfo} />
 
             {userInfo && (
               <div className={styles.avatarWrapper}>
