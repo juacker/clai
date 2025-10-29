@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { getUserInfo } from '../api/client';
 import UserAvatar from '../components/UserAvatar';
-import SpaceRoomSelector from '../components/SpaceRoomSelector';
 import TerminalEmulatorWrapper from '../components/TerminalEmulator/TerminalEmulatorWrapper';
 import { SharedSpaceRoomDataProvider } from '../contexts/SharedSpaceRoomDataContext';
 import { CommandProvider } from '../contexts/CommandContext';
@@ -54,11 +53,6 @@ const MainLayout = () => {
       <SharedSpaceRoomDataProvider>
         <TabManagerProvider>
           <div className={styles.mainLayout}>
-            {/* Mobile: SpaceRoomSelector (button + drawer) */}
-            <div className={styles.spaceRoomWrapper}>
-              <SpaceRoomSelector />
-            </div>
-
             {/* Desktop: TerminalEmulator (shell command bar) */}
             {isDesktop && <TerminalEmulatorWrapper userInfo={userInfo} />}
 
