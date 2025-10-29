@@ -9,15 +9,21 @@
  * rendered at the TabView level, outside of the TabContextProvider.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import { useSharedSpaceRoomData } from '../../contexts/SharedSpaceRoomDataContext';
 import ContextBadge from './ContextBadge';
+import ContextSelector from './ContextSelector';
 import styles from './ContextPanel.module.css';
 
 const ContextPanel = () => {
-  const { getActiveTab } = useTabManager();
-  const { getSpaceById, getRoomById } = useSharedSpaceRoomData();
+  const { getActiveTab, updateTabContext } = useTabManager();
+  const { spaces, getRoomsForSpace, getSpaceById, getRoomById } = useSharedSpaceRoomData();
+
+  // Selector state
+  const [showSpaceSelector, setShowSpaceSelector] = useState(false);
+  const [showRoomSelector, setShowRoomSelector] = useState(false);
+  const [availableRooms, setAvailableRooms] = useState([]);
 
   // Get the active tab's context
   const activeTab = getActiveTab();
@@ -61,44 +67,121 @@ const ContextPanel = () => {
     selectedRoom,
   });
 
+  // Load rooms when room selector is opened
+  const handleRoomSelectorOpen = useCallback(async () => {
+    if (!selectedSpace) return;
+
+    setShowRoomSelector(true);
+    const rooms = await getRoomsForSpace(selectedSpace.id);
+    setAvailableRooms(rooms || []);
+  }, [selectedSpace, getRoomsForSpace]);
+
+  // Handle space selection
+  const handleSpaceSelect = useCallback(async (space) => {
+    if (!activeTab) return;
+
+    console.log('[ContextPanel] Space selected:', space);
+
+    // Fetch rooms for the new space
+    const rooms = await getRoomsForSpace(space.id);
+
+    // Find "All Nodes" room (case-insensitive) or fallback to first room
+    const allNodesRoom = rooms.find(room =>
+      room.name?.toLowerCase() === 'all nodes'
+    ) || rooms[0];
+
+    console.log('[ContextPanel] Auto-selecting room:', allNodesRoom);
+
+    // Update the tab context with new space and room
+    updateTabContext(activeTab.id, {
+      spaceRoom: {
+        selectedSpaceId: space.id,
+        selectedRoomId: allNodesRoom?.id || null,
+      },
+    });
+  }, [activeTab, getRoomsForSpace, updateTabContext]);
+
+  // Handle room selection
+  const handleRoomSelect = useCallback((room) => {
+    if (!activeTab || !selectedSpace) return;
+
+    console.log('[ContextPanel] Room selected:', room);
+
+    // Update the tab context with new room
+    updateTabContext(activeTab.id, {
+      spaceRoom: {
+        selectedSpaceId: selectedSpace.id,
+        selectedRoomId: room.id,
+      },
+    });
+  }, [activeTab, selectedSpace, updateTabContext]);
+
   // If no context, don't render the panel
   if (!hasAnyContext) {
     return null;
   }
 
   return (
-    <div className={styles.contextPanel}>
-      <div className={styles.contextContainer}>
-        {/* Space Badge */}
-        {selectedSpace && (
-          <ContextBadge
-            type="space"
-            label="Space"
-            value={selectedSpace.name}
-          />
-        )}
-
-        {/* Room Badge */}
-        {selectedRoom && (
-          <ContextBadge
-            type="room"
-            label="Room"
-            value={selectedRoom.name}
-          />
-        )}
-
-        {/* Custom Context Badges */}
-        {hasCustomContext &&
-          Object.entries(customContext).map(([key, value]) => (
+    <>
+      <div className={styles.contextPanel}>
+        <div className={styles.contextContainer}>
+          {/* Space Badge */}
+          {selectedSpace && (
             <ContextBadge
-              key={key}
-              type="custom"
-              label={key}
-              value={String(value)}
+              type="space"
+              label="Space"
+              value={selectedSpace.name}
+              onClick={() => setShowSpaceSelector(true)}
+              clickable={true}
             />
-          ))}
+          )}
+
+          {/* Room Badge */}
+          {selectedRoom && (
+            <ContextBadge
+              type="room"
+              label="Room"
+              value={selectedRoom.name}
+              onClick={handleRoomSelectorOpen}
+              clickable={true}
+            />
+          )}
+
+          {/* Custom Context Badges */}
+          {hasCustomContext &&
+            Object.entries(customContext).map(([key, value]) => (
+              <ContextBadge
+                key={key}
+                type="custom"
+                label={key}
+                value={String(value)}
+              />
+            ))}
+        </div>
       </div>
-    </div>
+
+      {/* Space Selector Modal */}
+      {showSpaceSelector && (
+        <ContextSelector
+          items={spaces}
+          selectedId={selectedSpace?.id}
+          onSelect={handleSpaceSelect}
+          onClose={() => setShowSpaceSelector(false)}
+          type="space"
+        />
+      )}
+
+      {/* Room Selector Modal */}
+      {showRoomSelector && (
+        <ContextSelector
+          items={availableRooms}
+          selectedId={selectedRoom?.id}
+          onSelect={handleRoomSelect}
+          onClose={() => setShowRoomSelector(false)}
+          type="room"
+        />
+      )}
+    </>
   );
 };
 

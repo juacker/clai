@@ -1,0 +1,340 @@
+/**
+ * ContextSelector Component Styles
+ *
+ * Modal dropdown for selecting spaces or rooms.
+ * Clean, light theme matching the application's overall design.
+ * Follows mobile-first approach with responsive design.
+ */
+
+/* Overlay - Full screen backdrop */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(8px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Selector Container */
+.selector {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08),
+              0 2px 8px rgba(0, 0, 0, 0.04);
+  min-width: 360px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.25s ease;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: linear-gradient(to bottom, #fafbfc, #ffffff);
+}
+
+.title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: #1a1a1a;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 32px;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.closeButton:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.closeButton:active {
+  transform: scale(0.94);
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* Search Container */
+.searchContainer {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  background: #fafbfc;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  font-size: 15px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  outline: none;
+  transition: all 0.2s ease;
+  background: #ffffff;
+  color: #1a1a1a;
+  box-sizing: border-box; /* Ensure padding is included in width */
+}
+
+.searchInput:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.08);
+  background: #ffffff;
+}
+
+.searchInput::placeholder {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+/* Items List */
+.itemsList {
+  overflow-y: auto;
+  max-height: 420px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+/* Custom Scrollbar - Light theme */
+.itemsList::-webkit-scrollbar {
+  width: 10px;
+}
+
+.itemsList::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+
+.itemsList::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  border: 2px solid #ffffff;
+}
+
+.itemsList::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* Item Button */
+.item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  margin-bottom: 4px;
+  position: relative;
+}
+
+.item:hover {
+  background: rgba(102, 126, 234, 0.05);
+  transform: translateX(2px);
+}
+
+.item:active {
+  transform: scale(0.98) translateX(2px);
+}
+
+.itemSelected {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08), rgba(102, 126, 234, 0.12));
+  font-weight: 600;
+}
+
+.itemSelected:hover {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.12), rgba(102, 126, 234, 0.15));
+}
+
+.itemName {
+  font-size: 15px;
+  color: #1a1a1a;
+  flex: 1;
+  font-weight: 500;
+}
+
+.itemSelected .itemName {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.checkmark {
+  color: #667eea;
+  font-size: 20px;
+  font-weight: bold;
+  margin-left: 12px;
+  animation: checkmarkAppear 0.2s ease;
+}
+
+@keyframes checkmarkAppear {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* No Results */
+.noResults {
+  padding: 48px 24px;
+  text-align: center;
+  color: rgba(0, 0, 0, 0.35);
+  font-size: 15px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+/* Mobile Styles */
+@media (max-width: 768px) {
+  .selector {
+    min-width: 90vw;
+    max-width: 95vw;
+    max-height: 75vh;
+    border-radius: 20px;
+  }
+
+  .header {
+    padding: 20px 24px;
+  }
+
+  .title {
+    font-size: 18px;
+  }
+
+  .closeButton {
+    width: 40px;
+    height: 40px;
+    font-size: 36px;
+  }
+
+  .searchContainer {
+    padding: 16px 20px;
+  }
+
+  .searchInput {
+    padding: 14px 18px;
+    font-size: 16px; /* Prevent zoom on iOS */
+    border-radius: 12px;
+  }
+
+  .item {
+    padding: 16px 18px;
+    min-height: 52px; /* Touch-friendly */
+    border-radius: 12px;
+  }
+
+  .itemName {
+    font-size: 16px;
+  }
+
+  .itemsList {
+    max-height: 55vh;
+    padding: 12px;
+  }
+}
+
+/* Touch Device Optimizations */
+@media (pointer: coarse) {
+  .item {
+    min-height: 52px;
+    padding: 16px 18px;
+  }
+
+  .closeButton {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Tablet and larger screens - optimize layout */
+@media (min-width: 769px) {
+  .selector {
+    min-width: 420px;
+  }
+
+  .itemsList {
+    max-height: 480px;
+  }
+}
+
+/* Desktop with fine pointer - enhanced hover effects */
+@media (hover: hover) and (pointer: fine) {
+  .item:hover {
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.08);
+  }
+
+  .itemSelected:hover {
+    box-shadow: 0 2px 12px rgba(102, 126, 234, 0.15);
+  }
+}
+
+/* Accessibility - Focus Styles */
+.item:focus-visible {
+  outline: 2px solid #667eea;
+  outline-offset: 2px;
+}
+
+.searchInput:focus-visible {
+  outline: none;
+}
+
+.closeButton:focus-visible {
+  outline: 2px solid #667eea;
+  outline-offset: 2px;
+}
+

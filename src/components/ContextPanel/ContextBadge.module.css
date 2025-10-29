@@ -23,6 +23,16 @@
   border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
+/* Clickable Badge */
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:focus-visible {
+  outline: 2px solid rgba(102, 126, 234, 0.4);
+  outline-offset: 2px;
+}
+
 /* Icon */
 .icon {
   display: flex;

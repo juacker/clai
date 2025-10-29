@@ -41,10 +41,12 @@ const CustomIcon = () => (
  * @param {string} props.type - Type of badge: 'space', 'room', or 'custom'
  * @param {string} props.label - Label to display (for custom badges, this is the key)
  * @param {string} props.value - Value to display
+ * @param {Function} props.onClick - Optional click handler for interactive badges
+ * @param {boolean} props.clickable - Whether the badge is clickable (default: false)
  */
-const ContextBadge = ({ type = 'custom', label, value }) => {
+const ContextBadge = ({ type = 'custom', label, value, onClick, clickable = false }) => {
   // Determine badge style based on type
-  const badgeClass = `${styles.badge} ${styles[`badge${type.charAt(0).toUpperCase() + type.slice(1)}`] || ''}`;
+  const badgeClass = `${styles.badge} ${styles[`badge${type.charAt(0).toUpperCase() + type.slice(1)}`] || ''} ${clickable ? styles.clickable : ''}`;
 
   // Select the appropriate icon based on type
   const IconComponent = type === 'space' ? SpaceIcon : type === 'room' ? RoomIcon : CustomIcon;
@@ -55,8 +57,28 @@ const ContextBadge = ({ type = 'custom', label, value }) => {
     ? value
     : `${label}=${value}`;
 
+  // Handle click if clickable
+  const handleClick = (e) => {
+    if (clickable && onClick) {
+      e.stopPropagation();
+      onClick();
+    }
+  };
+
   return (
-    <div className={badgeClass} title={`${label}: ${value}`}>
+    <div
+      className={badgeClass}
+      title={`${label}: ${value}`}
+      onClick={handleClick}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleClick(e);
+        }
+      } : undefined}
+    >
       <span className={styles.icon}>
         <IconComponent />
       </span>
