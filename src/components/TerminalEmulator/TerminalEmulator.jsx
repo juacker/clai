@@ -1,60 +1,17 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { useSharedSpaceRoomData } from '../../contexts/SharedSpaceRoomDataContext';
+import React, { useState, useRef, useEffect } from 'react';
 import { useCommand } from '../../contexts/CommandContext';
 import { useTabManager } from '../../contexts/TabManagerContext';
-import { parseCommand, isNavigationCommand, isLayoutCommand, extractNavigationTarget } from '../../utils/commandParser';
+import { parseCommand, isLayoutCommand } from '../../utils/commandParser';
 import styles from './TerminalEmulator.module.css';
 
 const TerminalEmulator = ({ userInfo }) => {
-  // Get shared space/room data cache
-  const { spaces, getRoomsForSpace, getSpaceById, getRoomById, loading: sharedDataLoading } = useSharedSpaceRoomData();
   const { executeCommand, commandHistory } = useCommand();
-  const { handleLayoutCommand, tabs, getActiveTabContext, updateTabContext, activeTabId } = useTabManager();
-
-  // Get active tab context
-  const activeTabContext = getActiveTabContext();
-
-  // Derive selectedSpace and selectedRoom from active tab context
-  const selectedSpace = useMemo(() => {
-    return getSpaceById(activeTabContext?.spaceRoom?.selectedSpaceId);
-  }, [activeTabContext?.spaceRoom?.selectedSpaceId, getSpaceById]);
-
-  const selectedRoom = useMemo(() => {
-    return getRoomById(
-      activeTabContext?.spaceRoom?.selectedSpaceId,
-      activeTabContext?.spaceRoom?.selectedRoomId
-    );
-  }, [activeTabContext?.spaceRoom?.selectedSpaceId, activeTabContext?.spaceRoom?.selectedRoomId, getRoomById]);
-
-  // State for rooms in selected space
-  const [rooms, setRooms] = useState([]);
-  const [roomsLoading, setRoomsLoading] = useState(false);
-
-  // Load rooms when selected space changes
-  useEffect(() => {
-    const loadRooms = async () => {
-      if (activeTabContext?.spaceRoom?.selectedSpaceId) {
-        setRoomsLoading(true);
-        const roomsData = await getRoomsForSpace(activeTabContext.spaceRoom.selectedSpaceId);
-        setRooms(roomsData);
-        setRoomsLoading(false);
-      } else {
-        setRooms([]);
-      }
-    };
-    loadRooms();
-  }, [activeTabContext?.spaceRoom?.selectedSpaceId, getRoomsForSpace]);
-
-  const loading = sharedDataLoading || roomsLoading;
-  const [isSpaceDropdownOpen, setIsSpaceDropdownOpen] = useState(false);
-  const [isRoomDropdownOpen, setIsRoomDropdownOpen] = useState(false);
+  const { handleLayoutCommand } = useTabManager();
   const [inputValue, setInputValue] = useState('');
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [outputMessages, setOutputMessages] = useState([]);
   const [isOutputVisible, setIsOutputVisible] = useState(true);
   const [isHoveringOutput, setIsHoveringOutput] = useState(false);
-  const spaceDropdownRef = useRef(null);
-  const roomDropdownRef = useRef(null);
   const inputRef = useRef(null);
   const outputRef = useRef(null);
   const autoCollapseTimerRef = useRef(null);
@@ -113,54 +70,6 @@ const TerminalEmulator = ({ userInfo }) => {
     }
   }, [outputMessages]);
 
-  // Close dropdowns when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (spaceDropdownRef.current && !spaceDropdownRef.current.contains(event.target)) {
-        setIsSpaceDropdownOpen(false);
-      }
-      if (roomDropdownRef.current && !roomDropdownRef.current.contains(event.target)) {
-        setIsRoomDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Helper functions to update active tab context
-  const changeSpace = (space) => {
-    if (!activeTabId) return;
-
-    updateTabContext(activeTabId, {
-      spaceRoom: {
-        selectedSpaceId: space?.id || null,
-        selectedRoomId: null, // Clear room when changing space
-      },
-    });
-  };
-
-  const changeRoom = (room) => {
-    if (!activeTabId || !activeTabContext?.spaceRoom?.selectedSpaceId) return;
-
-    updateTabContext(activeTabId, {
-      spaceRoom: {
-        selectedSpaceId: activeTabContext.spaceRoom.selectedSpaceId,
-        selectedRoomId: room?.id || null,
-      },
-    });
-  };
-
-  const handleSpaceSelect = (space) => {
-    changeSpace(space);
-    setIsSpaceDropdownOpen(false);
-  };
-
-  const handleRoomSelect = (room) => {
-    changeRoom(room);
-    setIsRoomDropdownOpen(false);
-  };
-
   // Supported visualization command types
   const SUPPORTED_COMMAND_TYPES = ['echo'];
 
@@ -185,10 +94,6 @@ const TerminalEmulator = ({ userInfo }) => {
         addOutputMessage(result.message, 'success');
       }
     }
-    // Check if it's a navigation command
-    else if (isNavigationCommand(command)) {
-      handleNavigationCommand(command);
-    }
     // Execute visualization/action command with CommandContext
     else {
       // Validate command type before executing
@@ -197,53 +102,6 @@ const TerminalEmulator = ({ userInfo }) => {
         return;
       }
       executeCommand(command);
-    }
-  };
-
-  // Handle navigation commands (cd, ls, pwd)
-  const handleNavigationCommand = (command) => {
-    switch (command.type) {
-      case 'cd': {
-        const { space: spaceName, room: roomName } = extractNavigationTarget(command);
-        if (spaceName) {
-          const space = spaces.find(s => s.name.toLowerCase() === spaceName.toLowerCase());
-          if (space) {
-            changeSpace(space);
-            if (roomName) {
-              const room = rooms.find(r => r.name.toLowerCase() === roomName.toLowerCase());
-              if (room) {
-                changeRoom(room);
-                addOutputMessage(`Changed to ${space.name}/${room.name}`, 'success');
-              } else {
-                addOutputMessage(`Room not found: ${roomName}`, 'error');
-              }
-            } else {
-              addOutputMessage(`Changed to space: ${space.name}`, 'success');
-            }
-          } else {
-            addOutputMessage(`Space not found: ${spaceName}`, 'error');
-          }
-        }
-        break;
-      }
-      case 'ls': {
-        // List spaces and rooms
-        const spacesList = spaces.map(s => s.name).join(', ');
-        addOutputMessage(`Available spaces: ${spacesList}`, 'info');
-        if (selectedSpace && rooms.length > 0) {
-          const roomsList = rooms.map(r => `${r.name} (${r.nodeCount || 0} nodes)`).join(', ');
-          addOutputMessage(`Available rooms in ${selectedSpace.name}: ${roomsList}`, 'info');
-        }
-        break;
-      }
-      case 'pwd': {
-        // Print current working directory (space/room)
-        const location = `${selectedSpace?.name}/${selectedRoom?.name || 'no-room'}`;
-        addOutputMessage(`Current location: ${location}`, 'info');
-        break;
-      }
-      default:
-        break;
     }
   };
 
@@ -315,55 +173,6 @@ const TerminalEmulator = ({ userInfo }) => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className={styles.terminal}>
-        <div className={styles.terminalContent}>
-          <span className={styles.loadingText}>Loading...</span>
-        </div>
-      </div>
-    );
-  }
-
-  // If no selectedSpace, show a simplified terminal (no dropdowns)
-  if (!selectedSpace) {
-    return (
-      <div className={styles.terminal} onClick={handleTerminalClick}>
-        <div className={styles.terminalContent}>
-          {/* Shell Prompt - simplified without space/room */}
-          <div className={styles.shellPrompt}>
-            <span className={styles.userHost}>{userInfo?.email || 'user@netdata'}</span>
-          </div>
-
-          {/* Terminal Prompt Symbol */}
-          <span className={styles.terminalPrompt}>%</span>
-
-          {/* Terminal Input */}
-          <div className={styles.terminalInputWrapper}>
-            <input
-              ref={inputRef}
-              type="text"
-              className={styles.terminalInput}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onClick={(e) => e.stopPropagation()}
-              placeholder="Type a command..."
-              spellCheck={false}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-            />
-            <span className={styles.terminalInputDisplay} aria-hidden="true">
-              {inputValue}
-              <span className={styles.fatCursor}>█</span>
-            </span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={styles.terminal} onClick={handleTerminalClick}>
       {/* Output Messages Area - Expands upward */}
@@ -384,105 +193,15 @@ const TerminalEmulator = ({ userInfo }) => {
 
       {/* Input Line */}
       <div className={styles.terminalContent}>
-        {/* Shell Prompt with User and Path */}
+        {/* Shell Prompt - simplified without space/room */}
         <div className={styles.shellPrompt}>
           <span className={styles.userHost}>{userInfo?.email || 'user@netdata'}</span>
-          <div className={styles.pathSegments}>
-            {/* Space Segment */}
-            <div className={styles.pathSegmentWrapper} ref={spaceDropdownRef}>
-              <button
-                className={styles.pathSegment}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsSpaceDropdownOpen(!isSpaceDropdownOpen);
-                }}
-                aria-expanded={isSpaceDropdownOpen}
-                aria-haspopup="true"
-                title="Click to change space"
-              >
-                {selectedSpace.name}
-              </button>
-
-              {isSpaceDropdownOpen && (
-                <div className={styles.dropdown}>
-                  <div className={styles.dropdownHeader}>Select Space</div>
-                  <div className={styles.dropdownList}>
-                    {spaces.map((space) => (
-                      <button
-                        key={space.id}
-                        className={`${styles.dropdownItem} ${space.id === selectedSpace.id ? styles.dropdownItemActive : ''}`}
-                        onClick={() => handleSpaceSelect(space)}
-                      >
-                        <div className={styles.dropdownItemContent}>
-                          <span className={styles.dropdownItemName}>{space.name}</span>
-                          {space.description && (
-                            <span className={styles.dropdownItemDesc}>{space.description}</span>
-                          )}
-                        </div>
-                        {space.id === selectedSpace.id && (
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                            <path d="M13.3333 4L6 11.3333L2.66666 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <span className={styles.pathSeparator}>/</span>
-
-            {/* Room Segment */}
-            <div className={styles.pathSegmentWrapper} ref={roomDropdownRef}>
-              <button
-                className={styles.pathSegment}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsRoomDropdownOpen(!isRoomDropdownOpen);
-                }}
-                aria-expanded={isRoomDropdownOpen}
-                aria-haspopup="true"
-                disabled={rooms.length === 0}
-                title="Click to change room"
-              >
-                {selectedRoom ? selectedRoom.name : 'select-room'}
-              </button>
-
-              {isRoomDropdownOpen && rooms.length > 0 && (
-                <div className={styles.dropdown}>
-                  <div className={styles.dropdownHeader}>Select Room</div>
-                  <div className={styles.dropdownList}>
-                    {rooms.map((room) => (
-                      <button
-                        key={room.id}
-                        className={`${styles.dropdownItem} ${room.id === selectedRoom?.id ? styles.dropdownItemActive : ''}`}
-                        onClick={() => handleRoomSelect(room)}
-                      >
-                        <div className={styles.dropdownItemContent}>
-                          <span className={styles.dropdownItemName}>{room.name}</span>
-                          {room.nodeCount !== undefined && (
-                            <span className={styles.dropdownItemDesc}>{room.nodeCount} nodes</span>
-                          )}
-                        </div>
-                        {room.id === selectedRoom?.id && (
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                            <path d="M13.3333 4L6 11.3333L2.66666 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
         {/* Terminal Prompt Symbol */}
         <span className={styles.terminalPrompt}>%</span>
 
-        {/* Terminal Input Wrapper with Custom Cursor */}
+        {/* Terminal Input */}
         <div className={styles.terminalInputWrapper}>
           <input
             ref={inputRef}
