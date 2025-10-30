@@ -9,6 +9,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useCommand } from './CommandContext';
 import { useSharedSpaceRoomData } from './SharedSpaceRoomDataContext';
+import { handleTabCommand } from '../utils/tabCommandHandler';
 
 const TabManagerContext = createContext(null);
 
@@ -581,52 +582,24 @@ export const TabManagerProvider = ({ children }) => {
     try {
       switch (type) {
         case 'tab': {
-          // tab [index|next|prev|title]
-          const arg = args.positional[0];
-
-          if (!arg) {
-            // Create new empty tab
-            const newTab = createNewTab();
-            return {
-              success: true,
-              message: `Created new tab: ${newTab.title}`
-            };
-          }
-
-          // Check if it's a number (tab index)
-          const tabIndex = parseInt(arg, 10);
-          if (!isNaN(tabIndex)) {
-            switchToTabByIndex(tabIndex);
-            return {
-              success: true,
-              message: `Switched to tab ${tabIndex}`
-            };
-          }
-
-          // Check for next/prev
-          if (arg === 'next') {
-            switchToNextTab();
-            return {
-              success: true,
-              message: 'Switched to next tab'
-            };
-          }
-
-          if (arg === 'prev') {
-            switchToPrevTab();
-            return {
-              success: true,
-              message: 'Switched to previous tab'
-            };
-          }
-
-          // Otherwise, treat as tab title
-          const title = args.positional.join(' ');
-          const newTab = createNewTab(title);
-          return {
-            success: true,
-            message: `Created new tab: ${newTab.title}`
+          // Delegate to handleTabCommand with tabManager context
+          const tabManager = {
+            tabs,
+            activeTabId,
+            createTab: createNewTab,
+            closeTab,
+            switchToTab,
+            switchToTabByIndex,
+            switchToNextTab,
+            switchToPrevTab,
+            renameTab,
+            duplicateTab,
+            resetTab: (tabId) => {
+              // Placeholder for Phase 3
+              return { success: true, message: 'Tab reset (Phase 3)' };
+            },
           };
+          return handleTabCommand(command, tabManager);
         }
 
         case 'tab-close': {

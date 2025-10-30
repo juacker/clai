@@ -49,11 +49,6 @@ export const COMMAND_TYPES = {
 
   // Layout commands (Tab & Tile management)
   TAB: 'tab',
-  TAB_CLOSE: 'tab-close',
-  TAB_RENAME: 'tab-rename',
-  TAB_LIST: 'tab-list',
-  TAB_RESET: 'tab-reset',
-  TAB_DUPLICATE: 'tab-duplicate',
   SPLIT_V: 'split-v',
   SPLIT_H: 'split-h',
   TILE: 'tile',
@@ -313,62 +308,75 @@ export const COMMAND_METADATA = {
   [COMMAND_TYPES.TAB]: {
     name: 'tab',
     category: COMMAND_CATEGORIES.LAYOUT,
-    description: 'Create or switch tabs',
-    usage: 'tab [index|next|prev|title]',
+    description: 'Manage tabs (create, switch, close, rename, list, reset, duplicate)',
+    usage: 'tab [subcommand] [args...]',
     examples: [
       'tab',
-      'tab Production',
+      'tab new Production',
+      'tab new "My Dashboard"',
       'tab 2',
       'tab next',
-      'tab prev'
+      'tab prev',
+      'tab close',
+      'tab close 2',
+      'tab rename Production',
+      'tab list',
+      'tab reset',
+      'tab duplicate'
     ],
-    handledBy: 'TabManagerContext'
-  },
-  [COMMAND_TYPES.TAB_CLOSE]: {
-    name: 'tab-close',
-    category: COMMAND_CATEGORIES.LAYOUT,
-    description: 'Close a tab',
-    usage: 'tab-close [index]',
-    examples: [
-      'tab-close',
-      'tab-close 2'
-    ],
-    handledBy: 'TabManagerContext'
-  },
-  [COMMAND_TYPES.TAB_RENAME]: {
-    name: 'tab-rename',
-    category: COMMAND_CATEGORIES.LAYOUT,
-    description: 'Rename current tab',
-    usage: 'tab-rename <title>',
-    examples: [
-      'tab-rename Production',
-      'tab-rename "My Dashboard"'
-    ],
-    handledBy: 'TabManagerContext'
-  },
-  [COMMAND_TYPES.TAB_LIST]: {
-    name: 'tab-list',
-    category: COMMAND_CATEGORIES.LAYOUT,
-    description: 'List all tabs',
-    usage: 'tab-list',
-    examples: ['tab-list'],
-    handledBy: 'TabManagerContext'
-  },
-  [COMMAND_TYPES.TAB_RESET]: {
-    name: 'tab-reset',
-    category: COMMAND_CATEGORIES.LAYOUT,
-    description: 'Reset current tab layout',
-    usage: 'tab-reset',
-    examples: ['tab-reset'],
-    handledBy: 'TabManagerContext'
-  },
-  [COMMAND_TYPES.TAB_DUPLICATE]: {
-    name: 'tab-duplicate',
-    category: COMMAND_CATEGORIES.LAYOUT,
-    description: 'Duplicate current tab',
-    usage: 'tab-duplicate',
-    examples: ['tab-duplicate'],
-    handledBy: 'TabManagerContext'
+    subcommands: {
+      default: {
+        description: 'Create new tab with default title',
+        usage: 'tab',
+        examples: ['tab']
+      },
+      new: {
+        description: 'Create new tab with custom title',
+        usage: 'tab new <title>',
+        examples: ['tab new Production', 'tab new "My Dashboard"', 'tab new next']
+      },
+      switch: {
+        description: 'Switch to tab by index',
+        usage: 'tab <index>',
+        examples: ['tab 1', 'tab 2', 'tab 3']
+      },
+      next: {
+        description: 'Navigate to next tab',
+        usage: 'tab next',
+        examples: ['tab next']
+      },
+      prev: {
+        description: 'Navigate to previous tab',
+        usage: 'tab prev',
+        examples: ['tab prev']
+      },
+      close: {
+        description: 'Close a tab',
+        usage: 'tab close [index]',
+        examples: ['tab close', 'tab close 2']
+      },
+      rename: {
+        description: 'Rename current tab',
+        usage: 'tab rename <title>',
+        examples: ['tab rename Production', 'tab rename "My Dashboard"']
+      },
+      list: {
+        description: 'List all tabs',
+        usage: 'tab list',
+        examples: ['tab list']
+      },
+      reset: {
+        description: 'Reset current tab layout',
+        usage: 'tab reset',
+        examples: ['tab reset']
+      },
+      duplicate: {
+        description: 'Duplicate current tab',
+        usage: 'tab duplicate',
+        examples: ['tab duplicate']
+      }
+    },
+    handledBy: 'Terminal'
   },
   [COMMAND_TYPES.SPLIT_V]: {
     name: 'split-v',
