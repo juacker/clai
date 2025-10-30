@@ -408,24 +408,32 @@ export const TabManagerProvider = ({ children }) => {
 
   /**
    * Switch to next tab
+   * @returns {string|null} The ID of the tab switched to, or null if no tabs
    */
   const switchToNextTab = useCallback(() => {
-    if (tabs.length === 0) return;
+    if (tabs.length === 0) return null;
 
     const currentIndex = tabs.findIndex(t => t.id === activeTabId);
     const nextIndex = (currentIndex + 1) % tabs.length;
-    switchToTab(tabs[nextIndex].id);
+
+    const nextTabId = tabs[nextIndex].id;
+    switchToTab(nextTabId);
+    return nextTabId;
   }, [tabs, activeTabId, switchToTab]);
 
   /**
    * Switch to previous tab
+   * @returns {string|null} The ID of the tab switched to, or null if no tabs
    */
   const switchToPrevTab = useCallback(() => {
-    if (tabs.length === 0) return;
+    if (tabs.length === 0) return null;
 
     const currentIndex = tabs.findIndex(t => t.id === activeTabId);
     const prevIndex = currentIndex === 0 ? tabs.length - 1 : currentIndex - 1;
-    switchToTab(tabs[prevIndex].id);
+
+    const prevTabId = tabs[prevIndex].id;
+    switchToTab(prevTabId);
+    return prevTabId;
   }, [tabs, activeTabId, switchToTab]);
 
   /**
@@ -561,6 +569,14 @@ export const TabManagerProvider = ({ children }) => {
       rootTile: {
         ...tab.rootTile,
         id: generateTileId(),
+      },
+      // Deep clone context to prevent reference sharing
+      context: {
+        spaceRoom: {
+          selectedSpaceId: tab.context?.spaceRoom?.selectedSpaceId || null,
+          selectedRoomId: tab.context?.spaceRoom?.selectedRoomId || null,
+        },
+        customContext: { ...tab.context?.customContext || {} },
       },
     };
 

@@ -43,6 +43,14 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
     initialContext?.customContext || {}
   );
 
+  // CRITICAL: Sync internal state when tabId or initialContext changes (tab switching)
+  // This ensures each tab displays its own isolated context
+  useEffect(() => {
+    setSelectedSpaceId(initialContext?.spaceRoom?.selectedSpaceId || null);
+    setSelectedRoomId(initialContext?.spaceRoom?.selectedRoomId || null);
+    setCustomContextState(initialContext?.customContext || {});
+  }, [tabId, initialContext]);
+
   // Derived state: Get full space/room objects
   const selectedSpace = useMemo(() => {
     return getSpaceById(selectedSpaceId);

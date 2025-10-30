@@ -7,7 +7,7 @@
  * For Phase 3: Will render TileView with split layouts.
  */
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import { useCommand } from '../../contexts/CommandContext';
 import { TabContextProvider } from '../../contexts/TabContext';
@@ -22,11 +22,13 @@ const TabContent = () => {
   const activeTab = tabs.find(t => t.id === activeTabId);
 
   // Handle context changes from TabContext
-  const handleContextChange = (context) => {
-    if (activeTab) {
-      updateTabContext(activeTab.id, context);
+  // IMPORTANT: Use useCallback with activeTabId as dependency to prevent stale closure bug
+  // This ensures we always update the correct tab's context when switching tabs
+  const handleContextChange = useCallback((context) => {
+    if (activeTabId) {
+      updateTabContext(activeTabId, context);
     }
-  };
+  }, [activeTabId, updateTabContext]);
 
   // No active tab - show default dashboard
   if (!activeTab) {
