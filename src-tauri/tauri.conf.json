@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "netdata-ai",
+  "productName": "clai",
   "version": "0.1.0",
-  "identifier": "com.juacker.netdata-ai",
+  "identifier": "com.juacker.clai",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "netdata-ai",
+        "title": "clai",
         "width": 800,
         "height": 600
       }

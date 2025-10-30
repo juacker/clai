@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    netdata_ai_lib::run()
+    clai_lib::run()
 }
