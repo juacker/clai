@@ -120,6 +120,9 @@ export const TabManagerProvider = ({ children }) => {
   // Track if we've initialized default context
   const hasInitializedDefaults = useRef(false);
 
+  // Cache for default space/room to use when creating new tabs
+  const defaultSpaceRoom = useRef(null);
+
   /**
    * Load tabs from localStorage on mount
    * Includes migration for old tabs without context field
@@ -218,27 +221,17 @@ export const TabManagerProvider = ({ children }) => {
   }, [tabs, activeTabId]);
 
   /**
-   * Initialize default space/room context for tabs without selection
-   * Runs when spaces are loaded and tabs exist
+   * Initialize and cache default space/room when spaces are loaded
+   * This cache is used when creating new tabs without explicit context
    */
   useEffect(() => {
-    // Skip if already initialized, no tabs, spaces not loaded, or still loading
-    if (hasInitializedDefaults.current || tabs.length === 0 || !spaces || spaces.length === 0 || spacesLoading) {
-      return;
-    }
-
-    // Check if any tab needs default context
-    const needsDefaults = tabs.some(tab =>
-      !tab.context?.spaceRoom?.selectedSpaceId || !tab.context?.spaceRoom?.selectedRoomId
-    );
-
-    if (!needsDefaults) {
-      hasInitializedDefaults.current = true;
+    // Skip if already initialized, spaces not loaded, or still loading
+    if (defaultSpaceRoom.current || !spaces || spaces.length === 0 || spacesLoading) {
       return;
     }
 
     // Initialize defaults: first space + "All Nodes" room
-    const initializeDefaults = async () => {
+    const initializeDefaultCache = async () => {
       try {
         const firstSpace = spaces[0];
         if (!firstSpace) return;
@@ -252,38 +245,67 @@ export const TabManagerProvider = ({ children }) => {
           room.name?.toLowerCase() === 'all nodes'
         ) || rooms[0]; // Fallback to first room if "All Nodes" not found
 
-        console.log('[TabManagerContext] Initializing default context:', {
+        // Cache the default space/room
+        defaultSpaceRoom.current = {
+          selectedSpaceId: firstSpace.id,
+          selectedRoomId: allNodesRoom.id,
+        };
+
+        console.log('[TabManagerContext] Cached default space/room:', {
           space: firstSpace.name,
           room: allNodesRoom.name,
         });
-
-        // Update all tabs that don't have space/room selection
-        setTabs(prev =>
-          prev.map(tab => {
-            if (!tab.context?.spaceRoom?.selectedSpaceId || !tab.context?.spaceRoom?.selectedRoomId) {
-              return {
-                ...tab,
-                context: {
-                  ...tab.context,
-                  spaceRoom: {
-                    selectedSpaceId: firstSpace.id,
-                    selectedRoomId: allNodesRoom.id,
-                  },
-                },
-              };
-            }
-            return tab;
-          })
-        );
-
-        hasInitializedDefaults.current = true;
       } catch (error) {
-        console.error('[TabManagerContext] Error initializing default context:', error);
+        console.error('[TabManagerContext] Error caching default space/room:', error);
       }
     };
 
-    initializeDefaults();
-  }, [tabs, spaces, spacesLoading, getRoomsForSpace]);
+    initializeDefaultCache();
+  }, [spaces, spacesLoading, getRoomsForSpace]);
+
+  /**
+   * Initialize default space/room context for existing tabs without selection
+   * Runs once when default cache is populated and tabs exist
+   */
+  useEffect(() => {
+    // Skip if already initialized, no default cache, or no tabs
+    if (hasInitializedDefaults.current || !defaultSpaceRoom.current || tabs.length === 0) {
+      return;
+    }
+
+    // Check if any tab needs default context
+    const needsDefaults = tabs.some(tab =>
+      !tab.context?.spaceRoom?.selectedSpaceId || !tab.context?.spaceRoom?.selectedRoomId
+    );
+
+    if (!needsDefaults) {
+      hasInitializedDefaults.current = true;
+      return;
+    }
+
+    console.log('[TabManagerContext] Initializing existing tabs with default context');
+
+    // Update all tabs that don't have space/room selection
+    setTabs(prev =>
+      prev.map(tab => {
+        if (!tab.context?.spaceRoom?.selectedSpaceId || !tab.context?.spaceRoom?.selectedRoomId) {
+          return {
+            ...tab,
+            context: {
+              ...tab.context,
+              spaceRoom: {
+                selectedSpaceId: defaultSpaceRoom.current.selectedSpaceId,
+                selectedRoomId: defaultSpaceRoom.current.selectedRoomId,
+              },
+            },
+          };
+        }
+        return tab;
+      })
+    );
+
+    hasInitializedDefaults.current = true;
+  }, [tabs, defaultSpaceRoom.current]);
 
   /**
    * When a new command is executed, add it to the active tile
@@ -334,23 +356,36 @@ export const TabManagerProvider = ({ children }) => {
     // Calculate next available tab number if no title provided
     const tabTitle = title || `Tab ${getNextTabNumber(tabs)}`;
 
-    // Inherit context from the currently active tab
-    let inheritedContext = null;
+    // Determine context for the new tab
+    let tabContext = null;
+
+    // Priority 1: Inherit context from the currently active tab
     if (activeTabId) {
       const activeTab = tabs.find(t => t.id === activeTabId);
-      if (activeTab?.context) {
+      if (activeTab?.context?.spaceRoom?.selectedSpaceId && activeTab?.context?.spaceRoom?.selectedRoomId) {
         // Deep clone the context to avoid reference issues
-        inheritedContext = {
+        tabContext = {
           spaceRoom: {
-            selectedSpaceId: activeTab.context.spaceRoom?.selectedSpaceId || null,
-            selectedRoomId: activeTab.context.spaceRoom?.selectedRoomId || null,
+            selectedSpaceId: activeTab.context.spaceRoom.selectedSpaceId,
+            selectedRoomId: activeTab.context.spaceRoom.selectedRoomId,
           },
           customContext: { ...activeTab.context.customContext },
         };
       }
     }
 
-    const newTab = createTab(tabTitle, commandId, inheritedContext);
+    // Priority 2: Use cached default space/room if available and no context inherited
+    if (!tabContext && defaultSpaceRoom.current) {
+      tabContext = {
+        spaceRoom: {
+          selectedSpaceId: defaultSpaceRoom.current.selectedSpaceId,
+          selectedRoomId: defaultSpaceRoom.current.selectedRoomId,
+        },
+        customContext: {},
+      };
+    }
+
+    const newTab = createTab(tabTitle, commandId, tabContext);
 
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newTab.id);
