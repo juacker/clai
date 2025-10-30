@@ -128,7 +128,7 @@ async function handleSetSpace(args, tabContext) {
   }
 
   const spaceName = args.join(' ');
-  const { allSpaces, changeSpace } = tabContext;
+  const { allSpaces, changeSpace, rooms, changeRoom } = tabContext;
 
   // Find space by name or ID
   const space = allSpaces.find(s =>
@@ -151,9 +151,35 @@ async function handleSetSpace(args, tabContext) {
   // Change to the space
   changeSpace(space);
 
+  // Automatically set a default room
+  // Priority: "All Nodes" room first, otherwise the first available room
+  let defaultRoom = null;
+
+  if (rooms && rooms.length > 0) {
+    // Try to find "All Nodes" room (case-insensitive)
+    defaultRoom = rooms.find(r =>
+      r.name?.toLowerCase() === 'all nodes' ||
+      r.id?.toLowerCase() === 'all nodes'
+    );
+
+    // If "All Nodes" not found, use the first room
+    if (!defaultRoom) {
+      defaultRoom = rooms[0];
+    }
+
+    // Set the default room
+    changeRoom(defaultRoom);
+
+    return {
+      success: true,
+      message: `Changed to space: ${space.name || space.id}\nAuto-selected room: ${defaultRoom.name || defaultRoom.id}`
+    };
+  }
+
+  // If no rooms available, still succeed but inform the user
   return {
     success: true,
-    message: `Changed to space: ${space.name || space.id}`
+    message: `Changed to space: ${space.name || space.id}\nWarning: No rooms available in this space`
   };
 }
 
