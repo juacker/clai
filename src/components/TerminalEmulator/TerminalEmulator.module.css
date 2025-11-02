@@ -293,3 +293,11 @@
   font-size: 13px;
 }
 
+/* Terminal Avatar - Positioned at the right side of the input area */
+.terminalAvatar {
+  flex-shrink: 0;
+  margin-left: 12px;
+  display: flex;
+  align-items: center;
+}
+

@@ -5,6 +5,7 @@ import TabContext from '../../contexts/TabContext';
 import { parseCommand, isLayoutCommand } from '../../utils/commandParser';
 import { handleContextCommand, isContextCommand } from '../../utils/contextCommandHandler';
 import ContextPanel from '../ContextPanel/ContextPanel';
+import UserAvatar from '../UserAvatar';
 import styles from './TerminalEmulator.module.css';
 
 const TerminalEmulator = ({ userInfo }) => {
@@ -242,6 +243,15 @@ const TerminalEmulator = ({ userInfo }) => {
             {inputValue}
             <span className={styles.fatCursor}>█</span>
           </span>
+        </div>
+
+        {/* User Avatar - positioned at the right */}
+        <div className={styles.terminalAvatar}>
+          <UserAvatar
+            avatarUrl={userInfo?.avatarUrl}
+            userName={userInfo?.name || userInfo?.email}
+            size="small"
+          />
         </div>
       </div>
 

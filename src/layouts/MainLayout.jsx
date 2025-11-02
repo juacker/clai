@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { getUserInfo } from '../api/client';
-import UserAvatar from '../components/UserAvatar';
 import TerminalEmulatorWrapper from '../components/TerminalEmulator/TerminalEmulatorWrapper';
 import { SharedSpaceRoomDataProvider } from '../contexts/SharedSpaceRoomDataContext';
 import { CommandProvider } from '../contexts/CommandContext';
@@ -56,15 +55,6 @@ const MainLayout = () => {
             {/* Desktop: TerminalEmulator (shell command bar) */}
             {isDesktop && <TerminalEmulatorWrapper userInfo={userInfo} />}
 
-            {userInfo && (
-              <div className={styles.avatarWrapper}>
-                <UserAvatar
-                  avatarUrl={userInfo.avatarURL}
-                  userName={userInfo.name}
-                  size="medium"
-                />
-              </div>
-            )}
             <Outlet context={{ userInfo }} />
           </div>
         </TabManagerProvider>
