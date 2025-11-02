@@ -4,6 +4,7 @@ import { useTabManager } from '../../contexts/TabManagerContext';
 import TabContext from '../../contexts/TabContext';
 import { parseCommand, isLayoutCommand } from '../../utils/commandParser';
 import { handleContextCommand, isContextCommand } from '../../utils/contextCommandHandler';
+import ContextPanel from '../ContextPanel/ContextPanel';
 import styles from './TerminalEmulator.module.css';
 
 const TerminalEmulator = ({ userInfo }) => {
@@ -198,23 +199,12 @@ const TerminalEmulator = ({ userInfo }) => {
 
   return (
     <div className={styles.terminal} onClick={handleTerminalClick}>
-      {/* Output Messages Area - Expands upward */}
-      {outputMessages.length > 0 && (
-        <div
-          className={`${styles.outputArea} ${!isOutputVisible ? styles.outputAreaCollapsed : ''}`}
-          ref={outputRef}
-          onMouseEnter={() => setIsHoveringOutput(true)}
-          onMouseLeave={() => setIsHoveringOutput(false)}
-        >
-          {outputMessages.map((msg) => (
-            <div key={msg.id} className={`${styles.outputMessage} ${styles[`outputMessage${msg.type.charAt(0).toUpperCase() + msg.type.slice(1)}`]}`}>
-              <span className={styles.outputMessageText}>{msg.text}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Context Panel - shows space/room badges */}
+      <div className={styles.contextPanelWrapper}>
+        <ContextPanel />
+      </div>
 
-      {/* Input Line */}
+      {/* Input Line - Now at the top for better UX */}
       <div className={styles.terminalContent}>
         {/* Shell Prompt - simplified without space/room */}
         <div className={styles.shellPrompt}>
@@ -246,6 +236,22 @@ const TerminalEmulator = ({ userInfo }) => {
           </span>
         </div>
       </div>
+
+      {/* Output Messages Area - Now BELOW the input for better UX */}
+      {outputMessages.length > 0 && (
+        <div
+          className={`${styles.outputArea} ${!isOutputVisible ? styles.outputAreaCollapsed : ''}`}
+          ref={outputRef}
+          onMouseEnter={() => setIsHoveringOutput(true)}
+          onMouseLeave={() => setIsHoveringOutput(false)}
+        >
+          {outputMessages.map((msg) => (
+            <div key={msg.id} className={`${styles.outputMessage} ${styles[`outputMessage${msg.type.charAt(0).toUpperCase() + msg.type.slice(1)}`]}`}>
+              <span className={styles.outputMessageText}>{msg.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
