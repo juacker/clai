@@ -23,7 +23,7 @@ const TerminalEmulator = ({ userInfo }) => {
   // Maximum number of messages to keep
   const MAX_MESSAGES = 5;
   // Auto-collapse delay in milliseconds
-  const AUTO_COLLAPSE_DELAY = 10000; // 10 seconds
+  const AUTO_COLLAPSE_DELAY = 5000; // 10 seconds
 
   // Helper function to add output messages
   const addOutputMessage = (message, type = 'info') => {
