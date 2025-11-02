@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useContext } from 'react';
+import React, { useState, useRef, useEffect, useContext, useCallback } from 'react';
 import { useCommand } from '../../contexts/CommandContext';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import TabContext from '../../contexts/TabContext';
@@ -26,8 +26,20 @@ const TerminalEmulator = ({ userInfo }) => {
   // Auto-collapse delay in milliseconds
   const AUTO_COLLAPSE_DELAY = 5000; // 10 seconds
 
+  // Reset auto-collapse timer - memoized to avoid recreating on every render
+  const resetAutoCollapseTimer = useCallback(() => {
+    // Clear existing timer
+    if (autoCollapseTimerRef.current) {
+      clearTimeout(autoCollapseTimerRef.current);
+    }
+    // Set new timer
+    autoCollapseTimerRef.current = setTimeout(() => {
+      setIsOutputVisible(false);
+    }, AUTO_COLLAPSE_DELAY);
+  }, [AUTO_COLLAPSE_DELAY]);
+
   // Helper function to add output messages
-  const addOutputMessage = (message, type = 'info') => {
+  const addOutputMessage = useCallback((message, type = 'info') => {
     const newMessage = {
       id: Date.now() + Math.random(),
       text: message,
@@ -42,22 +54,7 @@ const TerminalEmulator = ({ userInfo }) => {
     // Show output area and reset auto-collapse timer
     setIsOutputVisible(true);
     resetAutoCollapseTimer();
-  };
-
-  // Reset auto-collapse timer
-  const resetAutoCollapseTimer = () => {
-    // Clear existing timer
-    if (autoCollapseTimerRef.current) {
-      clearTimeout(autoCollapseTimerRef.current);
-    }
-    // Set new timer
-    autoCollapseTimerRef.current = setTimeout(() => {
-      // Only collapse if not hovering
-      if (!isHoveringOutput && outputMessages.length > 0) {
-        setIsOutputVisible(false);
-      }
-    }, AUTO_COLLAPSE_DELAY);
-  };
+  }, [resetAutoCollapseTimer, MAX_MESSAGES]);
 
   // Clear auto-collapse timer on unmount
   useEffect(() => {
@@ -67,6 +64,17 @@ const TerminalEmulator = ({ userInfo }) => {
       }
     };
   }, []);
+
+  // Handle hover state changes - restart timer when user stops hovering
+  useEffect(() => {
+    if (!isHoveringOutput && isOutputVisible && outputMessages.length > 0) {
+      resetAutoCollapseTimer();
+    } else if (isHoveringOutput && autoCollapseTimerRef.current) {
+      // Clear timer while hovering to prevent collapse
+      clearTimeout(autoCollapseTimerRef.current);
+      autoCollapseTimerRef.current = null;
+    }
+  }, [isHoveringOutput, isOutputVisible, outputMessages.length, resetAutoCollapseTimer]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
