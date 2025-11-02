@@ -10,6 +10,7 @@
  */
 
 import React, { useMemo, useState, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import { useSharedSpaceRoomData } from '../../contexts/SharedSpaceRoomDataContext';
 import ContextBadge from './ContextBadge';
@@ -152,26 +153,28 @@ const ContextPanel = () => {
         </div>
       </div>
 
-      {/* Space Selector Modal */}
-      {showSpaceSelector && (
+      {/* Space Selector Modal - Rendered via Portal */}
+      {showSpaceSelector && ReactDOM.createPortal(
         <ContextSelector
           items={spaces}
           selectedId={selectedSpace?.id}
           onSelect={handleSpaceSelect}
           onClose={() => setShowSpaceSelector(false)}
           type="space"
-        />
+        />,
+        document.body
       )}
 
-      {/* Room Selector Modal */}
-      {showRoomSelector && (
+      {/* Room Selector Modal - Rendered via Portal */}
+      {showRoomSelector && ReactDOM.createPortal(
         <ContextSelector
           items={availableRooms}
           selectedId={selectedRoom?.id}
           onSelect={handleRoomSelect}
           onClose={() => setShowRoomSelector(false)}
           type="room"
-        />
+        />,
+        document.body
       )}
     </>
   );
