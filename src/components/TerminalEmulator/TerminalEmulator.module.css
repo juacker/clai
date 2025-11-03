@@ -1,20 +1,34 @@
-/* Terminal Emulator - Desktop Only Component */
+/* Terminal Emulator - Cross-Platform Component */
 /* Modern, light theme matching the app's design philosophy */
+/* Mobile-first approach with desktop enhancements */
 
 .terminal {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  background: rgba(255, 255, 255, 0.98);
-  backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.06);
+  /* Default: Mobile styles (will be wrapped in bottom sheet) */
+  position: relative;
+  width: 100%;
+  background: transparent;
   display: flex;
   flex-direction: column;
-  max-height: 50vh;
-  transition: all 0.2s ease;
+  min-height: 0;
+  flex: 1;
+}
+
+/* Desktop: Fixed positioning at bottom */
+@media (min-width: 769px) and (pointer: fine) {
+  .terminal {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.06);
+    max-height: 50vh;
+    transition: all 0.2s ease;
+    flex: none;
+  }
 }
 
 /* Context Panel Wrapper - adapts ContextPanel for terminal display */
@@ -45,21 +59,12 @@
   background: transparent;
 }
 
-/* Shell Prompt - Clean, modern label */
-.shellPrompt {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+/* Terminal Avatar - Positioned at the left side */
+.terminalAvatar {
   flex-shrink: 0;
-}
-
-.userHost {
-  color: rgba(0, 0, 0, 0.6);
-  font-weight: 500;
-  font-size: 13px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  user-select: none;
-  letter-spacing: -0.01em;
+  margin-right: 0;
+  display: flex;
+  align-items: center;
 }
 
 /* Terminal Prompt Symbol - Subtle indicator */
@@ -121,10 +126,13 @@
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'Courier New', monospace;
   font-size: 13px;
   line-height: 20px;
-  white-space: pre;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   position: relative;
   z-index: 1;
   min-height: 20px;
+  max-width: 100%;
 }
 
 /* Modern cursor - Subtle blinking line */
@@ -299,5 +307,53 @@
   margin-left: 12px;
   display: flex;
   align-items: center;
+}
+
+/* ===== MOBILE-SPECIFIC STYLES ===== */
+/* Mobile: Adjust padding and sizing for better touch experience */
+@media (max-width: 768px) {
+  .contextPanelWrapper :global(.contextPanel) {
+    padding: 10px 16px 6px;
+  }
+
+  .terminalContent {
+    padding: 12px 16px;
+    gap: 8px;
+  }
+
+  .terminalPrompt {
+    font-size: 13px;
+  }
+
+  .terminalInputWrapper {
+    padding: 10px;
+    min-height: 44px; /* iOS minimum touch target */
+  }
+
+  .terminalInput,
+  .terminalInputDisplay {
+    font-size: 14px;
+    line-height: 22px;
+  }
+
+  .outputArea {
+    padding: 10px 16px 14px;
+  }
+
+  .outputMessage {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+}
+
+/* Touch device detection */
+@media (pointer: coarse) {
+  .terminalInputWrapper {
+    min-height: 44px;
+  }
+
+  .terminalInput {
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
 }
 

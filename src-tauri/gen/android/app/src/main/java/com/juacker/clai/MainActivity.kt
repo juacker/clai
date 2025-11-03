@@ -1,4 +1,4 @@
-package com.juacker.netdata_ai
+package com.juacker.clai
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge

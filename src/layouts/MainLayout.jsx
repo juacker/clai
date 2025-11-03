@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { getUserInfo } from '../api/client';
 import TerminalEmulatorWrapper from '../components/TerminalEmulator/TerminalEmulatorWrapper';
+import MobileTerminalSheet from '../components/TerminalEmulator/MobileTerminalSheet';
 import { SharedSpaceRoomDataProvider } from '../contexts/SharedSpaceRoomDataContext';
 import { CommandProvider } from '../contexts/CommandContext';
 import { TabManagerProvider } from '../contexts/TabManagerContext';
@@ -12,7 +13,7 @@ const MainLayout = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-  const { isDesktop } = usePlatform();
+  const { isDesktop, isMobile } = usePlatform();
 
   useEffect(() => {
     const fetchUserInfo = async () => {
@@ -52,8 +53,15 @@ const MainLayout = () => {
       <SharedSpaceRoomDataProvider>
         <TabManagerProvider>
           <div className={styles.mainLayout}>
-            {/* Desktop: TerminalEmulator (shell command bar) */}
+            {/* Desktop: Fixed TerminalEmulator at bottom */}
             {isDesktop && <TerminalEmulatorWrapper userInfo={userInfo} />}
+
+            {/* Mobile: Draggable bottom sheet terminal */}
+            {isMobile && (
+              <MobileTerminalSheet>
+                <TerminalEmulatorWrapper userInfo={userInfo} />
+              </MobileTerminalSheet>
+            )}
 
             {/* Content area - takes remaining flex space */}
             <div className={styles.contentArea}>

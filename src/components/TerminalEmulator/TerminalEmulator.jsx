@@ -215,9 +215,13 @@ const TerminalEmulator = ({ userInfo }) => {
 
       {/* Input Line - Now at the top for better UX */}
       <div className={styles.terminalContent}>
-        {/* Shell Prompt - simplified without space/room */}
-        <div className={styles.shellPrompt}>
-          <span className={styles.userHost}>{userInfo?.email || 'user@netdata'}</span>
+        {/* User Avatar - positioned at the left */}
+        <div className={styles.terminalAvatar}>
+          <UserAvatar
+            avatarUrl={userInfo?.avatarUrl}
+            userName={userInfo?.name || userInfo?.email}
+            size="small"
+          />
         </div>
 
         {/* Terminal Prompt Symbol */}
@@ -243,15 +247,6 @@ const TerminalEmulator = ({ userInfo }) => {
             {inputValue}
             <span className={styles.fatCursor}>█</span>
           </span>
-        </div>
-
-        {/* User Avatar - positioned at the right */}
-        <div className={styles.terminalAvatar}>
-          <UserAvatar
-            avatarUrl={userInfo?.avatarUrl}
-            userName={userInfo?.name || userInfo?.email}
-            size="small"
-          />
         </div>
       </div>
 
