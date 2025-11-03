@@ -5,7 +5,7 @@
  * Appears when clicking on space/room badges in the ContextPanel.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import styles from './ContextSelector.module.css';
 
 /**
@@ -21,25 +21,13 @@ import styles from './ContextSelector.module.css';
  */
 const ContextSelector = ({ items, selectedId, onSelect, onClose, type, position }) => {
   const selectorRef = useRef(null);
-  const searchInputRef = useRef(null);
-  const [searchQuery, setSearchQuery] = useState('');
 
-  // Filter items based on search query
-  const filteredItems = items.filter(item =>
-    item.name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  // Auto-focus the search input or first item when selector opens
+  // Auto-focus the first item when selector opens
   useEffect(() => {
     // Use requestAnimationFrame to ensure DOM is fully rendered
     const rafId = requestAnimationFrame(() => {
-      // If there's a search input (>5 items), focus it immediately
-      if (searchInputRef.current) {
-        searchInputRef.current.focus();
-        // Select all text in the input for easy typing
-        searchInputRef.current.select();
-      } else if (selectorRef.current) {
-        // Otherwise, focus the first item for keyboard navigation
+      if (selectorRef.current) {
+        // Focus the first item for keyboard navigation
         const firstItem = selectorRef.current.querySelector('button');
         if (firstItem) {
           firstItem.focus();
@@ -97,7 +85,6 @@ const ContextSelector = ({ items, selectedId, onSelect, onClose, type, position 
   }
 
   const title = type === 'space' ? 'Select Space' : 'Select Room';
-  const placeholder = type === 'space' ? 'Search spaces...' : 'Search rooms...';
 
   return (
     <div className={styles.overlay}>
@@ -117,28 +104,12 @@ const ContextSelector = ({ items, selectedId, onSelect, onClose, type, position 
           </button>
         </div>
 
-        {/* Search Input */}
-        {items.length > 5 && (
-          <div className={styles.searchContainer}>
-            <input
-              ref={searchInputRef}
-              type="text"
-              className={styles.searchInput}
-              placeholder={placeholder}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-        )}
-
         {/* Items List */}
         <div className={styles.itemsList}>
-          {filteredItems.length === 0 ? (
-            <div className={styles.noResults}>
-              {searchQuery ? 'No results found' : 'No items available'}
-            </div>
+          {items.length === 0 ? (
+            <div className={styles.noResults}>No items available</div>
           ) : (
-            filteredItems.map((item) => (
+            items.map((item) => (
               <button
                 key={item.id}
                 className={`${styles.item} ${item.id === selectedId ? styles.itemSelected : ''}`}
