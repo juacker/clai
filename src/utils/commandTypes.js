@@ -49,11 +49,7 @@ export const COMMAND_TYPES = {
 
   // Layout commands (Tab & Tile management)
   TAB: 'tab',
-  SPLIT_V: 'split-v',
-  SPLIT_H: 'split-h',
   TILE: 'tile',
-  TILE_CLOSE: 'tile-close',
-  TILE_RESIZE: 'tile-resize',
   RESET_ALL: 'reset-all',
 
   // Unknown command
@@ -378,58 +374,79 @@ export const COMMAND_METADATA = {
     },
     handledBy: 'Terminal'
   },
-  [COMMAND_TYPES.SPLIT_V]: {
-    name: 'split-v',
-    category: COMMAND_CATEGORIES.LAYOUT,
-    description: 'Split current tile vertically',
-    usage: 'split-v [command]',
-    examples: [
-      'split-v',
-      'split-v echo hello'
-    ],
-    handledBy: 'TabManagerContext'
-  },
-  [COMMAND_TYPES.SPLIT_H]: {
-    name: 'split-h',
-    category: COMMAND_CATEGORIES.LAYOUT,
-    description: 'Split current tile horizontally',
-    usage: 'split-h [command]',
-    examples: [
-      'split-h',
-      'split-h chart cpu'
-    ],
-    handledBy: 'TabManagerContext'
-  },
   [COMMAND_TYPES.TILE]: {
     name: 'tile',
     category: COMMAND_CATEGORIES.LAYOUT,
-    description: 'Focus a specific tile',
-    usage: 'tile <index|next|prev>',
+    description: 'Manage tiles (split, focus, close, resize, navigate)',
+    usage: 'tile [subcommand] [args...]',
     examples: [
+      'tile',
+      'tile split-v',
+      'tile split-v echo hello',
+      'tile split-h',
+      'tile split-h chart cpu',
       'tile 1',
       'tile next',
-      'tile prev'
+      'tile prev',
+      'tile close',
+      'tile close 2',
+      'tile resize 60',
+      'tile focus 1',
+      'tile list'
     ],
-    handledBy: 'TabManagerContext'
-  },
-  [COMMAND_TYPES.TILE_CLOSE]: {
-    name: 'tile-close',
-    category: COMMAND_CATEGORIES.LAYOUT,
-    description: 'Close current tile',
-    usage: 'tile-close',
-    examples: ['tile-close'],
-    handledBy: 'TabManagerContext'
-  },
-  [COMMAND_TYPES.TILE_RESIZE]: {
-    name: 'tile-resize',
-    category: COMMAND_CATEGORIES.LAYOUT,
-    description: 'Resize current tile',
-    usage: 'tile-resize <percentage>',
-    examples: [
-      'tile-resize 60',
-      'tile-resize 40'
-    ],
-    handledBy: 'TabManagerContext'
+    subcommands: {
+      default: {
+        description: 'Show current tile information',
+        usage: 'tile',
+        examples: ['tile']
+      },
+      'split-v': {
+        description: 'Split current tile vertically',
+        usage: 'tile split-v [command]',
+        examples: ['tile split-v', 'tile split-v echo hello']
+      },
+      'split-h': {
+        description: 'Split current tile horizontally',
+        usage: 'tile split-h [command]',
+        examples: ['tile split-h', 'tile split-h chart cpu']
+      },
+      focus: {
+        description: 'Focus a specific tile by index',
+        usage: 'tile focus <index>',
+        examples: ['tile focus 1', 'tile focus 2']
+      },
+      switch: {
+        description: 'Switch to tile by index (shorthand)',
+        usage: 'tile <index>',
+        examples: ['tile 1', 'tile 2', 'tile 3']
+      },
+      next: {
+        description: 'Navigate to next tile',
+        usage: 'tile next',
+        examples: ['tile next']
+      },
+      prev: {
+        description: 'Navigate to previous tile',
+        usage: 'tile prev',
+        examples: ['tile prev']
+      },
+      close: {
+        description: 'Close a tile',
+        usage: 'tile close [index]',
+        examples: ['tile close', 'tile close 2']
+      },
+      resize: {
+        description: 'Resize current tile',
+        usage: 'tile resize <percentage>',
+        examples: ['tile resize 60', 'tile resize 40']
+      },
+      list: {
+        description: 'List all tiles in current tab',
+        usage: 'tile list',
+        examples: ['tile list']
+      }
+    },
+    handledBy: 'Terminal'
   },
   [COMMAND_TYPES.RESET_ALL]: {
     name: 'reset-all',

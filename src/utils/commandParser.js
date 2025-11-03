@@ -314,11 +314,7 @@ export const extractNavigationTarget = (command) => {
 export const isLayoutCommand = (command) => {
   return [
     COMMAND_TYPES.TAB,
-    COMMAND_TYPES.SPLIT_V,
-    COMMAND_TYPES.SPLIT_H,
     COMMAND_TYPES.TILE,
-    COMMAND_TYPES.TILE_CLOSE,
-    COMMAND_TYPES.TILE_RESIZE,
     COMMAND_TYPES.RESET_ALL
   ].includes(command.type);
 };

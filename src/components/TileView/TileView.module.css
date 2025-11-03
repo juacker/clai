@@ -1,0 +1,143 @@
+/**
+ * TileView Styles
+ *
+ * CRITICAL: Tiles MUST fill 100% of viewport height with NO scrollbars
+ * Now using react-resizable-panels for proper height management
+ */
+
+/* Panel Group - container for panels (replaces splitContainer) */
+.panelGroup {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Panel - wrapper for each tile (replaces splitChild) */
+.panel {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* Resize Handle - draggable divider between tiles */
+.resizeHandle {
+  position: relative;
+  flex-shrink: 0;
+  background-color: var(--color-border, #e5e7eb);
+  z-index: 10;
+  transition: background-color 0.15s ease;
+}
+
+.resizeHandle:hover {
+  background-color: var(--color-border-hover, #94a3b8);
+}
+
+.resizeHandle:active {
+  background-color: var(--color-primary, #3b82f6);
+}
+
+.resizeHandleHorizontal {
+  width: 1px;
+  cursor: col-resize;
+}
+
+.resizeHandleVertical {
+  height: 1px;
+  cursor: row-resize;
+}
+
+/* Tile Content - leaf tile that displays command visualization */
+.tileContent {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  background-color: var(--color-background, #ffffff);
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  overflow: hidden;
+  cursor: pointer;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.tileContent:hover {
+  background-color: var(--color-background-hover, #fafafa);
+}
+
+.tileContent.active {
+  background-color: var(--color-background-active, #f8faff);
+  box-shadow: inset 0 0 0 1px var(--color-primary-subtle, #3b82f6);
+}
+
+/* Command Visualization - container for command output */
+.commandVisualization {
+  width: 100%;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Empty Tile - shown when tile has no command */
+.emptyTile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--color-text-secondary, #666666);
+}
+
+.emptyTileText {
+  font-size: 18px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.emptyTileHint {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+/* Placeholder - for unimplemented command types */
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 20px;
+  background-color: var(--color-background-secondary, #f5f5f5);
+  border-radius: 8px;
+  color: var(--color-text-secondary, #666666);
+}
+
+.placeholder p {
+  margin: 4px 0;
+}
+
+/* Unknown Tile - error state */
+.unknownTile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 20px;
+  background-color: var(--color-error-background, #ffebee);
+  color: var(--color-error, #d32f2f);
+  border-radius: 8px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .tileContent {
+    padding: 0;
+  }
+}
+

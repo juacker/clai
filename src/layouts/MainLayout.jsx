@@ -55,7 +55,10 @@ const MainLayout = () => {
             {/* Desktop: TerminalEmulator (shell command bar) */}
             {isDesktop && <TerminalEmulatorWrapper userInfo={userInfo} />}
 
-            <Outlet context={{ userInfo }} />
+            {/* Content area - takes remaining flex space */}
+            <div className={styles.contentArea}>
+              <Outlet context={{ userInfo }} />
+            </div>
           </div>
         </TabManagerProvider>
       </SharedSpaceRoomDataProvider>

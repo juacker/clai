@@ -3,20 +3,17 @@
  *
  * Renders the content of the active tab wrapped with TabContext.
  * Each tab has its own isolated context (space/room selection).
- * For Phase 1: Displays a single command visualization per tab.
- * For Phase 3: Will render TileView with split layouts.
+ * Phase 3: Renders TileView with split layouts for multiple command visualizations.
  */
 
 import React, { useCallback } from 'react';
 import { useTabManager } from '../../contexts/TabManagerContext';
-import { useCommand } from '../../contexts/CommandContext';
 import { TabContextProvider } from '../../contexts/TabContext';
-import Echo from '../Echo';
+import TileView from '../TileView';
 import styles from './TabContent.module.css';
 
 const TabContent = () => {
-  const { tabs, activeTabId, updateTabContext } = useTabManager();
-  const { commandHistory } = useCommand();
+  const { tabs, activeTabId, activeTileId, updateTabContext } = useTabManager();
 
   // Get active tab directly from state instead of using getActiveTab()
   const activeTab = tabs.find(t => t.id === activeTabId);
@@ -68,68 +65,8 @@ const TabContent = () => {
     );
   }
 
-  // Get the command for this tab's tile
-  const commandId = activeTab.rootTile?.commandId;
-  const command = commandHistory.find(cmd => cmd.id === commandId);
-
-  // No command in this tab yet
-  if (!command) {
-    return (
-      <div className={styles.tabContent}>
-        <div className={styles.emptyState}>
-          <div className={styles.emptyStateIcon}>
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-              <rect
-                x="8"
-                y="8"
-                width="32"
-                height="32"
-                rx="4"
-                stroke="currentColor"
-                strokeWidth="2"
-                opacity="0.3"
-              />
-              <path
-                d="M16 24H32M24 16V32"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                opacity="0.5"
-              />
-            </svg>
-          </div>
-          <h3 className={styles.emptyStateTitle}>{activeTab.title}</h3>
-          <p className={styles.emptyStateDescription}>
-            This tab is empty. Type a command to add content.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Render command visualization based on command type
-  const renderCommandVisualization = () => {
-    switch (command.type) {
-      case 'echo':
-        return <Echo key={command.id} command={command} />;
-
-      // Phase 3+ will add more command types:
-      // case 'chart':
-      //   return <ChartVisualization command={command} />;
-      // case 'alerts':
-      //   return <AlertsVisualization command={command} />;
-
-      default:
-        return (
-          <div className={styles.unknownCommand}>
-            <p>Unknown command type: {command.type}</p>
-            <code>{command.raw}</code>
-          </div>
-        );
-    }
-  };
-
   // Wrap tab content with TabContext provider for context isolation
+  // Phase 3: Use TileView to render the tile layout (supports split views)
   return (
     <TabContextProvider
       tabId={activeTab.id}
@@ -137,7 +74,10 @@ const TabContent = () => {
       onContextChange={handleContextChange}
     >
       <div className={styles.tabContent}>
-        {renderCommandVisualization()}
+        <TileView
+          tile={activeTab.rootTile}
+          activeTileId={activeTileId}
+        />
       </div>
     </TabContextProvider>
   );

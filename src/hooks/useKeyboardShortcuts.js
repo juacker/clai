@@ -59,6 +59,11 @@ const isOnlyAlt = (event) => {
  * @param {Function} handlers.onNextTab - Called when Ctrl/Cmd+Tab is pressed
  * @param {Function} handlers.onPrevTab - Called when Ctrl/Cmd+Shift+Tab is pressed
  * @param {Function} handlers.onReopenTab - Called when Ctrl/Cmd+Shift+T is pressed
+ * @param {Function} handlers.onSplitVertical - Called when Ctrl/Cmd+\ is pressed
+ * @param {Function} handlers.onSplitHorizontal - Called when Ctrl/Cmd+- is pressed
+ * @param {Function} handlers.onCloseTile - Called when Ctrl/Cmd+Shift+W is pressed
+ * @param {Function} handlers.onNextTile - Called when Ctrl/Cmd+] is pressed
+ * @param {Function} handlers.onPrevTile - Called when Ctrl/Cmd+[ is pressed
  * @param {boolean} enabled - Whether shortcuts are enabled (default: true)
  */
 export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
@@ -75,6 +80,18 @@ export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
 
     // Get normalized key
     const key = normalizeKey(event.key);
+
+    // Debug: Log key presses with modifiers (remove after debugging)
+    if (isPrimaryModifier(event, os)) {
+      console.log('Key pressed:', {
+        key: event.key,
+        normalized: key,
+        code: event.code,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey
+      });
+    }
 
     // Tab switching: Alt+1 through Alt+9
     if (isOnlyAlt(event) && key >= '1' && key <= '9') {
@@ -131,11 +148,50 @@ export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
       return;
     }
 
-    // Add more shortcuts here as needed
-    // Example for future tile management:
-    // - Ctrl/Cmd+\ : Split vertical
-    // - Ctrl/Cmd+- : Split horizontal
-    // - Ctrl/Cmd+Arrow : Navigate between tiles
+    // Split Vertical: Ctrl/Cmd+Shift+V
+    if (isPrimaryModifier(event, os) && event.shiftKey && key === 'v') {
+      event.preventDefault();
+      if (handlers.onSplitVertical) {
+        handlers.onSplitVertical();
+      }
+      return;
+    }
+
+    // Split Horizontal: Ctrl/Cmd+-
+    if (isPrimaryModifier(event, os) && !event.shiftKey && (key === '-' || event.code === 'Minus')) {
+      event.preventDefault();
+      if (handlers.onSplitHorizontal) {
+        handlers.onSplitHorizontal();
+      }
+      return;
+    }
+
+    // Close Tile: Ctrl/Cmd+Shift+W
+    if (isPrimaryModifier(event, os) && event.shiftKey && key === 'w') {
+      event.preventDefault();
+      if (handlers.onCloseTile) {
+        handlers.onCloseTile();
+      }
+      return;
+    }
+
+    // Next Tile: Ctrl/Cmd+]
+    if (isPrimaryModifier(event, os) && !event.shiftKey && (key === ']' || event.code === 'BracketRight')) {
+      event.preventDefault();
+      if (handlers.onNextTile) {
+        handlers.onNextTile();
+      }
+      return;
+    }
+
+    // Previous Tile: Ctrl/Cmd+[
+    if (isPrimaryModifier(event, os) && !event.shiftKey && (key === '[' || event.code === 'BracketLeft')) {
+      event.preventDefault();
+      if (handlers.onPrevTile) {
+        handlers.onPrevTile();
+      }
+      return;
+    }
   }, [enabled, os, handlers]);
 
   // Register global keyboard listener
@@ -166,6 +222,16 @@ export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'T'], description: 'New tab' },
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'W'], description: 'Close tab' },
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'Shift', 'T'], description: 'Reopen closed tab' },
+        ]
+      },
+      {
+        category: 'Tile Management',
+        items: [
+          { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', '\\'], description: 'Split tile vertically' },
+          { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', '-'], description: 'Split tile horizontally' },
+          { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'Shift', 'W'], description: 'Close current tile' },
+          { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', ']'], description: 'Next tile' },
+          { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', '['], description: 'Previous tile' },
         ]
       },
       {

@@ -8,7 +8,7 @@ import styles from './Home.module.css';
 const Home = () => {
   const { userInfo } = useOutletContext();
 
-  // Get tab management functions from context
+  // Get tab and tile management functions from context
   const {
     switchToTabByIndex,
     createTab,
@@ -16,7 +16,12 @@ const Home = () => {
     switchToNextTab,
     switchToPrevTab,
     activeTabId,
-    tabs
+    activeTileId,
+    tabs,
+    splitTile,
+    closeTile,
+    focusNextTile,
+    focusPrevTile
   } = useTabManager();
 
   // Register global keyboard shortcuts
@@ -46,6 +51,53 @@ const Home = () => {
     // Ctrl/Cmd+Shift+Tab: Switch to previous tab
     onPrevTab: () => {
       switchToPrevTab();
+    },
+
+    // Ctrl/Cmd+\: Split tile vertically
+    onSplitVertical: () => {
+      if (activeTileId) {
+        splitTile(activeTileId, 'vertical');
+      }
+    },
+
+    // Ctrl/Cmd+-: Split tile horizontally
+    onSplitHorizontal: () => {
+      if (activeTileId) {
+        splitTile(activeTileId, 'horizontal');
+      }
+    },
+
+    // Ctrl/Cmd+Shift+W: Close current tile
+    onCloseTile: () => {
+      if (activeTileId) {
+        const currentTab = tabs.find(t => t.id === activeTabId);
+        if (currentTab) {
+          // Count tiles to prevent closing the last one
+          const countTiles = (layout) => {
+            if (!layout) return 0;
+            if (layout.type === 'leaf') return 1;
+            if (layout.type === 'split') {
+              return layout.children.reduce((sum, child) => sum + countTiles(child), 0);
+            }
+            return 0;
+          };
+
+          const tileCount = countTiles(currentTab.rootTile);
+          if (tileCount > 1) {
+            closeTile(activeTileId);
+          }
+        }
+      }
+    },
+
+    // Ctrl/Cmd+]: Next tile
+    onNextTile: () => {
+      focusNextTile();
+    },
+
+    // Ctrl/Cmd+[: Previous tile
+    onPrevTile: () => {
+      focusPrevTile();
     },
   });
 

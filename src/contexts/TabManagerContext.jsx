@@ -10,6 +10,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { useCommand } from './CommandContext';
 import { useSharedSpaceRoomData } from './SharedSpaceRoomDataContext';
 import { handleTabCommand } from '../utils/tabCommandHandler';
+import { handleTileCommand } from '../utils/tileCommandHandler';
 
 const TabManagerContext = createContext(null);
 
@@ -36,15 +37,42 @@ const generateTabId = () => `tab_${Date.now()}_${Math.random().toString(36).subs
 const generateTileId = () => `tile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 /**
- * Create a new tile structure
- * For Phase 1: Single leaf tile with a command
+ * Create a new leaf tile (contains a command)
+ * @param {string|null} commandId - Command ID to display in this tile
+ * @returns {Object} Leaf tile structure
  */
-const createTile = (commandId = null) => ({
+const createLeafTile = (commandId = null) => ({
   id: generateTileId(),
   type: 'leaf',
   commandId,
-  // Phase 3 will add: direction, children, sizes for split tiles
 });
+
+/**
+ * Create a new split tile (contains child tiles)
+ * @param {string} direction - 'horizontal' or 'vertical'
+ * @param {Array} children - Array of child tiles
+ * @param {Array} sizes - Array of percentage sizes for children (e.g., [50, 50])
+ * @returns {Object} Split tile structure
+ */
+const createSplitTile = (direction, children, sizes = null) => {
+  // Auto-calculate equal sizes if not provided
+  const tileCount = children.length;
+  const defaultSizes = Array(tileCount).fill(100 / tileCount);
+
+  return {
+    id: generateTileId(),
+    type: 'split',
+    direction, // 'horizontal' | 'vertical'
+    children,
+    sizes: sizes || defaultSizes,
+  };
+};
+
+/**
+ * Create a new tile structure (defaults to leaf)
+ * For backward compatibility
+ */
+const createTile = (commandId = null) => createLeafTile(commandId);
 
 /**
  * Extract the number from a tab title (e.g., "Tab 3" -> 3)
@@ -93,6 +121,173 @@ const createTab = (title = null, commandId = null, initialContext = null) => ({
     customContext: {},
   },
 });
+
+/**
+ * Recursively find a tile by ID in a tile tree
+ * @param {Object} tile - Root tile to search from
+ * @param {string} tileId - Tile ID to find
+ * @returns {Object|null} Found tile or null
+ */
+const findTileById = (tile, tileId) => {
+  if (tile.id === tileId) {
+    return tile;
+  }
+
+  if (tile.type === 'split' && tile.children) {
+    for (const child of tile.children) {
+      const found = findTileById(child, tileId);
+      if (found) return found;
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Recursively find the parent of a tile in a tile tree
+ * @param {Object} tile - Root tile to search from
+ * @param {string} tileId - Tile ID to find parent of
+ * @returns {Object|null} Parent tile or null
+ */
+const findParentTile = (tile, tileId) => {
+  if (tile.type === 'split' && tile.children) {
+    // Check if any child matches the target ID
+    if (tile.children.some(child => child.id === tileId)) {
+      return tile;
+    }
+
+    // Recursively search in children
+    for (const child of tile.children) {
+      const found = findParentTile(child, tileId);
+      if (found) return found;
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Split a tile into two tiles
+ * @param {Object} tile - Tile to split
+ * @param {string} direction - 'horizontal' or 'vertical'
+ * @param {string|null} newCommandId - Command ID for the new tile
+ * @returns {Object} New split tile
+ */
+const splitTileInternal = (tile, direction, newCommandId = null) => {
+  // Create a new tile for the existing content
+  const existingTile = { ...tile };
+
+  // Create a new empty tile
+  const newTile = createLeafTile(newCommandId);
+
+  // Return a split tile containing both
+  return createSplitTile(direction, [existingTile, newTile], [50, 50]);
+};
+
+/**
+ * Remove a tile from a split tile's children
+ * @param {Object} splitTile - Parent split tile
+ * @param {string} tileIdToRemove - ID of tile to remove
+ * @returns {Object|null} Updated split tile or the remaining child if only one left
+ */
+const removeTileFromSplit = (splitTile, tileIdToRemove) => {
+  if (splitTile.type !== 'split') {
+    return splitTile;
+  }
+
+  // Filter out the tile to remove
+  const remainingChildren = splitTile.children.filter(
+    child => child.id !== tileIdToRemove
+  );
+
+  // If only one child remains, return it directly (collapse the split)
+  if (remainingChildren.length === 1) {
+    return remainingChildren[0];
+  }
+
+  // If multiple children remain, update the split tile
+  if (remainingChildren.length > 1) {
+    // Recalculate sizes to distribute evenly
+    const newSizes = remainingChildren.map(() => 100 / remainingChildren.length);
+    return {
+      ...splitTile,
+      children: remainingChildren,
+      sizes: newSizes,
+    };
+  }
+
+  // If no children remain (shouldn't happen), return null
+  return null;
+};
+
+/**
+ * Update a tile's size in a split tile
+ * @param {Object} splitTile - Parent split tile
+ * @param {string} tileId - ID of tile to resize
+ * @param {number} newSize - New size percentage (0-100)
+ * @returns {Object} Updated split tile
+ */
+const updateTileSize = (splitTile, tileId, newSize) => {
+  if (splitTile.type !== 'split') {
+    return splitTile;
+  }
+
+  const tileIndex = splitTile.children.findIndex(child => child.id === tileId);
+  if (tileIndex === -1) {
+    return splitTile;
+  }
+
+  // Calculate new sizes
+  const newSizes = [...splitTile.sizes];
+  const oldSize = newSizes[tileIndex];
+  const sizeDiff = newSize - oldSize;
+
+  // Adjust the target tile size
+  newSizes[tileIndex] = newSize;
+
+  // Distribute the difference among other tiles proportionally
+  const otherIndices = newSizes
+    .map((_, idx) => idx)
+    .filter(idx => idx !== tileIndex);
+
+  if (otherIndices.length > 0) {
+    const totalOtherSize = otherIndices.reduce((sum, idx) => sum + newSizes[idx], 0);
+
+    otherIndices.forEach(idx => {
+      const proportion = newSizes[idx] / totalOtherSize;
+      newSizes[idx] = newSizes[idx] - (sizeDiff * proportion);
+    });
+  }
+
+  return {
+    ...splitTile,
+    sizes: newSizes,
+  };
+};
+
+/**
+ * Recursively clone a tile tree with new IDs
+ * @param {Object} tile - Tile to clone
+ * @returns {Object} Cloned tile with new IDs
+ */
+const cloneTileTree = (tile) => {
+  if (tile.type === 'leaf') {
+    return {
+      ...tile,
+      id: generateTileId(),
+    };
+  }
+
+  if (tile.type === 'split') {
+    return {
+      ...tile,
+      id: generateTileId(),
+      children: tile.children.map(cloneTileTree),
+    };
+  }
+
+  return tile;
+};
 
 /**
  * TabManagerProvider component
@@ -331,12 +526,28 @@ export const TabManagerProvider = ({ children }) => {
         setTabs(prev =>
           prev.map(tab => {
             if (tab.id === activeTabId) {
+              // Recursively update the active tile in the tree
+              const updateTileTree = (tile) => {
+                if (tile.id === activeTileId) {
+                  // Found the active tile, update its commandId
+                  return {
+                    ...tile,
+                    commandId: currentCommand.id,
+                  };
+                }
+                if (tile.type === 'split' && tile.children) {
+                  // Recursively search children
+                  return {
+                    ...tile,
+                    children: tile.children.map(updateTileTree),
+                  };
+                }
+                return tile;
+              };
+
               return {
                 ...tab,
-                rootTile: {
-                  ...tab.rootTile,
-                  commandId: currentCommand.id,
-                },
+                rootTile: updateTileTree(tab.rootTile),
               };
             }
             return tab;
@@ -588,6 +799,240 @@ export const TabManagerProvider = ({ children }) => {
   }, [activeTabId, getTabContext]);
 
   /**
+   * Split a tile in the active tab
+   * @param {string} tileId - Tile ID to split
+   * @param {string} direction - 'horizontal' or 'vertical'
+   * @param {string} newCommandId - Optional command ID for the new tile
+   * @returns {Object|null} Result with success status and new tile ID
+   */
+  const splitTile = useCallback((tileId, direction, newCommandId = null) => {
+    if (!activeTabId) {
+      return { success: false, message: 'No active tab' };
+    }
+
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    if (!activeTab) {
+      return { success: false, message: 'Active tab not found' };
+    }
+
+    // Find the tile to split
+    const tileToSplit = findTileById(activeTab.rootTile, tileId);
+    if (!tileToSplit) {
+      return { success: false, message: 'Tile not found' };
+    }
+
+    // Create the split tile
+    const splitTileResult = splitTileInternal(tileToSplit, direction, newCommandId);
+
+    // Update the tile tree
+    const updateTileTree = (tile) => {
+      if (tile.id === tileId) {
+        return splitTileResult;
+      }
+      if (tile.type === 'split' && tile.children) {
+        return {
+          ...tile,
+          children: tile.children.map(updateTileTree),
+        };
+      }
+      return tile;
+    };
+
+    const updatedRootTile = updateTileTree(activeTab.rootTile);
+
+    // Update the tab
+    setTabs(prev =>
+      prev.map(tab =>
+        tab.id === activeTabId
+          ? { ...tab, rootTile: updatedRootTile }
+          : tab
+      )
+    );
+
+    // Set the new tile as active (second child of the split)
+    const newTileId = splitTileResult.children[1].id;
+    setActiveTileId(newTileId);
+
+    return {
+      success: true,
+      message: `Tile split ${direction}`,
+      newTileId,
+    };
+  }, [activeTabId, tabs]);
+
+  /**
+   * Close a tile in the active tab
+   * @param {string} tileId - Tile ID to close
+   * @returns {Object} Result with success status
+   */
+  const closeTile = useCallback((tileId) => {
+    if (!activeTabId) {
+      return { success: false, message: 'No active tab' };
+    }
+
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    if (!activeTab) {
+      return { success: false, message: 'Active tab not found' };
+    }
+
+    // Can't close the root tile if it's the only one
+    if (activeTab.rootTile.id === tileId && activeTab.rootTile.type === 'leaf') {
+      return { success: false, message: 'Cannot close the only tile in a tab' };
+    }
+
+    // Find the parent of the tile to close
+    const parent = findParentTile(activeTab.rootTile, tileId);
+
+    if (!parent) {
+      // If no parent, this is the root tile
+      return { success: false, message: 'Cannot close root tile' };
+    }
+
+    // Remove the tile from its parent
+    const updatedParent = removeTileFromSplit(parent, tileId);
+
+    // Update the tile tree
+    const updateTileTree = (tile) => {
+      if (tile.id === parent.id) {
+        return updatedParent;
+      }
+      if (tile.type === 'split' && tile.children) {
+        return {
+          ...tile,
+          children: tile.children.map(updateTileTree),
+        };
+      }
+      return tile;
+    };
+
+    let updatedRootTile = updateTileTree(activeTab.rootTile);
+
+    // If the root was updated and it's now a leaf (collapsed), use it directly
+    if (updatedRootTile.id === parent.id && updatedParent.type === 'leaf') {
+      updatedRootTile = updatedParent;
+    }
+
+    // Update the tab
+    setTabs(prev =>
+      prev.map(tab =>
+        tab.id === activeTabId
+          ? { ...tab, rootTile: updatedRootTile }
+          : tab
+      )
+    );
+
+    // If the closed tile was active, set a new active tile
+    if (tileId === activeTileId) {
+      // Find the first leaf tile in the updated tree
+      const findFirstLeaf = (tile) => {
+        if (tile.type === 'leaf') return tile.id;
+        if (tile.type === 'split' && tile.children.length > 0) {
+          return findFirstLeaf(tile.children[0]);
+        }
+        return null;
+      };
+
+      const newActiveTileId = findFirstLeaf(updatedRootTile);
+      if (newActiveTileId) {
+        setActiveTileId(newActiveTileId);
+      }
+    }
+
+    return { success: true, message: 'Tile closed' };
+  }, [activeTabId, activeTileId, tabs]);
+
+  /**
+   * Resize a tile in the active tab
+   * @param {string} tileId - Tile ID to resize
+   * @param {number} newSize - New size percentage (0-100)
+   * @returns {Object} Result with success status
+   */
+  const resizeTile = useCallback((tileId, newSize) => {
+    if (!activeTabId) {
+      return { success: false, message: 'No active tab' };
+    }
+
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    if (!activeTab) {
+      return { success: false, message: 'Active tab not found' };
+    }
+
+    // Find the parent of the tile to resize
+    const parent = findParentTile(activeTab.rootTile, tileId);
+
+    if (!parent || parent.type !== 'split') {
+      return { success: false, message: 'Tile cannot be resized (no parent split)' };
+    }
+
+    // Update the tile sizes
+    const updatedParent = updateTileSize(parent, tileId, newSize);
+
+    // Update the tile tree
+    const updateTileTree = (tile) => {
+      if (tile.id === parent.id) {
+        return updatedParent;
+      }
+      if (tile.type === 'split' && tile.children) {
+        return {
+          ...tile,
+          children: tile.children.map(updateTileTree),
+        };
+      }
+      return tile;
+    };
+
+    const updatedRootTile = updateTileTree(activeTab.rootTile);
+
+    // Update the tab
+    setTabs(prev =>
+      prev.map(tab =>
+        tab.id === activeTabId
+          ? { ...tab, rootTile: updatedRootTile }
+          : tab
+      )
+    );
+
+    return { success: true, message: 'Tile resized' };
+  }, [activeTabId, tabs]);
+
+  /**
+   * Get a tile by ID in the active tab
+   * @param {string} tileId - Tile ID
+   * @returns {Object|null} Tile or null
+   */
+  const getTile = useCallback((tileId) => {
+    if (!activeTabId) return null;
+
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    if (!activeTab) return null;
+
+    return findTileById(activeTab.rootTile, tileId);
+  }, [activeTabId, tabs]);
+
+  /**
+   * Get all leaf tiles in the active tab
+   * @returns {Array} Array of leaf tiles
+   */
+  const getLeafTiles = useCallback(() => {
+    if (!activeTabId) return [];
+
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    if (!activeTab) return [];
+
+    const leafTiles = [];
+    const collectLeafTiles = (tile) => {
+      if (tile.type === 'leaf') {
+        leafTiles.push(tile);
+      } else if (tile.type === 'split' && tile.children) {
+        tile.children.forEach(collectLeafTiles);
+      }
+    };
+
+    collectLeafTiles(activeTab.rootTile);
+    return leafTiles;
+  }, [activeTabId, tabs]);
+
+  /**
    * Duplicate a tab
    * @param {string} tabId - Tab ID to duplicate
    * @returns {Object} The duplicated tab
@@ -662,16 +1107,35 @@ export const TabManagerProvider = ({ children }) => {
           };
         }
 
-        // Phase 3 commands (placeholders for now)
-        case 'split-v':
-        case 'split-h':
-        case 'tile':
-        case 'tile-close':
-        case 'tile-resize':
-          return {
-            success: false,
-            message: `Command '${type}' will be implemented in Phase 3 (Tiling)`
+        case 'tile': {
+          // Delegate to handleTileCommand with tileManager context
+          const tileManager = {
+            tabs,
+            activeTabId,
+            activeTileId,
+            splitTile,
+            closeTile,
+            resizeTile,
+            focusTile: setActiveTileId,
+            focusNextTile: () => {
+              const leafTiles = getLeafTiles();
+              if (leafTiles.length === 0) return false;
+              const currentIndex = leafTiles.findIndex(t => t.id === activeTileId);
+              const nextIndex = (currentIndex + 1) % leafTiles.length;
+              setActiveTileId(leafTiles[nextIndex].id);
+              return true;
+            },
+            focusPrevTile: () => {
+              const leafTiles = getLeafTiles();
+              if (leafTiles.length === 0) return false;
+              const currentIndex = leafTiles.findIndex(t => t.id === activeTileId);
+              const prevIndex = currentIndex === 0 ? leafTiles.length - 1 : currentIndex - 1;
+              setActiveTileId(leafTiles[prevIndex].id);
+              return true;
+            },
           };
+          return handleTileCommand(command, tileManager);
+        }
 
         default:
           return {
@@ -719,8 +1183,31 @@ export const TabManagerProvider = ({ children }) => {
     addCommandToActiveTile,
     handleLayoutCommand,
 
-    // Tile Management (Phase 3 will expand these)
+    // Tile Management (Phase 3)
     setActiveTile: setActiveTileId,
+    splitTile,
+    closeTile,
+    resizeTile,
+    getTile,
+    getLeafTiles,
+
+    // Tile Navigation
+    focusNextTile: () => {
+      const leafTiles = getLeafTiles();
+      if (leafTiles.length === 0) return false;
+      const currentIndex = leafTiles.findIndex(t => t.id === activeTileId);
+      const nextIndex = (currentIndex + 1) % leafTiles.length;
+      setActiveTileId(leafTiles[nextIndex].id);
+      return true;
+    },
+    focusPrevTile: () => {
+      const leafTiles = getLeafTiles();
+      if (leafTiles.length === 0) return false;
+      const currentIndex = leafTiles.findIndex(t => t.id === activeTileId);
+      const prevIndex = currentIndex === 0 ? leafTiles.length - 1 : currentIndex - 1;
+      setActiveTileId(leafTiles[prevIndex].id);
+      return true;
+    },
   };
 
   return (

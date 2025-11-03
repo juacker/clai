@@ -293,6 +293,16 @@ export const CommandProvider = ({ children }) => {
     setError(null);
   }, [currentCommand]);
 
+  /**
+   * Get a command by ID from history
+   * @param {string} commandId - Command ID to retrieve
+   * @returns {Object|null} Command object or null if not found
+   */
+  const getCommand = useCallback((commandId) => {
+    if (!commandId) return null;
+    return commandHistory.find(cmd => cmd.id === commandId) || null;
+  }, [commandHistory]);
+
   const value = {
     // State
     currentCommand,
@@ -311,7 +321,8 @@ export const CommandProvider = ({ children }) => {
     clearHistory,
     getFilteredHistory,
     getVisualizationHistory,
-    cancelCommand
+    cancelCommand,
+    getCommand
   };
 
   return (
