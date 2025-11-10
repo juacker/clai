@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useChatManager } from '../../contexts/ChatManagerContext';
+import { useSharedSpaceRoomData } from '../../contexts/SharedSpaceRoomDataContext';
 import Chat from './Chat';
 import styles from './DesktopChatPanel.module.css';
 
@@ -19,12 +20,24 @@ import styles from './DesktopChatPanel.module.css';
  */
 const DesktopChatPanel = () => {
   const { isCurrentChatOpen, getCurrentChatInstance } = useChatManager();
+  const { getSpaceById, getRoomById } = useSharedSpaceRoomData();
 
   // Get the current chat instance (if any)
   const chatInstance = getCurrentChatInstance();
 
   // Determine if panel should be visible
   const isOpen = isCurrentChatOpen();
+
+  // Resolve space and room IDs to full objects
+  const space = useMemo(() => {
+    if (!chatInstance?.space) return null;
+    return getSpaceById(chatInstance.space);
+  }, [chatInstance?.space, getSpaceById]);
+
+  const room = useMemo(() => {
+    if (!chatInstance?.space || !chatInstance?.room) return null;
+    return getRoomById(chatInstance.space, chatInstance.room);
+  }, [chatInstance?.space, chatInstance?.room, getRoomById]);
 
   return (
     <div
@@ -37,8 +50,8 @@ const DesktopChatPanel = () => {
       <div className={styles.chatContainer}>
         {chatInstance && (
           <Chat
-            space={chatInstance.space}
-            room={chatInstance.room}
+            space={space}
+            room={room}
             isOpen={isOpen}
           />
         )}

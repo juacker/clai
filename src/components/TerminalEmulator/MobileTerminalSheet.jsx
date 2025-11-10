@@ -9,8 +9,9 @@
  * - Terminal input will be used as chat input when chat is visible (future)
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useChatManager } from '../../contexts/ChatManagerContext';
+import { useSharedSpaceRoomData } from '../../contexts/SharedSpaceRoomDataContext';
 import Chat from '../Chat/Chat';
 import styles from './MobileTerminalSheet.module.css';
 
@@ -23,6 +24,7 @@ const MobileTerminalSheet = ({ children }) => {
   const dragHandleRef = useRef(null);
 
   const { isCurrentChatOpen, closeChat, getCurrentChatInstance } = useChatManager();
+  const { getSpaceById, getRoomById } = useSharedSpaceRoomData();
 
   // Threshold for snapping to expanded/collapsed state (in pixels)
   const SNAP_THRESHOLD = 50;
@@ -36,6 +38,17 @@ const MobileTerminalSheet = ({ children }) => {
   // Get current chat instance
   const chatInstance = getCurrentChatInstance();
   const isChatOpen = isCurrentChatOpen();
+
+  // Resolve space and room IDs to full objects
+  const space = useMemo(() => {
+    if (!chatInstance?.space) return null;
+    return getSpaceById(chatInstance.space);
+  }, [chatInstance?.space, getSpaceById]);
+
+  const room = useMemo(() => {
+    if (!chatInstance?.space || !chatInstance?.room) return null;
+    return getRoomById(chatInstance.space, chatInstance.room);
+  }, [chatInstance?.space, chatInstance?.room, getRoomById]);
 
   // Sync chat open state - expand panel when chat is opened
   useEffect(() => {
@@ -185,8 +198,8 @@ const MobileTerminalSheet = ({ children }) => {
         {chatInstance && isChatOpen && isExpanded && (
           <div className={styles.chatSection}>
             <Chat
-              space={chatInstance.space}
-              room={chatInstance.room}
+              space={space}
+              room={room}
               isOpen={isChatOpen}
             />
           </div>
