@@ -1,0 +1,463 @@
+/* Chat Component Styles - Mobile-first responsive design with light, elegant, modern aesthetic */
+
+.chatContainer {
+  display: flex;
+  flex-direction: column;
+
+  /* Mobile-first: Light, elegant, modern styling */
+  background: #ffffff;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  overflow: hidden;
+
+  /* Mobile-first: Full width, no margin (controlled by parent) */
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  margin: 0;
+
+  /* Smooth transitions */
+  transition: all 0.3s ease;
+}
+
+/* Desktop styles - Fill full panel height */
+@media (min-width: 769px) and (pointer: fine) {
+  .chatContainer {
+    /* Fill entire desktop panel */
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    margin: 0;
+
+    /* Light, elegant, modern styling */
+    background: #ffffff;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Chat Header */
+.chatHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 20px;
+  /* Mobile-first: Light, elegant header styling */
+  background: rgba(0, 0, 0, 0.02);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* Desktop: Light, elegant header styling */
+@media (min-width: 769px) and (pointer: fine) {
+  .chatHeader {
+    background: rgba(0, 0, 0, 0.02);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    padding: 20px 24px;
+  }
+}
+
+.chatTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  /* Mobile-first: Dark text for light background */
+  color: rgba(0, 0, 0, 0.85);
+}
+
+/* Desktop: Dark text for light background */
+@media (min-width: 769px) and (pointer: fine) {
+  .chatTitle {
+    color: rgba(0, 0, 0, 0.85);
+    font-size: 18px;
+  }
+}
+
+.chatIcon {
+  font-size: 20px;
+}
+
+.chatTitleText {
+  flex: 1;
+}
+
+.chatContext {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  /* Mobile-first: Dark text for light background */
+  color: rgba(0, 0, 0, 0.5);
+  flex-wrap: wrap;
+}
+
+/* Desktop: Context styling for light theme */
+@media (min-width: 769px) and (pointer: fine) {
+  .chatContext {
+    color: rgba(0, 0, 0, 0.5);
+    font-size: 13px;
+  }
+}
+
+.contextLabel {
+  font-weight: 500;
+  /* Mobile-first: Dark text for light background */
+  color: rgba(0, 0, 0, 0.5);
+}
+
+/* Desktop: Label styling */
+@media (min-width: 769px) and (pointer: fine) {
+  .contextLabel {
+    color: rgba(0, 0, 0, 0.5);
+  }
+}
+
+.contextValue {
+  /* Mobile-first: App's primary blue */
+  color: #4a9eff;
+  font-weight: 500;
+  background-color: rgba(74, 158, 255, 0.08);
+  padding: 3px 10px;
+  border-radius: 6px;
+}
+
+/* Desktop: Value badge with app's primary blue */
+@media (min-width: 769px) and (pointer: fine) {
+  .contextValue {
+    color: #4a9eff;
+    background-color: rgba(74, 158, 255, 0.08);
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-weight: 500;
+  }
+}
+
+.contextSeparator {
+  /* Mobile-first: Dark separator for light background */
+  color: rgba(0, 0, 0, 0.2);
+}
+
+/* Desktop: Separator styling */
+@media (min-width: 769px) and (pointer: fine) {
+  .contextSeparator {
+    color: rgba(0, 0, 0, 0.2);
+  }
+}
+
+/* Chat Body */
+.chatBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+/* Desktop: Increased padding and spacing */
+@media (min-width: 769px) and (pointer: fine) {
+  .chatBody {
+    padding: 20px 24px;
+    gap: 14px;
+  }
+}
+
+/* Custom scrollbar for webkit browsers */
+.chatBody::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chatBody::-webkit-scrollbar-track {
+  /* Mobile-first: Light scrollbar track */
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 3px;
+}
+
+/* Desktop: Light scrollbar track */
+@media (min-width: 769px) and (pointer: fine) {
+  .chatBody::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.03);
+  }
+}
+
+.chatBody::-webkit-scrollbar-thumb {
+  /* Mobile-first: Light scrollbar thumb */
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+/* Desktop: Light scrollbar thumb */
+@media (min-width: 769px) and (pointer: fine) {
+  .chatBody::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15);
+  }
+}
+
+.chatBody::-webkit-scrollbar-thumb:hover {
+  /* Mobile-first: Light scrollbar thumb hover */
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Desktop: Light scrollbar thumb hover */
+@media (min-width: 769px) and (pointer: fine) {
+  .chatBody::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.25);
+  }
+}
+
+/* Placeholder styles */
+.chatPlaceholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  gap: 8px;
+}
+
+.placeholderText {
+  font-size: 14px;
+  /* Mobile-first: Dark text for light background */
+  color: rgba(0, 0, 0, 0.6);
+  margin: 0;
+}
+
+.placeholderSubtext {
+  font-size: 12px;
+  /* Mobile-first: Dark text for light background */
+  color: rgba(0, 0, 0, 0.4);
+  margin: 0;
+}
+
+/* Chat Footer */
+.chatFooter {
+  padding: 12px 16px;
+  /* Mobile-first: Light footer styling */
+  background: rgba(0, 0, 0, 0.02);
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* Desktop: Light footer styling */
+@media (min-width: 769px) and (pointer: fine) {
+  .chatFooter {
+    background: rgba(0, 0, 0, 0.02);
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    padding: 16px 24px;
+  }
+}
+
+.chatInput {
+  width: 100%;
+  padding: 10px 12px;
+  /* Mobile-first: Light input styling */
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  color: rgba(0, 0, 0, 0.85);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+/* Desktop: Light input styling */
+@media (min-width: 769px) and (pointer: fine) {
+  .chatInput {
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    color: rgba(0, 0, 0, 0.85);
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+}
+
+.chatInput:focus {
+  /* Mobile-first: Light focus styling with app's primary blue */
+  background: #ffffff;
+  border-color: #4a9eff;
+  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.08);
+}
+
+/* Desktop: Light focus styling with app's primary blue */
+@media (min-width: 769px) and (pointer: fine) {
+  .chatInput:focus {
+    background: #ffffff;
+    border-color: #4a9eff;
+    box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.08);
+  }
+}
+
+.chatInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chatInput::placeholder {
+  /* Mobile-first: Light placeholder */
+  color: rgba(0, 0, 0, 0.4);
+}
+
+/* Desktop: Light placeholder */
+@media (min-width: 769px) and (pointer: fine) {
+  .chatInput::placeholder {
+    color: rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Touch device optimizations */
+@media (pointer: coarse) {
+  .chatInput {
+    padding: 12px 14px;
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
+
+  .chatTitle {
+    font-size: 18px;
+  }
+}
+
+/* Small mobile devices */
+@media (max-width: 480px) {
+  .chatContainer {
+    width: calc(100% - 16px);
+    margin: 8px;
+    height: 350px;
+  }
+
+  .chatHeader {
+    padding: 10px 12px;
+  }
+
+  .chatBody {
+    padding: 12px;
+  }
+
+  .chatFooter {
+    padding: 10px 12px;
+  }
+}
+
+/* Message Bubble Styles */
+.messageWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.messageWrapperOwn {
+  align-items: flex-end;
+}
+
+.messageBubble {
+  max-width: 75%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  /* Mobile-first: Light message bubbles */
+  background-color: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: messageSlideIn 0.2s ease-out;
+}
+
+/* Desktop: Light message bubbles */
+@media (min-width: 769px) and (pointer: fine) {
+  .messageBubble {
+    background-color: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    padding: 12px 16px;
+  }
+}
+
+.messageBubbleOwn {
+  /* Mobile-first: Light own message bubbles with app's primary blue */
+  background-color: rgba(74, 158, 255, 0.08);
+  border-color: rgba(74, 158, 255, 0.2);
+}
+
+/* Desktop: Light own message bubbles with app's primary blue */
+@media (min-width: 769px) and (pointer: fine) {
+  .messageBubbleOwn {
+    background-color: rgba(74, 158, 255, 0.08);
+    border-color: rgba(74, 158, 255, 0.2);
+  }
+}
+
+.messageSender {
+  font-size: 11px;
+  font-weight: 600;
+  /* Mobile-first: Dark text for sender */
+  color: rgba(0, 0, 0, 0.6);
+  margin-bottom: 2px;
+}
+
+/* Desktop: Dark text for sender */
+@media (min-width: 769px) and (pointer: fine) {
+  .messageSender {
+    color: rgba(0, 0, 0, 0.6);
+    font-size: 12px;
+  }
+}
+
+.messageText {
+  font-size: 14px;
+  /* Mobile-first: Dark text for messages */
+  color: rgba(0, 0, 0, 0.85);
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+/* Desktop: Dark text for messages */
+@media (min-width: 769px) and (pointer: fine) {
+  .messageText {
+    color: rgba(0, 0, 0, 0.85);
+    line-height: 1.5;
+  }
+}
+
+.messageTimestamp {
+  font-size: 10px;
+  /* Mobile-first: Dark text for timestamp */
+  color: rgba(0, 0, 0, 0.4);
+  align-self: flex-end;
+  margin-top: 2px;
+}
+
+/* Desktop: Dark text for timestamp */
+@media (min-width: 769px) and (pointer: fine) {
+  .messageTimestamp {
+    color: rgba(0, 0, 0, 0.4);
+    font-size: 11px;
+  }
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Mobile optimizations for messages */
+@media (max-width: 480px) {
+  .messageBubble {
+    max-width: 85%;
+    padding: 8px 12px;
+  }
+
+  .messageText {
+    font-size: 13px;
+  }
+}
+

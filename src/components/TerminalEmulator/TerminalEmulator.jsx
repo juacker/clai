@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useContext, useCallback } from 'react';
 import { useCommand } from '../../contexts/CommandContext';
 import { useTabManager } from '../../contexts/TabManagerContext';
+import { useChatManager } from '../../contexts/ChatManagerContext';
 import TabContext from '../../contexts/TabContext';
 import { parseCommand, isLayoutCommand } from '../../utils/commandParser';
 import { handleContextCommand, isContextCommand } from '../../utils/contextCommandHandler';
@@ -10,7 +11,8 @@ import styles from './TerminalEmulator.module.css';
 
 const TerminalEmulator = ({ userInfo }) => {
   const { executeCommand, commandHistory } = useCommand();
-  const { handleLayoutCommand } = useTabManager();
+  const { handleLayoutCommand, getActiveTab } = useTabManager();
+  const { setActiveContext, toggleChat, isCurrentChatOpen } = useChatManager();
   // Try to get tab context, but don't throw error if not available
   const tabContext = useContext(TabContext);
   const [inputValue, setInputValue] = useState('');
@@ -21,6 +23,9 @@ const TerminalEmulator = ({ userInfo }) => {
   const inputRef = useRef(null);
   const outputRef = useRef(null);
   const autoCollapseTimerRef = useRef(null);
+
+  // Check if desktop chat panel is open
+  const isChatOpen = isCurrentChatOpen();
 
   // Maximum number of messages to keep
   const MAX_MESSAGES = 5;
@@ -83,6 +88,15 @@ const TerminalEmulator = ({ userInfo }) => {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
   }, [outputMessages]);
+
+  // Sync chat context with active tab's space/room
+  useEffect(() => {
+    const activeTab = getActiveTab();
+    if (activeTab?.context?.spaceRoom) {
+      const { selectedSpaceId, selectedRoomId } = activeTab.context.spaceRoom;
+      setActiveContext(selectedSpaceId, selectedRoomId);
+    }
+  }, [getActiveTab, setActiveContext]);
 
   // Supported visualization command types
   const SUPPORTED_COMMAND_TYPES = ['echo'];
@@ -207,7 +221,7 @@ const TerminalEmulator = ({ userInfo }) => {
   };
 
   return (
-    <div className={styles.terminal} onClick={handleTerminalClick}>
+    <div className={`${styles.terminal} ${isChatOpen ? styles.chatOpen : ''}`} onClick={handleTerminalClick}>
       {/* Context Panel - shows space/room badges */}
       <div className={styles.contextPanelWrapper}>
         <ContextPanel />
@@ -215,6 +229,21 @@ const TerminalEmulator = ({ userInfo }) => {
 
       {/* Input Line - Now at the top for better UX */}
       <div className={styles.terminalContent}>
+        {/* Chat Toggle Button - Positioned at the left for always-visible access */}
+        <button
+          className={styles.chatToggleButtonInline}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleChat();
+          }}
+          aria-label="Toggle chat"
+          title="Toggle chat"
+        >
+          <span className={styles.chatToggleIconInline}>
+            💬
+          </span>
+        </button>
+
         {/* User Avatar - positioned at the left */}
         <div className={styles.terminalAvatar}>
           <UserAvatar

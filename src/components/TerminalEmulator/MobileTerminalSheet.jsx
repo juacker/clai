@@ -1,13 +1,17 @@
 /**
  * MobileTerminalSheet
  *
- * A draggable bottom sheet for mobile devices that wraps the terminal emulator.
+ * A unified draggable bottom sheet for mobile devices that contains the terminal.
+ * Chat appears as an overlay on top when opened via the conversation button.
  * - Collapsed state: Shows only the context panel
- * - Expanded state: Shows context panel + input prompt
+ * - Expanded state: Shows terminal with optional chat overlay
  * - Supports touch drag gestures for smooth transitions
+ * - Terminal input will be used as chat input when chat is visible (future)
  */
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useChatManager } from '../../contexts/ChatManagerContext';
+import Chat from '../Chat/Chat';
 import styles from './MobileTerminalSheet.module.css';
 
 const MobileTerminalSheet = ({ children }) => {
@@ -18,14 +22,38 @@ const MobileTerminalSheet = ({ children }) => {
   const sheetRef = useRef(null);
   const dragHandleRef = useRef(null);
 
+  const { isCurrentChatOpen, closeChat, getCurrentChatInstance } = useChatManager();
+
   // Threshold for snapping to expanded/collapsed state (in pixels)
   const SNAP_THRESHOLD = 50;
 
   // Height of the collapsed state (context panel only)
   const COLLAPSED_HEIGHT = 60;
 
-  // Height of the expanded state (context + input)
+  // Height of the expanded state
   const EXPANDED_HEIGHT = 200;
+
+  // Get current chat instance
+  const chatInstance = getCurrentChatInstance();
+  const isChatOpen = isCurrentChatOpen();
+
+  // Sync chat open state - expand panel when chat is opened
+  useEffect(() => {
+    if (isChatOpen) {
+      setIsExpanded(true);
+    }
+  }, [isChatOpen]);
+
+  // Calculate max translate based on whether chat is open
+  const getMaxTranslate = () => {
+    if (isChatOpen) {
+      // For chat overlay, use more height (70vh)
+      return (window.innerHeight * 70) / 100;
+    } else {
+      // For terminal only, use fixed height
+      return EXPANDED_HEIGHT - COLLAPSED_HEIGHT;
+    }
+  };
 
   // Handle touch start
   const handleTouchStart = (e) => {
@@ -39,17 +67,18 @@ const MobileTerminalSheet = ({ children }) => {
 
     const currentY = e.touches[0].clientY;
     const deltaY = currentY - dragStartY;
+    const maxTranslate = getMaxTranslate();
 
     // Only allow dragging within bounds
     if (isExpanded) {
       // When expanded, only allow dragging down
       if (deltaY > 0) {
-        setCurrentTranslateY(Math.min(deltaY, EXPANDED_HEIGHT - COLLAPSED_HEIGHT));
+        setCurrentTranslateY(Math.min(deltaY, maxTranslate));
       }
     } else {
       // When collapsed, only allow dragging up
       if (deltaY < 0) {
-        setCurrentTranslateY(Math.max(deltaY, -(EXPANDED_HEIGHT - COLLAPSED_HEIGHT)));
+        setCurrentTranslateY(Math.max(deltaY, -maxTranslate));
       }
     }
   };
@@ -65,6 +94,10 @@ const MobileTerminalSheet = ({ children }) => {
       // If dragged down more than threshold, collapse
       if (currentTranslateY > SNAP_THRESHOLD) {
         setIsExpanded(false);
+        // If chat was open, close it
+        if (isChatOpen) {
+          closeChat();
+        }
       }
     } else {
       // If dragged up more than threshold, expand
@@ -81,7 +114,13 @@ const MobileTerminalSheet = ({ children }) => {
   // Handle tap on drag handle to toggle
   const handleDragHandleTap = () => {
     if (!isDragging) {
-      setIsExpanded(!isExpanded);
+      const newExpandedState = !isExpanded;
+      setIsExpanded(newExpandedState);
+
+      // If collapsing and chat is open, close it
+      if (!newExpandedState && isChatOpen) {
+        closeChat();
+      }
     }
   };
 
@@ -98,23 +137,36 @@ const MobileTerminalSheet = ({ children }) => {
     };
   }, [isExpanded]);
 
+  // Calculate dynamic height based on whether chat is open
+  const getSheetHeight = () => {
+    if (!isExpanded) return 'auto';
+    if (isChatOpen) return '70vh';
+    return `${EXPANDED_HEIGHT}px`;
+  };
+
   return (
     <>
       {/* Backdrop - only visible when expanded */}
       {isExpanded && (
         <div
           className={styles.backdrop}
-          onClick={() => setIsExpanded(false)}
+          onClick={() => {
+            setIsExpanded(false);
+            if (isChatOpen) {
+              closeChat();
+            }
+          }}
         />
       )}
 
       {/* Bottom Sheet */}
       <div
         ref={sheetRef}
-        className={`${styles.sheet} ${isExpanded ? styles.sheetExpanded : styles.sheetCollapsed}`}
+        className={`${styles.sheet} ${isExpanded ? styles.sheetExpanded : styles.sheetCollapsed} ${isChatOpen ? styles.sheetWithChat : ''}`}
         style={{
           transform: isDragging ? `translateY(${currentTranslateY}px)` : undefined,
           transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          height: getSheetHeight(),
         }}
       >
         {/* Drag Handle */}
@@ -129,8 +181,19 @@ const MobileTerminalSheet = ({ children }) => {
           <div className={styles.dragHandleBar} />
         </div>
 
-        {/* Terminal Content */}
-        <div className={`${styles.sheetContent} ${!isExpanded ? styles.sheetContentHidden : ''}`}>
+        {/* Chat Section - Appears on top when open */}
+        {chatInstance && isChatOpen && isExpanded && (
+          <div className={styles.chatSection}>
+            <Chat
+              space={chatInstance.space}
+              room={chatInstance.room}
+              isOpen={isChatOpen}
+            />
+          </div>
+        )}
+
+        {/* Terminal Content - Always visible at bottom */}
+        <div className={`${styles.terminalContent} ${!isExpanded ? styles.contentHidden : ''} ${isChatOpen ? styles.terminalWithChat : ''}`}>
           {children}
         </div>
       </div>

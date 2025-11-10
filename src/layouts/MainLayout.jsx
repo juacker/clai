@@ -3,9 +3,11 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import { getUserInfo } from '../api/client';
 import TerminalEmulatorWrapper from '../components/TerminalEmulator/TerminalEmulatorWrapper';
 import MobileTerminalSheet from '../components/TerminalEmulator/MobileTerminalSheet';
+import DesktopChatPanel from '../components/Chat/DesktopChatPanel';
 import { SharedSpaceRoomDataProvider } from '../contexts/SharedSpaceRoomDataContext';
 import { CommandProvider } from '../contexts/CommandContext';
 import { TabManagerProvider } from '../contexts/TabManagerContext';
+import { ChatManagerProvider } from '../contexts/ChatManagerContext';
 import { usePlatform } from '../hooks/usePlatform';
 import styles from './MainLayout.module.css';
 
@@ -52,22 +54,27 @@ const MainLayout = () => {
     <CommandProvider>
       <SharedSpaceRoomDataProvider>
         <TabManagerProvider>
-          <div className={styles.mainLayout}>
-            {/* Desktop: Fixed TerminalEmulator at bottom */}
-            {isDesktop && <TerminalEmulatorWrapper userInfo={userInfo} />}
+          <ChatManagerProvider>
+            <div className={styles.mainLayout}>
+              {/* Desktop: Fixed chat panel on right side (full height) */}
+              {isDesktop && <DesktopChatPanel />}
 
-            {/* Mobile: Draggable bottom sheet terminal */}
-            {isMobile && (
-              <MobileTerminalSheet>
-                <TerminalEmulatorWrapper userInfo={userInfo} />
-              </MobileTerminalSheet>
-            )}
+              {/* Desktop: Fixed TerminalEmulator at bottom */}
+              {isDesktop && <TerminalEmulatorWrapper userInfo={userInfo} />}
 
-            {/* Content area - takes remaining flex space */}
-            <div className={styles.contentArea}>
-              <Outlet context={{ userInfo }} />
+              {/* Mobile: Unified draggable bottom sheet with terminal and chat */}
+              {isMobile && (
+                <MobileTerminalSheet>
+                  <TerminalEmulatorWrapper userInfo={userInfo} />
+                </MobileTerminalSheet>
+              )}
+
+              {/* Content area - takes remaining flex space */}
+              <div className={styles.contentArea}>
+                <Outlet context={{ userInfo }} />
+              </div>
             </div>
-          </div>
+          </ChatManagerProvider>
         </TabManagerProvider>
       </SharedSpaceRoomDataProvider>
     </CommandProvider>
