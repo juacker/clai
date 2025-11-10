@@ -64,6 +64,7 @@ const isOnlyAlt = (event) => {
  * @param {Function} handlers.onCloseTile - Called when Ctrl/Cmd+Shift+W is pressed
  * @param {Function} handlers.onNextTile - Called when Ctrl/Cmd+] is pressed
  * @param {Function} handlers.onPrevTile - Called when Ctrl/Cmd+[ is pressed
+ * @param {Function} handlers.onToggleChat - Called when Ctrl/Cmd+Shift+C is pressed
  * @param {boolean} enabled - Whether shortcuts are enabled (default: true)
  */
 export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
@@ -192,6 +193,15 @@ export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
       }
       return;
     }
+
+    // Toggle Chat: Ctrl/Cmd+Shift+C
+    if (isPrimaryModifier(event, os) && event.shiftKey && key === 'c') {
+      event.preventDefault();
+      if (handlers.onToggleChat) {
+        handlers.onToggleChat();
+      }
+      return;
+    }
   }, [enabled, os, handlers]);
 
   // Register global keyboard listener
@@ -238,6 +248,12 @@ export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
         category: 'Terminal',
         items: [
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'L'], description: 'Focus terminal input' },
+        ]
+      },
+      {
+        category: 'Chat',
+        items: [
+          { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'Shift', 'C'], description: 'Toggle chat panel' },
         ]
       }
     ]

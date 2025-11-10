@@ -2,6 +2,7 @@ import React from 'react';
 import { useOutletContext } from 'react-router-dom';
 import TabView from '../components/TabView/TabView';
 import { useTabManager } from '../contexts/TabManagerContext';
+import { useChatManager } from '../contexts/ChatManagerContext';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import styles from './Home.module.css';
 
@@ -23,6 +24,9 @@ const Home = () => {
     focusNextTile,
     focusPrevTile
   } = useTabManager();
+
+  // Get chat management functions from context
+  const { toggleChat } = useChatManager();
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts({
@@ -98,6 +102,11 @@ const Home = () => {
     // Ctrl/Cmd+[: Previous tile
     onPrevTile: () => {
       focusPrevTile();
+    },
+
+    // Ctrl/Cmd+Shift+C: Toggle chat panel
+    onToggleChat: () => {
+      toggleChat();
     },
   });
 
