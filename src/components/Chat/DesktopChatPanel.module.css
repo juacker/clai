@@ -61,7 +61,7 @@
     position: fixed;
     top: 0;
     right: 0;
-    bottom: 0px; /* Leave space for terminal content height */
+    bottom: 0px;
 
     /* Dimensions */
     width: 0;
