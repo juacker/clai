@@ -74,14 +74,12 @@ const Chat = ({ space, room, isOpen }) => {
         {MOCK_MESSAGES.map((message) => (
           <div
             key={message.id}
-            className={`${styles.messageWrapper} ${
-              message.isOwn ? styles.messageWrapperOwn : ''
-            }`}
+            className={`${styles.messageWrapper} ${message.isOwn ? styles.messageWrapperOwn : ''
+              }`}
           >
             <div
-              className={`${styles.messageBubble} ${
-                message.isOwn ? styles.messageBubbleOwn : ''
-              }`}
+              className={`${styles.messageBubble} ${message.isOwn ? styles.messageBubbleOwn : ''
+                }`}
             >
               {!message.isOwn && (
                 <div className={styles.messageSender}>{message.sender}</div>
@@ -93,14 +91,6 @@ const Chat = ({ space, room, isOpen }) => {
         ))}
       </div>
 
-      <div className={styles.chatFooter}>
-        <input
-          type="text"
-          className={styles.chatInput}
-          placeholder="Type a message..."
-          disabled
-        />
-      </div>
     </div>
   );
 };
