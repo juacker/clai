@@ -6,6 +6,11 @@
  * - Expanded state: Shows chat interface (height: 50vh)
  * - Supports touch drag gestures for smooth transitions
  * - Positioned above the terminal emulator
+ * - Supports forwarding messages from terminal when chat is visible
+ *
+ * @param {Object} props - Component props
+ * @param {string} props.message - Message to forward to chat (from terminal)
+ * @param {function} props.onMessageProcessed - Callback when message is processed
  */
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -13,7 +18,7 @@ import { useChatManager } from '../../contexts/ChatManagerContext';
 import Chat from './Chat';
 import styles from './MobileChatPanel.module.css';
 
-const MobileChatPanel = () => {
+const MobileChatPanel = ({ message, onMessageProcessed }) => {
   const { isCurrentChatOpen, toggleChat, getCurrentChatInstance } = useChatManager();
   const [dragStartY, setDragStartY] = useState(null);
   const [currentTranslateY, setCurrentTranslateY] = useState(0);
@@ -150,6 +155,8 @@ const MobileChatPanel = () => {
             space={chatInstance.space}
             room={chatInstance.room}
             isOpen={isChatOpen}
+            message={message}
+            onMessageProcessed={onMessageProcessed}
           />
         </div>
       </div>

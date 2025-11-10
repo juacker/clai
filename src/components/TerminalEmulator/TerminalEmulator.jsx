@@ -9,7 +9,7 @@ import ContextPanel from '../ContextPanel/ContextPanel';
 import UserAvatar from '../UserAvatar';
 import styles from './TerminalEmulator.module.css';
 
-const TerminalEmulator = ({ userInfo }) => {
+const TerminalEmulator = ({ userInfo, onSendToChat }) => {
   const { executeCommand, commandHistory } = useCommand();
   const { handleLayoutCommand, getActiveTab } = useTabManager();
   const { setActiveContext, toggleChat, isCurrentChatOpen } = useChatManager();
@@ -109,6 +109,13 @@ const TerminalEmulator = ({ userInfo }) => {
     // Clear input immediately
     setInputValue('');
     setHistoryIndex(-1);
+
+    // Check if chat is open - if so, forward the input to chat instead of processing as command
+    if (isChatOpen && onSendToChat) {
+      onSendToChat(trimmed);
+      addOutputMessage('Message sent to chat', 'success');
+      return;
+    }
 
     // Parse the command
     const command = parseCommand(trimmed);

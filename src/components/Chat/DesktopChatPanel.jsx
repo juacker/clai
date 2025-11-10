@@ -17,8 +17,13 @@ import styles from './DesktopChatPanel.module.css';
  * - Smooth expand/collapse animations
  * - Hidden on mobile (mobile uses MobileTerminalSheet)
  * - Integrates with ChatManagerContext for state management
+ * - Supports forwarding messages from terminal when chat is visible
+ *
+ * @param {Object} props - Component props
+ * @param {string} props.message - Message to forward to chat (from terminal)
+ * @param {function} props.onMessageProcessed - Callback when message is processed
  */
-const DesktopChatPanel = () => {
+const DesktopChatPanel = ({ message, onMessageProcessed }) => {
   const { isCurrentChatOpen, getCurrentChatInstance } = useChatManager();
   const { getSpaceById, getRoomById } = useSharedSpaceRoomData();
 
@@ -53,6 +58,8 @@ const DesktopChatPanel = () => {
             space={space}
             room={room}
             isOpen={isOpen}
+            message={message}
+            onMessageProcessed={onMessageProcessed}
           />
         )}
       </div>

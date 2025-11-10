@@ -14,8 +14,14 @@ import styles from './MainLayout.module.css';
 const MainLayout = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [messageForChat, setMessageForChat] = useState(null);
   const navigate = useNavigate();
   const { isDesktop, isMobile } = usePlatform();
+
+  // Callback to handle when chat has processed the message
+  const handleMessageProcessed = () => {
+    setMessageForChat(null);
+  };
 
   useEffect(() => {
     const fetchUserInfo = async () => {
@@ -57,15 +63,31 @@ const MainLayout = () => {
           <ChatManagerProvider>
             <div className={styles.mainLayout}>
               {/* Desktop: Fixed chat panel on right side (full height) */}
-              {isDesktop && <DesktopChatPanel />}
+              {isDesktop && (
+                <DesktopChatPanel
+                  message={messageForChat}
+                  onMessageProcessed={handleMessageProcessed}
+                />
+              )}
 
               {/* Desktop: Fixed TerminalEmulator at bottom */}
-              {isDesktop && <TerminalEmulatorWrapper userInfo={userInfo} />}
+              {isDesktop && (
+                <TerminalEmulatorWrapper
+                  userInfo={userInfo}
+                  onSendToChat={setMessageForChat}
+                />
+              )}
 
               {/* Mobile: Unified draggable bottom sheet with terminal and chat */}
               {isMobile && (
-                <MobileTerminalSheet>
-                  <TerminalEmulatorWrapper userInfo={userInfo} />
+                <MobileTerminalSheet
+                  message={messageForChat}
+                  onMessageProcessed={handleMessageProcessed}
+                >
+                  <TerminalEmulatorWrapper
+                    userInfo={userInfo}
+                    onSendToChat={setMessageForChat}
+                  />
                 </MobileTerminalSheet>
               )}
 

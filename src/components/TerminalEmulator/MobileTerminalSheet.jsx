@@ -6,7 +6,13 @@
  * - Collapsed state: Shows only the context panel
  * - Expanded state: Shows terminal with optional chat overlay
  * - Supports touch drag gestures for smooth transitions
- * - Terminal input will be used as chat input when chat is visible (future)
+ * - Terminal input will be used as chat input when chat is visible
+ * - Supports forwarding messages from terminal to chat
+ *
+ * @param {Object} props - Component props
+ * @param {React.ReactNode} props.children - Terminal component to render
+ * @param {string} props.message - Message to forward to chat (from terminal)
+ * @param {function} props.onMessageProcessed - Callback when message is processed
  */
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -15,7 +21,7 @@ import { useSharedSpaceRoomData } from '../../contexts/SharedSpaceRoomDataContex
 import Chat from '../Chat/Chat';
 import styles from './MobileTerminalSheet.module.css';
 
-const MobileTerminalSheet = ({ children }) => {
+const MobileTerminalSheet = ({ children, message, onMessageProcessed }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [dragStartY, setDragStartY] = useState(null);
   const [currentTranslateY, setCurrentTranslateY] = useState(0);
@@ -201,6 +207,8 @@ const MobileTerminalSheet = ({ children }) => {
               space={space}
               room={room}
               isOpen={isChatOpen}
+              message={message}
+              onMessageProcessed={onMessageProcessed}
             />
           </div>
         )}
