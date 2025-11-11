@@ -52,10 +52,54 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
   // Refs
   const messagesEndRef = useRef(null);
   const lastProcessedMessageRef = useRef(null);
+  // State cache to remember chat state for each space/room combination
+  const stateCache = useRef({});
 
   // Get token from localStorage
   const getToken = () => {
     return localStorage.getItem('netdata_token');
+  };
+
+  // Generate cache key for current space/room
+  const getCacheKey = (spaceId, roomId) => {
+    return `${spaceId}-${roomId}`;
+  };
+
+  // Save current state to cache
+  const saveStateToCache = (spaceId, roomId) => {
+    if (!spaceId || !roomId) return;
+
+    const key = getCacheKey(spaceId, roomId);
+    stateCache.current[key] = {
+      mode,
+      currentConversation,
+      conversationId: currentConversation?.id,
+    };
+  };
+
+  // Restore state from cache
+  const restoreStateFromCache = async (spaceId, roomId) => {
+    if (!spaceId || !roomId) return;
+
+    const key = getCacheKey(spaceId, roomId);
+    const cachedState = stateCache.current[key];
+
+    if (cachedState) {
+      // Restore mode
+      setMode(cachedState.mode);
+
+      // If in conversation mode, restore the conversation
+      if (cachedState.mode === 'conversation' && cachedState.conversationId) {
+        await loadConversation(cachedState.conversationId);
+      }
+    } else {
+      // No cached state, reset to list mode
+      setMode('list');
+      setCurrentConversation(null);
+      setConversationError(null);
+      setStreamingMessages([]);
+      setProcessingError(null);
+    }
   };
 
   // Scroll to bottom of messages
@@ -85,7 +129,37 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
     return formatTimestamp(conversation.created_at, true);
   };
 
-  // Load conversations list when component mounts or space/room changes
+  // Track previous space/room to detect changes
+  const prevSpaceRoomRef = useRef({ spaceId: null, roomId: null });
+
+  // Handle space/room changes: save current state and restore state for new space/room
+  useEffect(() => {
+    const currentSpaceId = space?.id;
+    const currentRoomId = room?.id;
+    const prevSpaceId = prevSpaceRoomRef.current.spaceId;
+    const prevRoomId = prevSpaceRoomRef.current.roomId;
+
+    // Check if space or room has changed
+    const hasChanged = currentSpaceId !== prevSpaceId || currentRoomId !== prevRoomId;
+
+    if (hasChanged && prevSpaceId && prevRoomId) {
+      // Save current state before switching
+      saveStateToCache(prevSpaceId, prevRoomId);
+    }
+
+    if (hasChanged && currentSpaceId && currentRoomId) {
+      // Restore state for new space/room
+      restoreStateFromCache(currentSpaceId, currentRoomId);
+    }
+
+    // Update ref to current space/room
+    prevSpaceRoomRef.current = {
+      spaceId: currentSpaceId,
+      roomId: currentRoomId,
+    };
+  }, [space?.id, room?.id]);
+
+  // Load conversations list when in list mode
   useEffect(() => {
     if (space?.id && room?.id && mode === 'list') {
       loadConversations();
