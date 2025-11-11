@@ -1,0 +1,321 @@
+/* Markdown Message Styles - Light, elegant, modern aesthetic */
+
+.markdownContainer {
+  width: 100%;
+  color: rgba(0, 0, 0, 0.85);
+  font-size: 15px;
+  line-height: 1.6;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Desktop: Slightly larger font */
+@media (min-width: 769px) and (pointer: fine) {
+  .markdownContainer {
+    font-size: 16px;
+  }
+}
+
+/* Paragraphs */
+.paragraph {
+  margin: 0 0 12px 0;
+}
+
+.paragraph:last-child {
+  margin-bottom: 0;
+}
+
+/* Headings */
+.heading1,
+.heading2,
+.heading3,
+.heading4,
+.heading5,
+.heading6 {
+  margin: 16px 0 8px 0;
+  font-weight: 600;
+  line-height: 1.3;
+  color: rgba(0, 0, 0, 0.9);
+}
+
+.heading1:first-child,
+.heading2:first-child,
+.heading3:first-child,
+.heading4:first-child,
+.heading5:first-child,
+.heading6:first-child {
+  margin-top: 0;
+}
+
+.heading1 {
+  font-size: 24px;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.1);
+  padding-bottom: 8px;
+}
+
+.heading2 {
+  font-size: 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  padding-bottom: 6px;
+}
+
+.heading3 {
+  font-size: 18px;
+}
+
+.heading4 {
+  font-size: 16px;
+}
+
+.heading5 {
+  font-size: 14px;
+}
+
+.heading6 {
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+/* Lists */
+.unorderedList,
+.orderedList {
+  margin: 8px 0 12px 0;
+  padding-left: 24px;
+}
+
+.unorderedList {
+  list-style-type: disc;
+}
+
+.orderedList {
+  list-style-type: decimal;
+}
+
+.listItem {
+  margin: 4px 0;
+  line-height: 1.6;
+}
+
+.listItem:last-child {
+  margin-bottom: 0;
+}
+
+/* Nested lists */
+.listItem .unorderedList,
+.listItem .orderedList {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+/* Inline code */
+.inlineCode {
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+  font-size: 0.9em;
+  color: #e83e8c;
+  white-space: pre-wrap;
+}
+
+/* Code blocks */
+.codeBlock {
+  margin: 12px 0;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.codeBlock code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: rgba(0, 0, 0, 0.85);
+  white-space: pre;
+  word-wrap: normal;
+}
+
+/* Desktop: Slightly larger code blocks */
+@media (min-width: 769px) and (pointer: fine) {
+  .codeBlock {
+    padding: 14px 18px;
+    font-size: 14px;
+  }
+}
+
+/* Scrollbar for code blocks */
+.codeBlock::-webkit-scrollbar {
+  height: 6px;
+}
+
+.codeBlock::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 3px;
+}
+
+.codeBlock::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+.codeBlock::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Links */
+.link {
+  color: #4a9eff;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(74, 158, 255, 0.3);
+  transition: all 0.2s ease;
+}
+
+.link:hover {
+  color: #3a8eef;
+  border-bottom-color: #3a8eef;
+}
+
+/* Blockquotes */
+.blockquote {
+  margin: 12px 0;
+  padding: 8px 16px;
+  border-left: 4px solid #4a9eff;
+  background: rgba(74, 158, 255, 0.05);
+  color: rgba(0, 0, 0, 0.75);
+  font-style: italic;
+}
+
+.blockquote p {
+  margin: 0;
+}
+
+/* Tables */
+.tableWrapper {
+  margin: 12px 0;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  font-size: 14px;
+}
+
+.tableHead {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.tableHeader {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.tableBody {
+  background: #ffffff;
+}
+
+.tableRow {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.tableRow:last-child {
+  border-bottom: none;
+}
+
+.tableCell {
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  color: rgba(0, 0, 0, 0.75);
+}
+
+/* Text formatting */
+.bold {
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.9);
+}
+
+.italic {
+  font-style: italic;
+}
+
+.strikethrough {
+  text-decoration: line-through;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+/* Horizontal rule */
+.horizontalRule {
+  margin: 16px 0;
+  border: none;
+  border-top: 2px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Streaming cursor */
+.streamingCursor {
+  display: inline-block;
+  margin-left: 2px;
+  color: #4a9eff;
+  animation: blink 1s infinite;
+  font-weight: 400;
+}
+
+@keyframes blink {
+  0%, 49% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0;
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 480px) {
+  .markdownContainer {
+    font-size: 14px;
+  }
+
+  .heading1 {
+    font-size: 20px;
+  }
+
+  .heading2 {
+    font-size: 18px;
+  }
+
+  .heading3 {
+    font-size: 16px;
+  }
+
+  .codeBlock {
+    font-size: 13px;
+    padding: 10px 12px;
+  }
+
+  .table {
+    font-size: 13px;
+  }
+
+  .tableHeader,
+  .tableCell {
+    padding: 8px 10px;
+  }
+}
+
+/* Touch device optimizations */
+@media (pointer: coarse) {
+  .link {
+    padding: 2px 0;
+    /* Increase tap target */
+  }
+}
+

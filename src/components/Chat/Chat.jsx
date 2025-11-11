@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   listConversations,
   getConversation,
-  createConversation,
   deleteConversation,
+  createConversation,
   createChatCompletion,
 } from '../../api/client';
+import MarkdownMessage from './MarkdownMessage';
 import styles from './Chat.module.css';
 
 /**
@@ -15,23 +16,21 @@ import styles from './Chat.module.css';
  * 1. List Mode: Display all conversations for the current space/room
  * 2. Single Conversation Mode: Display a specific conversation with messages
  *
- * This component is designed to be shown/hidden based on the active space-room context.
- * Multiple instances are kept in memory to preserve state when switching between contexts.
- *
- * The input is handled by the Terminal Emulator component and forwarded to this component
- * via the message prop. When a message is received:
- * - In list mode: Creates a new conversation and sends the message
- * - In conversation mode: Sends the message to the active conversation
+ * This component handles:
+ * - List all conversations in the current space/room
+ * - View a specific conversation with its messages
+ * - Delete conversations
+ * - Process incoming messages from terminal emulator
+ * - Real-time streaming of AI responses via SSE
  *
  * Props:
  * - space: The space object with id and name
  * - room: The room object with id and name
- * - isOpen: Whether the chat is currently open/visible
- * - message: Message to send (forwarded from Terminal Emulator)
- * - onMessageProcessed: Callback to notify parent that message was processed
+ * - message: New message from terminal emulator (triggers completion)
+ * - onMessageProcessed: Callback when message processing is complete
  */
 
-const Chat = ({ space, room, isOpen, message, onMessageProcessed }) => {
+const Chat = ({ space, room, message, onMessageProcessed }) => {
   // Mode state: 'list' or 'conversation'
   const [mode, setMode] = useState('list');
 
@@ -45,13 +44,14 @@ const Chat = ({ space, room, isOpen, message, onMessageProcessed }) => {
   const [conversationLoading, setConversationLoading] = useState(false);
   const [conversationError, setConversationError] = useState(null);
 
-  // Message sending state
-  const [isSendingMessage, setIsSendingMessage] = useState(false);
-  const [streamingMessage, setStreamingMessage] = useState('');
+  // Message processing state
+  const [isProcessingMessage, setIsProcessingMessage] = useState(false);
+  const [streamingMessages, setStreamingMessages] = useState([]);
+  const [processingError, setProcessingError] = useState(null);
 
-  // Ref to track if we're already processing a message
-  const processingMessageRef = useRef(false);
+  // Refs
   const messagesEndRef = useRef(null);
+  const lastProcessedMessageRef = useRef(null);
 
   // Get token from localStorage
   const getToken = () => {
@@ -63,172 +63,26 @@ const Chat = ({ space, room, isOpen, message, onMessageProcessed }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Handle incoming messages from Terminal Emulator
-  useEffect(() => {
-    // Only process messages when chat is open and we have a valid message
-    if (!isOpen || !message || !message.trim() || processingMessageRef.current) {
-      return;
+  // Extract text from message content array
+  const extractMessageText = (content) => {
+    if (!content) return '';
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      return content
+        .filter(item => item.type === 'text')
+        .map(item => item.text)
+        .join(' ');
     }
-
-    // Only process if we have space and room context
-    if (!space?.id || !room?.id) {
-      console.warn('Cannot send message: Missing space or room context');
-      return;
-    }
-
-    processingMessageRef.current = true;
-    handleIncomingMessage(message.trim());
-  }, [message, isOpen, space?.id, room?.id]);
-
-  // Handle incoming message based on current mode
-  const handleIncomingMessage = async (messageText) => {
-    if (mode === 'list') {
-      // In list mode: Create new conversation and send message
-      await createConversationAndSendMessage(messageText);
-    } else if (mode === 'conversation' && currentConversation?.id) {
-      // In conversation mode: Send message to active conversation
-      await sendMessageToConversation(messageText);
-    }
-
-    // Notify parent that message was processed
-    if (onMessageProcessed) {
-      onMessageProcessed();
-    }
-
-    processingMessageRef.current = false;
+    return '';
   };
 
-  // Create a new conversation and send the first message
-  const createConversationAndSendMessage = async (messageText) => {
-    const token = getToken();
-    if (!token) {
-      setConversationsError('Authentication token not found');
-      return;
+  // Format conversation title - use title or creation date
+  const formatConversationTitle = (conversation) => {
+    if (conversation.title) {
+      return conversation.title;
     }
-
-    setConversationsLoading(true);
-    setConversationsError(null);
-
-    try {
-      // Create new conversation
-      const data = await createConversation(token, space.id, room.id, {});
-
-      // Load the conversation
-      const conversationData = await getConversation(token, space.id, room.id, data.id);
-      setCurrentConversation(conversationData);
-      setMode('conversation');
-
-      // Send the message
-      await sendMessageToConversation(messageText, data.id);
-    } catch (error) {
-      console.error('Failed to create conversation and send message:', error);
-      setConversationsError(error.message);
-    } finally {
-      setConversationsLoading(false);
-    }
-  };
-
-  // Send message to the current conversation
-  const sendMessageToConversation = async (messageText, conversationId = null) => {
-    const token = getToken();
-    if (!token) {
-      setConversationError('Authentication token not found');
-      return;
-    }
-
-    const targetConversationId = conversationId || currentConversation?.id;
-    if (!targetConversationId) {
-      console.error('No conversation ID available');
-      return;
-    }
-
-    setIsSendingMessage(true);
-    setStreamingMessage('');
-    setConversationError(null);
-
-    try {
-      // Add user message to the conversation optimistically
-      const userMessage = {
-        id: `temp-${Date.now()}`,
-        role: 'user',
-        content: messageText,
-        created_at: new Date().toISOString(),
-      };
-
-      setCurrentConversation((prev) => ({
-        ...prev,
-        messages: [...(prev?.messages || []), userMessage],
-      }));
-
-      // Scroll to bottom after adding user message
-      setTimeout(scrollToBottom, 100);
-
-      // Create a temporary assistant message for streaming
-      const assistantMessageId = `temp-assistant-${Date.now()}`;
-      const assistantMessage = {
-        id: assistantMessageId,
-        role: 'assistant',
-        content: '',
-        created_at: new Date().toISOString(),
-      };
-
-      setCurrentConversation((prev) => ({
-        ...prev,
-        messages: [...(prev?.messages || []), assistantMessage],
-      }));
-
-      // Send completion request with streaming
-      let fullResponse = '';
-      await createChatCompletion(
-        token,
-        space.id,
-        room.id,
-        targetConversationId,
-        messageText,
-        (chunk) => {
-          // Handle SSE chunks
-          if (chunk.type === 'content_block_delta' && chunk.delta?.text) {
-            fullResponse += chunk.delta.text;
-            setStreamingMessage(fullResponse);
-
-            // Update the assistant message with streamed content
-            setCurrentConversation((prev) => {
-              const messages = [...(prev?.messages || [])];
-              const lastMessageIndex = messages.findIndex(m => m.id === assistantMessageId);
-              if (lastMessageIndex !== -1) {
-                messages[lastMessageIndex] = {
-                  ...messages[lastMessageIndex],
-                  content: fullResponse,
-                };
-              }
-              return { ...prev, messages };
-            });
-
-            // Scroll to bottom during streaming
-            scrollToBottom();
-          } else if (chunk.type === 'message_stop') {
-            // Message completed
-            console.log('Message completed');
-          } else if (chunk.type === 'error') {
-            console.error('Stream error:', chunk.error);
-            setConversationError(chunk.error?.message || 'An error occurred');
-          }
-        }
-      );
-
-      // Reload conversation to get the actual server data
-      const updatedConversation = await getConversation(token, space.id, room.id, targetConversationId);
-      setCurrentConversation(updatedConversation);
-
-      // Scroll to bottom after loading updated conversation
-      setTimeout(scrollToBottom, 100);
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      setConversationError(error.message);
-    } finally {
-      setIsSendingMessage(false);
-      setStreamingMessage('');
-    }
+    // If no title, show creation date
+    return formatTimestamp(conversation.created_at, true);
   };
 
   // Load conversations list when component mounts or space/room changes
@@ -237,6 +91,20 @@ const Chat = ({ space, room, isOpen, message, onMessageProcessed }) => {
       loadConversations();
     }
   }, [space?.id, room?.id, mode]);
+
+  // Process incoming messages from terminal emulator
+  useEffect(() => {
+    // Only process if we have a message and it's different from the last processed one
+    if (!message || !space?.id || !room?.id || message === lastProcessedMessageRef.current) {
+      return;
+    }
+
+    // Prevent duplicate processing
+    lastProcessedMessageRef.current = message;
+
+    // Process the message
+    processIncomingMessage(message);
+  }, [message, space?.id, room?.id]);
 
   // Load conversations list
   const loadConversations = async () => {
@@ -251,7 +119,8 @@ const Chat = ({ space, room, isOpen, message, onMessageProcessed }) => {
 
     try {
       const data = await listConversations(token, space.id, room.id);
-      setConversations(data.conversations || []);
+      // API returns array directly, not an object with conversations property
+      setConversations(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to load conversations:', error);
       setConversationsError(error.message);
@@ -275,34 +144,13 @@ const Chat = ({ space, room, isOpen, message, onMessageProcessed }) => {
       const data = await getConversation(token, space.id, room.id, conversationId);
       setCurrentConversation(data);
       setMode('conversation');
+      // Scroll to bottom after loading conversation
+      setTimeout(scrollToBottom, 100);
     } catch (error) {
       console.error('Failed to load conversation:', error);
       setConversationError(error.message);
     } finally {
       setConversationLoading(false);
-    }
-  };
-
-  // Create a new conversation
-  const handleCreateConversation = async () => {
-    const token = getToken();
-    if (!token) {
-      setConversationsError('Authentication token not found');
-      return;
-    }
-
-    setConversationsLoading(true);
-    setConversationsError(null);
-
-    try {
-      const data = await createConversation(token, space.id, room.id, {});
-      // After creating, load the new conversation
-      await loadConversation(data.id);
-    } catch (error) {
-      console.error('Failed to create conversation:', error);
-      setConversationsError(error.message);
-    } finally {
-      setConversationsLoading(false);
     }
   };
 
@@ -363,6 +211,138 @@ const Chat = ({ space, room, isOpen, message, onMessageProcessed }) => {
     }
   };
 
+  // Process incoming message from terminal emulator
+  const processIncomingMessage = async (userMessage) => {
+    const token = getToken();
+    if (!token) {
+      setProcessingError('Authentication token not found');
+      if (onMessageProcessed) {
+        onMessageProcessed();
+      }
+      return;
+    }
+
+    setIsProcessingMessage(true);
+    setProcessingError(null);
+    setStreamingMessages([]);
+
+    try {
+      let conversationId = currentConversation?.id;
+
+      // If in list mode, create a new conversation
+      if (mode === 'list') {
+        const newConversation = await createConversation(token, space.id, room.id, {
+          title: `Chat ${new Date().toLocaleString()}`,
+        });
+        conversationId = newConversation.id;
+
+        // Load the newly created conversation
+        await loadConversation(conversationId);
+      }
+
+      // Get parent message ID (last message in conversation if exists)
+      const parentMessageId = currentConversation?.messages?.length > 0
+        ? currentConversation.messages[currentConversation.messages.length - 1].id
+        : undefined;
+
+      // Create chat completion with SSE streaming
+      await createChatCompletion(
+        token,
+        space.id,
+        room.id,
+        conversationId,
+        userMessage,
+        handleSSEChunk,
+        parentMessageId
+      );
+
+      // Reload conversation to get final state from API
+      await loadConversation(conversationId);
+
+      // Clear streaming messages
+      setStreamingMessages([]);
+
+    } catch (error) {
+      console.error('Failed to process message:', error);
+      setProcessingError(error.message || 'Failed to process message');
+    } finally {
+      setIsProcessingMessage(false);
+
+      // Call callback to notify that message processing is complete
+      if (onMessageProcessed) {
+        onMessageProcessed();
+      }
+    }
+  };
+
+  // Handle SSE chunks from the API
+  const handleSSEChunk = (chunk) => {
+    try {
+      switch (chunk.type) {
+        case 'message_start':
+          // New message started (user or assistant)
+          if (chunk.message) {
+            const newMessage = {
+              id: chunk.message.id,
+              role: chunk.message.role,
+              content: '',
+              isStreaming: true,
+              created_at: new Date().toISOString(),
+            };
+
+            setStreamingMessages(prev => [...prev, newMessage]);
+
+            // Auto-scroll to bottom
+            setTimeout(scrollToBottom, 50);
+          }
+          break;
+
+        case 'content_block_start':
+          // Content block started (prepare for text streaming)
+          break;
+
+        case 'content_block_delta':
+          // Incremental text content received
+          if (chunk.delta?.text) {
+            setStreamingMessages(prev => {
+              const updated = [...prev];
+              if (updated.length > 0) {
+                const lastMessage = updated[updated.length - 1];
+                lastMessage.content += chunk.delta.text;
+              }
+              return updated;
+            });
+
+            // Auto-scroll to bottom as content arrives
+            setTimeout(scrollToBottom, 50);
+          }
+          break;
+
+        case 'content_block_stop':
+          // Content block complete
+          break;
+
+        case 'message_stop':
+          // Message complete
+          setStreamingMessages(prev => {
+            const updated = [...prev];
+            if (updated.length > 0) {
+              const lastMessage = updated[updated.length - 1];
+              lastMessage.isStreaming = false;
+            }
+            return updated;
+          });
+          break;
+
+        default:
+          // Unknown chunk type, ignore
+          break;
+      }
+    } catch (error) {
+      console.error('Error processing SSE chunk:', error);
+    }
+  };
+
   // Render conversation list mode
   const renderConversationsList = () => {
     return (
@@ -419,16 +399,17 @@ const Chat = ({ space, room, isOpen, message, onMessageProcessed }) => {
                 >
                   <div className={styles.conversationHeader}>
                     <div className={styles.conversationTitle}>
-                      {conversation.title || 'Untitled Conversation'}
+                      {formatConversationTitle(conversation)}
                     </div>
-                    <button
-                      className={styles.deleteButton}
-                      onClick={(e) => handleDeleteConversation(conversation.id, e)}
-                      title="Delete conversation"
-                    >
-                      🗑️
-                    </button>
                   </div>
+                  <button
+                    className={styles.deleteButton}
+                    onClick={(e) => handleDeleteConversation(conversation.id, e)}
+                    title="Delete conversation"
+                    aria-label="Delete conversation"
+                  >
+                    ✕
+                  </button>
                   <div className={styles.conversationMeta}>
                     <span className={styles.conversationTimestamp}>
                       {formatTimestamp(conversation.updated_at || conversation.created_at)}
@@ -451,17 +432,6 @@ const Chat = ({ space, room, isOpen, message, onMessageProcessed }) => {
               ))}
             </div>
           )}
-        </div>
-
-        <div className={styles.chatFooter}>
-          <button
-            className={styles.newConversationButton}
-            onClick={handleCreateConversation}
-            disabled={conversationsLoading}
-          >
-            <span className={styles.buttonIcon}>➕</span>
-            <span className={styles.buttonText}>New Conversation</span>
-          </button>
         </div>
       </>
     );
@@ -520,24 +490,97 @@ const Chat = ({ space, room, isOpen, message, onMessageProcessed }) => {
                         {message.role !== 'user' && (
                           <div className={styles.messageSender}>Netdata AI</div>
                         )}
-                        <div className={styles.messageText}>{message.content || message.text}</div>
+                        <MarkdownMessage
+                          content={extractMessageText(message.content)}
+                          isStreaming={false}
+                        />
                         <div className={styles.messageTimestamp}>
-                          {formatTimestamp(message.created_at || message.timestamp)}
+                          {formatTimestamp(message.created_at)}
                         </div>
                       </div>
                     </div>
                   ))}
+
+                  {/* Render streaming messages in real-time */}
+                  {streamingMessages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`${styles.messageWrapper} ${
+                        message.role === 'user' ? styles.messageWrapperOwn : ''
+                      }`}
+                    >
+                      <div
+                        className={`${styles.messageBubble} ${
+                          message.role === 'user' ? styles.messageBubbleOwn : ''
+                        }`}
+                      >
+                        {message.role !== 'user' && (
+                          <div className={styles.messageSender}>Netdata AI</div>
+                        )}
+                        <MarkdownMessage
+                          content={message.content}
+                          isStreaming={message.isStreaming}
+                        />
+                        <div className={styles.messageTimestamp}>
+                          {formatTimestamp(message.created_at)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
                   <div ref={messagesEndRef} />
                 </>
               ) : (
-                <div className={styles.emptyState}>
-                  <div className={styles.emptyIcon}>💭</div>
-                  <div className={styles.emptyTitle}>No messages yet</div>
-                  <div className={styles.emptyDescription}>
-                    Type a message in the terminal to start chatting with Netdata AI
-                  </div>
-                </div>
+                <>
+                  {/* Show streaming messages even if no conversation messages yet */}
+                  {streamingMessages.length > 0 ? (
+                    <>
+                      {streamingMessages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`${styles.messageWrapper} ${
+                            message.role === 'user' ? styles.messageWrapperOwn : ''
+                          }`}
+                        >
+                          <div
+                            className={`${styles.messageBubble} ${
+                              message.role === 'user' ? styles.messageBubbleOwn : ''
+                            }`}
+                          >
+                            {message.role !== 'user' && (
+                              <div className={styles.messageSender}>Netdata AI</div>
+                            )}
+                            <div className={styles.messageText}>
+                              {message.content}
+                              {message.isStreaming && <span className={styles.streamingCursor}>▊</span>}
+                            </div>
+                            <div className={styles.messageTimestamp}>
+                              {formatTimestamp(message.created_at)}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </>
+                  ) : (
+                    <div className={styles.emptyState}>
+                      <div className={styles.emptyIcon}>💭</div>
+                      <div className={styles.emptyTitle}>No messages yet</div>
+                      <div className={styles.emptyDescription}>
+                        Type a message in the terminal to start chatting with Netdata AI
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
+            </div>
+          )}
+
+          {/* Show processing error if any */}
+          {processingError && (
+            <div className={styles.errorContainer}>
+              <div className={styles.errorIcon}>⚠️</div>
+              <div className={styles.errorText}>{processingError}</div>
             </div>
           )}
         </div>
