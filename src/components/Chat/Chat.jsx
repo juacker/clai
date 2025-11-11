@@ -302,6 +302,7 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
 
     try {
       let conversationId = currentConversation?.id;
+      let parentMessageId = undefined;
 
       // If in list mode, create a new conversation
       if (mode === 'list') {
@@ -312,12 +313,15 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
 
         // Load the newly created conversation
         await loadConversation(conversationId);
-      }
 
-      // Get parent message ID (last message in conversation if exists)
-      const parentMessageId = currentConversation?.messages?.length > 0
-        ? currentConversation.messages[currentConversation.messages.length - 1].id
-        : undefined;
+        // For a new conversation, there are no messages yet, so parentMessageId is undefined
+        parentMessageId = undefined;
+      } else {
+        // In conversation mode, get parent message ID from current conversation
+        parentMessageId = currentConversation?.messages?.length > 0
+          ? currentConversation.messages[currentConversation.messages.length - 1].id
+          : undefined;
+      }
 
       // Create chat completion with SSE streaming
       await createChatCompletion(
