@@ -429,6 +429,11 @@
     padding: 6px 10px;
     font-size: 12px;
   }
+
+  /* Hide chat toggle button on mobile - chat is always open by default */
+  .chatToggleButtonInline {
+    display: none;
+  }
 }
 
 /* Touch device detection */

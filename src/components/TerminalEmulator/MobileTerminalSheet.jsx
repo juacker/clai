@@ -29,7 +29,7 @@ const MobileTerminalSheet = ({ children, message, onMessageProcessed }) => {
   const sheetRef = useRef(null);
   const dragHandleRef = useRef(null);
 
-  const { isCurrentChatOpen, closeChat, getCurrentChatInstance } = useChatManager();
+  const { isCurrentChatOpen, closeChat, openChat, getCurrentChatInstance } = useChatManager();
   const { getSpaceById, getRoomById } = useSharedSpaceRoomData();
 
   // Threshold for snapping to expanded/collapsed state (in pixels)
@@ -56,6 +56,14 @@ const MobileTerminalSheet = ({ children, message, onMessageProcessed }) => {
     return getRoomById(chatInstance.space, chatInstance.room);
   }, [chatInstance?.space, chatInstance?.room, getRoomById]);
 
+  // Auto-open chat when sheet is expanded on mobile
+  useEffect(() => {
+    if (isExpanded && !isChatOpen) {
+      // Open chat when sheet is expanded
+      openChat();
+    }
+  }, [isExpanded, isChatOpen, openChat]);
+
   // Sync chat open state - expand panel when chat is opened
   useEffect(() => {
     if (isChatOpen) {
@@ -66,8 +74,8 @@ const MobileTerminalSheet = ({ children, message, onMessageProcessed }) => {
   // Calculate max translate based on whether chat is open
   const getMaxTranslate = () => {
     if (isChatOpen) {
-      // For chat overlay, use more height (70vh)
-      return (window.innerHeight * 70) / 100;
+      // For chat overlay, use more height (85vh for better chat experience)
+      return (window.innerHeight * 85) / 100;
     } else {
       // For terminal only, use fixed height
       return EXPANDED_HEIGHT - COLLAPSED_HEIGHT;
@@ -159,7 +167,7 @@ const MobileTerminalSheet = ({ children, message, onMessageProcessed }) => {
   // Calculate dynamic height based on whether chat is open
   const getSheetHeight = () => {
     if (!isExpanded) return 'auto';
-    if (isChatOpen) return '70vh';
+    if (isChatOpen) return '85vh';
     return `${EXPANDED_HEIGHT}px`;
   };
 

@@ -41,10 +41,10 @@
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
-  max-height: 90vh;
+  max-height: 80vh;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  /* Account for safe areas (iOS notch and Android navigation bar) */
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 20px);
+  /* Apply safe area padding to sheet to account for Android/iOS navigation bars */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Collapsed State - Shows only context panel and drag handle */
@@ -59,7 +59,7 @@
 
 /* Dynamic height based on whether chat is open */
 .sheetWithChat {
-  max-height: 70vh;
+  max-height: 80vh; /* Increased from 70vh to allow much more space for chat */
 }
 
 /* ===== DRAG HANDLE ===== */
@@ -187,13 +187,10 @@
 
 /* Android-specific: Account for status bar and navigation */
 .platform-android .sheet {
-  max-height: calc(90vh - 24px);
+  max-height: calc(80vh - 24px); /* Increased to match general max-height */
 }
 
-/* iOS-specific: Account for notch and safe areas */
-.platform-ios .sheet {
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 20px);
-}
+/* iOS-specific adjustments - safe areas handled in terminal content */
 
 /* ===== DESKTOP OVERRIDE ===== */
 /* Hide mobile sheet on desktop - terminal uses its own fixed positioning */
