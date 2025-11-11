@@ -695,7 +695,7 @@
 .messageWrapper {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   margin-bottom: 12px;
 }
 
@@ -704,7 +704,9 @@
 }
 
 .messageBubble {
-  max-width: 75%;
+  /* Mobile-first: Full width for assistant messages with equal margins */
+  max-width: 100%;
+  width: auto;
   padding: 10px 14px;
   border-radius: 12px;
   /* Mobile-first: Light message bubbles */
@@ -716,9 +718,11 @@
   animation: messageSlideIn 0.2s ease-out;
 }
 
-/* Desktop: Light message bubbles */
+/* Desktop: Full width for assistant messages with equal margins */
 @media (min-width: 769px) and (pointer: fine) {
   .messageBubble {
+    max-width: 100%;
+    width: auto;
     background-color: rgba(0, 0, 0, 0.04);
     border: 1px solid rgba(0, 0, 0, 0.08);
     padding: 12px 16px;
@@ -726,14 +730,18 @@
 }
 
 .messageBubbleOwn {
-  /* Mobile-first: Light own message bubbles with app's primary blue */
+  /* Mobile-first: Constrained width for user messages with app's primary blue */
+  max-width: 75%;
+  width: auto;
   background-color: rgba(74, 158, 255, 0.08);
   border-color: rgba(74, 158, 255, 0.2);
 }
 
-/* Desktop: Light own message bubbles with app's primary blue */
+/* Desktop: Constrained width for user messages with app's primary blue */
 @media (min-width: 769px) and (pointer: fine) {
   .messageBubbleOwn {
+    max-width: 75%;
+    width: auto;
     background-color: rgba(74, 158, 255, 0.08);
     border-color: rgba(74, 158, 255, 0.2);
   }
