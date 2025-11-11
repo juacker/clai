@@ -19,3 +19,29 @@
   position: relative;
 }
 
+/* Desktop baseline - TabBar visible by default */
+.tabBar {
+  display: flex;
+}
+
+/* Mobile detection via screen width - Hide TabBar on mobile */
+@media (max-width: 768px) {
+  .tabBar {
+    display: none;
+  }
+}
+
+/* Touch device detection - Hide on touch devices */
+@media (pointer: coarse) {
+  .tabBar {
+    display: none;
+  }
+}
+
+/* No hover capability (mobile) - Hide on devices without hover */
+@media (hover: none) {
+  .tabBar {
+    display: none;
+  }
+}
+

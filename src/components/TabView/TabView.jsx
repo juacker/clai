@@ -13,8 +13,10 @@ import styles from './TabView.module.css';
 const TabView = () => {
   return (
     <div className={styles.tabView}>
-      {/* Tab Bar - always show */}
-      <TabBar />
+      {/* Tab Bar - hidden on mobile, shown on desktop */}
+      <div className={styles.tabBar}>
+        <TabBar />
+      </div>
 
       {/* Tab Content */}
       <div className={styles.tabContentWrapper}>
