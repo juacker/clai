@@ -169,15 +169,15 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
   // Process incoming messages from terminal emulator
   useEffect(() => {
     // Only process if we have a message and it's different from the last processed one
-    if (!message || !space?.id || !room?.id || message === lastProcessedMessageRef.current) {
+    if (!message || !space?.id || !room?.id || message?.id === lastProcessedMessageRef.current) {
       return;
     }
 
-    // Prevent duplicate processing
-    lastProcessedMessageRef.current = message;
+    // Prevent duplicate processing by tracking the message ID
+    lastProcessedMessageRef.current = message.id;
 
-    // Process the message
-    processIncomingMessage(message);
+    // Process the message text
+    processIncomingMessage(message.text);
   }, [message, space?.id, room?.id]);
 
   // Load conversations list

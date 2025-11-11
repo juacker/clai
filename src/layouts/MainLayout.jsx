@@ -15,6 +15,14 @@ const MainLayout = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [messageForChat, setMessageForChat] = useState(null);
+
+  // Wrapper function to add unique ID to each message
+  const handleSendToChat = (text) => {
+    setMessageForChat({
+      text,
+      id: Date.now(), // Unique identifier to ensure consecutive identical messages are processed
+    });
+  };
   const navigate = useNavigate();
   const { isDesktop, isMobile } = usePlatform();
 
@@ -74,7 +82,7 @@ const MainLayout = () => {
               {isDesktop && (
                 <TerminalEmulatorWrapper
                   userInfo={userInfo}
-                  onSendToChat={setMessageForChat}
+                  onSendToChat={handleSendToChat}
                 />
               )}
 
@@ -86,7 +94,7 @@ const MainLayout = () => {
                 >
                   <TerminalEmulatorWrapper
                     userInfo={userInfo}
-                    onSendToChat={setMessageForChat}
+                    onSendToChat={handleSendToChat}
                   />
                 </MobileTerminalSheet>
               )}
