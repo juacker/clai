@@ -334,11 +334,11 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
         parentMessageId
       );
 
+      // Clear streaming messages before reloading to prevent duplicates
+      setStreamingMessages([]);
+
       // Reload conversation to get final state from API
       await loadConversation(conversationId);
-
-      // Clear streaming messages
-      setStreamingMessages([]);
 
     } catch (error) {
       console.error('Failed to process message:', error);
@@ -359,12 +359,13 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
       switch (chunk.type) {
         case 'message_start':
           // New message started (user or assistant)
+          // Add both user and assistant messages to show server is processing
           if (chunk.message) {
             const newMessage = {
               id: chunk.message.id,
               role: chunk.message.role,
-              content: '',
-              isStreaming: true,
+              content: '', // Always start with empty content, let content_block_delta fill it
+              isStreaming: chunk.message.role === 'assistant', // Only assistant messages stream
               created_at: new Date().toISOString(),
             };
 
@@ -383,11 +384,17 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
           // Incremental text content received
           if (chunk.delta?.text) {
             setStreamingMessages(prev => {
+              if (prev.length === 0) return prev;
+
               const updated = [...prev];
-              if (updated.length > 0) {
-                const lastMessage = updated[updated.length - 1];
-                lastMessage.content += chunk.delta.text;
-              }
+              const lastIndex = updated.length - 1;
+
+              // Create a new message object instead of mutating
+              updated[lastIndex] = {
+                ...updated[lastIndex],
+                content: updated[lastIndex].content + chunk.delta.text
+              };
+
               return updated;
             });
 
@@ -628,10 +635,10 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                             {message.role !== 'user' && (
                               <div className={styles.messageSender}>Netdata AI</div>
                             )}
-                            <div className={styles.messageText}>
-                              {message.content}
-                              {message.isStreaming && <span className={styles.streamingCursor}>▊</span>}
-                            </div>
+                            <MarkdownMessage
+                              content={message.content}
+                              isStreaming={message.isStreaming}
+                            />
                             <div className={styles.messageTimestamp}>
                               {formatTimestamp(message.created_at)}
                             </div>
