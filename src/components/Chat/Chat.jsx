@@ -7,6 +7,7 @@ import {
   createChatCompletion,
 } from '../../api/client';
 import MarkdownMessage from './MarkdownMessage';
+import ToolBlock from './ToolBlock';
 import styles from './Chat.module.css';
 
 /**
@@ -22,6 +23,7 @@ import styles from './Chat.module.css';
  * - Delete conversations
  * - Process incoming messages from terminal emulator
  * - Real-time streaming of AI responses via SSE
+ * - Display tool_use and tool_result content blocks
  *
  * Props:
  * - space: The space object with id and name
@@ -118,6 +120,37 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
         .join(' ');
     }
     return '';
+  };
+
+  // Extract tool blocks from message content array
+  const extractToolBlocks = (content) => {
+    if (!content || !Array.isArray(content)) return [];
+
+    // Filter out tool_use blocks - these have name property
+    const toolUses = content.filter(item =>
+      (item.type === 'tool_use' || item.name) && item.id
+    );
+
+    // Filter out tool_result blocks - these have text but no name
+    const toolResults = content.filter(item =>
+      (item.type === 'tool_result' || (item.text !== undefined && !item.name)) && item.id
+    );
+
+    // Match tool uses with their results by id
+    return toolUses.map(toolUse => {
+      const result = toolResults.find(r => r.id === toolUse.id);
+      return {
+        toolUse: {
+          id: toolUse.id,
+          name: toolUse.name,
+          input: toolUse.input || {}
+        },
+        toolResult: result ? {
+          id: result.id,
+          text: result.text || ''
+        } : null
+      };
+    });
   };
 
   // Format conversation title - use title or creation date
@@ -359,48 +392,109 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
       switch (chunk.type) {
         case 'message_start':
           // New message started (user or assistant)
-          // Add both user and assistant messages to show server is processing
           if (chunk.message) {
             const newMessage = {
               id: chunk.message.id,
               role: chunk.message.role,
-              content: '', // Always start with empty content, let content_block_delta fill it
-              isStreaming: chunk.message.role === 'assistant', // Only assistant messages stream
+              content: [], // Start with empty content array
+              contentBlocks: [], // Track content blocks for streaming
+              isStreaming: chunk.message.role === 'assistant',
               created_at: new Date().toISOString(),
             };
 
             setStreamingMessages(prev => [...prev, newMessage]);
-
-            // Auto-scroll to bottom
             setTimeout(scrollToBottom, 50);
           }
           break;
 
         case 'content_block_start':
-          // Content block started (prepare for text streaming)
-          break;
-
-        case 'content_block_delta':
-          // Incremental text content received
-          if (chunk.delta?.text) {
+          // New content block started
+          if (chunk.content_block) {
             setStreamingMessages(prev => {
               if (prev.length === 0) return prev;
 
               const updated = [...prev];
               const lastIndex = updated.length - 1;
+              const lastMessage = { ...updated[lastIndex] };
 
-              // Create a new message object instead of mutating
-              updated[lastIndex] = {
-                ...updated[lastIndex],
-                content: updated[lastIndex].content + chunk.delta.text
-              };
+              // Initialize contentBlocks if needed
+              if (!lastMessage.contentBlocks) {
+                lastMessage.contentBlocks = [];
+              }
 
+              const blockIndex = chunk.index !== undefined ? chunk.index : lastMessage.contentBlocks.length;
+
+              // Create new content block based on type
+              if (chunk.content_block.type === 'tool_use') {
+                lastMessage.contentBlocks[blockIndex] = {
+                  type: 'tool_use',
+                  id: chunk.content_block.id,
+                  name: chunk.content_block.name,
+                  input: chunk.content_block.input || {},
+                  partialInput: '', // For building up JSON from deltas
+                };
+              } else if (chunk.content_block.type === 'tool_result') {
+                lastMessage.contentBlocks[blockIndex] = {
+                  type: 'tool_result',
+                  id: chunk.content_block.id,
+                  text: '',
+                };
+              } else if (chunk.content_block.type === 'text') {
+                lastMessage.contentBlocks[blockIndex] = {
+                  type: 'text',
+                  text: '',
+                };
+              }
+
+              updated[lastIndex] = lastMessage;
               return updated;
             });
-
-            // Auto-scroll to bottom as content arrives
-            setTimeout(scrollToBottom, 50);
           }
+          break;
+
+        case 'content_block_delta':
+          // Incremental content received
+          setStreamingMessages(prev => {
+            if (prev.length === 0) return prev;
+
+            const updated = [...prev];
+            const lastIndex = updated.length - 1;
+            const lastMessage = { ...updated[lastIndex] };
+
+            if (!lastMessage.contentBlocks) {
+              lastMessage.contentBlocks = [];
+            }
+
+            const blockIndex = chunk.index !== undefined ? chunk.index : 0;
+
+            if (chunk.delta?.type === 'text_delta' && chunk.delta.text) {
+              // Text content delta
+              if (!lastMessage.contentBlocks[blockIndex]) {
+                lastMessage.contentBlocks[blockIndex] = { type: 'text', text: '' };
+              }
+              lastMessage.contentBlocks[blockIndex] = {
+                ...lastMessage.contentBlocks[blockIndex],
+                text: (lastMessage.contentBlocks[blockIndex].text || '') + chunk.delta.text
+              };
+            } else if (chunk.delta?.type === 'input_json_delta' && chunk.delta.partial_json) {
+              // Tool input JSON delta
+              if (lastMessage.contentBlocks[blockIndex]) {
+                const block = lastMessage.contentBlocks[blockIndex];
+                block.partialInput = (block.partialInput || '') + chunk.delta.partial_json;
+
+                // Try to parse the accumulated JSON
+                try {
+                  block.input = JSON.parse(block.partialInput);
+                } catch (e) {
+                  // JSON not complete yet, keep accumulating
+                }
+              }
+            }
+
+            updated[lastIndex] = lastMessage;
+            setTimeout(scrollToBottom, 50);
+            return updated;
+          });
           break;
 
         case 'content_block_stop':
@@ -412,20 +506,121 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
           setStreamingMessages(prev => {
             const updated = [...prev];
             if (updated.length > 0) {
-              const lastMessage = updated[updated.length - 1];
+              const lastMessage = { ...updated[updated.length - 1] };
               lastMessage.isStreaming = false;
+              updated[updated.length - 1] = lastMessage;
             }
             return updated;
           });
           break;
 
         default:
-          // Unknown chunk type, ignore
           break;
       }
     } catch (error) {
       console.error('Error processing SSE chunk:', error);
     }
+  };
+
+  // Render a message with text and tool blocks in their original order
+  const renderMessageContent = (message, isStreaming = false) => {
+    // For streaming messages, use contentBlocks
+    if (isStreaming && message.contentBlocks) {
+      // Create a map of tool results by id for quick lookup
+      const toolResultsMap = {};
+      message.contentBlocks.forEach(block => {
+        if (block.type === 'tool_result' && block.id) {
+          toolResultsMap[block.id] = block;
+        }
+      });
+
+      // Render blocks in order, skipping tool_result blocks (they're paired with tool_use)
+      return (
+        <>
+          {message.contentBlocks.map((block, idx) => {
+            if (block.type === 'text') {
+              return (
+                <MarkdownMessage
+                  key={`text-${idx}`}
+                  content={block.text || ''}
+                  isStreaming={message.isStreaming}
+                />
+              );
+            } else if (block.type === 'tool_use') {
+              // Find matching tool result
+              const toolResult = toolResultsMap[block.id];
+              return (
+                <ToolBlock
+                  key={`tool-${block.id || idx}`}
+                  toolUse={{
+                    id: block.id,
+                    name: block.name,
+                    input: block.input || {}
+                  }}
+                  toolResult={toolResult ? {
+                    id: toolResult.id,
+                    text: toolResult.text || ''
+                  } : null}
+                  isStreaming={message.isStreaming}
+                />
+              );
+            }
+            // Skip tool_result blocks as they're rendered with their tool_use
+            return null;
+          })}
+        </>
+      );
+    }
+
+    // For complete messages from API, use content array
+    if (!message.content || !Array.isArray(message.content)) {
+      return null;
+    }
+
+    // Create a map of tool results by id for quick lookup
+    const toolResultsMap = {};
+    message.content.forEach(block => {
+      if ((block.type === 'tool_result' || (block.text !== undefined && !block.name)) && block.id) {
+        toolResultsMap[block.id] = block;
+      }
+    });
+
+    // Render blocks in order, skipping tool_result blocks (they're paired with tool_use)
+    return (
+      <>
+        {message.content.map((block, idx) => {
+          if (block.type === 'text') {
+            return (
+              <MarkdownMessage
+                key={`text-${idx}`}
+                content={block.text || ''}
+                isStreaming={false}
+              />
+            );
+          } else if (block.type === 'tool_use' || (block.name && block.id)) {
+            // Find matching tool result
+            const toolResult = toolResultsMap[block.id];
+            return (
+              <ToolBlock
+                key={`tool-${block.id || idx}`}
+                toolUse={{
+                  id: block.id,
+                  name: block.name,
+                  input: block.input || {}
+                }}
+                toolResult={toolResult ? {
+                  id: toolResult.id,
+                  text: toolResult.text || ''
+                } : null}
+                isStreaming={false}
+              />
+            );
+          }
+          // Skip tool_result blocks as they're rendered with their tool_use
+          return null;
+        })}
+      </>
+    );
   };
 
   // Render conversation list mode
@@ -560,6 +755,7 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
             <div className={styles.messagesContainer}>
               {currentConversation.messages && currentConversation.messages.length > 0 ? (
                 <>
+                  {/* Render conversation messages */}
                   {currentConversation.messages.map((message) => (
                     <div
                       key={message.id}
@@ -575,10 +771,7 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                         {message.role !== 'user' && (
                           <div className={styles.messageSender}>Netdata AI</div>
                         )}
-                        <MarkdownMessage
-                          content={extractMessageText(message.content)}
-                          isStreaming={false}
-                        />
+                        {renderMessageContent(message, false)}
                         <div className={styles.messageTimestamp}>
                           {formatTimestamp(message.created_at)}
                         </div>
@@ -602,10 +795,7 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                         {message.role !== 'user' && (
                           <div className={styles.messageSender}>Netdata AI</div>
                         )}
-                        <MarkdownMessage
-                          content={message.content}
-                          isStreaming={message.isStreaming}
-                        />
+                        {renderMessageContent(message, true)}
                         <div className={styles.messageTimestamp}>
                           {formatTimestamp(message.created_at)}
                         </div>
@@ -635,10 +825,7 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                             {message.role !== 'user' && (
                               <div className={styles.messageSender}>Netdata AI</div>
                             )}
-                            <MarkdownMessage
-                              content={message.content}
-                              isStreaming={message.isStreaming}
-                            />
+                            {renderMessageContent(message, true)}
                             <div className={styles.messageTimestamp}>
                               {formatTimestamp(message.created_at)}
                             </div>

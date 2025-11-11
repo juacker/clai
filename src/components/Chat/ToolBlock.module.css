@@ -1,0 +1,265 @@
+/* ToolBlock Component Styles - Elegant & Minimalistic */
+
+.toolBlock {
+  margin: 12px 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(8px);
+}
+
+.toolBlock:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+/* Tool Header */
+.toolHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s ease;
+}
+
+.toolHeader:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.toolHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.toolHeaderRight {
+  display: flex;
+  align-items: center;
+  margin-left: 12px;
+}
+
+/* Tool Icon */
+.toolIcon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(80, 80, 80, 0.8);
+}
+
+/* Tool Name */
+.toolName {
+  font-weight: 600;
+  font-size: 14px;
+  color: rgba(70, 130, 220, 1);
+  letter-spacing: 0.01em;
+}
+
+/* Streaming Indicator */
+.streamingIndicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(120, 180, 255, 1);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.streamingDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(120, 180, 255, 1);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+}
+
+/* Completed Indicator */
+.completedIndicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: rgba(130, 220, 150, 1);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.completedIcon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* Expand Icon */
+.expandIcon {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-block;
+}
+
+.expandIcon.expanded {
+  transform: rotate(180deg);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Tool Content */
+.toolContent {
+  padding: 0 18px 18px 18px;
+  animation: slideDown 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Tool Section */
+.toolSection {
+  margin-top: 14px;
+}
+
+.toolSection:first-child {
+  margin-top: 0;
+}
+
+.toolSectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 10px;
+}
+
+.toolSectionContent {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* JSON Display */
+.jsonDisplay {
+  margin: 0;
+  padding: 14px;
+  font-family: 'SF Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(0, 0, 0, 0.4);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.jsonDisplay code {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  padding: 0;
+}
+
+/* Tool Result */
+.toolResult {
+  padding: 14px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* No Result */
+.noResult {
+  padding: 14px;
+  font-size: 12.5px;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.35);
+  text-align: center;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .toolBlock {
+    border-radius: 8px;
+    margin: 10px 0;
+  }
+
+  .toolHeader {
+    padding: 12px 14px;
+  }
+
+  .toolContent {
+    padding: 0 14px 14px 14px;
+  }
+
+  .toolName {
+    font-size: 13px;
+  }
+
+  .toolIcon {
+    font-size: 16px;
+  }
+
+  .jsonDisplay {
+    font-size: 11.5px;
+    padding: 12px;
+    line-height: 1.6;
+  }
+
+  .toolResult {
+    padding: 12px;
+    font-size: 13px;
+  }
+
+  .streamingIndicator,
+  .completedIndicator {
+    font-size: 10px;
+  }
+}
+
+/* Touch device optimizations */
+@media (pointer: coarse) {
+  .toolHeader {
+    padding: 14px 16px;
+    min-height: 48px;
+  }
+
+  .expandIcon {
+    font-size: 12px;
+  }
+}
+
+/* No hover capability (mobile) */
+@media (hover: none) {
+  .toolBlock:hover {
+    transform: none;
+  }
+}
+
