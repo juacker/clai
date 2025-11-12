@@ -113,7 +113,6 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
     // Check if chat is open - if so, forward the input to chat instead of processing as command
     if (isChatOpen && onSendToChat) {
       onSendToChat(trimmed);
-      addOutputMessage('Message sent to chat', 'success');
       return;
     }
 
