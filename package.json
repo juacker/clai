@@ -19,6 +19,7 @@
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^3.0.6",
     "react-router-dom": "^7.9.5",
+    "react-syntax-highlighter": "^16.1.0",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {

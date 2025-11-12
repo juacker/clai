@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import styles from './MarkdownMessage.module.css';
 
 /**
@@ -28,6 +30,7 @@ const MarkdownMessage = ({ content, isStreaming = false }) => {
             // More reliable check: inline code doesn't have className and children is simple text
             const isInline = inline !== false && !className;
             const match = /language-(\w+)/.exec(className || '');
+            const language = match ? match[1] : '';
 
             if (isInline) {
               return (
@@ -37,12 +40,29 @@ const MarkdownMessage = ({ content, isStreaming = false }) => {
               );
             }
 
+            // Code block with syntax highlighting
             return (
-              <pre className={styles.codeBlock}>
-                <code className={match ? styles[`language-${match[1]}`] : ''} {...props}>
-                  {children}
-                </code>
-              </pre>
+              <SyntaxHighlighter
+                language={language || 'text'}
+                style={oneLight}
+                customStyle={{
+                  margin: '12px 0',
+                  padding: '12px 16px',
+                  background: 'rgba(0, 0, 0, 0.04)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  lineHeight: '1.5',
+                }}
+                codeTagProps={{
+                  style: {
+                    fontFamily: "'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace",
+                  }
+                }}
+                PreTag="div"
+              >
+                {String(children).replace(/\n$/, '')}
+              </SyntaxHighlighter>
             );
           },
           p: ({ children }) => <p className={styles.paragraph}>{children}</p>,
@@ -85,4 +105,3 @@ const MarkdownMessage = ({ content, isStreaming = false }) => {
 };
 
 export default MarkdownMessage;
-
