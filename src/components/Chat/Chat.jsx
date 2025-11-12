@@ -417,10 +417,8 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
               const lastIndex = updated.length - 1;
               const lastMessage = { ...updated[lastIndex] };
 
-              // Initialize contentBlocks if needed
-              if (!lastMessage.contentBlocks) {
-                lastMessage.contentBlocks = [];
-              }
+              // DEEP COPY the contentBlocks array
+              lastMessage.contentBlocks = lastMessage.contentBlocks ? [...lastMessage.contentBlocks] : [];
 
               const blockIndex = chunk.index !== undefined ? chunk.index : lastMessage.contentBlocks.length;
 
@@ -461,9 +459,8 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
             const lastIndex = updated.length - 1;
             const lastMessage = { ...updated[lastIndex] };
 
-            if (!lastMessage.contentBlocks) {
-              lastMessage.contentBlocks = [];
-            }
+            // DEEP COPY the contentBlocks array
+            lastMessage.contentBlocks = lastMessage.contentBlocks ? [...lastMessage.contentBlocks] : [];
 
             const blockIndex = chunk.index !== undefined ? chunk.index : 0;
 
@@ -471,14 +468,24 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
               // Text content delta
               if (!lastMessage.contentBlocks[blockIndex]) {
                 lastMessage.contentBlocks[blockIndex] = { type: 'text', text: '' };
+              } else {
+                // Also create a copy of the block we're modifying
+                lastMessage.contentBlocks[blockIndex] = {
+                  ...lastMessage.contentBlocks[blockIndex]
+                };
               }
-              lastMessage.contentBlocks[blockIndex] = {
-                ...lastMessage.contentBlocks[blockIndex],
-                text: (lastMessage.contentBlocks[blockIndex].text || '') + chunk.delta.text
-              };
+
+              lastMessage.contentBlocks[blockIndex].text =
+                (lastMessage.contentBlocks[blockIndex].text || '') + chunk.delta.text;
+
             } else if (chunk.delta?.type === 'input_json_delta' && chunk.delta.partial_json) {
               // Tool input JSON delta
               if (lastMessage.contentBlocks[blockIndex]) {
+                // Create a copy of the block
+                lastMessage.contentBlocks[blockIndex] = {
+                  ...lastMessage.contentBlocks[blockIndex]
+                };
+
                 const block = lastMessage.contentBlocks[blockIndex];
                 block.partialInput = (block.partialInput || '') + chunk.delta.partial_json;
 
@@ -719,6 +726,16 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
 
   // Render single conversation mode
   const renderConversation = () => {
+    // Create a Set of message IDs from currentConversation to avoid rendering duplicates
+    const conversationMessageIds = new Set(
+      currentConversation?.messages?.map(msg => msg.id) || []
+    );
+
+    // Filter out streaming messages that are already in the conversation
+    const uniqueStreamingMessages = streamingMessages.filter(
+      msg => !conversationMessageIds.has(msg.id)
+    );
+
     return (
       <>
         <div className={styles.chatHeader}>
@@ -759,14 +776,12 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                   {currentConversation.messages.map((message) => (
                     <div
                       key={message.id}
-                      className={`${styles.messageWrapper} ${
-                        message.role === 'user' ? styles.messageWrapperOwn : ''
-                      }`}
+                      className={`${styles.messageWrapper} ${message.role === 'user' ? styles.messageWrapperOwn : ''
+                        }`}
                     >
                       <div
-                        className={`${styles.messageBubble} ${
-                          message.role === 'user' ? styles.messageBubbleOwn : ''
-                        }`}
+                        className={`${styles.messageBubble} ${message.role === 'user' ? styles.messageBubbleOwn : ''
+                          }`}
                       >
                         {message.role !== 'user' && (
                           <div className={styles.messageSender}>Netdata AI</div>
@@ -779,18 +794,16 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                     </div>
                   ))}
 
-                  {/* Render streaming messages in real-time */}
-                  {streamingMessages.map((message) => (
+                  {/* Render only unique streaming messages (not already in conversation) */}
+                  {uniqueStreamingMessages.map((message) => (
                     <div
                       key={message.id}
-                      className={`${styles.messageWrapper} ${
-                        message.role === 'user' ? styles.messageWrapperOwn : ''
-                      }`}
+                      className={`${styles.messageWrapper} ${message.role === 'user' ? styles.messageWrapperOwn : ''
+                        }`}
                     >
                       <div
-                        className={`${styles.messageBubble} ${
-                          message.role === 'user' ? styles.messageBubbleOwn : ''
-                        }`}
+                        className={`${styles.messageBubble} ${message.role === 'user' ? styles.messageBubbleOwn : ''
+                          }`}
                       >
                         {message.role !== 'user' && (
                           <div className={styles.messageSender}>Netdata AI</div>
@@ -808,19 +821,17 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
               ) : (
                 <>
                   {/* Show streaming messages even if no conversation messages yet */}
-                  {streamingMessages.length > 0 ? (
+                  {uniqueStreamingMessages.length > 0 ? (
                     <>
-                      {streamingMessages.map((message) => (
+                      {uniqueStreamingMessages.map((message) => (
                         <div
                           key={message.id}
-                          className={`${styles.messageWrapper} ${
-                            message.role === 'user' ? styles.messageWrapperOwn : ''
-                          }`}
+                          className={`${styles.messageWrapper} ${message.role === 'user' ? styles.messageWrapperOwn : ''
+                            }`}
                         >
                           <div
-                            className={`${styles.messageBubble} ${
-                              message.role === 'user' ? styles.messageBubbleOwn : ''
-                            }`}
+                            className={`${styles.messageBubble} ${message.role === 'user' ? styles.messageBubbleOwn : ''
+                              }`}
                           >
                             {message.role !== 'user' && (
                               <div className={styles.messageSender}>Netdata AI</div>
@@ -868,4 +879,3 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
 };
 
 export default Chat;
-
