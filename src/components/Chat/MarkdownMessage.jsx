@@ -25,12 +25,19 @@ const MarkdownMessage = ({ content, isStreaming = false }) => {
         components={{
           // Customize rendering of specific elements
           code: ({ node, inline, className, children, ...props }) => {
+            // More reliable check: inline code doesn't have className and children is simple text
+            const isInline = inline !== false && !className;
             const match = /language-(\w+)/.exec(className || '');
-            return inline ? (
-              <code className={styles.inlineCode} {...props}>
-                {children}
-              </code>
-            ) : (
+
+            if (isInline) {
+              return (
+                <code className={styles.inlineCode} {...props}>
+                  {children}
+                </code>
+              );
+            }
+
+            return (
               <pre className={styles.codeBlock}>
                 <code className={match ? styles[`language-${match[1]}`] : ''} {...props}>
                   {children}

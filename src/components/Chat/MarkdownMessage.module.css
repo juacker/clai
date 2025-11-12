@@ -9,6 +9,12 @@
   overflow-wrap: break-word;
 }
 
+/* Make single paragraphs without siblings display inline */
+.markdownContainer > p:only-child {
+  display: inline;
+  margin: 0;
+}
+
 /* Desktop: Slightly larger font */
 @media (min-width: 769px) and (pointer: fine) {
   .markdownContainer {
