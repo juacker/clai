@@ -48,11 +48,20 @@
   gap: 6px;
   font-size: 11px;
   color: rgba(0, 0, 0, 0.7);
-  transition: color 0.2s ease;
+  transition: all 0.2s ease;
+  user-select: none;
 }
 
 .legendItem:hover {
   color: rgba(0, 0, 0, 0.9);
+}
+
+.legendItemInactive {
+  opacity: 0.4;
+}
+
+.legendItemInactive:hover {
+  opacity: 0.6;
 }
 
 .legendColor {

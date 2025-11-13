@@ -33,6 +33,8 @@ const TimeSeriesChartBlock = ({ toolInput, toolResult }) => {
     y: 0,
     content: null,
   });
+  // State for selected series (null = all visible, Set = only selected visible)
+  const [selectedSeries, setSelectedSeries] = useState(null);
 
   // Default color palette for chart series
   const DEFAULT_COLORS = [
@@ -114,6 +116,11 @@ const TimeSeriesChartBlock = ({ toolInput, toolResult }) => {
     try {
       const datasets = parseData();
       setError(null);
+
+      // Filter datasets based on selection
+      const filteredDatasets = selectedSeries
+        ? datasets.filter(d => selectedSeries.has(d.label))
+        : datasets;
 
       d3.select(svgRef.current).selectAll('*').remove();
 
@@ -205,21 +212,21 @@ const TimeSeriesChartBlock = ({ toolInput, toolResult }) => {
 
       if (toolInput.chart_type === 'area') {
         if (toolInput.stacked) {
-          renderStackedArea(g, datasets, xScale, yScale, width, height);
+          renderStackedArea(g, filteredDatasets, xScale, yScale, width, height);
         } else {
-          renderArea(g, datasets, xScale, yScale, width, height);
+          renderArea(g, filteredDatasets, xScale, yScale, width, height);
         }
       } else {
-        renderLine(g, datasets, xScale, yScale, width, height);
+        renderLine(g, filteredDatasets, xScale, yScale, width, height);
       }
 
-      addInteractivity(g, datasets, xScale, yScale, width, height);
+      addInteractivity(g, filteredDatasets, xScale, yScale, width, height);
 
     } catch (err) {
       console.error('Chart rendering error:', err);
       setError(err.message);
     }
-  }, [dimensions, toolInput, parseData]);
+  }, [dimensions, toolInput, parseData, selectedSeries]);
 
   // Render line chart
   const renderLine = (g, datasets, xScale, yScale, width, height) => {
@@ -473,6 +480,45 @@ const TimeSeriesChartBlock = ({ toolInput, toolResult }) => {
     });
   }, []);
 
+  // Handle legend item click for series filtering
+  const handleLegendClick = useCallback((seriesLabel, event) => {
+    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+
+    setSelectedSeries((prevSelected) => {
+      // If nothing is selected, select only this series
+      if (!prevSelected) {
+        return new Set([seriesLabel]);
+      }
+
+      // If Ctrl/Cmd is pressed, toggle the series in the selection
+      if (isCtrlOrCmd) {
+        const newSelected = new Set(prevSelected);
+        if (newSelected.has(seriesLabel)) {
+          newSelected.delete(seriesLabel);
+          // If all series are deselected, show all
+          return newSelected.size === 0 ? null : newSelected;
+        } else {
+          newSelected.add(seriesLabel);
+          return newSelected;
+        }
+      }
+
+      // If clicking on the only selected series, deselect it (show all)
+      if (prevSelected.size === 1 && prevSelected.has(seriesLabel)) {
+        return null;
+      }
+
+      // Otherwise, select only this series
+      return new Set([seriesLabel]);
+    });
+  }, []);
+
+  // Check if a series is selected
+  const isSeriesSelected = useCallback((seriesLabel) => {
+    if (!selectedSeries) return true; // All visible when nothing selected
+    return selectedSeries.has(seriesLabel);
+  }, [selectedSeries]);
+
   if (error) {
     return (
       <div className={styles.chartContainer}>
@@ -490,18 +536,30 @@ const TimeSeriesChartBlock = ({ toolInput, toolResult }) => {
         <h3 className={styles.chartTitle}>{toolInput?.title || 'Time Series Chart'}</h3>
         {toolInput?.datasets && toolInput.datasets.length > 0 && (
           <div className={styles.legend}>
-            {toolInput.datasets.map((dataset, index) => (
-              <div key={index} className={styles.legendItem}>
-                <span
-                  className={styles.legendColor}
-                  style={{
-                    backgroundColor:
-                      dataset.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length],
-                  }}
-                ></span>
-                <span className={styles.legendLabel}>{dataset.label || `Series ${index + 1}`}</span>
-              </div>
-            ))}
+            {toolInput.datasets.map((dataset, index) => {
+              const seriesLabel = dataset.label || `Series ${index + 1}`;
+              const isSelected = isSeriesSelected(seriesLabel);
+
+              return (
+                <div
+                  key={index}
+                  className={`${styles.legendItem} ${!isSelected ? styles.legendItemInactive : ''}`}
+                  onClick={(e) => handleLegendClick(seriesLabel, e)}
+                  style={{ cursor: 'pointer' }}
+                  title={`Click to select only ${seriesLabel}, Ctrl+Click to toggle`}
+                >
+                  <span
+                    className={styles.legendColor}
+                    style={{
+                      backgroundColor:
+                        dataset.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length],
+                      opacity: isSelected ? 1 : 0.3,
+                    }}
+                  ></span>
+                  <span className={styles.legendLabel}>{seriesLabel}</span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
