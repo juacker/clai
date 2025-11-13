@@ -1,0 +1,139 @@
+{
+  "title": "CPU States by Server (Average %)",
+  "x_axis_label": "Server",
+  "y_axis_label": "CPU Usage",
+  "unit": "%",
+  "stacked": true,
+  "datasets": [
+    {
+      "label": "user",
+      "color": "#3B82F6",
+      "data": [
+        {
+          "label": "netdata-parent-latest",
+          "v": 8.28
+        },
+        {
+          "label": "ip-10-0-148-203",
+          "v": 15.09
+        },
+        {
+          "label": "ip-10-0-148-202",
+          "v": 8.28
+        },
+        {
+          "label": "ip-10-0-155-217",
+          "v": 10.21
+        },
+        {
+          "label": "ip-10-0-146-59",
+          "v": 7.64
+        }
+      ]
+    },
+    {
+      "label": "system",
+      "color": "#EF4444",
+      "data": [
+        {
+          "label": "netdata-parent-latest",
+          "v": 5.56
+        },
+        {
+          "label": "ip-10-0-148-203",
+          "v": 5.73
+        },
+        {
+          "label": "ip-10-0-148-202",
+          "v": 5.56
+        },
+        {
+          "label": "ip-10-0-155-217",
+          "v": 10.23
+        },
+        {
+          "label": "ip-10-0-146-59",
+          "v": 5.93
+        }
+      ]
+    },
+    {
+      "label": "softirq",
+      "color": "#F59E0B",
+      "data": [
+        {
+          "label": "netdata-parent-latest",
+          "v": 0.93
+        },
+        {
+          "label": "ip-10-0-148-203",
+          "v": 0.27
+        },
+        {
+          "label": "ip-10-0-148-202",
+          "v": 0.93
+        },
+        {
+          "label": "ip-10-0-155-217",
+          "v": 0.57
+        },
+        {
+          "label": "ip-10-0-146-59",
+          "v": 0.44
+        }
+      ]
+    },
+    {
+      "label": "iowait",
+      "color": "#8B5CF6",
+      "data": [
+        {
+          "label": "netdata-parent-latest",
+          "v": 0.05
+        },
+        {
+          "label": "ip-10-0-148-203",
+          "v": 0.0
+        },
+        {
+          "label": "ip-10-0-148-202",
+          "v": 0.05
+        },
+        {
+          "label": "ip-10-0-155-217",
+          "v": 0.02
+        },
+        {
+          "label": "ip-10-0-146-59",
+          "v": 0.02
+        }
+      ]
+    },
+    {
+      "label": "steal",
+      "color": "#EC4899",
+      "data": [
+        {
+          "label": "netdata-parent-latest",
+          "v": 0.01
+        },
+        {
+          "label": "ip-10-0-148-203",
+          "v": 0.0
+        },
+        {
+          "label": "ip-10-0-148-202",
+          "v": 0.01
+        },
+        {
+          "label": "ip-10-0-155-217",
+          "v": 0.01
+        },
+        {
+          "label": "ip-10-0-146-59",
+          "v": 0.01
+        }
+      ]
+    }
+  ]
+}
