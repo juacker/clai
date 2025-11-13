@@ -289,7 +289,10 @@ export const deleteConversation = async (token, spaceId, roomId, conversationId)
 export const createChatCompletion = async (token, spaceId, roomId, conversationId, message, onChunk, parentMessageId) => {
   try {
     // Build request body, only include parent_message_id if provided
-    const requestBody = { message };
+    const requestBody = {
+      message,
+      tools: [{ name: "blocks", version: 0 }]
+    };
     if (parentMessageId) {
       requestBody.parent_message_id = parentMessageId;
     }
