@@ -10,6 +10,7 @@ import MarkdownMessage from './MarkdownMessage';
 import ToolBlock from './ToolBlock';
 import TimeSeriesChartBlock from './TimeSeriesChartBlock';
 import BarChartBlock from './BarChartBlock';
+import BubbleChartBlock from './BubbleChartBlock';
 import styles from './Chat.module.css';
 
 /**
@@ -587,6 +588,20 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                 );
               }
 
+              // Check if this is a custom_bubble_chart_block
+              if (block.name === 'custom_bubble_chart_block') {
+                return (
+                  <BubbleChartBlock
+                    key={`chart-${block.id || idx}`}
+                    toolInput={block.input || {}}
+                    toolResult={toolResult ? {
+                      id: toolResult.id,
+                      text: toolResult.text || ''
+                    } : null}
+                  />
+                );
+              }
+
               // Default: render ToolBlock for other tools
               return (
                 <ToolBlock
@@ -658,6 +673,20 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
             if (block.name === 'custom_bar_chart_block') {
               return (
                 <BarChartBlock
+                  key={`chart-${block.id || idx}`}
+                  toolInput={block.input || {}}
+                  toolResult={toolResult ? {
+                    id: toolResult.id,
+                    text: toolResult.text || ''
+                  } : null}
+                />
+              );
+            }
+
+            // Check if this is a custom_bubble_chart_block
+            if (block.name === 'custom_bubble_chart_block') {
+              return (
+                <BubbleChartBlock
                   key={`chart-${block.id || idx}`}
                   toolInput={block.input || {}}
                   toolResult={toolResult ? {

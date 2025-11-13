@@ -1,0 +1,83 @@
+{
+  "title": "CPU Workload Comparison Across Servers",
+  "x_axis_label": "System CPU Time (Kernel)",
+  "y_axis_label": "User CPU Time (Applications)",
+  "size_label": "Total Active CPU",
+  "x_unit": "%",
+  "y_unit": "%",
+  "size_unit": "%",
+  "datasets": [
+    {
+      "label": "Servers in us-east1",
+      "color": "#3B82F6",
+      "data": [
+        {
+          "label": "netdata-parent-latest",
+          "x": 5.79,
+          "y": 8.06,
+          "r": 14.74
+        },
+        {
+          "label": "ip-10-0-148-203.ec2.internal",
+          "x": 5.98,
+          "y": 14.96,
+          "r": 21.18
+        },
+        {
+          "label": "ip-10-0-146-59.ec2.internal",
+          "x": 6.06,
+          "y": 7.35,
+          "r": 13.86
+        },
+        {
+          "label": "ip-10-0-155-217.ec2.internal",
+          "x": 10.04,
+          "y": 10.33,
+          "r": 20.9
+        },
+        {
+          "label": "ip-10-0-148-202.ec2.internal",
+          "x": 5.79,
+          "y": 8.06,
+          "r": 14.74
+        }
+      ]
+    },
+    {
+      "label": "Servers in us-west1",
+      "color": "#8B32A6",
+      "data": [
+        {
+          "label": "netdata-parent-latest",
+          "x": 2.79,
+          "y": 4.06,
+          "r": 9.74
+        },
+        {
+          "label": "ip-10-0-148-203.ec2.internal",
+          "x": 4.98,
+          "y": 12.96,
+          "r": 25.18
+        },
+        {
+          "label": "ip-10-0-146-59.ec2.internal",
+          "x": 7.06,
+          "y": 9.35,
+          "r": 15.86
+        },
+        {
+          "label": "ip-10-0-155-217.ec2.internal",
+          "x": 12.04,
+          "y": 5.33,
+          "r": 10.9
+        },
+        {
+          "label": "ip-10-0-148-202.ec2.internal",
+          "x": 9.79,
+          "y": 4.06,
+          "r": 11.74
+        }
+      ]
+    }
+  ]
+}

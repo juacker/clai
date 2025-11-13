@@ -1,8 +1,9 @@
-# schema of the tool custom_bar_chart_block
+# schema of the tool custom_bubble_chart_block
+
 
 {
-  "name": "custom_bar_chart_block",
-  "description": "Creates a custom bar chart to compare values across categories (x-axis). Supports multiple data series that can be displayed grouped (side-by-side) or stacked (vertically).",
+  "name": "custom_bubble_chart_block",
+  "description": "Creates a custom bubble chart to visualize three quantitative dimensions simultaneously. Each bubble's horizontal position (x), vertical position (y), and size (radius) represents different metrics. Useful for showing relationships between three variables, such as 'revenue vs profit vs company size' or 'response time vs throughput vs error rate'.",
   "input_schema": {
     "type": "object",
     "properties": {
@@ -10,18 +11,33 @@
         "type": "string",
         "description": "The title of the chart"
       },
-      "unit": {
+      "x_axis_label": {
         "type": "string",
-        "description": "Unit of measurement for all values in the chart (e.g., 'requests/sec', 'GB', 'ms', '%'). This unit applies to all datasets since they share the same Y-axis scale."
+        "description": "Label describing what the horizontal axis represents (e.g., 'Response Time (ms)', 'Revenue ($M)')"
       },
-      "stacked": {
-        "type": "boolean",
-        "description": "How to display multiple data series at each category:\n- false (default): Grouped - bars from different series are shown side-by-side at each category position\n- true: Stacked - bars from different series are stacked vertically at each category position\n\nExample with series ['Server1', 'Server2'] and categories ['cpu1', 'cpu2']:\n- Grouped: At position 'cpu1' you see 2 bars side-by-side (Server1's value, Server2's value)\n- Stacked: At position 'cpu1' you see 1 bar with Server2 stacked on top of Server1",
-        "default": false
+      "y_axis_label": {
+        "type": "string",
+        "description": "Label describing what the vertical axis represents (e.g., 'Throughput (req/s)', 'Profit Margin (%)')"
+      },
+      "size_label": {
+        "type": "string",
+        "description": "Label describing what the bubble size represents (e.g., 'Number of Users', 'Data Volume (GB)', 'Error Count'). This helps users understand the third dimension."
+      },
+      "x_unit": {
+        "type": "string",
+        "description": "Optional unit for X-axis values (e.g., 'ms', 'GB', '%', '$')"
+      },
+      "y_unit": {
+        "type": "string",
+        "description": "Optional unit for Y-axis values (e.g., 'requests/sec', 'MB', '%')"
+      },
+      "size_unit": {
+        "type": "string",
+        "description": "Optional unit for the size dimension (e.g., 'users', 'GB', 'errors')"
       },
       "datasets": {
         "type": "array",
-        "description": "One or more data series to display. Each dataset represents a different series that will be shown across all categories. The 'label' field of each data item determines which category (x-axis position) it belongs to.",
+        "description": "One or more sets of bubbles. Multiple datasets allow grouping bubbles by category (e.g., different regions, product lines, or server types), with each dataset shown in a different color.",
         "items": {
           "type": "object",
           "required": [
@@ -31,52 +47,56 @@
           "properties": {
             "label": {
               "type": "string",
-              "description": "The name of this data series (e.g., 'Server1', 'Q1 Sales', 'Team A'). This appears in the chart legend and identifies which series each bar belongs to."
+              "description": "Name for this dataset/category (e.g., 'Production Servers', 'US Region', 'Premium Tier'). Appears in the legend."
             },
             "data": {
               "type": "array",
-              "description": "Data points for this series. Each data point belongs to a category (determined by its 'label' field). All series should have data points for the same set of categories.",
+              "description": "Individual bubble data points",
               "items": {
                 "type": "object",
                 "required": [
-                  "label",
-                  "v"
+                  "x",
+                  "y",
+                  "r"
                 ],
                 "properties": {
+                  "x": {
+                    "type": "number",
+                    "description": "Horizontal position value (mapped to x-axis scale)"
+                  },
+                  "y": {
+                    "type": "number",
+                    "description": "Vertical position value (mapped to y-axis scale)"
+                  },
+                  "r": {
+                    "type": "number",
+                    "description": "Size value (will be scaled proportionally to other bubbles). Larger values create larger bubbles. Use the actual metric value, not pixel radius - the chart will handle the visual scaling."
+                  },
                   "label": {
                     "type": "string",
-                    "description": "The category name for this data point (e.g., 'cpu1', 'cpu2', 'ProductA'). This determines the x-axis position. Data points from different series with the same category label will be grouped/stacked together at this x-axis position."
-                  },
-                  "v": {
-                    "type": "number",
-                    "description": "The numeric value for this data point (determines bar height)"
+                    "description": "Label identifying this specific bubble (e.g., 'Server-A', 'Product X', 'Tokyo'). Shown in tooltips and can be displayed on the chart."
                   },
                   "color": {
                     "type": "string",
-                    "description": "Optional hex color for this specific bar (overrides the series color)"
+                    "description": "Optional hex color for this specific bubble (overrides dataset color)"
                   }
                 }
               }
             },
             "color": {
               "type": "string",
-              "description": "Default hex color for all bars in this data series"
+              "description": "Default hex color for all bubbles in this dataset (e.g., '#3B82F6')"
             }
           }
         }
-      },
-      "x_axis_label": {
-        "type": "string",
-        "description": "Label for the x-axis (category axis)"
-      },
-      "y_axis_label": {
-        "type": "string",
-        "description": "Label for the y-axis (value axis)"
       }
     },
     "required": [
       "title",
-      "datasets"
+      "datasets",
+      "x_axis_label",
+      "y_axis_label",
+      "size_label"
     ]
   }
 }
