@@ -1,0 +1,88 @@
+# schema of the tool custom_timeseries_chart_block
+
+{
+  "name": "custom_timeseries_chart_block",
+  "description": "Creates a custom time-series chart to show trends over time. Supports line charts and area charts (filled regions under lines). Perfect for metrics, performance data, or any data that changes over time. Can display multiple series as separate lines or stacked areas.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string",
+        "description": "The title of the chart"
+      },
+      "chart_type": {
+        "type": "string",
+        "enum": [
+          "line",
+          "area"
+        ],
+        "description": "Visual style of the chart:\n- 'line': Shows data as lines connecting points (default)\n- 'area': Shows data as filled regions under the lines, emphasizing volume or magnitude",
+        "default": "line"
+      },
+      "stacked": {
+        "type": "boolean",
+        "description": "Whether to stack multiple series vertically (only applies when chart_type='area' and multiple datasets are present):\n- false (default): Each series is plotted independently, lines/areas can overlap\n- true: Series are stacked on top of each other, showing cumulative values. Useful for part-to-whole relationships (e.g., 'total CPU = user + system + idle')\n\nNote: Stacking is most commonly used with area charts. Line charts are rarely stacked as it makes individual values hard to read.",
+        "default": false
+      },
+      "unit": {
+        "type": "string",
+        "description": "Unit of measurement for all values in the chart (e.g., '%', 'MB', 'requests/sec', 'ms'). All series share the same Y-axis scale and should use the same unit."
+      },
+      "datasets": {
+        "type": "array",
+        "description": "One or more data series to plot. When stacked=true, series are layered vertically showing cumulative values. When stacked=false, each series is plotted independently.",
+        "items": {
+          "type": "object",
+          "required": [
+            "label",
+            "data"
+          ],
+          "properties": {
+            "label": {
+              "type": "string",
+              "description": "Name for this data series (e.g., 'CPU Usage', 'Memory', 'Server-1'). Appears in the chart legend."
+            },
+            "data": {
+              "type": "array",
+              "description": "Time-series data points. All timestamps should be in chronological order for proper rendering.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "dt",
+                  "v"
+                ],
+                "properties": {
+                  "dt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Timestamp in RFC 3339 format (e.g., '2025-11-13T10:30:00Z'). Use UTC timezone for consistency."
+                  },
+                  "v": {
+                    "type": "number",
+                    "description": "The value at this timestamp"
+                  }
+                }
+              }
+            },
+            "color": {
+              "type": "string",
+              "description": "Hex color for this series (e.g., '#3B82F6'). Each series should have a distinct color for easy identification."
+            }
+          }
+        }
+      },
+      "x_axis_label": {
+        "type": "string",
+        "description": "Label for the time axis (horizontal)"
+      },
+      "y_axis_label": {
+        "type": "string",
+        "description": "Label for the value axis (vertical)"
+      }
+    },
+    "required": [
+      "title",
+      "datasets"
+    ]
+  }
+}

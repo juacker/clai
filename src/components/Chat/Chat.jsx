@@ -8,6 +8,7 @@ import {
 } from '../../api/client';
 import MarkdownMessage from './MarkdownMessage';
 import ToolBlock from './ToolBlock';
+import TimeSeriesChartBlock from './TimeSeriesChartBlock';
 import styles from './Chat.module.css';
 
 /**
@@ -556,6 +557,22 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
             } else if (block.type === 'tool_use') {
               // Find matching tool result
               const toolResult = toolResultsMap[block.id];
+
+              // Check if this is a custom_timeseries_chart_block
+              if (block.name === 'custom_timeseries_chart_block') {
+                return (
+                  <TimeSeriesChartBlock
+                    key={`chart-${block.id || idx}`}
+                    toolInput={block.input || {}}
+                    toolResult={toolResult ? {
+                      id: toolResult.id,
+                      text: toolResult.text || ''
+                    } : null}
+                  />
+                );
+              }
+
+              // Default: render ToolBlock for other tools
               return (
                 <ToolBlock
                   key={`tool-${block.id || idx}`}
@@ -607,6 +624,22 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
           } else if (block.type === 'tool_use' || (block.name && block.id)) {
             // Find matching tool result
             const toolResult = toolResultsMap[block.id];
+
+            // Check if this is a custom_timeseries_chart_block
+            if (block.name === 'custom_timeseries_chart_block') {
+              return (
+                <TimeSeriesChartBlock
+                  key={`chart-${block.id || idx}`}
+                  toolInput={block.input || {}}
+                  toolResult={toolResult ? {
+                    id: toolResult.id,
+                    text: toolResult.text || ''
+                  } : null}
+                />
+              );
+            }
+
+            // Default: render ToolBlock for other tools
             return (
               <ToolBlock
                 key={`tool-${block.id || idx}`}
