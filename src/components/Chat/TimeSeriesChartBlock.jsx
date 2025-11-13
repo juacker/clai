@@ -49,8 +49,12 @@ const TimeSeriesChartBlock = ({ toolInput, toolResult }) => {
   ];
 
   // Handle container resizing with ResizeObserver
+  // Important: This must re-run when toolResult changes because the container
+  // only exists after we exit the loading state
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current) {
+      return;
+    }
 
     const resizeObserver = new ResizeObserver((entries) => {
       for (let entry of entries) {
@@ -64,6 +68,7 @@ const TimeSeriesChartBlock = ({ toolInput, toolResult }) => {
 
     resizeObserver.observe(containerRef.current);
 
+    // Immediately calculate dimensions
     const width = containerRef.current.clientWidth;
     if (width > 0) {
       const height = Math.min(400, Math.max(250, width * 0.5));
@@ -73,7 +78,7 @@ const TimeSeriesChartBlock = ({ toolInput, toolResult }) => {
     return () => {
       resizeObserver.disconnect();
     };
-  }, []);
+  }, [toolResult]); // Re-run when toolResult changes (when we exit loading state)
 
   // Parse and validate data
   const parseData = useCallback(() => {
@@ -518,6 +523,27 @@ const TimeSeriesChartBlock = ({ toolInput, toolResult }) => {
     if (!selectedSeries) return true; // All visible when nothing selected
     return selectedSeries.has(seriesLabel);
   }, [selectedSeries]);
+
+  // Check if we're waiting for tool result during streaming
+  // toolResult should exist and have valid content before rendering
+  const isWaitingForData = !toolResult || !toolResult.text;
+
+  // Show loading state only if waiting for data
+  if (isWaitingForData) {
+    return (
+      <div className={styles.chartContainer}>
+        <div className={styles.chartHeader}>
+          <h3 className={styles.chartTitle}>{toolInput?.title || 'Time Series Chart'}</h3>
+        </div>
+        <div className={styles.loadingContainer}>
+          <div className={styles.loadingContent}>
+            <div className={styles.loadingSpinner}></div>
+            <div className={styles.loadingText}>Waiting for chart data...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (

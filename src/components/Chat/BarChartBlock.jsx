@@ -47,8 +47,12 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
   ];
 
   // Handle container resizing with ResizeObserver
+  // Important: This must re-run when toolResult changes because the container
+  // only exists after we exit the loading state
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current) {
+      return;
+    }
 
     const resizeObserver = new ResizeObserver((entries) => {
       for (let entry of entries) {
@@ -62,6 +66,7 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
 
     resizeObserver.observe(containerRef.current);
 
+    // Immediately calculate dimensions
     const width = containerRef.current.clientWidth;
     if (width > 0) {
       const height = Math.min(400, Math.max(250, width * 0.5));
@@ -71,7 +76,7 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
     return () => {
       resizeObserver.disconnect();
     };
-  }, []);
+  }, [toolResult]); // Re-run when toolResult changes (when we exit loading state)
 
   // Parse and validate data
   const parseData = useCallback(() => {
@@ -114,7 +119,9 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
 
   // Main D3 rendering logic
   useEffect(() => {
-    if (!svgRef.current || dimensions.width === 0 || dimensions.height === 0) return;
+    if (!svgRef.current || dimensions.width === 0 || dimensions.height === 0) {
+      return;
+    }
 
     try {
       const { categories, datasets } = parseData();
@@ -124,6 +131,11 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
       const filteredDatasets = selectedSeries
         ? datasets.filter(d => selectedSeries.has(d.label))
         : datasets;
+
+      if (filteredDatasets.length === 0) {
+        console.warn('BarChart: No datasets to render after filtering');
+        return;
+      }
 
       d3.select(svgRef.current).selectAll('*').remove();
 
@@ -252,7 +264,7 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
       .attr('transform', d => `translate(${x0(d)},0)`);
 
     datasets.forEach((dataset) => {
-      categoryGroups.each(function(category) {
+      categoryGroups.each(function (category) {
         const data = dataset.dataMap.get(category);
         if (!data) return;
 
@@ -271,7 +283,7 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
           .attr('data-series', dataset.label)
           .attr('data-value', data.value)
           .style('cursor', 'pointer')
-          .on('mouseover', function(event) {
+          .on('mouseover', function (event) {
             d3.select(this)
               .transition()
               .duration(150)
@@ -284,7 +296,7 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
               color: barColor,
             });
           })
-          .on('mouseout', function() {
+          .on('mouseout', function () {
             d3.select(this)
               .transition()
               .duration(150)
@@ -320,7 +332,7 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
           .attr('data-series', dataset.label)
           .attr('data-value', data.value)
           .style('cursor', 'pointer')
-          .on('mouseover', function(event) {
+          .on('mouseover', function (event) {
             d3.select(this)
               .transition()
               .duration(150)
@@ -333,7 +345,7 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
               color: barColor,
             });
           })
-          .on('mouseout', function() {
+          .on('mouseout', function () {
             d3.select(this)
               .transition()
               .duration(150)
@@ -440,6 +452,29 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
     if (!selectedSeries) return true; // All visible when nothing selected
     return selectedSeries.has(seriesLabel);
   }, [selectedSeries]);
+
+  // Check if we're waiting for tool result during streaming
+  // toolResult should exist and have valid content before rendering
+  const isWaitingForData = !toolResult || !toolResult.text;
+
+  // Show loading state only if waiting for data
+  // Once we have data, render the container so dimensions can be calculated
+  // The D3 rendering useEffect will handle waiting for dimensions internally
+  if (isWaitingForData) {
+    return (
+      <div className={styles.chartContainer}>
+        <div className={styles.chartHeader}>
+          <h3 className={styles.chartTitle}>{toolInput?.title || 'Bar Chart'}</h3>
+        </div>
+        <div className={styles.loadingContainer}>
+          <div className={styles.loadingContent}>
+            <div className={styles.loadingSpinner}></div>
+            <div className={styles.loadingText}>Waiting for chart data...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (
