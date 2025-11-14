@@ -632,7 +632,6 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                     id: toolResult.id,
                     text: toolResult.text || ''
                   } : null}
-                  isStreaming={message.isStreaming}
                 />
               );
             }
@@ -743,7 +742,6 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                   id: toolResult.id,
                   text: toolResult.text || ''
                 } : null}
-                isStreaming={false}
               />
             );
           }

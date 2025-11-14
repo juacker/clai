@@ -11,11 +11,17 @@ import styles from './ToolBlock.module.css';
  * Props:
  * - toolUse: Object containing tool_use data { id, name, input }
  * - toolResult: Object containing tool_result data { id, text } (optional)
- * - isStreaming: Boolean indicating if the tool is currently streaming
+ *
+ * The tool is considered "running" when we have toolUse but no toolResult.
+ * Once toolResult is received, the tool is marked as "complete".
  */
 
-const ToolBlock = ({ toolUse, toolResult, isStreaming }) => {
+const ToolBlock = ({ toolUse, toolResult }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+
+  // Determine if the tool is currently running
+  // A tool is running when we have toolUse but no toolResult
+  const isRunning = !toolResult;
 
   const toggleExpanded = () => {
     setIsExpanded(!isExpanded);
@@ -36,13 +42,13 @@ const ToolBlock = ({ toolUse, toolResult, isStreaming }) => {
         <div className={styles.toolHeaderLeft}>
           <span className={styles.toolIcon}>⚙</span>
           <span className={styles.toolName}>{toolUse.name}</span>
-          {isStreaming && (
-            <span className={styles.streamingIndicator}>
-              <span className={styles.streamingDot}></span>
+          {isRunning && (
+            <span className={styles.runningIndicator}>
+              <span className={styles.spinner}></span>
               Running...
             </span>
           )}
-          {!isStreaming && toolResult && (
+          {!isRunning && (
             <span className={styles.completedIndicator}>
               <span className={styles.completedIcon}>✓</span>
               Complete
@@ -85,11 +91,14 @@ const ToolBlock = ({ toolUse, toolResult, isStreaming }) => {
             </div>
           )}
 
-          {/* No result yet */}
-          {!toolResult && !isStreaming && (
+          {/* No result yet - tool is still running */}
+          {!toolResult && (
             <div className={styles.toolSection}>
               <div className={styles.toolSectionContent}>
-                <div className={styles.noResult}>No result available</div>
+                <div className={styles.runningMessage}>
+                  <span className={styles.runningSpinner}></span>
+                  <span>Executing tool...</span>
+                </div>
               </div>
             </div>
           )}
