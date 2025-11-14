@@ -11,6 +11,7 @@ import ToolBlock from './ToolBlock';
 import TimeSeriesChartBlock from './TimeSeriesChartBlock';
 import BarChartBlock from './BarChartBlock';
 import BubbleChartBlock from './BubbleChartBlock';
+import LoadChartBlock from './LoadChartBlock';
 import styles from './Chat.module.css';
 
 /**
@@ -602,6 +603,22 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                 );
               }
 
+              // Check if this is a load_chart_block
+              if (block.name === 'load_chart_block') {
+                return (
+                  <LoadChartBlock
+                    key={`chart-${block.id || idx}`}
+                    toolInput={block.input || {}}
+                    toolResult={toolResult ? {
+                      id: toolResult.id,
+                      text: toolResult.text || ''
+                    } : null}
+                    space={space}
+                    room={room}
+                  />
+                );
+              }
+
               // Default: render ToolBlock for other tools
               return (
                 <ToolBlock
@@ -693,6 +710,22 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                     id: toolResult.id,
                     text: toolResult.text || ''
                   } : null}
+                />
+              );
+            }
+
+            // Check if this is a load_chart_block
+            if (block.name === 'load_chart_block') {
+              return (
+                <LoadChartBlock
+                  key={`chart-${block.id || idx}`}
+                  toolInput={block.input || {}}
+                  toolResult={toolResult ? {
+                    id: toolResult.id,
+                    text: toolResult.text || ''
+                  } : null}
+                  space={space}
+                  room={room}
                 />
               );
             }
