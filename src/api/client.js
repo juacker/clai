@@ -6,6 +6,7 @@ const client = axios.create({
   baseURL: NETDATA_CLOUD_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
+    'User-Agent': 'netdata-clai',
   },
 });
 
@@ -305,6 +306,7 @@ export const createChatCompletion = async (token, spaceId, roomId, conversationI
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'User-Agent': 'netdata-clai',
       },
       body: JSON.stringify(requestBody),
     });
