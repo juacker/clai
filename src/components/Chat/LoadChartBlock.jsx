@@ -32,6 +32,7 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState(null);
+  const [summary, setSummary] = useState(null);
   const [tooltip, setTooltip] = useState({
     visible: false,
     x: 0,
@@ -39,6 +40,11 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     content: null,
   });
   const [selectedSeries, setSelectedSeries] = useState(null);
+
+  // Filter and grouping state
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [activeGroupBy, setActiveGroupBy] = useState([]);
+  const [activeFilters, setActiveFilters] = useState({});
 
   const DEFAULT_COLORS = useMemo(() => [
     '#3B82F6', // Blue
@@ -50,6 +56,28 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     '#06B6D4', // Cyan
     '#F97316', // Orange
   ], []);
+
+  // Initialize active filters and groups from toolInput
+  useEffect(() => {
+    if (!toolInput) return;
+
+    // Initialize groupBy from toolInput
+    if (toolInput.group_by && Array.isArray(toolInput.group_by)) {
+      setActiveGroupBy(toolInput.group_by);
+    }
+
+    // Initialize filters from toolInput
+    if (toolInput.filter_by && Array.isArray(toolInput.filter_by)) {
+      const filters = {};
+      toolInput.filter_by.forEach(filter => {
+        if (!filters[filter.label]) {
+          filters[filter.label] = [];
+        }
+        filters[filter.label].push(filter.value);
+      });
+      setActiveFilters(filters);
+    }
+  }, [toolInput]);
 
   // Handle container resizing with ResizeObserver
   useEffect(() => {
@@ -76,59 +104,60 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     return () => resizeObserver.disconnect();
   }, []);
 
-  // Build getData request params from toolInput
-  const buildGetDataParams = useCallback((input) => {
+  // Build getData request params from current state
+  const buildGetDataParams = useCallback((groupBy, filters) => {
     const nodeIDs = [];
     const dimensions = [];
     const instances = [];
     const labels = [];
 
-    if (input.filter_by && Array.isArray(input.filter_by)) {
-      input.filter_by.forEach(filter => {
-        switch (filter.label) {
+    // Build filters from activeFilters state
+    Object.keys(filters).forEach(label => {
+      const values = filters[label];
+      values.forEach(value => {
+        switch (label) {
           case 'node':
-            nodeIDs.push(filter.value);
+            nodeIDs.push(value);
             break;
           case 'dimension':
-            dimensions.push(filter.value);
+            dimensions.push(value);
             break;
           case 'instance':
-            instances.push(filter.value);
+            instances.push(value);
             break;
           default:
-            labels.push(`${filter.label}:${filter.value}`);
+            labels.push(`${label}:${value}`);
             break;
         }
       });
-    }
+    });
 
     const systemLabels = ['node', 'dimension', 'instance'];
     const groupedBy = [];
     const groupedByLabel = [];
 
-    if (input.group_by && Array.isArray(input.group_by)) {
-      input.group_by.forEach(label => {
-        if (systemLabels.includes(label)) {
-          groupedBy.push(label);
-        } else {
-          if (!groupedBy.includes('label')) {
-            groupedBy.push('label');
-          }
-          groupedByLabel.push(label);
+    // Build groupBy from activeGroupBy state
+    groupBy.forEach(label => {
+      if (systemLabels.includes(label)) {
+        groupedBy.push(label);
+      } else {
+        if (!groupedBy.includes('label')) {
+          groupedBy.push('label');
         }
-      });
-    }
+        groupedByLabel.push(label);
+      }
+    });
 
     if (groupedBy.length === 0) {
       groupedBy.push('dimension');
     }
 
-    const afterTimestamp = Math.floor(new Date(input.after).getTime() / 1000);
-    const beforeTimestamp = Math.floor(new Date(input.before).getTime() / 1000);
+    const afterTimestamp = Math.floor(new Date(toolInput.after).getTime() / 1000);
+    const beforeTimestamp = Math.floor(new Date(toolInput.before).getTime() / 1000);
 
     return {
       scope: {
-        contexts: [input.context],
+        contexts: [toolInput.context],
         nodes: nodeIDs.length > 0 ? nodeIDs : []
       },
       selectors: {
@@ -141,28 +170,28 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
           {
             group_by: groupedBy,
             group_by_label: groupedByLabel,
-            aggregation: input.value_agg || 'avg'
+            aggregation: toolInput.value_agg || 'avg'
           }
         ],
         time: {
-          time_group: input.time_agg || 'average',
+          time_group: toolInput.time_agg || 'average',
           time_resampling: 0
         }
       },
       window: {
         after: afterTimestamp,
         before: beforeTimestamp,
-        points: input.interval_count || 15
+        points: toolInput.interval_count || 15
       }
     };
-  }, []);
+  }, [toolInput]);
 
   const buildNodeMapping = (summary) => {
     const nodeMap = new Map();
     if (summary?.nodes && Array.isArray(summary.nodes)) {
       summary.nodes.forEach(node => {
         if (node.mg && node.nm) {
-          nodeMap.set(node.mg, node.nm); // not surprisingly, the mg (machine guid) is the node id here :D
+          nodeMap.set(node.mg, node.nm);
         }
       });
     }
@@ -174,10 +203,8 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
       return label;
     }
 
-    // Replace all node IDs found in the label with their names
     let updatedLabel = label;
     nodeMap.forEach((nodeName, nodeId) => {
-      // Use a regex to replace the node ID (UUID format)
       const nodeIdRegex = new RegExp(nodeId, 'g');
       updatedLabel = updatedLabel.replace(nodeIdRegex, nodeName);
     });
@@ -193,11 +220,11 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     const { labels, data } = response.result;
     const { view, summary } = response;
 
-    // Build node ID to name mapping
-    const nodeMap = buildNodeMapping(summary);
+    // Store summary for filter/group UI
+    setSummary(summary);
 
-    // Check if the request was grouped by node
-    const isGroupedByNode = toolInput?.group_by?.includes('node') || false;
+    const nodeMap = buildNodeMapping(summary);
+    const isGroupedByNode = activeGroupBy.includes('node');
 
     const metricLabels = labels.slice(1);
 
@@ -213,7 +240,6 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
         };
       });
 
-      // Replace node IDs with node names in the label
       const displayLabel = replaceNodeIdsInLabel(label, nodeMap, isGroupedByNode);
 
       return {
@@ -233,41 +259,210 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
       title: view?.title || toolInput?.context || 'Chart',
       unit: unit
     };
-  }, [toolInput, DEFAULT_COLORS]);
+  }, [toolInput, DEFAULT_COLORS, activeGroupBy]);
 
-  // Fetch data from API when toolResult is available
+  // Fetch data from API
+  const fetchData = useCallback(async (groupBy, filters) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem('netdata_token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+
+      if (!space?.id || !room?.id) {
+        throw new Error('Space ID or Room ID not found. Please select a space and room.');
+      }
+
+      const params = buildGetDataParams(groupBy, filters);
+      const response = await getData(token, space.id, room.id, params);
+      const transformedData = transformResponseToChartData(response);
+
+      setChartData(transformedData);
+      setLoading(false);
+    } catch (err) {
+      console.error('Failed to fetch chart data:', err);
+      setError(err.message || 'Failed to load chart data');
+      setLoading(false);
+    }
+  }, [space?.id, room?.id, buildGetDataParams, transformResponseToChartData]);
+
+  // Initial data fetch when toolResult is available
   useEffect(() => {
     if (!toolResult || !toolResult.text) return;
+    fetchData(activeGroupBy, activeFilters);
+  }, [toolResult?.text]);
 
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
+  // Refetch when filters or grouping changes
+  useEffect(() => {
+    if (!toolResult || !toolResult.text) return;
+    if (!summary) return; // Don't refetch until we have initial summary
+    fetchData(activeGroupBy, activeFilters);
+  }, [activeGroupBy, activeFilters]);
 
-      try {
-        const token = localStorage.getItem('netdata_token');
-        if (!token) {
-          throw new Error('Authentication token not found');
+  // Parse available options from summary
+  const getAvailableOptions = useCallback(() => {
+    if (!summary) return { groupByOptions: [], filterOptions: {} };
+
+    const groupByOptions = [];
+    const filterOptions = {};
+
+    // Nodes
+    if (summary.nodes && summary.nodes.length > 1) {
+      groupByOptions.push({ label: 'node', displayName: 'Node' });
+      filterOptions.node = summary.nodes.map(n => ({
+        value: n.mg,
+        displayName: n.nm || n.mg
+      }));
+    }
+
+    // Dimensions
+    if (summary.dimensions && summary.dimensions.length > 1) {
+      groupByOptions.push({ label: 'dimension', displayName: 'Dimension' });
+      filterOptions.dimension = summary.dimensions.map(d => ({
+        value: d.id,
+        displayName: d.id
+      }));
+    }
+
+    // Instances
+    if (summary.instances && summary.instances.length > 1) {
+      groupByOptions.push({ label: 'instance', displayName: 'Instance' });
+      filterOptions.instance = summary.instances.map(i => ({
+        value: i.id,
+        displayName: i.id
+      }));
+    }
+
+    // Custom labels
+    if (summary.labels && Array.isArray(summary.labels)) {
+      summary.labels.forEach(labelObj => {
+        if (labelObj.vl && labelObj.vl.length > 1) {
+          groupByOptions.push({ label: labelObj.id, displayName: labelObj.id });
+          filterOptions[labelObj.id] = labelObj.vl.map(v => ({
+            value: v.id,
+            displayName: v.id
+          }));
         }
+      });
+    }
 
-        if (!space?.id || !room?.id) {
-          throw new Error('Space ID or Room ID not found. Please select a space and room.');
-        }
+    return { groupByOptions, filterOptions };
+  }, [summary]);
 
-        const params = buildGetDataParams(toolInput);
-        const response = await getData(token, space.id, room.id, params);
-        const transformedData = transformResponseToChartData(response);
-
-        setChartData(transformedData);
-        setLoading(false);
-      } catch (err) {
-        console.error('Failed to fetch chart data:', err);
-        setError(err.message || 'Failed to load chart data');
-        setLoading(false);
+  // Handle group by change
+  const handleGroupByChange = useCallback((label, isChecked) => {
+    setActiveGroupBy(prev => {
+      if (isChecked) {
+        return [...prev, label];
+      } else {
+        return prev.filter(l => l !== label);
       }
-    };
+    });
+  }, []);
 
-    fetchData();
-  }, [toolResult?.text, space?.id, room?.id, buildGetDataParams, toolInput, transformResponseToChartData]);
+  // Handle filter change
+  const handleFilterChange = useCallback((filterLabel, value, isChecked) => {
+    setActiveFilters(prev => {
+      const updated = { ...prev };
+      if (isChecked) {
+        if (!updated[filterLabel]) {
+          updated[filterLabel] = [];
+        }
+        updated[filterLabel] = [...updated[filterLabel], value];
+      } else {
+        if (updated[filterLabel]) {
+          updated[filterLabel] = updated[filterLabel].filter(v => v !== value);
+          if (updated[filterLabel].length === 0) {
+            delete updated[filterLabel];
+          }
+        }
+      }
+      return updated;
+    });
+  }, []);
+
+  // Remove a specific group by
+  const handleRemoveGroupBy = useCallback((label) => {
+    setActiveGroupBy(prev => prev.filter(l => l !== label));
+  }, []);
+
+  // Remove a specific filter
+  const handleRemoveFilter = useCallback((filterLabel, value) => {
+    setActiveFilters(prev => {
+      const updated = { ...prev };
+      if (updated[filterLabel]) {
+        updated[filterLabel] = updated[filterLabel].filter(v => v !== value);
+        if (updated[filterLabel].length === 0) {
+          delete updated[filterLabel];
+        }
+      }
+      return updated;
+    });
+  }, []);
+
+  // Reset to original toolInput configuration
+  const handleReset = useCallback(() => {
+    const initialGroupBy = toolInput?.group_by || [];
+    const initialFilters = {};
+
+    if (toolInput?.filter_by && Array.isArray(toolInput.filter_by)) {
+      toolInput.filter_by.forEach(filter => {
+        if (!initialFilters[filter.label]) {
+          initialFilters[filter.label] = [];
+        }
+        initialFilters[filter.label].push(filter.value);
+      });
+    }
+
+    setActiveGroupBy(initialGroupBy);
+    setActiveFilters(initialFilters);
+  }, [toolInput]);
+
+  // Check if current state differs from initial toolInput
+  const hasChanges = useMemo(() => {
+    const initialGroupBy = toolInput?.group_by || [];
+    const initialFilters = {};
+
+    if (toolInput?.filter_by && Array.isArray(toolInput.filter_by)) {
+      toolInput.filter_by.forEach(filter => {
+        if (!initialFilters[filter.label]) {
+          initialFilters[filter.label] = [];
+        }
+        initialFilters[filter.label].push(filter.value);
+      });
+    }
+
+    // Check groupBy changes
+    if (activeGroupBy.length !== initialGroupBy.length) return true;
+    if (!activeGroupBy.every(g => initialGroupBy.includes(g))) return true;
+
+    // Check filter changes
+    const activeFilterKeys = Object.keys(activeFilters);
+    const initialFilterKeys = Object.keys(initialFilters);
+
+    if (activeFilterKeys.length !== initialFilterKeys.length) return true;
+
+    for (const key of activeFilterKeys) {
+      if (!initialFilters[key]) return true;
+      if (activeFilters[key].length !== initialFilters[key].length) return true;
+      if (!activeFilters[key].every(v => initialFilters[key].includes(v))) return true;
+    }
+
+    return false;
+  }, [activeGroupBy, activeFilters, toolInput]);
+
+  // Get display name for a filter value
+  const getFilterDisplayName = useCallback((filterLabel, value) => {
+    const { filterOptions } = getAvailableOptions();
+    const options = filterOptions[filterLabel];
+    if (!options) return value;
+
+    const option = options.find(opt => opt.value === value);
+    return option ? option.displayName : value;
+  }, [getAvailableOptions]);
 
   // Render line chart
   const renderLine = useCallback((g, datasets, xScale, yScale) => {
@@ -506,7 +701,6 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
             .attr('r', 5)
             .attr('stroke-width', 2);
 
-          // Start hide timeout when leaving circle
           hideTimeout = setTimeout(() => {
             if (!isOverCircle) {
               hideAllElements();
@@ -567,7 +761,6 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
         showTooltip(event, nearestPoints);
       })
       .on('mouseleave', function () {
-        // Use a timeout to allow moving to circles
         hideTimeout = setTimeout(() => {
           if (!isOverCircle) {
             hideAllElements();
@@ -713,7 +906,7 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
 
   const isWaitingForData = !toolResult || !toolResult.text;
 
-  if (isWaitingForData || loading) {
+  if (isWaitingForData || (loading && !summary)) {
     return (
       <div ref={containerRef} className={styles.chartContainer}>
         <div className={styles.chartHeader}>
@@ -743,10 +936,140 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     );
   }
 
+  const { groupByOptions, filterOptions } = getAvailableOptions();
+  const hasFilterOptions = groupByOptions.length > 0 || Object.keys(filterOptions).length > 0;
+
   return (
     <div ref={containerRef} className={styles.chartContainer}>
       <div className={styles.chartHeader}>
         <h3 className={styles.chartTitle}>{getChartTitle()}</h3>
+
+        {/* Filters & Grouping Panel */}
+        {hasFilterOptions && (
+          <div className={styles.filterPanel}>
+            <div className={styles.filterPanelHeader}>
+              <button
+                className={styles.filterPanelToggle}
+                onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
+              >
+                <span className={styles.filterPanelToggleIcon}>
+                  {isFilterPanelOpen ? '▼' : '▶'}
+                </span>
+                <span className={styles.filterPanelTitle}>Filters & Grouping</span>
+              </button>
+              {hasChanges && (
+                <button
+                  className={styles.resetButton}
+                  onClick={handleReset}
+                  title="Reset to original configuration"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            {/* Active selections shown as tags when collapsed */}
+            {!isFilterPanelOpen && (activeGroupBy.length > 0 || Object.keys(activeFilters).length > 0) && (
+              <div className={styles.activeSelections}>
+                {/* Group By Tags */}
+                {activeGroupBy.map(group => (
+                  <div key={group} className={styles.activeTag}>
+                    <span className={styles.activeTagPrefix}>Group:</span>
+                    <span className={styles.activeTagValue}>{group}</span>
+                    <button
+                      className={styles.activeTagRemove}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveGroupBy(group);
+                      }}
+                      title={`Remove ${group} grouping`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+
+                {/* Filter Tags */}
+                {Object.entries(activeFilters).map(([filterLabel, values]) =>
+                  values.map(value => (
+                    <div key={`${filterLabel}-${value}`} className={styles.activeTag}>
+                      <span className={styles.activeTagPrefix}>{filterLabel}:</span>
+                      <span className={styles.activeTagValue}>
+                        {getFilterDisplayName(filterLabel, value)}
+                      </span>
+                      <button
+                        className={styles.activeTagRemove}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveFilter(filterLabel, value);
+                        }}
+                        title={`Remove ${filterLabel} filter`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {isFilterPanelOpen && (
+              <div className={styles.filterPanelContent}>
+                {/* Group By Section */}
+                {groupByOptions.length > 0 && (
+                  <div className={styles.filterSection}>
+                    <div className={styles.filterSectionTitle}>Group By</div>
+                    <div className={styles.filterChips}>
+                      {groupByOptions.map(option => (
+                        <label key={option.label} className={styles.filterChip}>
+                          <input
+                            type="checkbox"
+                            checked={activeGroupBy.includes(option.label)}
+                            onChange={(e) => handleGroupByChange(option.label, e.target.checked)}
+                            className={styles.filterCheckbox}
+                          />
+                          <span className={styles.filterChipLabel}>{option.displayName}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Filter By Section */}
+                {Object.keys(filterOptions).length > 0 && (
+                  <div className={styles.filterSection}>
+                    <div className={styles.filterSectionTitle}>Filter By</div>
+                    <div className={styles.filterGroupsContainer}>
+                      {Object.entries(filterOptions).map(([filterLabel, options]) => (
+                        <div key={filterLabel} className={styles.filterGroup}>
+                          <div className={styles.filterGroupTitle}>{filterLabel}</div>
+                          <div className={styles.filterChipsScrollable}>
+                            {options.map(option => {
+                              const isChecked = activeFilters[filterLabel]?.includes(option.value) || false;
+                              return (
+                                <label key={option.value} className={styles.filterChip}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => handleFilterChange(filterLabel, option.value, e.target.checked)}
+                                    className={styles.filterCheckbox}
+                                  />
+                                  <span className={styles.filterChipLabel}>{option.displayName}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Legend */}
         {chartData?.datasets && chartData.datasets.length > 0 && (
           <div className={styles.legendWrapper}>
             <div className={styles.legend}>
@@ -778,6 +1101,13 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
           </div>
         )}
       </div>
+
+      {loading && (
+        <div className={styles.loadingOverlay}>
+          <div className={styles.loadingSpinner}></div>
+        </div>
+      )}
+
       <div className={styles.chartWrapper}>
         <svg ref={svgRef} className={styles.chartSvg}></svg>
       </div>

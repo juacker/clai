@@ -6,9 +6,10 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);
-  overflow: visible; /* Changed from hidden to visible to prevent clipping */
+  overflow: visible;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(8px);
+  position: relative;
 }
 
 .chartContainer:hover {
@@ -32,6 +33,302 @@
   color: rgba(70, 130, 220, 1);
   letter-spacing: 0.01em;
   margin: 0;
+}
+
+/* Filter Panel */
+.filterPanel {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+}
+
+.filterPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.filterPanelToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.7);
+  transition: all 0.2s ease;
+  flex: 1;
+  text-align: left;
+}
+
+.filterPanelToggle:hover {
+  background: rgba(0, 0, 0, 0.03);
+  color: rgba(0, 0, 0, 0.9);
+}
+
+.filterPanelToggleIcon {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+
+.filterPanelTitle {
+  font-weight: 600;
+}
+
+.resetButton {
+  padding: 6px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  color: rgba(239, 68, 68, 1);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.resetButton:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* Active selections displayed as tags when panel is collapsed */
+.activeSelections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.activeSelections::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.activeSelections::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+}
+
+.activeSelections::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.activeTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 12px;
+  font-size: 11px;
+  transition: all 0.2s ease;
+}
+
+.activeTag:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.activeTagPrefix {
+  color: rgba(0, 0, 0, 0.5);
+  font-weight: 500;
+}
+
+.activeTagValue {
+  color: rgba(59, 130, 246, 1);
+  font-weight: 600;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activeTagRemove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: rgba(59, 130, 246, 0.2);
+  border: none;
+  border-radius: 50%;
+  color: rgba(59, 130, 246, 1);
+  font-size: 14px;
+  font-weight: bold;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.activeTagRemove:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: rgba(239, 68, 68, 1);
+}
+
+.filterPanelContent {
+  padding: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 800px;
+  }
+}
+
+.filterSection {
+  margin-bottom: 12px;
+}
+
+.filterSection:last-child {
+  margin-bottom: 0;
+}
+
+.filterSectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+/* Container for all filter groups with scrolling */
+.filterGroupsContainer {
+  max-height: 400px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+.filterGroupsContainer::-webkit-scrollbar {
+  width: 6px;
+}
+
+.filterGroupsContainer::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+}
+
+.filterGroupsContainer::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.filterGroupsContainer::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.filterGroup {
+  margin-bottom: 12px;
+}
+
+.filterGroup:last-child {
+  margin-bottom: 0;
+}
+
+.filterGroupTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.7);
+  margin-bottom: 6px;
+  padding-left: 4px;
+}
+
+.filterChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Scrollable container for filter chips when there are many options */
+.filterChipsScrollable {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 150px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.filterChipsScrollable::-webkit-scrollbar {
+  width: 4px;
+}
+
+.filterChipsScrollable::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 2px;
+}
+
+.filterChipsScrollable::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 2px;
+}
+
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 16px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.filterChip:hover {
+  background: rgba(255, 255, 255, 1);
+  border-color: rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.filterCheckbox {
+  margin: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.filterCheckbox:checked + .filterChipLabel {
+  font-weight: 600;
+  color: rgba(59, 130, 246, 1);
+}
+
+.filterChip:has(.filterCheckbox:checked) {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.filterChipLabel {
+  color: rgba(0, 0, 0, 0.7);
+  transition: all 0.2s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
 }
 
 /* Legend */
@@ -78,10 +375,10 @@
 
 /* Legend Wrapper - makes it scrollable */
 .legendWrapper {
-  max-height: 120px; /* Limit to ~4 rows of legend items */
+  max-height: 120px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 4px; /* Space for scrollbar */
+  padding-right: 4px;
 }
 
 /* Custom scrollbar styling for legend */
@@ -111,10 +408,25 @@
 
 /* Chart Wrapper */
 .chartWrapper {
-  padding: 10px 0px; /* Reduced padding to give more space for the chart */
+  padding: 10px 0px;
   position: relative;
   min-height: 250px;
-  overflow: visible; /* Ensure SVG content is not clipped */
+  overflow: visible;
+}
+
+/* Loading Overlay for refetching */
+.loadingOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(2px);
 }
 
 /* SVG Element */
@@ -122,7 +434,7 @@
   width: 100%;
   height: 100%;
   display: block;
-  overflow: visible; /* Ensure chart elements beyond bounds are visible */
+  overflow: visible;
 }
 
 /* D3 Elements Styling */
@@ -183,7 +495,7 @@
   font-size: 12px;
   font-weight: 600;
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  text-anchor: end; /* Right-aligned - text ends at y-axis position */
+  text-anchor: end;
 }
 
 /* Crosshair */
@@ -343,6 +655,34 @@
     min-height: 220px;
   }
 
+  .filterPanelToggle {
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+
+  .filterPanelContent {
+    padding: 10px;
+  }
+
+  .filterChip {
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+
+  .resetButton {
+    padding: 5px 10px;
+    font-size: 10px;
+  }
+
+  .activeTag {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+
+  .activeTagValue {
+    max-width: 100px;
+  }
+
   .legend {
     gap: 10px;
   }
@@ -405,6 +745,16 @@
   .legendItem {
     padding: 4px 0;
   }
+
+  .filterChip {
+    padding: 8px 12px;
+  }
+
+  .activeTagRemove {
+    width: 20px;
+    height: 20px;
+    font-size: 16px;
+  }
 }
 
 /* No hover capability (mobile) - disable hover effects */
@@ -416,6 +766,16 @@
 
   .legendItem:hover {
     color: rgba(0, 0, 0, 0.7);
+  }
+
+  .filterChip:hover {
+    background: rgba(255, 255, 255, 0.8);
+    border-color: rgba(0, 0, 0, 0.15);
+  }
+
+  .activeTag:hover {
+    background: rgba(59, 130, 246, 0.1);
+    border-color: rgba(59, 130, 246, 0.3);
   }
 }
 
@@ -432,6 +792,10 @@
   .tooltip {
     max-width: 320px;
   }
+
+  .filterGroupsContainer {
+    max-height: 500px;
+  }
 }
 
 /* Smaller mobile devices */
@@ -447,6 +811,28 @@
   .chartWrapper {
     padding: 14px 12px;
     min-height: 200px;
+  }
+
+  .filterPanelHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .resetButton {
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .activeSelections {
+    max-height: 80px;
+  }
+
+  .filterGroupsContainer {
+    max-height: 300px;
+  }
+
+  .filterChipsScrollable {
+    max-height: 120px;
   }
 
   .legend {
@@ -492,4 +878,3 @@
 .chartContainer {
   animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-
