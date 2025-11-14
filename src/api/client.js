@@ -365,5 +365,188 @@ export const createChatCompletion = async (token, spaceId, roomId, conversationI
   }
 };
 
+/**
+ * Get data from Netdata Cloud with complex aggregation and filtering options
+ * @param {string} token - Authentication token (Bearer token)
+ * @param {string} spaceId - Space ID
+ * @param {string} roomId - Room ID
+ * @param {Object} params - Data query parameters
+ * @param {Object} params.scope - Required scope definition
+ * @param {string[]} params.scope.contexts - Array of context patterns
+ * @param {string[]} params.scope.nodes - Array of node IDs
+ * @param {string[]} [params.scope.instances] - Optional array of instance patterns
+ * @param {string[]} [params.scope.dimensions] - Optional array of dimension names
+ * @param {string[]} [params.scope.labels] - Optional array of label filters
+ * @param {Object} params.window - Required time window
+ * @param {number} params.window.after - Unix timestamp (seconds) for start time
+ * @param {number} params.window.before - Unix timestamp (seconds) for end time
+ * @param {number} [params.window.points] - Number of points to return
+ * @param {number} [params.window.duration] - Duration in seconds
+ * @param {number} [params.window.tier] - Data tier
+ * @param {Object} [params.window.baseline] - Optional baseline window
+ * @param {Object} params.aggregations - Aggregation configuration
+ * @param {Object[]} params.aggregations.metrics - Array of metric aggregations
+ * @param {string} params.aggregations.metrics[].aggregation - Aggregation function (sum, avg, min, max, etc.)
+ * @param {string[]} [params.aggregations.metrics[].group_by] - Group by dimensions/nodes
+ * @param {string[]} [params.aggregations.metrics[].group_by_label] - Group by label keys
+ * @param {Object} params.aggregations.time - Time aggregation settings
+ * @param {string} params.aggregations.time.time_group - Time grouping method
+ * @param {number} params.aggregations.time.time_resampling - Resampling interval in seconds
+ * @param {string} [params.aggregations.time.time_group_options] - Additional time group options
+ * @param {Object} [params.selectors] - Optional data selectors (defaults to "*" for all)
+ * @param {string[]} [params.selectors.contexts] - Context patterns to select
+ * @param {string[]} [params.selectors.nodes] - Node IDs to select
+ * @param {string[]} [params.selectors.instances] - Instance patterns to select
+ * @param {string[]} [params.selectors.dimensions] - Dimension names to select
+ * @param {string[]} [params.selectors.labels] - Label filters to select
+ * @param {string[]} [params.selectors.alerts] - Alert filters to select
+ * @param {string} [params.format] - Response format (default: "json2")
+ * @param {string[]} [params.options] - Query options array
+ * @param {number} [params.timeout] - Request timeout in milliseconds (default: 10000)
+ * @returns {Promise<Object>} Data response
+ * @throws {Error} If the request fails or required parameters are missing
+ * 
+ * @example
+ * const data = await getData(token, spaceId, roomId, {
+ *   scope: {
+ *     contexts: ["system.cpu"],
+ *     nodes: ["node1", "node2"]
+ *   },
+ *   window: {
+ *     after: Math.floor(Date.now() / 1000) - 3600,
+ *     before: Math.floor(Date.now() / 1000),
+ *     points: 100
+ *   },
+ *   aggregations: {
+ *     metrics: [
+ *       { aggregation: "avg", group_by: ["dimension"] }
+ *     ],
+ *     time: {
+ *       time_group: "average",
+ *       time_resampling: 60
+ *     }
+ *   }
+ * });
+ */
+export const getData = async (token, spaceId, roomId, params) => {
+  try {
+    // Validate required parameters
+    if (!params.scope || !params.scope.contexts || !params.scope.nodes) {
+      throw new Error('scope.contexts and scope.nodes are required');
+    }
+    if (!params.window || params.window.after === undefined || params.window.before === undefined) {
+      throw new Error('window.after and window.before are required');
+    }
+    if (!params.aggregations || !params.aggregations.metrics || !params.aggregations.time) {
+      throw new Error('aggregations.metrics and aggregations.time are required');
+    }
+
+    // Build metrics array with proper structure
+    const metrics = params.aggregations.metrics.map(metric => {
+      const metricObj = {
+        group_by: metric.group_by || [],
+        group_by_label: metric.group_by_label || [],
+        aggregation: metric.aggregation
+      };
+      return metricObj;
+    });
+
+    // Build selectors with defaults
+    const selectors = {
+      contexts: params.selectors?.contexts || ['*'],
+      nodes: params.selectors?.nodes || ['*'],
+      instances: params.selectors?.instances || ['*'],
+      dimensions: params.selectors?.dimensions || ['*'],
+      labels: params.selectors?.labels || ['*']
+    };
+
+    // Add alerts selector if provided
+    if (params.selectors?.alerts) {
+      selectors.alerts = params.selectors.alerts;
+    }
+
+    // Build scope object - only include dimensions, instances, labels if provided
+    const scope = {
+      contexts: params.scope.contexts,
+      nodes: params.scope.nodes
+    };
+
+    if (params.scope.dimensions) {
+      scope.dimensions = params.scope.dimensions;
+    }
+    if (params.scope.instances) {
+      scope.instances = params.scope.instances;
+    }
+    if (params.scope.labels) {
+      scope.labels = params.scope.labels;
+    }
+
+    // Build time aggregation
+    const timeAggregation = {
+      time_group: params.aggregations.time.time_group,
+      time_resampling: params.aggregations.time.time_resampling
+    };
+
+    if (params.aggregations.time.time_group_options) {
+      timeAggregation.time_group_options = params.aggregations.time.time_group_options;
+    }
+
+    // Build window object
+    const window = {
+      after: params.window.after,
+      before: params.window.before
+    };
+
+    if (params.window.points !== undefined) {
+      window.points = params.window.points;
+    }
+    if (params.window.duration !== undefined) {
+      window.duration = params.window.duration;
+    }
+    if (params.window.tier !== undefined) {
+      window.tier = params.window.tier;
+    }
+    if (params.window.baseline) {
+      window.baseline = params.window.baseline;
+    }
+
+    // Build request body
+    const requestBody = {
+      format: params.format || 'json2',
+      options: params.options || ['jsonwrap', 'nonzero', 'flip', 'ms', 'jw-anomaly-rates', 'minify'],
+      scope,
+      selectors,
+      aggregations: {
+        metrics,
+        time: timeAggregation
+      },
+      window,
+      timeout: params.timeout || 10000
+    };
+
+    const response = await client.post(
+      `/v3/spaces/${spaceId}/rooms/${roomId}/data`,
+      requestBody,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    );
+
+    return response.data;
+  } catch (error) {
+    if (error.response) {
+      throw new Error(
+        `Failed to get data: ${error.response.status} - ${error.response.data?.message || error.response.statusText}`
+      );
+    } else if (error.request) {
+      throw new Error('Failed to get data: No response from server');
+    } else {
+      throw new Error(`Failed to get data: ${error.message}`);
+    }
+  }
+};
+
 export default client;
 
