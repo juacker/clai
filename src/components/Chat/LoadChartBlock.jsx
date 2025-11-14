@@ -882,26 +882,15 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     }
   }, [dimensions, chartData, selectedSeries, DEFAULT_COLORS, renderLine, addInteractivity]);
 
-  // Generate chart title from tool input
+  // Generate chart title from chartData or use default
   const getChartTitle = () => {
-    if (!toolInput) return 'Load Chart';
-
-    const context = toolInput.context || 'metric';
-    const filters = toolInput.filter_by || [];
-    const groups = toolInput.group_by || [];
-
-    let title = context;
-
-    if (filters.length > 0) {
-      const filterStr = filters.map(f => `${f.label}=${f.value}`).join(', ');
-      title += ` (${filterStr})`;
+    // Use the title from chartData if available (comes from view.title in the API response)
+    if (chartData?.title) {
+      return chartData.title;
     }
 
-    if (groups.length > 0 && groups.length <= 2) {
-      title += ` by ${groups.join(', ')}`;
-    }
-
-    return title;
+    // Fallback to "Load Chart" when data isn't ready yet
+    return 'Load Chart';
   };
 
   const isWaitingForData = !toolResult || !toolResult.text;
