@@ -226,8 +226,8 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
       if (toolInput.x_axis_label) {
         g.append('text')
           .attr('class', styles.axisLabel)
-          .attr('text-anchor', 'middle')
-          .attr('x', width / 2)
+          .attr('text-anchor', 'end')
+          .attr('x', width)
           .attr('y', height + 40)
           .text(toolInput.x_axis_label);
       }
@@ -235,7 +235,6 @@ const BarChartBlock = ({ toolInput, toolResult }) => {
       if (toolInput.y_axis_label) {
         g.append('text')
           .attr('class', styles.yAxisLabel)
-          .attr('text-anchor', 'end')
           .attr('x', 0)
           .attr('y', -15)
           .text(toolInput.y_axis_label);

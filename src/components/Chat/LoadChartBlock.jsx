@@ -4,6 +4,41 @@ import * as d3 from 'd3';
 import { getData } from '../../api/client';
 import styles from './LoadChartBlock.module.css';
 
+// Optimized Netdata icon - only the logo mark for spinner use
+// Spins around the center of the semicircle (approximately x=33, y=34)
+const NetdataIcon = ({ className = "", size = 40 }) => {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 65 65"
+      fill="none"
+      className={className}
+      style={{
+        transformOrigin: '50% 52%' // Adjusted to center on the semicircle
+      }}
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M40.7084 59.5833H27.5225L0.5 8.125H38.8578C53.7729 8.15204 65.858 20.0767 65.8659 34.7873C65.8419 48.4964 54.5902 59.5833 40.7084 59.5833Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+};
+
+const NetdataSpinner = ({ size = 40, className = "" }) => {
+  return (
+    <div className={`${styles.netdataSpinnerWrapper} ${className}`}>
+      <NetdataIcon
+        size={size}
+        className={styles.netdataSpinner}
+      />
+    </div>
+  );
+};
+
 /**
  * LoadChartBlock Component
  *
@@ -499,7 +534,7 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     const dataRows = limitedPoints.map(({ dataset, point }) => ({
       color: dataset.color,
       label: dataset.label,
-      value: `${point.value.toFixed(2)}${chartData?.unit || ''}`,
+      value: point.value.toFixed(2),
     }));
 
     const offset = 15;
@@ -844,7 +879,7 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
       const yAxis = d3
         .axisLeft(yScale)
         .ticks(5)
-        .tickFormat((d) => `${d}${chartData.unit || ''}`)
+        .tickFormat((d) => `${d}`)
         .tickSizeOuter(0);
 
       g.append('g')
@@ -873,6 +908,15 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
       g.append('g')
         .attr('class', styles.yAxis)
         .call(yAxis);
+
+      // Add Y-axis label with unit
+      if (chartData.unit) {
+        g.append('text')
+          .attr('class', styles.yAxisLabel)
+          .attr('x', 0)
+          .attr('y', -15)
+          .text(chartData.unit);
+      }
 
       renderLine(g, filteredDatasets, xScale, yScale);
       addInteractivity(g, filteredDatasets, xScale, yScale, width, height);
@@ -904,7 +948,7 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
         </div>
         <div className={styles.loadingContainer}>
           <div className={styles.loadingContent}>
-            <div className={styles.loadingSpinner}></div>
+            <NetdataSpinner size={40} />
             <div className={styles.loadingText}>Loading chart data...</div>
           </div>
         </div>

@@ -137,7 +137,7 @@
 .axisLabel {
   fill: rgba(0, 0, 0, 0.8);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
 }
 
@@ -147,7 +147,7 @@
   font-size: 12px;
   font-weight: 600;
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  text-anchor: end;
+  text-anchor: middle;
 }
 
 /* Bubble Labels */
