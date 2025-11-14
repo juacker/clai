@@ -257,6 +257,7 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     return {
       datasets,
       title: view?.title || toolInput?.context || 'Chart',
+      context: toolInput?.context || "context not set",
       unit: unit
     };
   }, [toolInput, DEFAULT_COLORS, activeGroupBy]);
@@ -884,9 +885,9 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
 
   // Generate chart title from chartData or use default
   const getChartTitle = () => {
-    // Use the title from chartData if available (comes from view.title in the API response)
-    if (chartData?.title) {
-      return chartData.title;
+    // Use the title and context from chartData if available (comes from view.title in the API response)
+    if (chartData?.title && chartData?.context) {
+      return `${chartData.title} (${chartData.context})`;
     }
 
     // Fallback to "Load Chart" when data isn't ready yet
