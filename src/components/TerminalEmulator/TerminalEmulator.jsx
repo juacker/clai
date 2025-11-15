@@ -23,6 +23,8 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
   const inputRef = useRef(null);
   const outputRef = useRef(null);
   const autoCollapseTimerRef = useRef(null);
+  // CHANGED: Ref for the wrapper element instead of display to handle scrolling
+  const inputWrapperRef = useRef(null);
 
   // Check if desktop chat panel is open
   const isChatOpen = isCurrentChatOpen();
@@ -31,6 +33,19 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
   const MAX_MESSAGES = 5;
   // Auto-collapse delay in milliseconds
   const AUTO_COLLAPSE_DELAY = 5000; // 10 seconds
+
+  // UPDATED: Function to scroll the wrapper to keep cursor visible
+  const scrollToCursor = useCallback(() => {
+    if (inputWrapperRef.current) {
+      // Scroll to the far right to show the cursor
+      inputWrapperRef.current.scrollLeft = inputWrapperRef.current.scrollWidth;
+    }
+  }, []);
+
+  // UPDATED: Effect to scroll when input value changes
+  useEffect(() => {
+    scrollToCursor();
+  }, [inputValue, scrollToCursor]);
 
   // Reset auto-collapse timer - memoized to avoid recreating on every render
   const resetAutoCollapseTimer = useCallback(() => {
@@ -57,9 +72,12 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
       // Keep only the last MAX_MESSAGES messages
       return updated.slice(-MAX_MESSAGES);
     });
-    // Show output area and reset auto-collapse timer
-    setIsOutputVisible(true);
-    resetAutoCollapseTimer();
+    // Only show output area and reset auto-collapse timer for error/warning messages
+    // Success messages are added to the list but don't expand the panel
+    if (type === 'error' || type === 'warning') {
+      setIsOutputVisible(true);
+      resetAutoCollapseTimer();
+    }
   }, [resetAutoCollapseTimer, MAX_MESSAGES]);
 
   // Clear auto-collapse timer on unmount
@@ -262,8 +280,8 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
         {/* Terminal Prompt Symbol */}
         <span className={styles.terminalPrompt}>%</span>
 
-        {/* Terminal Input */}
-        <div className={styles.terminalInputWrapper}>
+        {/* Terminal Input - SIMPLIFIED: Just the input, no display span */}
+        <div className={styles.terminalInputWrapper} ref={inputWrapperRef}>
           <input
             ref={inputRef}
             type="text"
@@ -278,10 +296,6 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
             autoCorrect="off"
             autoCapitalize="off"
           />
-          <span className={styles.terminalInputDisplay} aria-hidden="true">
-            {inputValue}
-            <span className={styles.fatCursor}>█</span>
-          </span>
         </div>
       </div>
 
@@ -305,4 +319,3 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
 };
 
 export default TerminalEmulator;
-

@@ -68,11 +68,11 @@
     height: auto; /* Auto height to respect bottom spacing */
 
     /* Light, elegant, modern visual styling */
-    background: rgba(255, 255, 255, 0.98);
+    background: var(--color-bg-glass);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-left: none;
-    box-shadow: -8px 0 16px -8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-lg);
 
     /* Layering */
     z-index: 101;

@@ -118,19 +118,19 @@
 }
 
 .contextValue {
-  /* Mobile-first: App's primary blue */
-  color: #4a9eff;
+  /* Mobile-first: Netdata Green */
+  color: var(--color-primary);
   font-weight: 500;
-  background-color: rgba(74, 158, 255, 0.08);
+  background-color: var(--color-primary-alpha-08);
   padding: 3px 10px;
   border-radius: 6px;
 }
 
-/* Desktop: Value badge with app's primary blue */
+/* Desktop: Value badge with Netdata Green */
 @media (min-width: 769px) and (pointer: fine) {
   .contextValue {
-    color: #4a9eff;
-    background-color: rgba(74, 158, 255, 0.08);
+    color: var(--color-primary);
+    background-color: var(--color-primary-alpha-08);
     padding: 3px 10px;
     border-radius: 6px;
     font-weight: 500;
@@ -250,7 +250,7 @@
   width: 40px;
   height: 40px;
   border: 3px solid rgba(0, 0, 0, 0.1);
-  border-top-color: #4a9eff;
+  border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -290,7 +290,7 @@
 
 .retryButton {
   padding: 8px 16px;
-  background: #4a9eff;
+  background: var(--color-primary);
   color: white;
   border: none;
   border-radius: 6px;
@@ -301,9 +301,9 @@
 }
 
 .retryButton:hover {
-  background: #3a8eef;
+  background: var(--color-primary-light);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(74, 158, 255, 0.3);
+  box-shadow: var(--shadow-primary);
 }
 
 .retryButton:active {
@@ -360,7 +360,7 @@
 
 .conversationItem:hover {
   background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(74, 158, 255, 0.3);
+  border-color: var(--color-primary-alpha-30);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
@@ -466,7 +466,7 @@
 .newConversationButton {
   width: 100%;
   padding: 12px 16px;
-  background: #4a9eff;
+  background: var(--color-primary);
   color: white;
   border: none;
   border-radius: 8px;
@@ -481,9 +481,9 @@
 }
 
 .newConversationButton:hover:not(:disabled) {
-  background: #3a8eef;
+  background: var(--color-primary-light);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(74, 158, 255, 0.3);
+  box-shadow: var(--shadow-primary);
 }
 
 .newConversationButton:active:not(:disabled) {
@@ -560,8 +560,8 @@
 
 .messageInput:focus {
   background: #ffffff;
-  border-color: #4a9eff;
-  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.08);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-alpha-08);
 }
 
 .messageInput:disabled {
@@ -575,7 +575,7 @@
 
 .sendButton {
   padding: 12px 16px;
-  background: #4a9eff;
+  background: var(--color-primary);
   color: white;
   border: none;
   border-radius: 8px;
@@ -588,9 +588,9 @@
 }
 
 .sendButton:hover:not(:disabled) {
-  background: #3a8eef;
+  background: var(--color-primary-light);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(74, 158, 255, 0.3);
+  box-shadow: var(--shadow-primary);
 }
 
 .sendButton:active:not(:disabled) {
@@ -632,18 +632,18 @@
 }
 
 .chatInput:focus {
-  /* Mobile-first: Light focus styling with app's primary blue */
+  /* Mobile-first: Light focus styling with Netdata Green */
   background: #ffffff;
-  border-color: #4a9eff;
-  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.08);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-alpha-08);
 }
 
-/* Desktop: Light focus styling with app's primary blue */
+/* Desktop: Light focus styling with Netdata Green */
 @media (min-width: 769px) and (pointer: fine) {
   .chatInput:focus {
     background: #ffffff;
-    border-color: #4a9eff;
-    box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.08);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-alpha-08);
   }
 }
 
@@ -732,20 +732,20 @@
 }
 
 .messageBubbleOwn {
-  /* Mobile-first: Constrained width for user messages with app's primary blue */
+  /* Mobile-first: Constrained width for user messages with Netdata Green */
   max-width: 75%;
   width: auto;
-  background-color: rgba(74, 158, 255, 0.08);
-  border-color: rgba(74, 158, 255, 0.2);
+  background-color: var(--color-primary-alpha-08);
+  border-color: var(--color-primary-alpha-20);
 }
 
-/* Desktop: Constrained width for user messages with app's primary blue */
+/* Desktop: Constrained width for user messages with Netdata Green */
 @media (min-width: 769px) and (pointer: fine) {
   .messageBubbleOwn {
     max-width: 75%;
     width: auto;
-    background-color: rgba(74, 158, 255, 0.08);
-    border-color: rgba(74, 158, 255, 0.2);
+    background-color: var(--color-primary-alpha-08);
+    border-color: var(--color-primary-alpha-20);
   }
 }
 
@@ -825,7 +825,7 @@
 .streamingCursor {
   display: inline-block;
   margin-left: 2px;
-  color: #4a9eff;
+  color: var(--color-primary);
   animation: blink 1s infinite;
   font-weight: 400;
 }

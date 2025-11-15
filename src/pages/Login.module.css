@@ -3,27 +3,28 @@
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background-color: #f6f6f6;
+  background-color: var(--color-bg-secondary);
 }
 
 .loginCard {
-  background: white;
+  background: var(--color-bg-primary);
   padding: 3rem;
   border-radius: 12px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-lg);
   max-width: 450px;
   width: 100%;
+  border: 1px solid var(--color-border-light);
 }
 
 .loginCard h1 {
   margin: 0 0 1rem 0;
   font-size: 2rem;
-  color: #0f0f0f;
+  color: var(--color-text-primary);
   text-align: center;
 }
 
 .description {
-  color: #666;
+  color: var(--color-text-secondary);
   text-align: center;
   margin-bottom: 2rem;
   font-size: 1rem;
@@ -43,54 +44,59 @@
 
 .formGroup label {
   font-weight: 500;
-  color: #0f0f0f;
+  color: var(--color-text-primary);
   font-size: 0.95rem;
 }
 
 .input {
   padding: 0.75rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--color-border-medium);
   border-radius: 8px;
   font-size: 1rem;
-  background-color: white;
-  color: #0f0f0f;
-  transition: border-color 0.3s;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  transition: all 0.3s ease;
 }
 
 .input:focus {
   outline: none;
-  border-color: #646cff;
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px var(--color-primary-alpha-10);
 }
 
 .submitButton {
   padding: 0.875rem;
-  background-color: #646cff;
+  background-color: var(--color-primary);
   color: white;
   border: none;
   border-radius: 8px;
   font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.3s;
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow-sm);
 }
 
 .submitButton:hover {
-  background-color: #535bf2;
+  background-color: var(--color-primary-light);
+  box-shadow: var(--shadow-primary);
+  transform: translateY(-1px);
 }
 
 .submitButton:active {
-  background-color: #4248d6;
+  background-color: var(--color-primary-dark);
+  transform: translateY(0);
 }
 
 .helpText {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-border-light);
   text-align: center;
 }
 
 .helpText p {
-  color: #999;
+  color: var(--color-text-tertiary);
   font-size: 0.875rem;
   margin: 0;
 }

@@ -5,15 +5,17 @@
   justify-content: center;
   border-radius: 50%;
   overflow: hidden;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  box-shadow: var(--shadow-sm);
+  border: 2px solid var(--color-border-medium);
   transition: all 0.3s ease;
   cursor: pointer;
 }
 
 .avatarContainer:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
   transform: scale(1.05);
+  border-color: var(--color-primary-alpha-30);
 }
 
 /* Size variants */

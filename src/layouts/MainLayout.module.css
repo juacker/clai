@@ -89,5 +89,6 @@
   align-items: center;
   justify-content: center;
   height: 100vh;
-  color: #666;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-primary);
 }

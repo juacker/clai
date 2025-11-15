@@ -13,7 +13,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--color-border-medium);
   backdrop-filter: blur(8px);
   z-index: 10000;
   display: flex;
@@ -33,9 +33,9 @@
 
 /* Selector Container */
 .selector {
-  background: #ffffff;
+  background: var(--color-bg-primary);
   border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08),
+  box-shadow: 0 8px 32px var(--color-overlay-08),
               0 2px 8px rgba(0, 0, 0, 0.04);
   min-width: 360px;
   max-width: 90vw;
@@ -64,7 +64,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid var(--color-overlay-06);
   background: linear-gradient(to bottom, #fafbfc, #ffffff);
 }
 
@@ -95,13 +95,13 @@
 }
 
 .closeButton:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--color-bg-hover);
   color: rgba(0, 0, 0, 0.7);
 }
 
 .closeButton:active {
   transform: scale(0.94);
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--color-overlay-08);
 }
 
 /* Search Container */
@@ -114,13 +114,13 @@
 .searchInput {
   width: 100%;
   padding: 12px 16px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--color-overlay-10);
   border-radius: 10px;
   font-size: 15px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   outline: none;
   transition: all 0.2s ease;
-  background: #ffffff;
+  background: var(--color-bg-primary);
   color: #1a1a1a;
   box-sizing: border-box; /* Ensure padding is included in width */
 }
@@ -128,7 +128,7 @@
 .searchInput:focus {
   border-color: #667eea;
   box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.08);
-  background: #ffffff;
+  background: var(--color-bg-primary);
 }
 
 .searchInput::placeholder {
@@ -140,7 +140,7 @@
   overflow-y: auto;
   max-height: 420px;
   padding: 12px;
-  background: #ffffff;
+  background: var(--color-bg-primary);
 }
 
 /* Custom Scrollbar - Light theme */

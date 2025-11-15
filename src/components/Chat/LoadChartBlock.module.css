@@ -3,9 +3,9 @@
 /* Chart Container - Mobile-First */
 .chartContainer {
   margin: 12px 0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--chart-border);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--chart-bg);
   overflow: visible;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(8px);
@@ -13,9 +13,9 @@
 }
 
 .chartContainer:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--chart-border-hover);
+  background: var(--chart-bg-hover);
+  box-shadow: var(--shadow-md);
 }
 
 /* Chart Header */
@@ -24,20 +24,20 @@
   flex-direction: column;
   gap: 12px;
   padding: 14px 18px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .chartTitle {
   font-size: 14px;
   font-weight: 600;
-  color: rgba(70, 130, 220, 1);
+  color: var(--chart-title);
   letter-spacing: 0.01em;
   margin: 0;
 }
 
 /* Filter Panel */
 .filterPanel {
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--chart-grid);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.5);
   overflow: hidden;
@@ -60,7 +60,7 @@
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--color-text-secondary);
   transition: all 0.2s ease;
   flex: 1;
   text-align: left;
@@ -68,7 +68,7 @@
 
 .filterPanelToggle:hover {
   background: rgba(0, 0, 0, 0.03);
-  color: rgba(0, 0, 0, 0.9);
+  color: var(--color-text-primary);
 }
 
 .filterPanelToggleIcon {
@@ -104,7 +104,7 @@
   flex-wrap: wrap;
   gap: 6px;
   padding: 8px 12px;
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  border-top: 1px solid var(--color-border-light);
   max-height: 120px;
   overflow-y: auto;
 }
@@ -115,12 +115,12 @@
 }
 
 .activeSelections::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--color-border-light);
   border-radius: 3px;
 }
 
 .activeSelections::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--chart-axis);
   border-radius: 3px;
 }
 
@@ -129,25 +129,25 @@
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: var(--color-primary-alpha-10);
+  border: 1px solid var(--color-primary-alpha-30);
   border-radius: 12px;
   font-size: 11px;
   transition: all 0.2s ease;
 }
 
 .activeTag:hover {
-  background: rgba(59, 130, 246, 0.15);
-  border-color: rgba(59, 130, 246, 0.4);
+  background: var(--color-primary-alpha-15);
+  border-color: var(--color-primary-alpha-40);
 }
 
 .activeTagPrefix {
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--color-text-tertiary);
   font-weight: 500;
 }
 
 .activeTagValue {
-  color: rgba(59, 130, 246, 1);
+  color: var(--color-primary-dark);
   font-weight: 600;
   max-width: 150px;
   overflow: hidden;
@@ -162,10 +162,10 @@
   width: 16px;
   height: 16px;
   padding: 0;
-  background: rgba(59, 130, 246, 0.2);
+  background: var(--color-primary-alpha-20);
   border: none;
   border-radius: 50%;
-  color: rgba(59, 130, 246, 1);
+  color: var(--color-primary);
   font-size: 14px;
   font-weight: bold;
   line-height: 1;
@@ -175,13 +175,13 @@
 }
 
 .activeTagRemove:hover {
-  background: rgba(239, 68, 68, 0.2);
-  color: rgba(239, 68, 68, 1);
+  background: var(--color-error-alpha-10);
+  color: var(--color-error);
 }
 
 .filterPanelContent {
   padding: 12px;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  border-top: 1px solid var(--chart-grid);
   animation: slideDown 0.2s ease-out;
 }
 
@@ -207,7 +207,7 @@
 .filterSectionTitle {
   font-size: 11px;
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 8px;
@@ -226,12 +226,12 @@
 }
 
 .filterGroupsContainer::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--color-border-light);
   border-radius: 3px;
 }
 
 .filterGroupsContainer::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--chart-axis);
   border-radius: 3px;
 }
 
@@ -250,7 +250,7 @@
 .filterGroupTitle {
   font-size: 11px;
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--color-text-secondary);
   margin-bottom: 6px;
   padding-left: 4px;
 }
@@ -276,12 +276,12 @@
 }
 
 .filterChipsScrollable::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--color-border-light);
   border-radius: 2px;
 }
 
 .filterChipsScrollable::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--color-border-medium);
   border-radius: 2px;
 }
 
@@ -291,7 +291,7 @@
   gap: 6px;
   padding: 6px 10px;
   background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--color-border-medium);
   border-radius: 16px;
   font-size: 11px;
   cursor: pointer;
@@ -303,27 +303,28 @@
 .filterChip:hover {
   background: rgba(255, 255, 255, 1);
   border-color: rgba(0, 0, 0, 0.25);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 4px var(--color-border-light);
 }
 
 .filterCheckbox {
   margin: 0;
   cursor: pointer;
   flex-shrink: 0;
+  accent-color: var(--color-primary); /* Netdata Green for checkbox */
 }
 
 .filterCheckbox:checked + .filterChipLabel {
   font-weight: 600;
-  color: rgba(59, 130, 246, 1);
+  color: var(--color-primary-dark);
 }
 
 .filterChip:has(.filterCheckbox:checked) {
-  background: rgba(59, 130, 246, 0.1);
-  border-color: rgba(59, 130, 246, 0.4);
+  background: var(--color-primary-alpha-10);
+  border-color: var(--color-primary-alpha-40);
 }
 
 .filterChipLabel {
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--color-text-secondary);
   transition: all 0.2s ease;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -344,13 +345,13 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--color-text-secondary);
   transition: all 0.2s ease;
   user-select: none;
 }
 
 .legendItem:hover {
-  color: rgba(0, 0, 0, 0.9);
+  color: var(--color-text-primary);
 }
 
 .legendItemInactive {
@@ -387,12 +388,12 @@
 }
 
 .legendWrapper::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--color-border-light);
   border-radius: 3px;
 }
 
 .legendWrapper::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--chart-axis);
   border-radius: 3px;
 }
 
@@ -403,7 +404,7 @@
 /* For Firefox */
 .legendWrapper {
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) rgba(0, 0, 0, 0.05);
+  scrollbar-color: var(--chart-axis) var(--color-border-light);
 }
 
 /* Chart Wrapper */
@@ -450,7 +451,7 @@
 }
 
 .chartSvg :global(.grid) line {
-  stroke: rgba(0, 0, 0, 0.1);
+  stroke: var(--chart-grid);
   stroke-dasharray: 2, 2;
 }
 
@@ -462,28 +463,28 @@
 .xAxis,
 .yAxis {
   font-size: 11px;
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--color-text-secondary);
 }
 
 .xAxis :global(line),
 .yAxis :global(line) {
-  stroke: rgba(0, 0, 0, 0.2);
+  stroke: var(--chart-axis);
 }
 
 .xAxis :global(path),
 .yAxis :global(path) {
-  stroke: rgba(0, 0, 0, 0.2);
+  stroke: var(--chart-axis);
 }
 
 .xAxis :global(text),
 .yAxis :global(text) {
-  fill: rgba(0, 0, 0, 0.7);
+  fill: var(--color-text-secondary);
   font-size: 11px;
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
 }
 
 .axisLabel {
-  fill: rgba(0, 0, 0, 0.8);
+  fill: var(--color-text-primary);
   font-size: 12px;
   font-weight: 600;
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
@@ -491,7 +492,7 @@
 
 /* Y-axis label positioned at top-left corner */
 .yAxisLabel {
-  fill: rgba(0, 0, 0, 0.8);
+  fill: var(--color-text-primary);
   font-size: 12px;
   font-weight: 600;
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
@@ -510,7 +511,7 @@
 /* Hover Circles - enhanced for clickability */
 :global(.hover-circle) {
   transition: opacity 0.1s ease-out, r 0.1s ease-out;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  filter: drop-shadow(0 2px 4px var(--chart-axis));
   cursor: pointer;
 }
 
@@ -528,34 +529,34 @@
 /* Tooltip */
 .tooltip {
   position: fixed;
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: var(--color-bg-glass);
+  border: 1px solid var(--color-border-medium);
   border-radius: 8px;
   padding: 10px 12px;
   pointer-events: none;
   z-index: 10000;
   backdrop-filter: blur(12px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 16px var(--color-border-medium);
   max-width: 280px;
 }
 
 .tooltipDate {
   font-size: 11px;
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--color-text-secondary);
   margin-bottom: 8px;
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid var(--chart-grid);
   font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
 }
 
 .tooltipLabel {
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--color-text-secondary);
   font-weight: 500;
 }
 
 .tooltipValue {
-  color: rgba(0, 0, 0, 0.9);
+  color: var(--color-text-primary);
   font-weight: 600;
   margin-left: auto;
   font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
@@ -578,11 +579,11 @@
 
 .tooltipMore {
   font-size: 10px;
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--color-text-tertiary);
   font-style: italic;
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  border-top: 1px solid var(--chart-grid);
   text-align: center;
 }
 
@@ -611,14 +612,14 @@
 
 /* Netdata Spinner Icon - Spinning Animation */
 .netdataSpinner {
-  color: #00AB44; /* Netdata green color */
+  color: var(--color-primary); /* Netdata green color */
   animation: spin 1s linear infinite;
   filter: drop-shadow(0 2px 4px rgba(0, 171, 68, 0.2));
 }
 
 .loadingText {
   font-size: 13px;
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
@@ -630,7 +631,7 @@
   gap: 10px;
   padding: 24px 18px;
   font-size: 13px;
-  color: rgba(255, 100, 100, 0.9);
+  color: var(--color-error);
   text-align: center;
 }
 
@@ -770,17 +771,17 @@
   }
 
   .legendItem:hover {
-    color: rgba(0, 0, 0, 0.7);
+    color: var(--color-text-secondary);
   }
 
   .filterChip:hover {
     background: rgba(255, 255, 255, 0.8);
-    border-color: rgba(0, 0, 0, 0.15);
+    border-color: var(--color-border-medium);
   }
 
   .activeTag:hover {
-    background: rgba(59, 130, 246, 0.1);
-    border-color: rgba(59, 130, 246, 0.3);
+    background: var(--color-primary-alpha-10);
+    border-color: var(--color-primary-alpha-30);
   }
 }
 

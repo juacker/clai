@@ -2,18 +2,18 @@
 
 .toolBlock {
   margin: 12px 0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--chart-border);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--chart-bg);
   overflow: hidden;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(8px);
 }
 
 .toolBlock:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--chart-border-hover);
+  background: var(--chart-bg-hover);
+  box-shadow: var(--shadow-md);
   transform: translateY(-1px);
 }
 
@@ -29,7 +29,7 @@
 }
 
 .toolHeader:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--chart-bg);
 }
 
 .toolHeaderLeft {
@@ -61,7 +61,7 @@
 .toolName {
   font-weight: 600;
   font-size: 14px;
-  color: rgba(70, 130, 220, 1);
+  color: var(--chart-title);
   letter-spacing: 0.01em;
 }
 

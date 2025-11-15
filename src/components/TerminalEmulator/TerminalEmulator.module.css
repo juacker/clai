@@ -21,10 +21,10 @@
     left: 0;
     right: 0;
     z-index: 100;
-    background: rgba(255, 255, 255, 0.98);
+    background: var(--color-bg-glass);
     backdrop-filter: blur(20px);
-    border-top: 1px solid rgba(0, 0, 0, 0.08);
-    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.06);
+    border-top: 1px solid var(--color-border-light);
+    box-shadow: var(--shadow-lg);
     max-height: 50vh;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     flex: none;
@@ -35,7 +35,7 @@
 .contextPanelWrapper {
   position: relative;
   width: 100%;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  /* FIXED: Removed border-bottom to prevent double border */
   background: transparent;
   transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -45,7 +45,8 @@
   position: relative;
   top: auto;
   background: transparent;
-  border-bottom: none;
+  /* FIXED: Keep border-bottom only on context panel */
+  border-bottom: 1px solid var(--color-border-light);
   padding: 12px 24px 8px;
   z-index: auto;
 }
@@ -56,7 +57,6 @@
   align-items: center;
   gap: 12px;
   padding: 16px 24px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   background: transparent;
   transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -132,11 +132,11 @@
 }
 
 .chatToggleButtonInline:hover {
-  background: rgba(74, 158, 255, 0.08);
+  background: var(--color-primary-alpha-08);
 }
 
 .chatToggleButtonInline:active {
-  background: rgba(74, 158, 255, 0.12);
+  background: var(--color-primary-alpha-12);
   transform: scale(0.95);
 }
 
@@ -154,7 +154,7 @@
 
 /* Terminal Prompt Symbol - Subtle indicator */
 .terminalPrompt {
-  color: rgba(74, 158, 255, 0.7);
+  color: var(--color-primary-alpha-70);
   font-weight: 500;
   font-size: 14px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -166,80 +166,65 @@
   flex: 1;
   position: relative;
   min-width: 0;
-  background: rgba(0, 0, 0, 0.02);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--color-overlay-02);
+  border: 1px solid var(--color-border-light);
   border-radius: 8px;
   padding: 8px 12px;
   transition: all 0.2s ease;
+  /* FIXED: Added overflow-x auto to enable horizontal scrolling */
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Hide scrollbar but keep functionality */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+/* Hide webkit scrollbar */
+.terminalInputWrapper::-webkit-scrollbar {
+  display: none;
 }
 
 .terminalInputWrapper:focus-within {
-  background: rgba(255, 255, 255, 0.9);
-  border-color: rgba(74, 158, 255, 0.4);
-  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.08);
+  background: var(--color-bg-primary);
+  border-color: var(--color-border-focus);
+  box-shadow: var(--shadow-focus);
 }
 
-/* Terminal Input - hidden native cursor */
+/* Terminal Input - Simplified, no hidden cursor trick */
 .terminalInput {
   width: 100%;
   background: transparent;
-  border: none;
-  outline: none;
-  color: transparent;
-  caret-color: transparent;
+  border: none !important;
+  outline: none !important;
+  color: var(--color-text-primary);
+  caret-color: var(--color-primary-alpha-70);
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'Courier New', monospace;
   font-size: 13px;
   line-height: 20px;
   padding: 0;
   margin: 0;
-  position: absolute;
-  top: 8px;
-  left: 12px;
-  right: 12px;
-  z-index: 2;
+  box-shadow: none !important;
+}
+
+.terminalInput:focus {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .terminalInput::placeholder {
-  color: transparent;
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
 }
 
-/* Terminal Input Display - shows the actual text and cursor */
-.terminalInputDisplay {
-  pointer-events: none;
-  user-select: none;
-  color: rgba(0, 0, 0, 0.85);
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 20px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  position: relative;
-  z-index: 1;
-  min-height: 20px;
-  max-width: 100%;
+.terminalInput::selection {
+  background: var(--color-primary-alpha-20);
+  color: var(--color-text-primary);
 }
 
-/* Modern cursor - Subtle blinking line */
-.fatCursor {
-  display: inline-block;
-  width: 2px;
-  height: 1.2em;
-  background: rgba(74, 158, 255, 0.8);
-  vertical-align: text-bottom;
-  margin-left: 1px;
-  animation: cursorBlink 1s ease-in-out infinite;
-  position: relative;
-  top: -0.05em;
-}
-
-@keyframes cursorBlink {
-  0%, 49% {
-    opacity: 1;
-  }
-  50%, 100% {
-    opacity: 0.2;
-  }
+.terminalInput::-moz-selection {
+  background: var(--color-primary-alpha-20);
+  color: var(--color-text-primary);
 }
 
 /* Output Area - Appears BELOW the input for better UX */
@@ -252,6 +237,8 @@
   min-height: 0;
   opacity: 1;
   transition: opacity 0.2s ease, max-height 0.2s ease, padding 0.2s ease, margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  /* FIXED: Added subtle border-top to separate from input area */
+  border-top: 1px solid var(--color-border-light);
 }
 
 /* Collapsed state - smooth fade out and shrink */
@@ -273,12 +260,12 @@
 }
 
 .outputArea::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--color-border-medium);
   border-radius: 3px;
 }
 
 .outputArea::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--color-border-strong);
 }
 
 /* Output Message - Modern, clean design */
@@ -291,7 +278,7 @@
   font-size: 13px;
   line-height: 1.5;
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.02);
+  background: var(--color-overlay-02);
   border-left: 3px solid transparent;
   animation: messageSlideIn 0.3s ease;
 }
@@ -311,33 +298,33 @@
   flex: 1;
   word-wrap: break-word;
   word-break: break-word;
-  color: rgba(0, 0, 0, 0.75);
+  color: var(--color-text-secondary);
 }
 
 /* Message type colors - Light theme */
 .outputMessageInfo {
-  background: rgba(74, 158, 255, 0.06);
-  border-left-color: rgba(74, 158, 255, 0.5);
+  background: var(--color-info-alpha-06);
+  border-left-color: var(--color-info);
 }
 
 .outputMessageInfo .outputMessageText {
-  color: rgba(74, 158, 255, 0.9);
+  color: var(--color-info-dark);
 }
 
 .outputMessageInfo::before {
   content: 'ℹ';
-  color: rgba(74, 158, 255, 0.7);
+  color: var(--color-primary-alpha-70);
   margin-right: 8px;
   font-weight: 600;
 }
 
 .outputMessageSuccess {
-  background: rgba(16, 185, 129, 0.06);
-  border-left-color: rgba(16, 185, 129, 0.5);
+  background: var(--color-success-alpha-06);
+  border-left-color: var(--color-success);
 }
 
 .outputMessageSuccess .outputMessageText {
-  color: rgba(16, 185, 129, 0.9);
+  color: var(--color-success-dark);
 }
 
 .outputMessageSuccess::before {
@@ -348,12 +335,12 @@
 }
 
 .outputMessageError {
-  background: rgba(239, 68, 68, 0.06);
-  border-left-color: rgba(239, 68, 68, 0.5);
+  background: var(--color-error-alpha-06);
+  border-left-color: var(--color-error);
 }
 
 .outputMessageError .outputMessageText {
-  color: rgba(239, 68, 68, 0.9);
+  color: var(--color-error-dark);
 }
 
 .outputMessageError::before {
@@ -364,12 +351,12 @@
 }
 
 .outputMessageWarning {
-  background: rgba(245, 158, 11, 0.06);
-  border-left-color: rgba(245, 158, 11, 0.5);
+  background: var(--color-warning-alpha-06);
+  border-left-color: var(--color-warning);
 }
 
 .outputMessageWarning .outputMessageText {
-  color: rgba(245, 158, 11, 0.9);
+  color: var(--color-warning-dark);
 }
 
 .outputMessageWarning::before {
@@ -381,17 +368,9 @@
 
 /* Loading State */
 .loadingText {
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--color-text-disabled);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 13px;
-}
-
-/* Terminal Avatar - Positioned at the right side of the input area */
-.terminalAvatar {
-  flex-shrink: 0;
-  margin-left: 12px;
-  display: flex;
-  align-items: center;
 }
 
 /* ===== MOBILE-SPECIFIC STYLES ===== */
@@ -446,4 +425,3 @@
     font-size: 16px; /* Prevent zoom on iOS */
   }
 }
-

@@ -1150,7 +1150,7 @@ export const TabManagerProvider = ({ children }) => {
         message: `Error: ${error.message}`
       };
     }
-  }, [tabs, activeTabId, createNewTab, switchToTabByIndex, switchToNextTab, switchToPrevTab, closeTab, renameTab, duplicateTab, clearAllTabs]);
+  }, [tabs, activeTabId, activeTileId, createNewTab, switchToTab, switchToTabByIndex, switchToNextTab, switchToPrevTab, closeTab, renameTab, duplicateTab, clearAllTabs, splitTile, closeTile, resizeTile, getLeafTiles]);
 
   const value = {
     // State

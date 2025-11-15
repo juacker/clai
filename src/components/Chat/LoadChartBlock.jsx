@@ -81,15 +81,16 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
   const [activeGroupBy, setActiveGroupBy] = useState([]);
   const [activeFilters, setActiveFilters] = useState({});
 
+  // Netdata chart color palette
   const DEFAULT_COLORS = useMemo(() => [
-    '#3B82F6', // Blue
-    '#10B981', // Green
-    '#F59E0B', // Amber
-    '#EF4444', // Red
-    '#8B5CF6', // Purple
-    '#EC4899', // Pink
-    '#06B6D4', // Cyan
-    '#F97316', // Orange
+    '#00AB44',  // Netdata Green
+    '#00B5D8',  // Netdata Teal
+    '#3498DB',  // Sky Blue
+    '#9B59B6',  // Purple
+    '#F39C12',  // Orange
+    '#E74C3C',  // Red
+    '#1ABC9C',  // Turquoise
+    '#34495E',  // Dark Gray
   ], []);
 
   // Initialize active filters and groups from toolInput

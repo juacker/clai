@@ -10,32 +10,35 @@
 .notFound h1 {
   font-size: 6rem;
   margin: 0;
-  color: #646cff;
+  color: var(--color-primary);
 }
 
 .notFound h2 {
   font-size: 2rem;
   margin: 1rem 0;
-  color: #0f0f0f;
+  color: var(--color-text-primary);
 }
 
 .notFound p {
   font-size: 1.2rem;
-  color: #666;
+  color: var(--color-text-secondary);
   margin-bottom: 2rem;
 }
 
 .homeLink {
   padding: 0.8rem 2rem;
-  background-color: #646cff;
+  background-color: var(--color-primary);
   color: white;
   text-decoration: none;
   border-radius: 8px;
   font-weight: 500;
-  transition: background-color 0.3s;
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow-sm);
 }
 
 .homeLink:hover {
-  background-color: #535bf2;
+  background-color: var(--color-primary-light);
+  box-shadow: var(--shadow-primary);
+  transform: translateY(-1px);
 }
 

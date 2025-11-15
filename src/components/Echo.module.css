@@ -12,12 +12,18 @@
   justify-content: center;
   padding: 40px;
   overflow: auto;
+  background: var(--color-bg-primary);
+  /* Inset by 2px to allow parent's focus border (box-shadow) to be visible */
+  box-sizing: border-box;
+  margin: 2px;
+  width: calc(100% - 4px);
+  height: calc(100% - 4px);
 }
 
 .echoText {
   font-size: clamp(2rem, 8vw, 12rem);
   font-weight: 300;
-  color: #0f0f0f;
+  color: var(--color-text-primary);
   text-align: center;
   word-break: break-word;
   line-height: 1.2;

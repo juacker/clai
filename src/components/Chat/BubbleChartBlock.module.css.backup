@@ -1,20 +1,20 @@
-/* TimeSeriesChartBlock Component Styles - Elegant & Minimalistic */
+/* BubbleChartBlock Component Styles - Elegant & Minimalistic */
 
 /* Chart Container - Mobile-First */
 .chartContainer {
   margin: 12px 0;
-  border: 1px solid var(--chart-border);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
-  background: var(--chart-bg);
-  overflow: visible; /* Changed from hidden to visible to prevent clipping */
+  background: rgba(255, 255, 255, 0.04);
+  overflow: visible;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(8px);
 }
 
 .chartContainer:hover {
-  border-color: var(--chart-border-hover);
-  background: var(--chart-bg-hover);
-  box-shadow: var(--shadow-md);
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 /* Chart Header */
@@ -23,13 +23,13 @@
   flex-direction: column;
   gap: 12px;
   padding: 14px 18px;
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .chartTitle {
   font-size: 14px;
   font-weight: 600;
-  color: var(--chart-title);
+  color: rgba(70, 130, 220, 1);
   letter-spacing: 0.01em;
   margin: 0;
 }
@@ -47,13 +47,13 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--color-text-secondary);
+  color: rgba(0, 0, 0, 0.7);
   transition: all 0.2s ease;
   user-select: none;
 }
 
 .legendItem:hover {
-  color: var(--color-text-primary);
+  color: rgba(0, 0, 0, 0.9);
 }
 
 .legendItemInactive {
@@ -78,10 +78,10 @@
 
 /* Chart Wrapper */
 .chartWrapper {
-  padding: 10px 0px; /* Reduced padding to give more space for the chart */
+  padding: 10px 0px;
   position: relative;
-  min-height: 250px;
-  overflow: visible; /* Ensure SVG content is not clipped */
+  min-height: 300px;
+  overflow: visible;
 }
 
 /* SVG Element */
@@ -89,23 +89,20 @@
   width: 100%;
   height: 100%;
   display: block;
-  overflow: visible; /* Ensure chart elements beyond bounds are visible */
+  overflow: visible;
 }
 
 /* D3 Elements Styling */
-.chartSvg :global(.line) {
-  fill: none;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.chartSvg :global(.bubble) {
+  transition: all 0.15s ease;
 }
 
-.chartSvg :global(.area) {
-  stroke: none;
+.chartSvg :global(.bubble:hover) {
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
 }
 
 .chartSvg :global(.grid) line {
-  stroke: var(--chart-grid);
+  stroke: rgba(0, 0, 0, 0.1);
   stroke-dasharray: 2, 2;
 }
 
@@ -117,28 +114,28 @@
 .xAxis,
 .yAxis {
   font-size: 11px;
-  color: var(--color-text-secondary);
+  color: rgba(0, 0, 0, 0.7);
 }
 
 .xAxis :global(line),
 .yAxis :global(line) {
-  stroke: var(--chart-axis);
+  stroke: rgba(0, 0, 0, 0.2);
 }
 
 .xAxis :global(path),
 .yAxis :global(path) {
-  stroke: var(--chart-axis);
+  stroke: rgba(0, 0, 0, 0.2);
 }
 
 .xAxis :global(text),
 .yAxis :global(text) {
-  fill: var(--color-text-secondary);
+  fill: rgba(0, 0, 0, 0.7);
   font-size: 11px;
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
 }
 
 .axisLabel {
-  fill: var(--color-text-primary);
+  fill: rgba(0, 0, 0, 0.8);
   font-size: 12px;
   font-weight: 600;
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
@@ -146,77 +143,53 @@
 
 /* Y-axis label positioned at top-left corner */
 .yAxisLabel {
-  fill: var(--color-text-primary);
+  fill: rgba(0, 0, 0, 0.8);
   font-size: 12px;
   font-weight: 600;
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   text-anchor: middle;
 }
 
-/* Crosshair */
-.crosshair {
-  stroke: rgba(0, 0, 0, 0.3);
-  stroke-width: 1;
-  stroke-dasharray: 4, 4;
-  pointer-events: none;
-  transition: opacity 0.15s ease-out;
-}
-
-/* Hover Circles */
-:global(.hover-circle) {
-  transition: opacity 0.1s ease-out;
-  filter: drop-shadow(0 2px 4px var(--chart-axis));
-}
-
-/* Overlay for mouse events */
-.overlay {
-  fill: none;
-  pointer-events: all;
-  cursor: crosshair;
+/* Bubble Labels */
+.bubbleLabel {
+  fill: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
 }
 
 /* Tooltip */
 .tooltip {
   position: fixed;
-  background: var(--color-bg-glass);
-  border: 1px solid var(--color-border-medium);
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(0, 0, 0, 0.15);
   border-radius: 8px;
   padding: 10px 12px;
   pointer-events: none;
   z-index: 10000;
   backdrop-filter: blur(12px);
-  box-shadow: 0 4px 16px var(--color-border-medium);
-  max-width: 280px;
-}
-
-.tooltipDate {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--chart-grid);
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  max-width: 240px;
 }
 
 .tooltipLabel {
-  color: var(--color-text-secondary);
-  font-weight: 500;
-}
-
-.tooltipValue {
-  color: var(--color-text-primary);
+  font-size: 12px;
   font-weight: 600;
-  margin-left: auto;
+  color: rgba(0, 0, 0, 0.8);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
 }
 
-.tooltipRow {
+.tooltipSeries {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 4px 0;
+  gap: 6px;
+  margin-bottom: 8px;
   font-size: 11px;
+  color: rgba(0, 0, 0, 0.7);
+  font-weight: 500;
 }
 
 .tooltipColor {
@@ -226,13 +199,32 @@
   flex-shrink: 0;
 }
 
+.tooltipRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0;
+  font-size: 11px;
+}
+
+.tooltipKey {
+  color: rgba(0, 0, 0, 0.6);
+  font-weight: 500;
+}
+
+.tooltipValue {
+  color: rgba(0, 0, 0, 0.9);
+  font-weight: 600;
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+}
 
 /* Loading Container */
 .loadingContainer {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 250px;
+  min-height: 300px;
   padding: 24px 18px;
 }
 
@@ -246,15 +238,15 @@
 .loadingSpinner {
   width: 40px;
   height: 40px;
-  border: 4px solid var(--chart-grid);
-  border-top: 4px solid var(--color-primary);
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  border-top: 4px solid #3B82F6;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
 
 .loadingText {
   font-size: 13px;
-  color: var(--color-text-secondary);
+  color: rgba(0, 0, 0, 0.6);
   text-align: center;
 }
 
@@ -266,7 +258,7 @@
   gap: 10px;
   padding: 24px 18px;
   font-size: 13px;
-  color: var(--color-error);
+  color: rgba(255, 100, 100, 0.9);
   text-align: center;
 }
 
@@ -293,7 +285,7 @@
 
   .chartWrapper {
     padding: 16px 14px;
-    min-height: 220px;
+    min-height: 250px;
   }
 
   .legend {
@@ -319,19 +311,24 @@
   }
 
   .tooltip {
-    max-width: 220px;
+    max-width: 200px;
     padding: 8px 10px;
   }
 
-  .tooltipDate {
-    font-size: 10px;
+  .tooltipLabel {
+    font-size: 11px;
     margin-bottom: 6px;
     padding-bottom: 4px;
   }
 
-  .tooltipRow {
+  .tooltipSeries {
     font-size: 10px;
-    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .tooltipRow {
+    gap: 8px;
+    font-size: 10px;
   }
 
   .tooltipColor {
@@ -350,13 +347,13 @@
     padding: 18px 16px;
   }
 
-  .overlay {
-    cursor: default;
-  }
-
   /* Increase touch target sizes */
   .legendItem {
     padding: 4px 0;
+  }
+
+  .chartSvg :global(.bubble) {
+    cursor: default;
   }
 }
 
@@ -368,7 +365,11 @@
   }
 
   .legendItem:hover {
-    color: var(--color-text-secondary);
+    color: rgba(0, 0, 0, 0.7);
+  }
+
+  .chartSvg :global(.bubble:hover) {
+    filter: none;
   }
 }
 
@@ -379,11 +380,11 @@
   }
 
   .chartWrapper {
-    min-height: 280px;
+    min-height: 320px;
   }
 
   .tooltip {
-    max-width: 320px;
+    max-width: 280px;
   }
 }
 
@@ -399,7 +400,7 @@
 
   .chartWrapper {
     padding: 14px 12px;
-    min-height: 200px;
+    min-height: 220px;
   }
 
   .legend {
