@@ -9,8 +9,7 @@ import React from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useCommand } from '../../contexts/CommandContext';
 import { useTabManager } from '../../contexts/TabManagerContext';
-import Echo from '../Echo';
-import Metrics from '../Metrics/Metrics';
+import { getCommandComponent } from '../../utils/commandRegistry';
 import styles from './TileView.module.css';
 
 /**
@@ -84,17 +83,20 @@ const TileView = ({ tile, activeTileId }) => {
       >
         {command ? (
           <div className={styles.commandVisualization}>
-            {/* Render command based on type */}
-            {command.type === 'echo' && <Echo command={command} />}
-            {command.type === 'metrics' && <Metrics command={command} />}
-
-            {/* Add more command types here as they are implemented */}
-            {command.type !== 'echo' && command.type !== 'metrics' && (
-              <div className={styles.placeholder}>
-                <p>Command type: {command.type}</p>
-                <p>Not yet implemented</p>
-              </div>
-            )}
+            {/* Dynamically render command component from registry */}
+            {(() => {
+              const CommandComponent = getCommandComponent(command.type);
+              if (CommandComponent) {
+                return <CommandComponent command={command} />;
+              }
+              // Fallback for unimplemented commands
+              return (
+                <div className={styles.placeholder}>
+                  <p>Command type: {command.type}</p>
+                  <p>Not yet implemented</p>
+                </div>
+              );
+            })()}
           </div>
         ) : (
           <div className={styles.emptyTile} />

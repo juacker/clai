@@ -1,11 +1,11 @@
 /**
  * Command Parser for Netdata AI CLI
  *
- * This module provides utilities for parsing command strings into
- * structured command objects that can be executed by the application.
+ * Lightweight command parser that converts command strings into structured objects.
+ * Philosophy: Parse, don't validate. Let the registry handle command existence.
  */
 
-import { COMMAND_TYPES, COMMAND_STATUS } from './commandTypes';
+import { COMMAND_STATUS } from './commandTypes';
 
 /**
  * Generate a unique command ID
@@ -66,39 +66,22 @@ export const parseArguments = (args) => {
 };
 
 /**
- * Determine command type from command name
- *
- * @param {string} commandName - The command name
- * @returns {string} Command type from COMMAND_TYPES
- */
-export const getCommandType = (commandName) => {
-  const normalized = commandName.toLowerCase().trim();
-
-  // Check if it matches any known command type
-  const matchedType = Object.values(COMMAND_TYPES).find(
-    type => type === normalized
-  );
-
-  return matchedType || COMMAND_TYPES.UNKNOWN;
-};
-
-/**
  * Parse a command string into a structured command object
  *
  * @param {string} commandString - The raw command string
  * @returns {Object} Parsed command object
  *
  * @example
- * parseCommand('chart cpu --range 1h --node server1')
+ * parseCommand('metrics --range 1h')
  * // Returns:
  * // {
  * //   id: 'cmd_1234567890_abc123',
- * //   type: 'chart',
- * //   raw: 'chart cpu --range 1h --node server1',
- * //   name: 'chart',
+ * //   type: 'metrics',
+ * //   raw: 'metrics --range 1h',
+ * //   name: 'metrics',
  * //   args: {
- * //     options: { range: '1h', node: 'server1' },
- * //     positional: ['cpu']
+ * //     options: { range: '1h' },
+ * //     positional: []
  * //   },
  * //   timestamp: 1234567890,
  * //   status: 'pending'
@@ -110,7 +93,7 @@ export const parseCommand = (commandString) => {
   if (!trimmed) {
     return {
       id: generateCommandId(),
-      type: COMMAND_TYPES.UNKNOWN,
+      type: '',
       raw: commandString,
       name: '',
       args: { options: {}, positional: [] },
@@ -123,9 +106,8 @@ export const parseCommand = (commandString) => {
   // Split command into parts, respecting quoted strings
   const parts = trimmed.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
 
-  // First part is the command name
-  const commandName = parts[0] || '';
-  const commandType = getCommandType(commandName);
+  // First part is the command name (normalized to lowercase)
+  const commandName = (parts[0] || '').toLowerCase().trim();
 
   // Rest are arguments
   const argParts = parts.slice(1);
@@ -133,63 +115,12 @@ export const parseCommand = (commandString) => {
 
   return {
     id: generateCommandId(),
-    type: commandType,
+    type: commandName, // Type is just the command name
     raw: commandString,
     name: commandName,
     args,
     timestamp: Date.now(),
     status: COMMAND_STATUS.PENDING
-  };
-};
-
-/**
- * Validate a parsed command
- *
- * @param {Object} command - Parsed command object
- * @returns {Object} Validation result { valid: boolean, errors: string[] }
- */
-export const validateCommand = (command) => {
-  const errors = [];
-
-  if (!command) {
-    errors.push('Command is null or undefined');
-    return { valid: false, errors };
-  }
-
-  if (!command.name) {
-    errors.push('Command name is required');
-  }
-
-  if (command.type === COMMAND_TYPES.UNKNOWN) {
-    errors.push(`Unknown command: ${command.name}`);
-  }
-
-  // Add specific validation rules for different command types
-  switch (command.type) {
-    case COMMAND_TYPES.CHART:
-      if (command.args.positional.length === 0) {
-        errors.push('Chart command requires a metric name');
-      }
-      break;
-
-    case COMMAND_TYPES.CD:
-      if (command.args.positional.length === 0) {
-        errors.push('cd command requires a space name');
-      }
-      break;
-
-    case COMMAND_TYPES.QUERY:
-      if (command.args.positional.length === 0) {
-        errors.push('Query command requires a metric name');
-      }
-      break;
-
-    // Add more validation rules as needed
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors
   };
 };
 
@@ -224,98 +155,11 @@ export const formatCommand = (command) => {
 };
 
 /**
- * Get command suggestions based on partial input
- *
- * @param {string} partial - Partial command string
- * @returns {string[]} Array of suggested commands
- */
-export const getCommandSuggestions = (partial) => {
-  if (!partial) {
-    return Object.values(COMMAND_TYPES).filter(
-      type => type !== COMMAND_TYPES.UNKNOWN
-    );
-  }
-
-  const normalized = partial.toLowerCase().trim();
-  const parts = normalized.split(' ');
-
-  // If only typing the command name, suggest matching commands
-  if (parts.length === 1) {
-    return Object.values(COMMAND_TYPES)
-      .filter(type => type !== COMMAND_TYPES.UNKNOWN)
-      .filter(type => type.startsWith(normalized))
-      .sort();
-  }
-
-  // If typing arguments, could suggest common options
-  // This can be extended based on command type
-  return [];
-};
-
-/**
- * Check if a command is a navigation command
- *
- * @param {Object} command - Command object
- * @returns {boolean} True if it's a navigation command
- */
-export const isNavigationCommand = (command) => {
-  return [
-    COMMAND_TYPES.CD,
-    COMMAND_TYPES.LS,
-    COMMAND_TYPES.PWD
-  ].includes(command.type);
-};
-
-/**
- * Check if a command is a visualization command
- *
- * @param {Object} command - Command object
- * @returns {boolean} True if it's a visualization command
- */
-export const isVisualizationCommand = (command) => {
-  return [
-    COMMAND_TYPES.CHART,
-    COMMAND_TYPES.DASHBOARD,
-    COMMAND_TYPES.ALERTS,
-    COMMAND_TYPES.NODES,
-    COMMAND_TYPES.METRICS,
-    COMMAND_TYPES.LOGS,
-    COMMAND_TYPES.EVENTS,
-    COMMAND_TYPES.TOPOLOGY,
-    COMMAND_TYPES.HEALTH
-  ].includes(command.type);
-};
-
-/**
- * Extract space and room from cd command
- *
- * @param {Object} command - Parsed cd command
- * @returns {Object} { space: string, room: string|null }
- */
-export const extractNavigationTarget = (command) => {
-  if (command.type !== COMMAND_TYPES.CD) {
-    return { space: null, room: null };
-  }
-
-  const [space, room] = command.args.positional;
-
-  return {
-    space: space || null,
-    room: room || null
-  };
-};
-
-/**
- * Check if a command is a layout command (tab/tile management)
- *
+ * Check if a command is a layout command
  * @param {Object} command - Command object
  * @returns {boolean} True if it's a layout command
  */
 export const isLayoutCommand = (command) => {
-  return [
-    COMMAND_TYPES.TAB,
-    COMMAND_TYPES.TILE,
-    COMMAND_TYPES.RESET_ALL
-  ].includes(command.type);
+  return ['tab', 'tile', 'reset-all'].includes(command.type);
 };
 

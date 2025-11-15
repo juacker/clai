@@ -6,7 +6,7 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { parseCommand, validateCommand, isNavigationCommand } from '../utils/commandParser';
+import { parseCommand } from '../utils/commandParser';
 import { COMMAND_STATUS } from '../utils/commandTypes';
 
 const CommandContext = createContext(null);
@@ -78,7 +78,7 @@ export const CommandProvider = ({ children }) => {
 
   /**
    * Execute a command
-   * Parses the command string, validates it, and sets it as current
+   * Parses the command string and sets it as current
    *
    * @param {string|Object} command - Command string or parsed command object
    * @returns {Object} Parsed command object
@@ -93,13 +93,11 @@ export const CommandProvider = ({ children }) => {
         ? parseCommand(command)
         : command;
 
-      // Validate command
-      const validation = validateCommand(parsedCommand);
-      if (!validation.valid) {
-        const errorMessage = validation.errors.join(', ');
+      // Check for empty command
+      if (!parsedCommand.name) {
+        const errorMessage = 'Empty command';
         setError(errorMessage);
 
-        // Still add to history but mark as error
         const errorCommand = {
           ...parsedCommand,
           status: COMMAND_STATUS.ERROR,

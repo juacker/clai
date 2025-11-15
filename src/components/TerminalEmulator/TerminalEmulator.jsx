@@ -5,6 +5,7 @@ import { useChatManager } from '../../contexts/ChatManagerContext';
 import TabContext from '../../contexts/TabContext';
 import { parseCommand, isLayoutCommand } from '../../utils/commandParser';
 import { handleContextCommand, isContextCommand } from '../../utils/contextCommandHandler';
+import { isCommandSupported } from '../../utils/commandRegistry';
 import ContextPanel from '../ContextPanel/ContextPanel';
 import UserAvatar from '../UserAvatar';
 import styles from './TerminalEmulator.module.css';
@@ -116,9 +117,6 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
     }
   }, [getActiveTab, setActiveContext]);
 
-  // Supported visualization command types
-  const SUPPORTED_COMMAND_TYPES = ['echo', 'metrics'];
-
   // Handle command execution
   const handleCommandExecution = async (input) => {
     const trimmed = input.trim();
@@ -167,8 +165,8 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
     }
     // Execute visualization/action command with CommandContext
     else {
-      // Validate command type before executing
-      if (!SUPPORTED_COMMAND_TYPES.includes(command.type)) {
+      // Validate command type using registry - no hardcoded list needed!
+      if (!isCommandSupported(command.type)) {
         addOutputMessage(`Unknown command: ${trimmed}`, 'error');
         return;
       }
