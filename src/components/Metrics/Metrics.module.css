@@ -1,16 +1,18 @@
 /**
  * Metrics Component CSS Module
  *
- * Minimal display for metric command
+ * Chess board layout with no scrolling - all content fits in viewport
  */
 
 .metricsContainer {
   width: 100%;
   height: 100%;
   display: flex;
-  padding: 40px;
-  overflow: auto;
-  background: var(--color-bg-primary);
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  overflow: hidden;
+  background: #f6f6f6;
   /* Inset by 2px to allow parent's focus border (box-shadow) to be visible */
   box-sizing: border-box;
   margin: 2px;
@@ -18,11 +20,112 @@
   height: calc(100% - 4px);
 }
 
+/* Metrics grid - chess board layout */
+.metricsGrid {
+  display: grid;
+  gap: 4px;
+  place-items: center;
+}
+
+/* Individual metric cell - simple square */
+.metricCell {
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  width: 100%;
+  height: 100%;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.metricCell:hover {
+  border-color: #00AB44;
+  box-shadow: 0 2px 6px rgba(0, 171, 68, 0.1);
+  transform: scale(1.05);
+}
+
+.metricCell:active {
+  transform: scale(0.98);
+}
+
+/* Loading state */
+.loadingContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 20px;
+}
+
+.loadingText {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+}
+
+/* Error state */
+.errorContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 20px;
+}
+
+.errorText {
+  font-size: 14px;
+  color: #E74C3C;
+  text-align: center;
+  margin: 0;
+}
+
+/* Empty state */
+.emptyContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 20px;
+}
+
+.emptyText {
+  font-size: 14px;
+  color: #999;
+  text-align: center;
+  margin: 0;
+}
+
 /* Mobile responsive */
 @media (max-width: 768px) {
-  .metricsContainer {
-    padding: 20px;
+  .metricsGrid {
+    gap: 3px;
   }
 
+  .metricCell {
+    border-radius: 3px;
+  }
+}
+
+/* Touch device adjustments */
+@media (pointer: coarse) {
+  .metricCell:hover {
+    transform: none;
+  }
+
+  .metricCell:active {
+    transform: scale(0.95);
+    border-color: #00AB44;
+  }
+}
+
+/* No hover capability (mobile) */
+@media (hover: none) {
+  .metricCell:hover {
+    border-color: #e5e5e5;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+    transform: none;
+  }
 }
 
