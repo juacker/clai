@@ -550,5 +550,88 @@ export const getData = async (token, spaceId, roomId, params) => {
   }
 };
 
+/**
+ * Get contexts from Netdata Cloud
+ * @param {string} token - Authentication token (Bearer token)
+ * @param {string} spaceId - Space ID
+ * @param {string} roomId - Room ID
+ * @param {Object} params - Contexts query parameters
+ * @param {Object} [params.scope] - Optional scope definition
+ * @param {string[]} [params.scope.contexts] - Optional array of context patterns
+ * @param {string[]} [params.scope.nodes] - Optional array of node IDs
+ * @param {Object} params.window - time window
+ * @param {number} params.window.after - Unix timestamp (seconds) for start time
+ * @param {number} params.window.before - Unix timestamp (seconds) for end time
+ * @param {Object} [params.selectors] - Optional data selectors (defaults to "*" for all)
+ * @param {string[]} [params.selectors.contexts] - Context patterns to select
+ * @param {string[]} [params.selectors.nodes] - Node IDs to select
+ * @returns {Promise<Object>} Data response
+ * @throws {Error} If the request fails or required parameters are missing
+ * 
+ * @example
+ * const data = await getContexts(token, spaceId, roomId, {
+ *   scope: {
+ *     nodes: ["node1", "node2"]
+ *   },
+ *   window: {
+ *     after: Math.floor(Date.now() / 1000) - 3600,
+ *     before: Math.floor(Date.now() / 1000),
+ *   }
+ * });
+ */
+export const getContexts = async (token, spaceId, roomId, params) => {
+  try {
+    // Build selectors with defaults
+    const selectors = {
+      contexts: params.selectors?.contexts || ['*'],
+      nodes: params.selectors?.nodes || ['*'],
+    };
+
+    // Build scope object
+    const scope = {
+      contexts: params?.scope?.contexts || ['*'],
+      nodes: params?.scope?.nodes || []
+    };
+
+
+    // Build window object
+    const window = {
+      after: params.window.after,
+      before: params.window.before
+    };
+
+    // Build request body
+    const requestBody = {
+      format: params.format || 'json2',
+      scope,
+      selectors,
+      window,
+      timeout: params.timeout || 20000
+    };
+
+    const response = await client.post(
+      `/v3/spaces/${spaceId}/rooms/${roomId}/contexts`,
+      requestBody,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    );
+
+    return response.data;
+  } catch (error) {
+    if (error.response) {
+      throw new Error(
+        `Failed to get data: ${error.response.status} - ${error.response.data?.message || error.response.statusText}`
+      );
+    } else if (error.request) {
+      throw new Error('Failed to get contexts: No response from server');
+    } else {
+      throw new Error(`Failed to get contexts: ${error.message}`);
+    }
+  }
+};
+
 export default client;
 

@@ -117,7 +117,7 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
   }, [getActiveTab, setActiveContext]);
 
   // Supported visualization command types
-  const SUPPORTED_COMMAND_TYPES = ['echo'];
+  const SUPPORTED_COMMAND_TYPES = ['echo', 'metrics'];
 
   // Handle command execution
   const handleCommandExecution = async (input) => {

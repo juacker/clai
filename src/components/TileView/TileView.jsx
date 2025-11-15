@@ -10,6 +10,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useCommand } from '../../contexts/CommandContext';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import Echo from '../Echo';
+import Metrics from '../Metrics/Metrics';
 import styles from './TileView.module.css';
 
 /**
@@ -60,9 +61,8 @@ const TileView = ({ tile, activeTileId }) => {
               {/* Render resize handle between tiles (except after last tile) */}
               {index < tile.children.length - 1 && (
                 <PanelResizeHandle
-                  className={`${styles.resizeHandle} ${
-                    isHorizontal ? styles.resizeHandleHorizontal : styles.resizeHandleVertical
-                  }`}
+                  className={`${styles.resizeHandle} ${isHorizontal ? styles.resizeHandleHorizontal : styles.resizeHandleVertical
+                    }`}
                 />
               )}
             </React.Fragment>
@@ -86,9 +86,10 @@ const TileView = ({ tile, activeTileId }) => {
           <div className={styles.commandVisualization}>
             {/* Render command based on type */}
             {command.type === 'echo' && <Echo command={command} />}
+            {command.type === 'metrics' && <Metrics command={command} />}
 
             {/* Add more command types here as they are implemented */}
-            {command.type !== 'echo' && (
+            {command.type !== 'echo' && command.type !== 'metrics' && (
               <div className={styles.placeholder}>
                 <p>Command type: {command.type}</p>
                 <p>Not yet implemented</p>
