@@ -80,6 +80,7 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
   const [activeGroupBy, setActiveGroupBy] = useState([]);
   const [activeFilters, setActiveFilters] = useState({});
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Netdata chart color palette
   const DEFAULT_COLORS = useMemo(() => [
@@ -113,6 +114,9 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
       });
       setActiveFilters(filters);
     }
+
+    // Mark initialization as complete
+    setIsInitialized(true);
   }, [toolInput]);
 
   // Handle container resizing with ResizeObserver
@@ -326,18 +330,13 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     }
   }, [space?.id, room?.id, buildGetDataParams, transformResponseToChartData]);
 
-  // Initial data fetch when toolResult is available
+  // Fetch data when initialized and when filters/grouping changes
   useEffect(() => {
     if (!toolResult || !toolResult.text) return;
-    fetchData(activeGroupBy, activeFilters);
-  }, [toolResult?.text]);
+    if (!isInitialized) return; // Wait for initialization to complete
 
-  // Refetch when filters or grouping changes
-  useEffect(() => {
-    if (!toolResult || !toolResult.text) return;
-    if (!summary) return; // Don't refetch until we have initial summary
     fetchData(activeGroupBy, activeFilters);
-  }, [activeGroupBy, activeFilters]);
+  }, [isInitialized, activeGroupBy, activeFilters, toolResult?.text, fetchData]);
 
   // Parse available options from summary
   const getAvailableOptions = useCallback(() => {
