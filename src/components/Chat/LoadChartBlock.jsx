@@ -2,42 +2,8 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom';
 import * as d3 from 'd3';
 import { getData } from '../../api/client';
+import NetdataSpinner from '../common/NetdataSpinner';
 import styles from './LoadChartBlock.module.css';
-
-// Optimized Netdata icon - only the logo mark for spinner use
-// Spins around the center of the semicircle (approximately x=33, y=34)
-const NetdataIcon = ({ className = "", size = 40 }) => {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 65 65"
-      fill="none"
-      className={className}
-      style={{
-        transformOrigin: '50% 52%' // Adjusted to center on the semicircle
-      }}
-    >
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M40.7084 59.5833H27.5225L0.5 8.125H38.8578C53.7729 8.15204 65.858 20.0767 65.8659 34.7873C65.8419 48.4964 54.5902 59.5833 40.7084 59.5833Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-};
-
-const NetdataSpinner = ({ size = 40, className = "" }) => {
-  return (
-    <div className={`${styles.netdataSpinnerWrapper} ${className}`}>
-      <NetdataIcon
-        size={size}
-        className={styles.netdataSpinner}
-      />
-    </div>
-  );
-};
 
 /**
  * LoadChartBlock Component

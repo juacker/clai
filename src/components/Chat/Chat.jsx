@@ -12,6 +12,7 @@ import TimeSeriesChartBlock from './TimeSeriesChartBlock';
 import BarChartBlock from './BarChartBlock';
 import BubbleChartBlock from './BubbleChartBlock';
 import LoadChartBlock from './LoadChartBlock';
+import NetdataSpinner from '../common/NetdataSpinner';
 import styles from './Chat.module.css';
 
 /**
@@ -248,13 +249,16 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
       return;
     }
 
+    // Switch to conversation mode immediately and clear old data
+    setMode('conversation');
+    setCurrentConversation(null);
     setConversationLoading(true);
     setConversationError(null);
+    setStreamingMessages([]);
 
     try {
       const data = await getConversation(token, space.id, room.id, conversationId);
       setCurrentConversation(data);
-      setMode('conversation');
       // Scroll to bottom after loading conversation
       setTimeout(scrollToBottom, 100);
     } catch (error) {
@@ -773,7 +777,7 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
         <div className={styles.chatBody}>
           {conversationsLoading && (
             <div className={styles.loadingContainer}>
-              <div className={styles.loadingSpinner}></div>
+              <NetdataSpinner size={40} />
               <div className={styles.loadingText}>Loading conversations...</div>
             </div>
           )}
@@ -848,6 +852,31 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
 
   // Render single conversation mode
   const renderConversation = () => {
+    // If loading, show only the spinner - no content
+    if (conversationLoading) {
+      return (
+        <>
+          <div className={styles.chatHeader}>
+            <div className={styles.conversationHeaderRow}>
+              <button className={styles.backButton} onClick={handleBackToList} title="Back to conversations">
+                <span className={styles.backIcon}>←</span>
+              </button>
+              <div className={styles.conversationTitleContainer}>
+                <span className={styles.conversationTitleText}>Loading...</span>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.chatBody}>
+            <div className={styles.loadingContainer}>
+              <NetdataSpinner size={40} />
+              <div className={styles.loadingText}>Loading conversation...</div>
+            </div>
+          </div>
+        </>
+      );
+    }
+
     // Create a Set of message IDs from currentConversation to avoid rendering duplicates
     const conversationMessageIds = new Set(
       currentConversation?.messages?.map(msg => msg.id) || []
@@ -874,13 +903,6 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
         </div>
 
         <div className={styles.chatBody}>
-          {conversationLoading && (
-            <div className={styles.loadingContainer}>
-              <div className={styles.loadingSpinner}></div>
-              <div className={styles.loadingText}>Loading conversation...</div>
-            </div>
-          )}
-
           {conversationError && (
             <div className={styles.errorContainer}>
               <div className={styles.errorIcon}>⚠️</div>
@@ -891,7 +913,7 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
             </div>
           )}
 
-          {!conversationLoading && !conversationError && currentConversation && (
+          {!conversationError && currentConversation && (
             <div className={styles.messagesContainer}>
               {currentConversation.messages && currentConversation.messages.length > 0 ? (
                 <>

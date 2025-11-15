@@ -1,0 +1,30 @@
+/* NetdataSpinner Component Styles */
+
+.netdataSpinnerWrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.netdataSpinner {
+  color: var(--netdata-green, #00AB44);
+  animation: netdataSpin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform;
+}
+
+@keyframes netdataSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Smooth animation for reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .netdataSpinner {
+    animation: netdataSpin 2s linear infinite;
+  }
+}
+
