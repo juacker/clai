@@ -79,30 +79,30 @@
 /* Large desktop: Match wider chat panel */
 @media (min-width: 1200px) and (pointer: fine) {
   .terminal.chatOpen .terminalContent {
-    margin-right: 480px;
+    margin-right: 580px;
   }
 
   .terminal.chatOpen .contextPanelWrapper {
-    margin-right: 480px;
+    margin-right: 580px;
   }
 
   .terminal.chatOpen .outputArea {
-    margin-right: 480px;
+    margin-right: 580px;
   }
 }
 
 /* Extra large desktop: Match even wider chat panel */
 @media (min-width: 1600px) and (pointer: fine) {
   .terminal.chatOpen .terminalContent {
-    margin-right: 720px;
+    margin-right: 780px;
   }
 
   .terminal.chatOpen .contextPanelWrapper {
-    margin-right: 720px;
+    margin-right: 780px;
   }
 
   .terminal.chatOpen .outputArea {
-    margin-right: 720px;
+    margin-right: 780px;
   }
 }
 
