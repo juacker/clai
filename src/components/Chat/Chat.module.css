@@ -505,21 +505,20 @@
 
 /* Back Button */
 .backButton {
-  padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 12px;
+  flex-shrink: 0;
 }
 
 .backButton:hover {
-  background: rgba(0, 0, 0, 0.08);
-  border-color: rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .backButton:active {
@@ -527,8 +526,9 @@
 }
 
 .backIcon {
-  font-size: 18px;
+  font-size: 20px;
   color: rgba(0, 0, 0, 0.7);
+  font-weight: 600;
 }
 
 /* Messages Container */
@@ -839,3 +839,32 @@
   }
 }
 
+/* Conversation Header Row - Single line layout */
+.conversationHeaderRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.conversationTitleContainer {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.conversationTitleText {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 769px) and (pointer: fine) {
+  .conversationTitleText {
+    font-size: 17px;
+  }
+}

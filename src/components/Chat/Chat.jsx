@@ -861,14 +861,15 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
     return (
       <>
         <div className={styles.chatHeader}>
-          <button className={styles.backButton} onClick={handleBackToList}>
-            <span className={styles.backIcon}>←</span>
-          </button>
-          <div className={styles.chatTitle}>
-            <span className={styles.chatIcon}>💬</span>
-            <span className={styles.chatTitleText}>
-              {currentConversation?.title || 'Conversation'}
-            </span>
+          <div className={styles.conversationHeaderRow}>
+            <button className={styles.backButton} onClick={handleBackToList} title="Back to conversations">
+              <span className={styles.backIcon}>←</span>
+            </button>
+            <div className={styles.conversationTitleContainer}>
+              <span className={styles.conversationTitleText}>
+                {currentConversation?.title || 'Conversation'}
+              </span>
+            </div>
           </div>
         </div>
 
