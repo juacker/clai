@@ -15,20 +15,8 @@ import styles from './TabContent.module.css';
 const TabContent = () => {
   const { tabs, activeTabId, activeTileId, updateTabContext } = useTabManager();
 
-  // Get active tab directly from state instead of using getActiveTab()
-  const activeTab = tabs.find(t => t.id === activeTabId);
-
-  // Handle context changes from TabContext
-  // IMPORTANT: Use useCallback with activeTabId as dependency to prevent stale closure bug
-  // This ensures we always update the correct tab's context when switching tabs
-  const handleContextChange = useCallback((context) => {
-    if (activeTabId) {
-      updateTabContext(activeTabId, context);
-    }
-  }, [activeTabId, updateTabContext]);
-
-  // No active tab - show default dashboard
-  if (!activeTab) {
+  // No tabs - show default dashboard
+  if (tabs.length === 0) {
     return (
       <div className={styles.tabContent}>
         <div className={styles.emptyState}>
@@ -65,17 +53,47 @@ const TabContent = () => {
     );
   }
 
-  // Wrap tab content with TabContext provider for context isolation
-  // Phase 3: Use TileView to render the tile layout (supports split views)
+  // Render ALL tabs but only show the active one
+  // This keeps all tab components mounted, preserving their state
+  // and avoiding re-fetching data when switching tabs
+  return (
+    <div className={styles.tabContent}>
+      {tabs.map((tab) => (
+        <TabPanel
+          key={tab.id}
+          tab={tab}
+          isActive={tab.id === activeTabId}
+          activeTileId={activeTileId}
+          updateTabContext={updateTabContext}
+        />
+      ))}
+    </div>
+  );
+};
+
+/**
+ * TabPanel - Individual tab content wrapper
+ * Keeps tab mounted but hidden when inactive to preserve state
+ */
+const TabPanel = ({ tab, isActive, activeTileId, updateTabContext }) => {
+  // Handle context changes for this specific tab
+  const handleContextChange = useCallback((context) => {
+    updateTabContext(tab.id, context);
+  }, [tab.id, updateTabContext]);
+
   return (
     <TabContextProvider
-      tabId={activeTab.id}
-      initialContext={activeTab.context}
+      tabId={tab.id}
+      initialContext={tab.context}
       onContextChange={handleContextChange}
     >
-      <div className={styles.tabContent}>
+      <div
+        className={styles.tabPanel}
+        data-active={isActive}
+        aria-hidden={!isActive}
+      >
         <TileView
-          tile={activeTab.rootTile}
+          tile={tab.rootTile}
           activeTileId={activeTileId}
         />
       </div>

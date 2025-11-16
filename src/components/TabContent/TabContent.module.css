@@ -12,6 +12,33 @@
   flex-direction: column;
   overflow: hidden;
   background: var(--color-bg-primary);
+  position: relative;
+}
+
+/* Tab Panel - Individual tab wrapper */
+.tabPanel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Hide inactive tabs - keeps them mounted but invisible */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease-in-out, visibility 0s linear 0.15s;
+}
+
+/* Active tab panel - visible and interactive */
+.tabPanel[data-active="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.15s ease-in-out, visibility 0s linear 0s;
+  z-index: 1;
 }
 
 /* Empty State */
