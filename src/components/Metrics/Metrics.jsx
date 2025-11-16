@@ -342,9 +342,15 @@ const Metrics = ({ command }) => {
   const [error, setError] = useState(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [hoveredGroup, setHoveredGroup] = useState(null);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [filterText, setFilterText] = useState('');
+  const [debouncedFilterText, setDebouncedFilterText] = useState('');
+  const [selectedMetrics, setSelectedMetrics] = useState(new Set());
+  const [viewMode, setViewMode] = useState('canvas'); // 'canvas' or 'charts'
 
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
+  const filterTimeoutRef = useRef(null);
 
   const sortedContexts = useMemo(() => {
     console.time('sortContexts');
@@ -440,6 +446,30 @@ const Metrics = ({ command }) => {
     console.timeEnd('groupLabels useMemo');
     return labels;
   }, [allCells, visualGroups]);
+
+  // Filter contexts based on debounced filter text
+  const filteredContexts = useMemo(() => {
+    if (!debouncedFilterText.trim()) {
+      return null; // No filter applied
+    }
+
+    console.time('Filter contexts');
+    const lowerFilter = debouncedFilterText.toLowerCase();
+    const matchingContexts = [];
+
+    // Search through all visual groups
+    visualGroups.forEach((metrics, groupKey) => {
+      metrics.forEach(metric => {
+        if (metric.toLowerCase().includes(lowerFilter)) {
+          matchingContexts.push(metric);
+        }
+      });
+    });
+
+    console.timeEnd('Filter contexts');
+    console.log(`Filtered ${matchingContexts.length} contexts from ${debouncedFilterText}`);
+    return matchingContexts.sort();
+  }, [debouncedFilterText, visualGroups]);
 
   // Canvas rendering effect
   useEffect(() => {
@@ -563,7 +593,7 @@ const Metrics = ({ command }) => {
     });
 
     console.timeEnd('Canvas render');
-  }, [allCells, groupBorders, groupLabels, dimensions, visualGroups, hoveredGroup]);
+  }, [allCells, groupBorders, groupLabels, dimensions, visualGroups, hoveredGroup, anomalyRates]);
 
   // Handle mouse move - update hover state for group
   const handleMouseMove = (e) => {
@@ -593,6 +623,65 @@ const Metrics = ({ command }) => {
     const canvas = canvasRef.current;
     if (canvas) canvas.style.cursor = 'default';
     setHoveredGroup(null);
+  };
+
+  // Handle click - select group and show context list
+  const handleCanvasClick = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const cell = allCells.find(c =>
+      x >= c.x && x <= c.x + c.width &&
+      y >= c.y && y <= c.y + c.height
+    );
+
+    if (cell) {
+      const groupKey = getGroupForCell(cell);
+      setSelectedGroup(groupKey);
+    }
+  };
+
+  // Handle click on backdrop to close panel
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) {
+      setSelectedGroup(null);
+    }
+  };
+
+  // Handle filter input change
+  const handleFilterChange = (e) => {
+    const value = e.target.value;
+    setFilterText(value);
+
+    // Clear existing timeout
+    if (filterTimeoutRef.current) {
+      clearTimeout(filterTimeoutRef.current);
+    }
+
+    // Debounce the filter - wait 300ms after user stops typing
+    filterTimeoutRef.current = setTimeout(() => {
+      setDebouncedFilterText(value);
+      // Auto-open panel when user types
+      if (value.trim()) {
+        setSelectedGroup('filter-results');
+      } else {
+        setSelectedGroup(null);
+      }
+    }, 300);
+  };
+
+  // Clear filter
+  const handleClearFilter = () => {
+    setFilterText('');
+    setDebouncedFilterText('');
+    setSelectedGroup(null);
+    if (filterTimeoutRef.current) {
+      clearTimeout(filterTimeoutRef.current);
+    }
   };
 
   // Get group for a cell
@@ -632,6 +721,67 @@ const Metrics = ({ command }) => {
       resizeObserver.disconnect();
     };
   }, [contexts]);
+
+  // Cleanup filter timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (filterTimeoutRef.current) {
+        clearTimeout(filterTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Handle Escape key to close panel
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && selectedGroup) {
+        setSelectedGroup(null);
+        setFilterText('');
+        setDebouncedFilterText('');
+        if (filterTimeoutRef.current) {
+          clearTimeout(filterTimeoutRef.current);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedGroup]);
+
+  // Toggle metric selection
+  const toggleMetric = (context) => {
+    setSelectedMetrics(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(context)) {
+        newSet.delete(context);
+      } else {
+        newSet.add(context);
+      }
+      return newSet;
+    });
+  };
+
+  // Remove metric from selection
+  const removeMetric = (context) => {
+    setSelectedMetrics(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(context);
+      return newSet;
+    });
+  };
+
+  // Switch to charts view
+  const switchToChartsView = () => {
+    setViewMode('charts');
+    setSelectedGroup(null);
+  };
+
+  // Switch to canvas view
+  const switchToCanvasView = () => {
+    setViewMode('canvas');
+  };
 
   // Fetch contexts and anomaly data
   useEffect(() => {
@@ -788,21 +938,177 @@ const Metrics = ({ command }) => {
 
   return (
     <div className={styles.metricsContainer} ref={containerRef}>
-      {/* Info banner */}
-      <div className={`${styles.infoBanner} ${waste <= 5 ? styles.infoBannerSuccess : styles.infoBannerInfo}`}>
-        Order: {order} • Grid: {gridSize}×{gridSize} •
-        Cells: {processedMetrics.length}/{totalCells} •
-        Waste: {waste.toFixed(1)}% •
-        Original: {totalGrouped} metrics
+      {/* Header toolbar */}
+      <div className={styles.headerBar}>
+        <div className={styles.toolbarLeft}>
+          <div className={styles.viewToggle}>
+            <button
+              className={`${styles.viewToggleButton} ${viewMode === 'canvas' ? styles.active : ''}`}
+              onClick={switchToCanvasView}
+            >
+              Canvas
+            </button>
+            <button
+              className={`${styles.viewToggleButton} ${viewMode === 'charts' ? styles.active : ''}`}
+              onClick={switchToChartsView}
+              disabled={selectedMetrics.size === 0}
+            >
+              Charts ({selectedMetrics.size})
+            </button>
+          </div>
+          {viewMode === 'canvas' && (
+            <>
+              <input
+                type="text"
+                placeholder="Filter metrics..."
+                className={styles.filterInput}
+                value={filterText}
+                onChange={handleFilterChange}
+              />
+              {filterText && (
+                <button className={styles.clearButton} onClick={handleClearFilter}>
+                  ×
+                </button>
+              )}
+            </>
+          )}
+        </div>
+        <div className={styles.toolbarRight}>
+          {viewMode === 'charts' && (
+            <button className={styles.clearAllButton} onClick={() => setSelectedMetrics(new Set())}>
+              Clear All
+            </button>
+          )}
+        </div>
       </div>
 
-      {dimensions.width > 0 && dimensions.height > 0 && (
-        <canvas
-          ref={canvasRef}
-          className={styles.metricsCanvas}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
-        />
+      {viewMode === 'canvas' ? (
+        <>
+          {/* Info banner */}
+          <div className={`${styles.infoBanner} ${waste <= 5 ? styles.infoBannerSuccess : styles.infoBannerInfo}`}>
+            Order: {order} • Grid: {gridSize}×{gridSize} •
+            Cells: {processedMetrics.length}/{totalCells} •
+            Waste: {waste.toFixed(1)}% •
+            Original: {totalGrouped} metrics
+          </div>
+
+          {dimensions.width > 0 && dimensions.height > 0 && (
+            <canvas
+              ref={canvasRef}
+              className={styles.metricsCanvas}
+              onMouseMove={handleMouseMove}
+              onMouseLeave={handleMouseLeave}
+              onClick={handleCanvasClick}
+            />
+          )}
+
+          {/* Context list panel with backdrop */}
+          {selectedGroup && (
+            <>
+              <div className={styles.backdrop} onClick={handleBackdropClick} />
+              <div className={styles.contextPanel}>
+                <div className={styles.contextPanelHeader}>
+                  <h3 className={styles.contextPanelTitle}>
+                    {selectedGroup === 'filter-results'
+                      ? `Filter: "${debouncedFilterText}" (${filteredContexts?.length || 0} results)`
+                      : selectedGroup
+                    }
+                  </h3>
+                </div>
+                <div className={styles.contextList}>
+                  {selectedGroup === 'filter-results' ? (
+                    filteredContexts && filteredContexts.length > 0 ? (
+                      filteredContexts.map((context) => {
+                        const anomalyRate = anomalyRates.get(context);
+                        const color = getColorForAnomalyRate(anomalyRate);
+                        const isSelected = selectedMetrics.has(context);
+                        return (
+                          <div key={context} className={styles.contextItem}>
+                            <div className={styles.contextBand} style={{ backgroundColor: color }} />
+                            <div className={styles.contextName}>{context}</div>
+                            <button
+                              className={`${styles.addButton} ${isSelected ? styles.selected : ''}`}
+                              onClick={() => toggleMetric(context)}
+                              title={isSelected ? 'Remove from charts' : 'Add to charts'}
+                            >
+                              {isSelected ? '✓' : '+'}
+                            </button>
+                          </div>
+                        );
+                      })
+                    ) : debouncedFilterText ? (
+                      <div className={styles.noResults}>No matching contexts found</div>
+                    ) : (
+                      <div className={styles.noResults}>Searching...</div>
+                    )
+                  ) : (
+                    visualGroups.get(selectedGroup)?.map((context) => {
+                      const anomalyRate = anomalyRates.get(context);
+                      const color = getColorForAnomalyRate(anomalyRate);
+                      const isSelected = selectedMetrics.has(context);
+                      return (
+                        <div key={context} className={styles.contextItem}>
+                          <div className={styles.contextBand} style={{ backgroundColor: color }} />
+                          <div className={styles.contextName}>{context}</div>
+                          <button
+                            className={`${styles.addButton} ${isSelected ? styles.selected : ''}`}
+                            onClick={() => toggleMetric(context)}
+                            title={isSelected ? 'Remove from charts' : 'Add to charts'}
+                          >
+                            {isSelected ? '✓' : '+'}
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        /* Charts View */
+        <div className={styles.chartsView}>
+          <div className={styles.chartsGrid}>
+            {Array.from(selectedMetrics).map((context) => {
+              const anomalyRate = anomalyRates.get(context);
+              const color = getColorForAnomalyRate(anomalyRate);
+              return (
+                <div key={context} className={styles.chartCard}>
+                  <div className={styles.chartHeader}>
+                    <div className={styles.chartBand} style={{ backgroundColor: color }} />
+                    <div className={styles.chartTitle}>{context}</div>
+                    <button
+                      className={styles.removeButton}
+                      onClick={() => removeMetric(context)}
+                      title="Remove chart"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className={styles.chartContent}>
+                    <div className={styles.chartPlaceholder}>
+                      Chart for {context}
+                      <div className={styles.chartInfo}>
+                        Anomaly Rate: {anomalyRate !== null && anomalyRate !== undefined
+                          ? `${anomalyRate.toFixed(2)}%`
+                          : 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {selectedMetrics.size === 0 && (
+            <div className={styles.emptyChartsView}>
+              <p>No metrics selected</p>
+              <button className={styles.backToCanvasButton} onClick={switchToCanvasView}>
+                Go to Canvas to select metrics
+              </button>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
