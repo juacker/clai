@@ -1,18 +1,26 @@
 /**
- * Metrics Component CSS Module
+ * Metrics Component CSS Module - Light, elegant, modern design
  *
- * Chess board layout with no scrolling - all content fits in viewport
+ * Hilbert curve layout that fills viewport with mobile-first responsive design
+ * NO ZOOM - Static overview only
  */
 
 .metricsContainer {
-  width: 100%;
-  height: 100%;
+  /* Mobile-first: Full viewport with clean background */
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   overflow: hidden;
-  background: #f6f6f6;
+  background: #fafafa;
+  position: relative;
+
+  /* Light, elegant styling */
+  border-radius: 0;
+  box-shadow: none;
+
+  /* Smooth transitions */
+  transition: background 0.3s ease;
   /* Inset by 2px to allow parent's focus border (box-shadow) to be visible */
   box-sizing: border-box;
   margin: 2px;
@@ -20,33 +28,61 @@
   height: calc(100% - 4px);
 }
 
-/* Metrics grid - chess board layout */
-.metricsGrid {
-  display: grid;
-  gap: 4px;
-  place-items: center;
+/* Canvas element */
+.metricsCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: default;
+
+  /* Smooth rendering */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
 }
 
-/* Individual metric cell - simple square */
-.metricCell {
-  background: #ffffff;
-  border: 1px solid #e5e5e5;
-  border-radius: 4px;
-  width: 100%;
-  height: 100%;
-  transition: all 0.2s ease;
-  cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+/* Info banner - Desktop default */
+.infoBanner {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 11px;
+  z-index: 10;
+  color: #333;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  line-height: 1.5;
+  max-width: 90%;
+
+  /* Smooth transitions */
+  transition: all 0.3s ease;
 }
 
-.metricCell:hover {
-  border-color: #00AB44;
-  box-shadow: 0 2px 6px rgba(0, 171, 68, 0.1);
-  transform: scale(1.05);
+.infoBanner:hover {
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
-.metricCell:active {
-  transform: scale(0.98);
+.infoBannerSuccess {
+  background: rgba(209, 250, 229, 0.95);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.infoBannerSuccess:hover {
+  background: rgba(209, 250, 229, 1);
+}
+
+.infoBannerInfo {
+  background: rgba(219, 234, 254, 0.95);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.infoBannerInfo:hover {
+  background: rgba(219, 234, 254, 1);
 }
 
 /* Loading state */
@@ -57,12 +93,14 @@
   justify-content: center;
   height: 100%;
   gap: 20px;
+  padding: 20px;
 }
 
 .loadingText {
   font-size: 14px;
   color: #666;
   margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
 }
 
 /* Error state */
@@ -79,6 +117,8 @@
   color: #E74C3C;
   text-align: center;
   margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  line-height: 1.6;
 }
 
 /* Empty state */
@@ -95,37 +135,64 @@
   color: #999;
   text-align: center;
   margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  line-height: 1.6;
 }
 
-/* Mobile responsive */
+/* Mobile responsive - screen width */
 @media (max-width: 768px) {
-  .metricsGrid {
-    gap: 3px;
+  .metricsContainer {
+    background: #ffffff;
   }
 
-  .metricCell {
-    border-radius: 3px;
+  .infoBanner {
+    top: 8px;
+    right: 8px;
+    padding: 8px 12px;
+    font-size: 10px;
+    max-width: calc(100% - 16px);
   }
 }
 
 /* Touch device adjustments */
 @media (pointer: coarse) {
-  .metricCell:hover {
-    transform: none;
+  .metricsContainer {
+    background: #ffffff;
   }
 
-  .metricCell:active {
-    transform: scale(0.95);
-    border-color: #00AB44;
+  .infoBanner {
+    top: 8px;
+    right: 8px;
+    padding: 8px 12px;
   }
 }
 
 /* No hover capability (mobile) */
 @media (hover: none) {
-  .metricCell:hover {
-    border-color: #e5e5e5;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
-    transform: none;
+  .infoBanner:hover {
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .infoBannerSuccess:hover {
+    background: rgba(209, 250, 229, 0.95);
+  }
+
+  .infoBannerInfo:hover {
+    background: rgba(219, 234, 254, 1);
   }
 }
 
+/* Desktop override (fine pointer + larger screen) */
+@media (min-width: 769px) and (pointer: fine) {
+  .metricsContainer {
+    background: #fafafa;
+  }
+
+  .infoBanner {
+    top: 12px;
+    right: 12px;
+    padding: 10px 14px;
+    font-size: 11px;
+  }
+}
