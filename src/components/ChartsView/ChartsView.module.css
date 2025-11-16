@@ -1,0 +1,456 @@
+/* ChartsView Component Styles - Mobile-First Approach */
+
+/* Wrapper - contains all ChartsView elements in vertical stack */
+.chartsViewWrapper {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 44px); /* Subtract Metrics header height */
+  width: 100%;
+  overflow: hidden;
+  margin-top: 44px; /* Position below Metrics header */
+}
+
+/* Header Bar - matches Metrics header style */
+.headerBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border-light);
+  gap: 16px;
+  flex-wrap: wrap;
+  flex-shrink: 0; /* Prevent header from shrinking */
+  z-index: 10; /* Below Metrics header but above content */
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.headerTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+/* Container - full width, no horizontal padding */
+.chartsViewContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--color-bg-primary);
+}
+
+.clearAllButton {
+  padding: 6px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: rgba(239, 68, 68, 1);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.clearAllButton:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+}
+
+/* Time Interval Selector */
+.timeIntervalSelector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.intervalButton {
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--color-border-medium);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.intervalButton:hover {
+  background: rgba(255, 255, 255, 1);
+  border-color: var(--color-primary-alpha-40);
+  color: var(--color-text-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px var(--color-border-light);
+}
+
+.intervalButton.active {
+  background: var(--color-primary-alpha-10);
+  border-color: var(--color-primary);
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.intervalButton.active:hover {
+  background: var(--color-primary-alpha-15);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px var(--color-primary-alpha-20);
+}
+
+/* Custom Time Range Bar - shown below header */
+.customTimeRangeBar {
+  display: flex;
+  gap: 16px;
+  padding: 12px 20px;
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border-light);
+  flex-wrap: wrap;
+}
+
+.customTimeInput {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.customTimeLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.datetimeInput {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--color-border-medium);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  transition: all 0.2s ease;
+}
+
+.datetimeInput:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-alpha-10);
+}
+
+/* Global Checkbox */
+.globalCheckbox {
+  margin: 0;
+  margin-right: 8px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.globalCheckboxLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.globalFiltersNote {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--color-info-alpha-10);
+  border: 1px solid var(--color-info-alpha-30);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+/* Charts Grid - with padding */
+.chartsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100%, 1fr));
+  gap: 20px;
+  padding: 20px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.chartCard {
+  min-height: 300px;
+  animation: slideInUp 0.3s ease-out;
+}
+
+/* Empty State */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.emptyStateIcon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.emptyStateTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 8px 0;
+}
+
+.emptyStateText {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin: 0;
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Mobile Responsive - Smaller screens */
+@media (max-width: 768px) {
+  .headerBar {
+    padding: 10px 16px;
+    gap: 12px;
+  }
+
+  .headerTitle {
+    font-size: 13px;
+  }
+
+  .headerLeft {
+    gap: 12px;
+  }
+
+  .timeIntervalSelector {
+    gap: 6px;
+  }
+
+  .intervalButton {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+
+  .customTimeRangeBar {
+    padding: 10px 16px;
+    gap: 12px;
+  }
+
+  .datetimeInput {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .chartsGrid {
+    padding: 16px;
+    gap: 16px;
+  }
+
+  .emptyState {
+    min-height: 300px;
+    padding: 30px 16px;
+  }
+
+  .emptyStateIcon {
+    font-size: 48px;
+  }
+
+  .emptyStateTitle {
+    font-size: 16px;
+  }
+
+  .emptyStateText {
+    font-size: 13px;
+  }
+}
+
+/* Touch device optimizations */
+@media (pointer: coarse) {
+  .intervalButton {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  .clearAllButton {
+    padding: 10px 18px;
+  }
+
+  .datetimeInput {
+    padding: 10px 14px;
+  }
+}
+
+/* No hover capability (mobile) - disable hover effects */
+@media (hover: none) {
+  .globalControls:hover {
+    border-color: var(--color-border-light);
+    box-shadow: none;
+  }
+
+  .intervalButton:hover {
+    background: rgba(255, 255, 255, 0.8);
+    border-color: var(--color-border-medium);
+    color: var(--color-text-secondary);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .intervalButton.active:hover {
+    background: var(--color-primary-alpha-10);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .clearAllButton:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+/* Tablet - 2 columns */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .chartsGrid {
+    grid-template-columns: repeat(auto-fill, minmax(48%, 1fr));
+  }
+}
+
+/* Desktop - 2 columns for better readability */
+@media (min-width: 1025px) and (max-width: 1440px) {
+  .chartsGrid {
+    grid-template-columns: repeat(auto-fill, minmax(48%, 1fr));
+    gap: 24px;
+  }
+}
+
+/* Large Desktop - 3 columns */
+@media (min-width: 1441px) {
+  .chartsGrid {
+    grid-template-columns: repeat(auto-fill, minmax(32%, 1fr));
+    gap: 28px;
+  }
+
+  .emptyState {
+    min-height: 500px;
+  }
+}
+
+/* Very Large Screens - 4 columns */
+@media (min-width: 1920px) {
+  .chartsGrid {
+    grid-template-columns: repeat(auto-fill, minmax(24%, 1fr));
+  }
+}
+
+/* Smaller mobile devices */
+@media (max-width: 480px) {
+  .chartsViewContainer {
+    padding: 12px;
+    gap: 14px;
+  }
+
+  .globalControls {
+    padding: 12px;
+  }
+
+  .globalControlsHeader {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .clearAllButton {
+    width: 100%;
+  }
+
+  .timeIntervalSelector {
+    gap: 6px;
+  }
+
+  .intervalButton {
+    flex: 1;
+    min-width: calc(50% - 3px);
+    padding: 8px 6px;
+    font-size: 10px;
+  }
+
+  .customTimeRange {
+    gap: 8px;
+  }
+
+  .chartsGrid {
+    gap: 14px;
+  }
+}
+
+/* Scrollbar styling for container */
+.chartsViewContainer::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chartsViewContainer::-webkit-scrollbar-track {
+  background: var(--color-border-light);
+  border-radius: 4px;
+}
+
+.chartsViewContainer::-webkit-scrollbar-thumb {
+  background: var(--color-border-medium);
+  border-radius: 4px;
+}
+
+.chartsViewContainer::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* For Firefox */
+.chartsViewContainer {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-medium) var(--color-border-light);
+}
+

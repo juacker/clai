@@ -11,6 +11,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useTabContext } from '../../contexts/TabContext';
 import { getContexts, getData } from '../../api/client';
 import NetdataSpinner from '../common/NetdataSpinner';
+import ChartsView from '../ChartsView/ChartsView';
 import styles from './Metrics.module.css';
 
 // ============================================================================
@@ -1068,47 +1069,11 @@ const Metrics = ({ command }) => {
         </>
       ) : (
         /* Charts View */
-        <div className={styles.chartsView}>
-          <div className={styles.chartsGrid}>
-            {Array.from(selectedMetrics).map((context) => {
-              const anomalyRate = anomalyRates.get(context);
-              const color = getColorForAnomalyRate(anomalyRate);
-              return (
-                <div key={context} className={styles.chartCard}>
-                  <div className={styles.chartHeader}>
-                    <div className={styles.chartBand} style={{ backgroundColor: color }} />
-                    <div className={styles.chartTitle}>{context}</div>
-                    <button
-                      className={styles.removeButton}
-                      onClick={() => removeMetric(context)}
-                      title="Remove chart"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <div className={styles.chartContent}>
-                    <div className={styles.chartPlaceholder}>
-                      Chart for {context}
-                      <div className={styles.chartInfo}>
-                        Anomaly Rate: {anomalyRate !== null && anomalyRate !== undefined
-                          ? `${anomalyRate.toFixed(2)}%`
-                          : 'N/A'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {selectedMetrics.size === 0 && (
-            <div className={styles.emptyChartsView}>
-              <p>No metrics selected</p>
-              <button className={styles.backToCanvasButton} onClick={switchToCanvasView}>
-                Go to Canvas to select metrics
-              </button>
-            </div>
-          )}
-        </div>
+        <ChartsView
+          selectedContexts={selectedMetrics}
+          onRemoveContext={removeMetric}
+          onClearAll={() => setSelectedMetrics(new Set())}
+        />
       )}
     </div>
   );
