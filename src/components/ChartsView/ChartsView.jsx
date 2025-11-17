@@ -17,6 +17,9 @@ import styles from './ChartsView.module.css';
 const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
   const { selectedSpace, selectedRoom } = useTabContext();
 
+  // Generate a unique instance ID on mount
+  const instanceId = useMemo(() => `charts-${Math.random().toString(36).substr(2, 9)}`, []);
+
   // Time interval state
   const [timeInterval, setTimeInterval] = useState('15m'); // '15m', '1h', '6h', '24h', 'custom'
   const [customAfter, setCustomAfter] = useState('');
@@ -204,7 +207,7 @@ const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
       <div className={styles.chartsViewContainer}>
         <div className={styles.chartsGrid}>
           {contextsArray.map((context) => (
-            <div key={context} className={styles.chartCard}>
+            <div key={`${instanceId}-chart-${context}`} className={styles.chartCard}>
               <ContextChart
                 context={context}
                 groupBy={applyGlobally ? globalGroupBy : []}
@@ -227,4 +230,3 @@ const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
 };
 
 export default ChartsView;
-

@@ -11,7 +11,7 @@
  * Selection is handled per-tab by TabContext.
  */
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { getSpaces, getRooms } from '../api/client';
 
 const SharedSpaceRoomDataContext = createContext(null);
@@ -162,7 +162,7 @@ export function SharedSpaceRoomDataProvider({ children }) {
     }
   }, []);
 
-  const value = {
+  const value = useMemo(() => ({
     // Data
     spaces,
     loading,
@@ -174,7 +174,17 @@ export function SharedSpaceRoomDataProvider({ children }) {
     getRoomById,
     refetch,
     clearRoomsCache,
-  };
+  }), [
+    spaces,
+    roomsCache,
+    loading,
+    error,
+    getRoomsForSpace,
+    getSpaceById,
+    getRoomById,
+    refetch,
+    clearRoomsCache
+  ]);
 
   return (
     <SharedSpaceRoomDataContext.Provider value={value}>

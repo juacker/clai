@@ -5,7 +5,7 @@
  * It handles command parsing, execution, history, and output management.
  */
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { parseCommand } from '../utils/commandParser';
 import { COMMAND_STATUS } from '../utils/commandTypes';
 
@@ -301,7 +301,7 @@ export const CommandProvider = ({ children }) => {
     return commandHistory.find(cmd => cmd.id === commandId) || null;
   }, [commandHistory]);
 
-  const value = {
+  const value = useMemo(() => ({
     // State
     currentCommand,
     commandHistory,
@@ -321,7 +321,24 @@ export const CommandProvider = ({ children }) => {
     getVisualizationHistory,
     cancelCommand,
     getCommand
-  };
+  }), [
+    currentCommand,
+    commandHistory,
+    commandOutput,
+    isExecuting,
+    error,
+    executeCommand,
+    clearCommand,
+    setOutput,
+    setCommandError,
+    getHistoryCommand,
+    replayCommand,
+    clearHistory,
+    getFilteredHistory,
+    getVisualizationHistory,
+    cancelCommand,
+    getCommand
+  ]);
 
   return (
     <CommandContext.Provider value={value}>

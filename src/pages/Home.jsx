@@ -1,5 +1,4 @@
 import React from 'react';
-import { useOutletContext } from 'react-router-dom';
 import TabView from '../components/TabView/TabView';
 import { useTabManager } from '../contexts/TabManagerContext';
 import { useChatManager } from '../contexts/ChatManagerContext';
@@ -7,8 +6,6 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import styles from './Home.module.css';
 
 const Home = () => {
-  const { userInfo } = useOutletContext();
-
   // Get tab and tile management functions from context
   const {
     switchToTabByIndex,

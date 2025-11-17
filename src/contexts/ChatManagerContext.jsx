@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useMemo } from 'react';
 
 /**
  * ChatManagerContext
@@ -192,7 +192,21 @@ export const ChatManagerProvider = ({ children }) => {
     setActiveSpaceRoom(null);
   }, []);
 
-  const value = {
+  const value = useMemo(() => {
+    return {
+      chatInstances,
+      activeSpaceRoom,
+      setActiveContext,
+      toggleChat,
+      openChat,
+      closeChat,
+      isCurrentChatOpen,
+      getCurrentChatInstance,
+      getChatInstance,
+      addMessage,
+      clearAllChats
+    };
+  }, [
     chatInstances,
     activeSpaceRoom,
     setActiveContext,
@@ -204,7 +218,7 @@ export const ChatManagerProvider = ({ children }) => {
     getChatInstance,
     addMessage,
     clearAllChats
-  };
+  ]);
 
   return (
     <ChatManagerContext.Provider value={value}>

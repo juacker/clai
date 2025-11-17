@@ -337,6 +337,17 @@ function getColorForAnomalyRate(anomalyRate) {
 const Metrics = ({ command }) => {
   const { selectedSpace, selectedRoom } = useTabContext();
 
+  // DEBUG: Track mounts and unmounts
+  useEffect(() => {
+    console.log('🔵 Metrics MOUNTED');
+    return () => console.log('🔴 Metrics UNMOUNTED');
+  }, []);
+
+  // DEBUG: Track re-renders
+  useEffect(() => {
+    console.log('🔄 Metrics RE-RENDERED', { selectedSpace, selectedRoom, command });
+  });
+
   const [contexts, setContexts] = useState([]);
   const [anomalyRates, setAnomalyRates] = useState(new Map());
   const [loading, setLoading] = useState(true);
@@ -983,67 +994,43 @@ const Metrics = ({ command }) => {
         </div>
       </div>
 
-      {viewMode === 'canvas' ? (
-        <>
-          {/* Info banner */}
-          <div className={`${styles.infoBanner} ${waste <= 5 ? styles.infoBannerSuccess : styles.infoBannerInfo}`}>
-            Order: {order} • Grid: {gridSize}×{gridSize} •
-            Cells: {processedMetrics.length}/{totalCells} •
-            Waste: {waste.toFixed(1)}% •
-            Original: {totalGrouped} metrics
-          </div>
+      {/* Canvas View - Hidden with CSS when not active */}
+      <div style={{ display: viewMode === 'canvas' ? 'block' : 'none', height: '100%' }}>
+        {/* Info banner */}
+        <div className={`${styles.infoBanner} ${waste <= 5 ? styles.infoBannerSuccess : styles.infoBannerInfo}`}>
+          Order: {order} • Grid: {gridSize}×{gridSize} •
+          Cells: {processedMetrics.length}/{totalCells} •
+          Waste: {waste.toFixed(1)}% •
+          Original: {totalGrouped} metrics
+        </div>
 
-          {dimensions.width > 0 && dimensions.height > 0 && (
-            <canvas
-              ref={canvasRef}
-              className={styles.metricsCanvas}
-              onMouseMove={handleMouseMove}
-              onMouseLeave={handleMouseLeave}
-              onClick={handleCanvasClick}
-            />
-          )}
+        {dimensions.width > 0 && dimensions.height > 0 && (
+          <canvas
+            ref={canvasRef}
+            className={styles.metricsCanvas}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+            onClick={handleCanvasClick}
+          />
+        )}
 
-          {/* Context list panel with backdrop */}
-          {selectedGroup && (
-            <>
-              <div className={styles.backdrop} onClick={handleBackdropClick} />
-              <div className={styles.contextPanel}>
-                <div className={styles.contextPanelHeader}>
-                  <h3 className={styles.contextPanelTitle}>
-                    {selectedGroup === 'filter-results'
-                      ? `Filter: "${debouncedFilterText}" (${filteredContexts?.length || 0} results)`
-                      : selectedGroup
-                    }
-                  </h3>
-                </div>
-                <div className={styles.contextList}>
-                  {selectedGroup === 'filter-results' ? (
-                    filteredContexts && filteredContexts.length > 0 ? (
-                      filteredContexts.map((context) => {
-                        const anomalyRate = anomalyRates.get(context);
-                        const color = getColorForAnomalyRate(anomalyRate);
-                        const isSelected = selectedMetrics.has(context);
-                        return (
-                          <div key={context} className={styles.contextItem}>
-                            <div className={styles.contextBand} style={{ backgroundColor: color }} />
-                            <div className={styles.contextName}>{context}</div>
-                            <button
-                              className={`${styles.addButton} ${isSelected ? styles.selected : ''}`}
-                              onClick={() => toggleMetric(context)}
-                              title={isSelected ? 'Remove from charts' : 'Add to charts'}
-                            >
-                              {isSelected ? '✓' : '+'}
-                            </button>
-                          </div>
-                        );
-                      })
-                    ) : debouncedFilterText ? (
-                      <div className={styles.noResults}>No matching contexts found</div>
-                    ) : (
-                      <div className={styles.noResults}>Searching...</div>
-                    )
-                  ) : (
-                    visualGroups.get(selectedGroup)?.map((context) => {
+        {/* Context list panel with backdrop */}
+        {selectedGroup && (
+          <>
+            <div className={styles.backdrop} onClick={handleBackdropClick} />
+            <div className={styles.contextPanel}>
+              <div className={styles.contextPanelHeader}>
+                <h3 className={styles.contextPanelTitle}>
+                  {selectedGroup === 'filter-results'
+                    ? `Filter: "${debouncedFilterText}" (${filteredContexts?.length || 0} results)`
+                    : selectedGroup
+                  }
+                </h3>
+              </div>
+              <div className={styles.contextList}>
+                {selectedGroup === 'filter-results' ? (
+                  filteredContexts && filteredContexts.length > 0 ? (
+                    filteredContexts.map((context) => {
                       const anomalyRate = anomalyRates.get(context);
                       const color = getColorForAnomalyRate(anomalyRate);
                       const isSelected = selectedMetrics.has(context);
@@ -1061,20 +1048,45 @@ const Metrics = ({ command }) => {
                         </div>
                       );
                     })
-                  )}
-                </div>
+                  ) : debouncedFilterText ? (
+                    <div className={styles.noResults}>No matching contexts found</div>
+                  ) : (
+                    <div className={styles.noResults}>Searching...</div>
+                  )
+                ) : (
+                  visualGroups.get(selectedGroup)?.map((context) => {
+                    const anomalyRate = anomalyRates.get(context);
+                    const color = getColorForAnomalyRate(anomalyRate);
+                    const isSelected = selectedMetrics.has(context);
+                    return (
+                      <div key={context} className={styles.contextItem}>
+                        <div className={styles.contextBand} style={{ backgroundColor: color }} />
+                        <div className={styles.contextName}>{context}</div>
+                        <button
+                          className={`${styles.addButton} ${isSelected ? styles.selected : ''}`}
+                          onClick={() => toggleMetric(context)}
+                          title={isSelected ? 'Remove from charts' : 'Add to charts'}
+                        >
+                          {isSelected ? '✓' : '+'}
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
               </div>
-            </>
-          )}
-        </>
-      ) : (
-        /* Charts View */
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Charts View - Hidden with CSS when not active */}
+      <div style={{ display: viewMode === 'charts' ? 'block' : 'none', height: '100%' }}>
         <ChartsView
           selectedContexts={selectedMetrics}
           onRemoveContext={removeMetric}
           onClearAll={() => setSelectedMetrics(new Set())}
         />
-      )}
+      </div>
     </div>
   );
 };

@@ -37,6 +37,7 @@ const ContextChart = ({
   room,
   onRemove
 }) => {
+
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const tooltipRef = useRef(null);
@@ -71,7 +72,7 @@ const ContextChart = ({
     '#34495E',  // Dark Gray
   ], []);
 
-  // Initialize active filters and groups from props
+  // Initialize active filters and groups from props - ONLY ON MOUNT
   useEffect(() => {
     // Initialize groupBy from props
     if (groupBy && Array.isArray(groupBy)) {
@@ -92,7 +93,8 @@ const ContextChart = ({
 
     // Mark initialization as complete
     setIsInitialized(true);
-  }, [groupBy, filterBy]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array - only run on mount
 
   // Handle container resizing with ResizeObserver
   useEffect(() => {

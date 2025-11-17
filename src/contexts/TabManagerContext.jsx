@@ -6,7 +6,7 @@
  * For Phase 1, each tab contains a single tile with one command.
  */
 
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useCommand } from './CommandContext';
 import { useSharedSpaceRoomData } from './SharedSpaceRoomDataContext';
 import { handleTabCommand } from '../utils/tabCommandHandler';
@@ -445,11 +445,6 @@ export const TabManagerProvider = ({ children }) => {
           selectedSpaceId: firstSpace.id,
           selectedRoomId: allNodesRoom.id,
         };
-
-        console.log('[TabManagerContext] Cached default space/room:', {
-          space: firstSpace.name,
-          room: allNodesRoom.name,
-        });
       } catch (error) {
         console.error('[TabManagerContext] Error caching default space/room:', error);
       }
@@ -477,8 +472,6 @@ export const TabManagerProvider = ({ children }) => {
       hasInitializedDefaults.current = true;
       return;
     }
-
-    console.log('[TabManagerContext] Initializing existing tabs with default context');
 
     // Update all tabs that don't have space/room selection
     setTabs(prev =>
@@ -1152,7 +1145,26 @@ export const TabManagerProvider = ({ children }) => {
     }
   }, [tabs, activeTabId, activeTileId, createNewTab, switchToTab, switchToTabByIndex, switchToNextTab, switchToPrevTab, closeTab, renameTab, duplicateTab, clearAllTabs, splitTile, closeTile, resizeTile, getLeafTiles]);
 
-  const value = {
+  // Extract inline functions to useCallback for proper memoization
+  const focusNextTile = useCallback(() => {
+    const leafTiles = getLeafTiles();
+    if (leafTiles.length === 0) return false;
+    const currentIndex = leafTiles.findIndex(t => t.id === activeTileId);
+    const nextIndex = (currentIndex + 1) % leafTiles.length;
+    setActiveTileId(leafTiles[nextIndex].id);
+    return true;
+  }, [activeTileId, getLeafTiles]);
+
+  const focusPrevTile = useCallback(() => {
+    const leafTiles = getLeafTiles();
+    if (leafTiles.length === 0) return false;
+    const currentIndex = leafTiles.findIndex(t => t.id === activeTileId);
+    const prevIndex = currentIndex === 0 ? leafTiles.length - 1 : currentIndex - 1;
+    setActiveTileId(leafTiles[prevIndex].id);
+    return true;
+  }, [activeTileId, getLeafTiles]);
+
+  const value = useMemo(() => ({
     // State
     tabs,
     activeTabId,
@@ -1192,23 +1204,37 @@ export const TabManagerProvider = ({ children }) => {
     getLeafTiles,
 
     // Tile Navigation
-    focusNextTile: () => {
-      const leafTiles = getLeafTiles();
-      if (leafTiles.length === 0) return false;
-      const currentIndex = leafTiles.findIndex(t => t.id === activeTileId);
-      const nextIndex = (currentIndex + 1) % leafTiles.length;
-      setActiveTileId(leafTiles[nextIndex].id);
-      return true;
-    },
-    focusPrevTile: () => {
-      const leafTiles = getLeafTiles();
-      if (leafTiles.length === 0) return false;
-      const currentIndex = leafTiles.findIndex(t => t.id === activeTileId);
-      const prevIndex = currentIndex === 0 ? leafTiles.length - 1 : currentIndex - 1;
-      setActiveTileId(leafTiles[prevIndex].id);
-      return true;
-    },
-  };
+    focusNextTile,
+    focusPrevTile,
+  }), [
+    tabs,
+    activeTabId,
+    activeTileId,
+    createNewTab,
+    closeTab,
+    switchToTab,
+    switchToTabByIndex,
+    switchToNextTab,
+    switchToPrevTab,
+    renameTab,
+    moveTab,
+    duplicateTab,
+    clearAllTabs,
+    getActiveTab,
+    getTab,
+    updateTabContext,
+    getTabContext,
+    getActiveTabContext,
+    addCommandToActiveTile,
+    handleLayoutCommand,
+    splitTile,
+    closeTile,
+    resizeTile,
+    getTile,
+    getLeafTiles,
+    focusNextTile,
+    focusPrevTile
+  ]);
 
   return (
     <TabManagerContext.Provider value={value}>
