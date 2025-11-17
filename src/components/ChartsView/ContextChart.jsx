@@ -5,6 +5,92 @@ import { getData } from '../../api/client';
 import NetdataSpinner from '../common/NetdataSpinner';
 import styles from './ContextChart.module.css';
 
+// Memoized FilterChip component to prevent unnecessary re-renders
+const FilterChip = React.memo(({
+  option,
+  filterLabel,
+  isChecked,
+  onFilterChange
+}) => {
+  const handleChange = useCallback((e) => {
+    onFilterChange(filterLabel, option.value, e.target.checked);
+  }, [filterLabel, option.value, onFilterChange]);
+
+  return (
+    <label className={styles.filterChip}>
+      <input
+        type="checkbox"
+        checked={isChecked}
+        onChange={handleChange}
+        className={styles.filterCheckbox}
+      />
+      <span className={styles.filterChipLabel}>{option.displayName}</span>
+    </label>
+  );
+});
+
+// Memoized FilterPanelContent component for better performance
+const ChartFilterPanelContent = React.memo(({
+  groupByOptions,
+  filterOptions,
+  activeGroupBy,
+  activeFilters,
+  onGroupByChange,
+  onFilterChange
+}) => {
+  return (
+    <>
+      {/* Group By Section */}
+      {groupByOptions.length > 0 && (
+        <div className={styles.filterSection}>
+          <div className={styles.filterSectionTitle}>Group By</div>
+          <div className={styles.filterChips}>
+            {groupByOptions.map(option => (
+              <label key={option.label} className={styles.filterChip}>
+                <input
+                  type="checkbox"
+                  checked={activeGroupBy.includes(option.label)}
+                  onChange={(e) => onGroupByChange(option.label, e.target.checked)}
+                  className={styles.filterCheckbox}
+                />
+                <span className={styles.filterChipLabel}>{option.displayName}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filter By Section */}
+      {Object.keys(filterOptions).length > 0 && (
+        <div className={styles.filterSection}>
+          <div className={styles.filterSectionTitle}>Filter By</div>
+          <div className={styles.filterGroupsContainer}>
+            {Object.entries(filterOptions).map(([filterLabel, options]) => (
+              <div key={filterLabel} className={styles.filterGroup}>
+                <div className={styles.filterGroupTitle}>{filterLabel}</div>
+                <div className={styles.filterChipsScrollable}>
+                  {options.map(option => {
+                    const isChecked = activeFilters[filterLabel]?.includes(option.value) || false;
+                    return (
+                      <FilterChip
+                        key={option.value}
+                        option={option}
+                        filterLabel={filterLabel}
+                        isChecked={isChecked}
+                        onFilterChange={onFilterChange}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+});
+
 /**
  * ContextChart Component
  *
@@ -247,6 +333,7 @@ const ContextChart = ({
       skipped: { groupBy: skippedGroupBy, filters: skippedFilters }
     };
   }, []);
+
   const buildGetDataParams = useCallback((groupByParam, filters) => {
     const nodeIDs = [];
     const dimensions = [];
@@ -1242,57 +1329,17 @@ const ContextChart = ({
               </div>
             )}
 
+            {/* OPTIMIZED: Only render content when panel is open */}
             {isFilterPanelOpen && (
               <div className={styles.filterPanelContent}>
-                {/* Group By Section */}
-                {groupByOptions.length > 0 && (
-                  <div className={styles.filterSection}>
-                    <div className={styles.filterSectionTitle}>Group By</div>
-                    <div className={styles.filterChips}>
-                      {groupByOptions.map(option => (
-                        <label key={option.label} className={styles.filterChip}>
-                          <input
-                            type="checkbox"
-                            checked={activeGroupBy.includes(option.label)}
-                            onChange={(e) => handleGroupByChange(option.label, e.target.checked)}
-                            className={styles.filterCheckbox}
-                          />
-                          <span className={styles.filterChipLabel}>{option.displayName}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Filter By Section */}
-                {Object.keys(filterOptions).length > 0 && (
-                  <div className={styles.filterSection}>
-                    <div className={styles.filterSectionTitle}>Filter By</div>
-                    <div className={styles.filterGroupsContainer}>
-                      {Object.entries(filterOptions).map(([filterLabel, options]) => (
-                        <div key={filterLabel} className={styles.filterGroup}>
-                          <div className={styles.filterGroupTitle}>{filterLabel}</div>
-                          <div className={styles.filterChipsScrollable}>
-                            {options.map(option => {
-                              const isChecked = activeFilters[filterLabel]?.includes(option.value) || false;
-                              return (
-                                <label key={option.value} className={styles.filterChip}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={(e) => handleFilterChange(filterLabel, option.value, e.target.checked)}
-                                    className={styles.filterCheckbox}
-                                  />
-                                  <span className={styles.filterChipLabel}>{option.displayName}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <ChartFilterPanelContent
+                  groupByOptions={groupByOptions}
+                  filterOptions={filterOptions}
+                  activeGroupBy={activeGroupBy}
+                  activeFilters={activeFilters}
+                  onGroupByChange={handleGroupByChange}
+                  onFilterChange={handleFilterChange}
+                />
               </div>
             )}
           </div>

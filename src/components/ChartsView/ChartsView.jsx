@@ -1,7 +1,119 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useTabContext } from '../../contexts/TabContext';
 import ContextChart from './ContextChart';
 import styles from './ChartsView.module.css';
+import { createPerformanceMonitor, measureDOMNodes } from '../../utils/performance/performanceMonitor';
+import { useDebounce } from '../../hooks/useDebounce';
+
+// Memoized FilterChip component to prevent unnecessary re-renders
+const FilterChip = React.memo(({
+  option,
+  filterLabel,
+  isChecked,
+  onFilterChange
+}) => {
+  const handleChange = useCallback((e) => {
+    onFilterChange(filterLabel, option.value, e.target.checked);
+  }, [filterLabel, option.value, onFilterChange]);
+
+  return (
+    <label className={styles.globalFilterChip}>
+      <input
+        type="checkbox"
+        checked={isChecked}
+        onChange={handleChange}
+        className={styles.globalFilterCheckbox}
+      />
+      <span className={styles.globalFilterChipLabel}>{option.displayName}</span>
+    </label>
+  );
+});
+
+// Memoized FilterPanelContent component for better performance
+// PHASE 2: Added search functionality with filtering
+const FilterPanelContent = React.memo(({
+  groupByOptions,
+  filterOptions,
+  globalGroupBy,
+  globalFilterBy,
+  onGroupByChange,
+  onFilterChange,
+  searchQuery,
+  onSearchChange
+}) => {
+  return (
+    <>
+      {/* PHASE 2: Search Input */}
+      <div className={styles.globalFilterSearchContainer}>
+        <input
+          type="text"
+          className={styles.globalFilterSearchInput}
+          placeholder="Search filters..."
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          autoComplete="off"
+        />
+        {searchQuery && (
+          <button
+            className={styles.globalFilterSearchClear}
+            onClick={() => onSearchChange('')}
+            title="Clear search"
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {/* Group By Section */}
+      {groupByOptions.length > 0 && (
+        <div className={styles.globalFilterSection}>
+          <div className={styles.globalFilterSectionTitle}>Group By</div>
+          <div className={styles.globalFilterChips}>
+            {groupByOptions.map(option => (
+              <label key={option.label} className={styles.globalFilterChip}>
+                <input
+                  type="checkbox"
+                  checked={globalGroupBy.includes(option.label)}
+                  onChange={(e) => onGroupByChange(option.label, e.target.checked)}
+                  className={styles.globalFilterCheckbox}
+                />
+                <span className={styles.globalFilterChipLabel}>{option.displayName}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filter By Section */}
+      {Object.keys(filterOptions).length > 0 && (
+        <div className={styles.globalFilterSection}>
+          <div className={styles.globalFilterSectionTitle}>Filter By</div>
+          <div className={styles.globalFilterGroupsContainer}>
+            {Object.entries(filterOptions).map(([filterLabel, options]) => (
+              <div key={filterLabel} className={styles.globalFilterGroup}>
+                <div className={styles.globalFilterGroupTitle}>{filterLabel}</div>
+                <div className={styles.globalFilterChipsScrollable}>
+                  {options.map(option => {
+                    const isChecked = globalFilterBy[filterLabel]?.includes(option.value) || false;
+                    return (
+                      <FilterChip
+                        key={option.value}
+                        option={option}
+                        filterLabel={filterLabel}
+                        isChecked={isChecked}
+                        onFilterChange={onFilterChange}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+});
 
 /**
  * ChartsView Component
@@ -20,6 +132,10 @@ const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
   // Generate a unique instance ID on mount
   const instanceId = useMemo(() => `charts-${Math.random().toString(36).substr(2, 9)}`, []);
 
+  // PHASE 0: Performance monitoring setup
+  const perfMonitor = useMemo(() => createPerformanceMonitor('ChartsView'), []);
+  const filterPanelRef = useRef(null);
+
   // Time interval state
   const [timeInterval, setTimeInterval] = useState('15m'); // '15m', '1h', '6h', '24h', 'custom'
   const [customAfter, setCustomAfter] = useState('');
@@ -33,6 +149,31 @@ const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
 
   // Collected summaries from all charts
   const [chartSummaries, setChartSummaries] = useState({});
+
+  // PHASE 2: Search functionality state
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+
+  // PHASE 0: Performance monitoring for filter panel open/close
+  useEffect(() => {
+    if (isGlobalPanelOpen) {
+      perfMonitor.start('filter-panel-open');
+    }
+  }, [isGlobalPanelOpen, perfMonitor]);
+
+  useEffect(() => {
+    if (isGlobalPanelOpen && filterPanelRef.current) {
+      // Measure after render is complete
+      requestAnimationFrame(() => {
+        perfMonitor.end('filter-panel-open', 100);
+
+        // Measure DOM nodes in development
+        if (import.meta.env.DEV) {
+          measureDOMNodes(filterPanelRef.current);
+        }
+      });
+    }
+  }, [isGlobalPanelOpen, perfMonitor]);
 
   // Predefined time intervals
   const TIME_INTERVALS = useMemo(() => [
@@ -122,7 +263,14 @@ const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
     }));
   }, []);
 
+  // OPTIMIZATION: Create a stable hash for chart summaries to prevent unnecessary recalculations
+  const chartSummariesHash = useMemo(() =>
+    JSON.stringify(Object.keys(chartSummaries).sort()),
+    [chartSummaries]
+  );
+
   // Aggregate available options from all chart summaries
+  // OPTIMIZED: Now only recalculates when charts are added/removed, not on every summary update
   const aggregatedOptions = useMemo(() => {
     const groupByOptionsMap = new Map();
     const filterOptionsMap = new Map();
@@ -200,7 +348,44 @@ const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
     });
 
     return { groupByOptions, filterOptions };
-  }, [chartSummaries]);
+  }, [chartSummariesHash]); // Use hash instead of full chartSummaries object
+
+  // PHASE 2: Filter options based on debounced search query
+  const filteredOptions = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) {
+      return aggregatedOptions;
+    }
+
+    const query = debouncedSearchQuery.toLowerCase();
+
+    // Filter groupBy options
+    const filteredGroupByOptions = aggregatedOptions.groupByOptions.filter(option =>
+      option.displayName.toLowerCase().includes(query)
+    );
+
+    // Filter filterBy options
+    const filteredFilterOptions = {};
+    Object.entries(aggregatedOptions.filterOptions).forEach(([filterLabel, options]) => {
+      const filteredOpts = options.filter(option =>
+        option.displayName.toLowerCase().includes(query) ||
+        filterLabel.toLowerCase().includes(query)
+      );
+
+      if (filteredOpts.length > 0) {
+        filteredFilterOptions[filterLabel] = filteredOpts;
+      }
+    });
+
+    return {
+      groupByOptions: filteredGroupByOptions,
+      filterOptions: filteredFilterOptions
+    };
+  }, [aggregatedOptions, debouncedSearchQuery]);
+
+  // PHASE 2: Handle search query change
+  const handleSearchChange = useCallback((value) => {
+    setSearchQuery(value);
+  }, []);
 
   // Handle global group by change
   const handleGlobalGroupByChange = useCallback((label, isChecked) => {
@@ -460,64 +645,24 @@ const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
         )}
 
         {/* Global Controls Panel Content */}
+        {/* OPTIMIZED: Only render content when panel is open */}
         {isGlobalPanelOpen && (
-          <div className={styles.globalControlsContent}>
+          <div ref={filterPanelRef} className={styles.globalControlsContent}>
             {aggregatedOptions.groupByOptions.length === 0 && Object.keys(aggregatedOptions.filterOptions).length === 0 ? (
               <div className={styles.globalControlsEmpty}>
                 <p>Loading available options from charts...</p>
               </div>
             ) : (
-              <>
-                {/* Group By Section */}
-                {aggregatedOptions.groupByOptions.length > 0 && (
-                  <div className={styles.globalFilterSection}>
-                    <div className={styles.globalFilterSectionTitle}>Group By</div>
-                    <div className={styles.globalFilterChips}>
-                      {aggregatedOptions.groupByOptions.map(option => (
-                        <label key={option.label} className={styles.globalFilterChip}>
-                          <input
-                            type="checkbox"
-                            checked={globalGroupBy.includes(option.label)}
-                            onChange={(e) => handleGlobalGroupByChange(option.label, e.target.checked)}
-                            className={styles.globalFilterCheckbox}
-                          />
-                          <span className={styles.globalFilterChipLabel}>{option.displayName}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Filter By Section */}
-                {Object.keys(aggregatedOptions.filterOptions).length > 0 && (
-                  <div className={styles.globalFilterSection}>
-                    <div className={styles.globalFilterSectionTitle}>Filter By</div>
-                    <div className={styles.globalFilterGroupsContainer}>
-                      {Object.entries(aggregatedOptions.filterOptions).map(([filterLabel, options]) => (
-                        <div key={filterLabel} className={styles.globalFilterGroup}>
-                          <div className={styles.globalFilterGroupTitle}>{filterLabel}</div>
-                          <div className={styles.globalFilterChipsScrollable}>
-                            {options.map(option => {
-                              const isChecked = globalFilterBy[filterLabel]?.includes(option.value) || false;
-                              return (
-                                <label key={option.value} className={styles.globalFilterChip}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={(e) => handleGlobalFilterChange(filterLabel, option.value, e.target.checked)}
-                                    className={styles.globalFilterCheckbox}
-                                  />
-                                  <span className={styles.globalFilterChipLabel}>{option.displayName}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
+              <FilterPanelContent
+                groupByOptions={filteredOptions.groupByOptions}
+                filterOptions={filteredOptions.filterOptions}
+                globalGroupBy={globalGroupBy}
+                globalFilterBy={globalFilterBy}
+                onGroupByChange={handleGlobalGroupByChange}
+                onFilterChange={handleGlobalFilterChange}
+                searchQuery={searchQuery}
+                onSearchChange={handleSearchChange}
+              />
             )}
           </div>
         )}

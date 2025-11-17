@@ -163,6 +163,8 @@
   background: linear-gradient(135deg, rgba(0, 171, 68, 0.03), rgba(0, 181, 216, 0.03));
   border-bottom: 2px solid var(--color-primary-alpha-20);
   flex-shrink: 0;
+  /* PHASE 1: CSS containment for better performance */
+  contain: layout style;
 }
 
 .globalControlsHeader {
@@ -272,6 +274,7 @@
   padding: 0 20px 12px 20px;
   max-height: 150px;
   overflow-y: auto;
+  contain: layout style;
 }
 
 .globalActiveSelections::-webkit-scrollbar {
@@ -355,6 +358,10 @@
   border-top: 1px solid var(--color-primary-alpha-20);
   animation: slideDown 0.25s ease-out;
   background: rgba(255, 255, 255, 0.4);
+  /* PHASE 1: CSS containment and performance optimizations */
+  contain: layout style paint;
+  /* Use will-change sparingly - only during animations */
+  transition: max-height 0.2s ease-out, opacity 0.15s ease-out;
 }
 
 @keyframes slideDown {
@@ -380,8 +387,71 @@
   font-style: italic;
 }
 
+/* PHASE 2: Search Input Container */
+.globalFilterSearchContainer {
+  position: relative;
+  margin-bottom: 16px;
+  contain: layout style;
+}
+
+.globalFilterSearchInput {
+  width: 100%;
+  padding: 10px 36px 10px 12px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--color-border-medium);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.globalFilterSearchInput:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-alpha-10);
+  background: rgba(255, 255, 255, 1);
+}
+
+.globalFilterSearchInput::placeholder {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.globalFilterSearchClear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.globalFilterSearchClear:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: rgba(239, 68, 68, 1);
+  transform: translateY(-50%) scale(1.1);
+}
+
+.globalFilterSearchClear:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
 .globalFilterSection {
   margin-bottom: 16px;
+  contain: layout;
 }
 
 .globalFilterSection:last-child {
@@ -403,6 +473,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 4px;
+  contain: layout;
 }
 
 .globalFilterGroupsContainer::-webkit-scrollbar {
@@ -425,6 +496,7 @@
 
 .globalFilterGroup {
   margin-bottom: 14px;
+  contain: layout;
 }
 
 .globalFilterGroup:last-child {
@@ -453,6 +525,11 @@
   max-height: 180px;
   overflow-y: auto;
   padding-right: 4px;
+  contain: layout style;
+  will-change: scroll-position;
+  /* Use GPU acceleration for scrolling */
+  transform: translateZ(0);
+  -webkit-overflow-scrolling: touch;
 }
 
 .globalFilterChipsScrollable::-webkit-scrollbar {
@@ -482,6 +559,7 @@
   transition: all 0.2s ease;
   user-select: none;
   flex-shrink: 0;
+  contain: layout style;
 }
 
 .globalFilterChip:hover {

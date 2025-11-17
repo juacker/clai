@@ -10,6 +10,7 @@
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(8px);
   position: relative;
+  contain: layout;
 }
 
 .chartContainer:hover {
@@ -74,6 +75,7 @@
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.5);
   overflow: hidden;
+  contain: layout;
 }
 
 .filterPanelHeader {
@@ -140,6 +142,7 @@
   border-top: 1px solid var(--color-border-light);
   max-height: 120px;
   overflow-y: auto;
+  contain: layout style;
 }
 
 .activeSelections::-webkit-scrollbar {
@@ -216,6 +219,9 @@
   padding: 12px;
   border-top: 1px solid var(--chart-grid);
   animation: slideDown 0.2s ease-out;
+  will-change: max-height, opacity;
+  contain: layout style paint;
+  transition: max-height 0.2s ease-out, opacity 0.15s ease-out;
 }
 
 @keyframes slideDown {
@@ -231,6 +237,7 @@
 
 .filterSection {
   margin-bottom: 12px;
+  contain: layout;
 }
 
 .filterSection:last-child {
@@ -252,6 +259,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 4px;
+  contain: layout;
 }
 
 .filterGroupsContainer::-webkit-scrollbar {
@@ -274,6 +282,7 @@
 
 .filterGroup {
   margin-bottom: 12px;
+  contain: layout;
 }
 
 .filterGroup:last-child {
@@ -302,6 +311,10 @@
   max-height: 150px;
   overflow-y: auto;
   padding-right: 4px;
+  contain: layout style;
+  will-change: scroll-position;
+  transform: translateZ(0);
+  -webkit-overflow-scrolling: touch;
 }
 
 .filterChipsScrollable::-webkit-scrollbar {
@@ -331,6 +344,7 @@
   transition: all 0.2s ease;
   user-select: none;
   flex-shrink: 0;
+  contain: layout style;
 }
 
 .filterChip:hover {
@@ -413,6 +427,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 4px;
+  contain: layout style;
 }
 
 /* Custom scrollbar styling for legend */
@@ -446,6 +461,7 @@
   position: relative;
   min-height: 250px;
   overflow: visible;
+  contain: strict;
 }
 
 /* Loading Overlay for refetching */
