@@ -14,7 +14,7 @@ import styles from './ContextChart.module.css';
  * @param {Object} props - Component props
  * @param {string} props.context - The name of the metric context to show data for
  * @param {Array} props.groupBy - Labels to group metrics by (e.g., 'node', 'dimension', 'instance')
- * @param {Array} props.filterBy - Filter data by specific label values
+ * @param {Object|Array} props.filterBy - Filter data by specific label values (can be object or array)
  * @param {string} props.valueAgg - Aggregation method for grouping series
  * @param {string} props.timeAgg - Aggregation method for downsampling
  * @param {string} props.after - Start timestamp (RFC 3339 format)
@@ -23,6 +23,7 @@ import styles from './ContextChart.module.css';
  * @param {Object} props.space - Space object with id and name
  * @param {Object} props.room - Room object with id and name
  * @param {Function} props.onRemove - Callback when chart is removed
+ * @param {Function} props.onSummaryUpdate - Callback to report summary data back to parent
  */
 const ContextChart = ({
   context,
@@ -35,7 +36,8 @@ const ContextChart = ({
   intervalCount = 15,
   space,
   room,
-  onRemove
+  onRemove,
+  onSummaryUpdate
 }) => {
 
   const svgRef = useRef(null);
@@ -72,29 +74,54 @@ const ContextChart = ({
     '#34495E',  // Dark Gray
   ], []);
 
+  // Convert filterBy prop to object format if it's an array (for backward compatibility)
+  const normalizeFilterBy = useCallback((filterByProp) => {
+    if (!filterByProp) return {};
+
+    // If it's already an object, return as-is
+    if (!Array.isArray(filterByProp)) return filterByProp;
+
+    // Convert array format to object format
+    const filters = {};
+    filterByProp.forEach(filter => {
+      if (!filters[filter.label]) {
+        filters[filter.label] = [];
+      }
+      filters[filter.label].push(filter.value);
+    });
+    return filters;
+  }, []);
+
+  // Memoize normalized props to prevent unnecessary updates
+  const normalizedGroupBy = useMemo(() => {
+    return groupBy && Array.isArray(groupBy) ? groupBy : [];
+  }, [JSON.stringify(groupBy)]);
+
+  const normalizedFilterBy = useMemo(() => {
+    return normalizeFilterBy(filterBy);
+  }, [normalizeFilterBy, JSON.stringify(filterBy)]);
+
   // Initialize active filters and groups from props - ONLY ON MOUNT
   useEffect(() => {
     // Initialize groupBy from props
-    if (groupBy && Array.isArray(groupBy)) {
-      setActiveGroupBy(groupBy);
-    }
+    setActiveGroupBy(normalizedGroupBy);
 
     // Initialize filters from props
-    if (filterBy && Array.isArray(filterBy)) {
-      const filters = {};
-      filterBy.forEach(filter => {
-        if (!filters[filter.label]) {
-          filters[filter.label] = [];
-        }
-        filters[filter.label].push(filter.value);
-      });
-      setActiveFilters(filters);
-    }
+    setActiveFilters(normalizedFilterBy);
 
     // Mark initialization as complete
     setIsInitialized(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty dependency array - only run on mount
+
+  // Update filters/groups when props change (for global controls)
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    // Only update if the values actually changed (deep comparison via JSON.stringify in memos)
+    setActiveGroupBy(normalizedGroupBy);
+    setActiveFilters(normalizedFilterBy);
+  }, [normalizedGroupBy, normalizedFilterBy, isInitialized]);
 
   // Handle container resizing with ResizeObserver
   useEffect(() => {
@@ -121,7 +148,105 @@ const ContextChart = ({
     return () => resizeObserver.disconnect();
   }, []);
 
-  // Build getData request params from current state
+  // Filter out groupBy/filterBy that don't exist in this chart's summary
+  const getApplicableFilters = useCallback((groupByParam, filters, summaryData) => {
+    if (!summaryData) {
+      // If no summary yet, return everything (will be filtered after first load)
+      return { applicableGroupBy: groupByParam, applicableFilters: filters, skipped: { groupBy: [], filters: {} } };
+    }
+
+    const availableLabels = new Set(['node', 'dimension', 'instance']);
+    const skippedGroupBy = [];
+    const skippedFilters = {};
+
+    // Add custom labels from summary
+    if (summaryData.labels && Array.isArray(summaryData.labels)) {
+      summaryData.labels.forEach(labelObj => {
+        if (labelObj.id) {
+          availableLabels.add(labelObj.id);
+        }
+      });
+    }
+
+    // Filter groupBy to only include available labels
+    const applicableGroupBy = groupByParam.filter(label => {
+      const isAvailable = availableLabels.has(label);
+      if (!isAvailable) {
+        skippedGroupBy.push(label);
+      }
+      return isAvailable;
+    });
+
+    // Filter filterBy to only include available labels and values
+    const applicableFilters = {};
+    Object.entries(filters).forEach(([filterLabel, values]) => {
+      // Check if the label exists
+      if (!availableLabels.has(filterLabel)) {
+        skippedFilters[filterLabel] = values;
+        return;
+      }
+
+      // For system labels, check if values exist
+      if (filterLabel === 'node' && summaryData.nodes) {
+        const availableNodeIds = new Set(summaryData.nodes.map(n => n.mg));
+        const applicableValues = values.filter(v => availableNodeIds.has(v));
+        const skippedValues = values.filter(v => !availableNodeIds.has(v));
+
+        if (applicableValues.length > 0) {
+          applicableFilters[filterLabel] = applicableValues;
+        }
+        if (skippedValues.length > 0) {
+          skippedFilters[filterLabel] = skippedValues;
+        }
+      } else if (filterLabel === 'dimension' && summaryData.dimensions) {
+        const availableDimIds = new Set(summaryData.dimensions.map(d => d.id));
+        const applicableValues = values.filter(v => availableDimIds.has(v));
+        const skippedValues = values.filter(v => !availableDimIds.has(v));
+
+        if (applicableValues.length > 0) {
+          applicableFilters[filterLabel] = applicableValues;
+        }
+        if (skippedValues.length > 0) {
+          skippedFilters[filterLabel] = skippedValues;
+        }
+      } else if (filterLabel === 'instance' && summaryData.instances) {
+        const availableInstIds = new Set(summaryData.instances.map(i => i.id));
+        const applicableValues = values.filter(v => availableInstIds.has(v));
+        const skippedValues = values.filter(v => !availableInstIds.has(v));
+
+        if (applicableValues.length > 0) {
+          applicableFilters[filterLabel] = applicableValues;
+        }
+        if (skippedValues.length > 0) {
+          skippedFilters[filterLabel] = skippedValues;
+        }
+      } else {
+        // For custom labels, check if values exist
+        const labelObj = summaryData.labels?.find(l => l.id === filterLabel);
+        if (labelObj && labelObj.vl) {
+          const availableValues = new Set(labelObj.vl.map(v => v.id));
+          const applicableValues = values.filter(v => availableValues.has(v));
+          const skippedValues = values.filter(v => !availableValues.has(v));
+
+          if (applicableValues.length > 0) {
+            applicableFilters[filterLabel] = applicableValues;
+          }
+          if (skippedValues.length > 0) {
+            skippedFilters[filterLabel] = skippedValues;
+          }
+        } else {
+          // Label doesn't exist, skip all values
+          skippedFilters[filterLabel] = values;
+        }
+      }
+    });
+
+    return {
+      applicableGroupBy,
+      applicableFilters,
+      skipped: { groupBy: skippedGroupBy, filters: skippedFilters }
+    };
+  }, []);
   const buildGetDataParams = useCallback((groupByParam, filters) => {
     const nodeIDs = [];
     const dimensions = [];
@@ -240,6 +365,11 @@ const ContextChart = ({
     // Store summary for filter/group UI
     setSummary(summaryData);
 
+    // Report summary back to parent if callback provided
+    if (onSummaryUpdate && summaryData) {
+      onSummaryUpdate(context, summaryData);
+    }
+
     const nodeMap = buildNodeMapping(summaryData);
     const isGroupedByNode = activeGroupBy.includes('node');
 
@@ -277,7 +407,7 @@ const ContextChart = ({
       context: context || "context not set",
       unit: unit
     };
-  }, [context, DEFAULT_COLORS, activeGroupBy]);
+  }, [context, DEFAULT_COLORS, activeGroupBy, onSummaryUpdate]);
 
   // Fetch data from API
   const fetchData = useCallback(async (groupByParam, filters) => {
@@ -294,7 +424,16 @@ const ContextChart = ({
         throw new Error('Space ID or Room ID not found. Please select a space and room.');
       }
 
-      const params = buildGetDataParams(groupByParam, filters);
+      // Filter out inapplicable filters/groupings based on summary
+      // Use the current summary from the closure, not from dependencies
+      const currentSummary = summary;
+      const { applicableGroupBy, applicableFilters } = getApplicableFilters(
+        groupByParam,
+        filters,
+        currentSummary
+      );
+
+      const params = buildGetDataParams(applicableGroupBy, applicableFilters);
       const response = await getData(token, space.id, room.id, params);
       const transformedData = transformResponseToChartData(response);
 
@@ -305,7 +444,9 @@ const ContextChart = ({
       setError(err.message || 'Failed to load chart data');
       setLoading(false);
     }
-  }, [space?.id, room?.id, buildGetDataParams, transformResponseToChartData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [space?.id, room?.id, buildGetDataParams, transformResponseToChartData, getApplicableFilters]);
+  // Note: summary is intentionally NOT in deps to avoid refetch loops
 
   // Fetch data when initialized and when filters/grouping changes
   useEffect(() => {
@@ -315,7 +456,7 @@ const ContextChart = ({
   }, [isInitialized, activeGroupBy, activeFilters, fetchData]);
 
   // Parse available options from summary
-  const getAvailableOptions = useCallback(() => {
+  const availableOptions = useMemo(() => {
     if (!summary) return { groupByOptions: [], filterOptions: {} };
 
     const groupByOptions = [];
@@ -425,64 +566,107 @@ const ContextChart = ({
 
   // Reset to original props configuration
   const handleReset = useCallback(() => {
-    const initialGroupBy = groupBy || [];
-    const initialFilters = {};
-
-    if (filterBy && Array.isArray(filterBy)) {
-      filterBy.forEach(filter => {
-        if (!initialFilters[filter.label]) {
-          initialFilters[filter.label] = [];
-        }
-        initialFilters[filter.label].push(filter.value);
-      });
-    }
-
-    setActiveGroupBy(initialGroupBy);
-    setActiveFilters(initialFilters);
-  }, [groupBy, filterBy]);
+    setActiveGroupBy(normalizedGroupBy);
+    setActiveFilters(normalizedFilterBy);
+  }, [normalizedGroupBy, normalizedFilterBy]);
 
   // Check if current state differs from initial props
   const hasChanges = useMemo(() => {
-    const initialGroupBy = groupBy || [];
-    const initialFilters = {};
-
-    if (filterBy && Array.isArray(filterBy)) {
-      filterBy.forEach(filter => {
-        if (!initialFilters[filter.label]) {
-          initialFilters[filter.label] = [];
-        }
-        initialFilters[filter.label].push(filter.value);
-      });
-    }
-
     // Check groupBy changes
-    if (activeGroupBy.length !== initialGroupBy.length) return true;
-    if (!activeGroupBy.every(g => initialGroupBy.includes(g))) return true;
+    if (activeGroupBy.length !== normalizedGroupBy.length) return true;
+    if (!activeGroupBy.every(g => normalizedGroupBy.includes(g))) return true;
 
     // Check filter changes
     const activeFilterKeys = Object.keys(activeFilters);
-    const initialFilterKeys = Object.keys(initialFilters);
+    const normalizedFilterKeys = Object.keys(normalizedFilterBy);
 
-    if (activeFilterKeys.length !== initialFilterKeys.length) return true;
+    if (activeFilterKeys.length !== normalizedFilterKeys.length) return true;
 
     for (const key of activeFilterKeys) {
-      if (!initialFilters[key]) return true;
-      if (activeFilters[key].length !== initialFilters[key].length) return true;
-      if (!activeFilters[key].every(v => initialFilters[key].includes(v))) return true;
+      if (!normalizedFilterBy[key]) return true;
+      if (activeFilters[key].length !== normalizedFilterBy[key].length) return true;
+      if (!activeFilters[key].every(v => normalizedFilterBy[key].includes(v))) return true;
     }
 
     return false;
-  }, [activeGroupBy, activeFilters, groupBy, filterBy]);
+  }, [activeGroupBy, activeFilters, normalizedGroupBy, normalizedFilterBy]);
 
   // Get display name for a filter value
   const getFilterDisplayName = useCallback((filterLabel, value) => {
-    const { filterOptions } = getAvailableOptions();
-    const options = filterOptions[filterLabel];
+    const options = availableOptions.filterOptions[filterLabel];
     if (!options) return value;
 
     const option = options.find(opt => opt.value === value);
     return option ? option.displayName : value;
-  }, [getAvailableOptions]);
+  }, [availableOptions]);
+
+  // Calculate skipped filters for display
+  const skippedFiltersInfo = useMemo(() => {
+    if (!summary) return { groupBy: [], filters: {} };
+
+    // Inline the filter logic here to avoid dependency on getApplicableFilters
+    const availableLabels = new Set(['node', 'dimension', 'instance']);
+    const skippedGroupBy = [];
+    const skippedFilters = {};
+
+    // Add custom labels from summary
+    if (summary.labels && Array.isArray(summary.labels)) {
+      summary.labels.forEach(labelObj => {
+        if (labelObj.id) {
+          availableLabels.add(labelObj.id);
+        }
+      });
+    }
+
+    // Check groupBy
+    activeGroupBy.forEach(label => {
+      if (!availableLabels.has(label)) {
+        skippedGroupBy.push(label);
+      }
+    });
+
+    // Check filters
+    Object.entries(activeFilters).forEach(([filterLabel, values]) => {
+      if (!availableLabels.has(filterLabel)) {
+        skippedFilters[filterLabel] = values;
+        return;
+      }
+
+      // Check values for system labels
+      if (filterLabel === 'node' && summary.nodes) {
+        const availableNodeIds = new Set(summary.nodes.map(n => n.mg));
+        const skippedValues = values.filter(v => !availableNodeIds.has(v));
+        if (skippedValues.length > 0) {
+          skippedFilters[filterLabel] = skippedValues;
+        }
+      } else if (filterLabel === 'dimension' && summary.dimensions) {
+        const availableDimIds = new Set(summary.dimensions.map(d => d.id));
+        const skippedValues = values.filter(v => !availableDimIds.has(v));
+        if (skippedValues.length > 0) {
+          skippedFilters[filterLabel] = skippedValues;
+        }
+      } else if (filterLabel === 'instance' && summary.instances) {
+        const availableInstIds = new Set(summary.instances.map(i => i.id));
+        const skippedValues = values.filter(v => !availableInstIds.has(v));
+        if (skippedValues.length > 0) {
+          skippedFilters[filterLabel] = skippedValues;
+        }
+      } else {
+        const labelObj = summary.labels?.find(l => l.id === filterLabel);
+        if (labelObj && labelObj.vl) {
+          const availableValues = new Set(labelObj.vl.map(v => v.id));
+          const skippedValues = values.filter(v => !availableValues.has(v));
+          if (skippedValues.length > 0) {
+            skippedFilters[filterLabel] = skippedValues;
+          }
+        } else {
+          skippedFilters[filterLabel] = values;
+        }
+      }
+    });
+
+    return { groupBy: skippedGroupBy, filters: skippedFilters };
+  }, [summary, activeGroupBy, activeFilters]);
 
   // Render line chart
   const renderLine = useCallback((g, datasets, xScale, yScale) => {
@@ -964,7 +1148,7 @@ const ContextChart = ({
     );
   }
 
-  const { groupByOptions, filterOptions } = getAvailableOptions();
+  const { groupByOptions, filterOptions } = availableOptions;
   const hasFilterOptions = groupByOptions.length > 0 || Object.keys(filterOptions).length > 0;
 
   return (
@@ -990,7 +1174,7 @@ const ContextChart = ({
                 <span className={styles.filterPanelToggleIcon}>
                   {isFilterPanelOpen ? '▼' : '▶'}
                 </span>
-                <span className={styles.filterPanelTitle}>Filters & Grouping</span>
+                <span className={styles.filterPanelTitle}>Chart Filters & Grouping</span>
               </button>
               {hasChanges && (
                 <button
@@ -1007,43 +1191,53 @@ const ContextChart = ({
             {!isFilterPanelOpen && (activeGroupBy.length > 0 || Object.keys(activeFilters).length > 0) && (
               <div className={styles.activeSelections}>
                 {/* Group By Tags */}
-                {activeGroupBy.map(group => (
-                  <div key={group} className={styles.activeTag}>
-                    <span className={styles.activeTagPrefix}>Group:</span>
-                    <span className={styles.activeTagValue}>{group}</span>
-                    <button
-                      className={styles.activeTagRemove}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveGroupBy(group);
-                      }}
-                      title={`Remove ${group} grouping`}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-
-                {/* Filter Tags */}
-                {Object.entries(activeFilters).map(([filterLabel, values]) =>
-                  values.map(value => (
-                    <div key={`${filterLabel}-${value}`} className={styles.activeTag}>
-                      <span className={styles.activeTagPrefix}>{filterLabel}:</span>
+                {activeGroupBy.map(group => {
+                  const isSkipped = skippedFiltersInfo.groupBy.includes(group);
+                  return (
+                    <div key={group} className={`${styles.activeTag} ${isSkipped ? styles.activeTagSkipped : ''}`}>
+                      <span className={styles.activeTagPrefix}>Group:</span>
                       <span className={styles.activeTagValue}>
-                        {getFilterDisplayName(filterLabel, value)}
+                        {isSkipped && <span className={styles.skippedIcon} title="Not available in this chart">⊘ </span>}
+                        {group}
                       </span>
                       <button
                         className={styles.activeTagRemove}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleRemoveFilter(filterLabel, value);
+                          handleRemoveGroupBy(group);
                         }}
-                        title={`Remove ${filterLabel} filter`}
+                        title={`Remove ${group} grouping`}
                       >
                         ×
                       </button>
                     </div>
-                  ))
+                  );
+                })}
+
+                {/* Filter Tags */}
+                {Object.entries(activeFilters).map(([filterLabel, values]) =>
+                  values.map(value => {
+                    const isSkipped = skippedFiltersInfo.filters[filterLabel]?.includes(value);
+                    return (
+                      <div key={`${filterLabel}-${value}`} className={`${styles.activeTag} ${isSkipped ? styles.activeTagSkipped : ''}`}>
+                        <span className={styles.activeTagPrefix}>{filterLabel}:</span>
+                        <span className={styles.activeTagValue}>
+                          {isSkipped && <span className={styles.skippedIcon} title="Not available in this chart">⊘ </span>}
+                          {getFilterDisplayName(filterLabel, value)}
+                        </span>
+                        <button
+                          className={styles.activeTagRemove}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveFilter(filterLabel, value);
+                          }}
+                          title={`Remove ${filterLabel} filter`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             )}
@@ -1185,4 +1379,3 @@ const ContextChart = ({
 };
 
 export default ContextChart;
-

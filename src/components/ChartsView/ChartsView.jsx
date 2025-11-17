@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTabContext } from '../../contexts/TabContext';
 import ContextChart from './ContextChart';
 import styles from './ChartsView.module.css';
@@ -27,8 +27,12 @@ const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
 
   // Global filters and grouping state
   const [globalGroupBy, setGlobalGroupBy] = useState([]);
-  const [globalFilterBy, setGlobalFilterBy] = useState([]);
+  const [globalFilterBy, setGlobalFilterBy] = useState({});
   const [applyGlobally, setApplyGlobally] = useState(false);
+  const [isGlobalPanelOpen, setIsGlobalPanelOpen] = useState(false);
+
+  // Collected summaries from all charts
+  const [chartSummaries, setChartSummaries] = useState({});
 
   // Predefined time intervals
   const TIME_INTERVALS = useMemo(() => [
@@ -110,10 +114,177 @@ const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
     setApplyGlobally(prev => !prev);
   }, []);
 
+  // Callback to receive summary data from charts
+  const handleChartSummary = useCallback((context, summary) => {
+    setChartSummaries(prev => ({
+      ...prev,
+      [context]: summary
+    }));
+  }, []);
+
+  // Aggregate available options from all chart summaries
+  const aggregatedOptions = useMemo(() => {
+    const groupByOptionsMap = new Map();
+    const filterOptionsMap = new Map();
+
+    Object.values(chartSummaries).forEach(summary => {
+      if (!summary) return;
+
+      // Nodes
+      if (summary.nodes && summary.nodes.length > 1) {
+        groupByOptionsMap.set('node', { label: 'node', displayName: 'Node' });
+
+        if (!filterOptionsMap.has('node')) {
+          filterOptionsMap.set('node', new Map());
+        }
+        const nodeOptions = filterOptionsMap.get('node');
+        summary.nodes.forEach(n => {
+          nodeOptions.set(n.mg, { value: n.mg, displayName: n.nm || n.mg });
+        });
+      }
+
+      // Dimensions
+      if (summary.dimensions && summary.dimensions.length > 1) {
+        groupByOptionsMap.set('dimension', { label: 'dimension', displayName: 'Dimension' });
+
+        if (!filterOptionsMap.has('dimension')) {
+          filterOptionsMap.set('dimension', new Map());
+        }
+        const dimOptions = filterOptionsMap.get('dimension');
+        summary.dimensions.forEach(d => {
+          dimOptions.set(d.id, { value: d.id, displayName: d.id });
+        });
+      }
+
+      // Instances
+      if (summary.instances && summary.instances.length > 1) {
+        groupByOptionsMap.set('instance', { label: 'instance', displayName: 'Instance' });
+
+        if (!filterOptionsMap.has('instance')) {
+          filterOptionsMap.set('instance', new Map());
+        }
+        const instOptions = filterOptionsMap.get('instance');
+        summary.instances.forEach(i => {
+          instOptions.set(i.id, { value: i.id, displayName: i.id });
+        });
+      }
+
+      // Custom labels
+      if (summary.labels && Array.isArray(summary.labels)) {
+        summary.labels.forEach(labelObj => {
+          if (labelObj.vl && labelObj.vl.length > 1) {
+            groupByOptionsMap.set(labelObj.id, { label: labelObj.id, displayName: labelObj.id });
+
+            if (!filterOptionsMap.has(labelObj.id)) {
+              filterOptionsMap.set(labelObj.id, new Map());
+            }
+            const labelOptions = filterOptionsMap.get(labelObj.id);
+            labelObj.vl.forEach(v => {
+              labelOptions.set(v.id, { value: v.id, displayName: v.id });
+            });
+          }
+        });
+      }
+    });
+
+    // Convert maps to arrays and sort
+    const groupByOptions = Array.from(groupByOptionsMap.values()).sort((a, b) =>
+      a.displayName.localeCompare(b.displayName)
+    );
+
+    const filterOptions = {};
+    filterOptionsMap.forEach((optionsMap, key) => {
+      filterOptions[key] = Array.from(optionsMap.values()).sort((a, b) =>
+        a.displayName.localeCompare(b.displayName)
+      );
+    });
+
+    return { groupByOptions, filterOptions };
+  }, [chartSummaries]);
+
+  // Handle global group by change
+  const handleGlobalGroupByChange = useCallback((label, isChecked) => {
+    setGlobalGroupBy(prev => {
+      if (isChecked) {
+        return [...prev, label];
+      } else {
+        return prev.filter(l => l !== label);
+      }
+    });
+  }, []);
+
+  // Handle global filter change
+  const handleGlobalFilterChange = useCallback((filterLabel, value, isChecked) => {
+    setGlobalFilterBy(prev => {
+      const updated = { ...prev };
+      if (isChecked) {
+        if (!updated[filterLabel]) {
+          updated[filterLabel] = [];
+        }
+        updated[filterLabel] = [...updated[filterLabel], value];
+      } else {
+        if (updated[filterLabel]) {
+          updated[filterLabel] = updated[filterLabel].filter(v => v !== value);
+          if (updated[filterLabel].length === 0) {
+            delete updated[filterLabel];
+          }
+        }
+      }
+      return updated;
+    });
+  }, []);
+
+  // Remove a specific global group by
+  const handleRemoveGlobalGroupBy = useCallback((label) => {
+    setGlobalGroupBy(prev => prev.filter(l => l !== label));
+  }, []);
+
+  // Remove a specific global filter
+  const handleRemoveGlobalFilter = useCallback((filterLabel, value) => {
+    setGlobalFilterBy(prev => {
+      const updated = { ...prev };
+      if (updated[filterLabel]) {
+        updated[filterLabel] = updated[filterLabel].filter(v => v !== value);
+        if (updated[filterLabel].length === 0) {
+          delete updated[filterLabel];
+        }
+      }
+      return updated;
+    });
+  }, []);
+
+  // Clear all global filters
+  const handleClearGlobalFilters = useCallback(() => {
+    setGlobalGroupBy([]);
+    setGlobalFilterBy({});
+  }, []);
+
+  // Get display name for a filter value
+  const getFilterDisplayName = useCallback((filterLabel, value) => {
+    const options = aggregatedOptions.filterOptions[filterLabel];
+    if (!options) return value;
+
+    const option = options.find(opt => opt.value === value);
+    return option ? option.displayName : value;
+  }, [aggregatedOptions]);
+
   // Convert selectedContexts Set to Array for rendering
   const contextsArray = useMemo(() => {
     return Array.from(selectedContexts);
   }, [selectedContexts]);
+
+  // Memoize the filter object to prevent unnecessary re-renders
+  const memoizedGlobalFilterBy = useMemo(() => globalFilterBy, [
+    JSON.stringify(globalFilterBy)
+  ]);
+
+  // Memoize the groupBy array to prevent unnecessary re-renders
+  const memoizedGlobalGroupBy = useMemo(() => globalGroupBy, [
+    JSON.stringify(globalGroupBy)
+  ]);
+
+  // Check if global filters are active
+  const hasGlobalFilters = globalGroupBy.length > 0 || Object.keys(globalFilterBy).length > 0;
 
   if (contextsArray.length === 0) {
     return (
@@ -203,6 +374,155 @@ const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
         </div>
       )}
 
+      {/* Global Filters & Grouping Panel */}
+      <div className={styles.globalControlsBar}>
+        <div className={styles.globalControlsHeader}>
+          <button
+            className={styles.globalControlsToggle}
+            onClick={() => setIsGlobalPanelOpen(!isGlobalPanelOpen)}
+          >
+            <span className={styles.globalControlsToggleIcon}>
+              {isGlobalPanelOpen ? '▼' : '▶'}
+            </span>
+            <span className={styles.globalControlsTitle}>Global Filters & Grouping</span>
+            {hasGlobalFilters && (
+              <span className={styles.globalControlsBadge}>
+                {globalGroupBy.length + Object.values(globalFilterBy).reduce((sum, arr) => sum + arr.length, 0)} active
+              </span>
+            )}
+          </button>
+
+          <div className={styles.globalControlsActions}>
+            <label className={styles.globalToggleLabel}>
+              <input
+                type="checkbox"
+                checked={applyGlobally}
+                onChange={handleToggleApplyGlobally}
+                className={styles.globalToggleCheckbox}
+              />
+              <span>Apply to all charts</span>
+            </label>
+            {hasGlobalFilters && (
+              <button
+                className={styles.clearGlobalButton}
+                onClick={handleClearGlobalFilters}
+                title="Clear all global filters"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Active global selections shown as tags when collapsed */}
+        {!isGlobalPanelOpen && hasGlobalFilters && (
+          <div className={styles.globalActiveSelections}>
+            {/* Group By Tags */}
+            {globalGroupBy.map(group => (
+              <div key={group} className={styles.globalActiveTag}>
+                <span className={styles.globalActiveTagPrefix}>Group:</span>
+                <span className={styles.globalActiveTagValue}>{group}</span>
+                <button
+                  className={styles.globalActiveTagRemove}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveGlobalGroupBy(group);
+                  }}
+                  title={`Remove ${group} grouping`}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+
+            {/* Filter Tags */}
+            {Object.entries(globalFilterBy).map(([filterLabel, values]) =>
+              values.map(value => (
+                <div key={`${filterLabel}-${value}`} className={styles.globalActiveTag}>
+                  <span className={styles.globalActiveTagPrefix}>{filterLabel}:</span>
+                  <span className={styles.globalActiveTagValue}>
+                    {getFilterDisplayName(filterLabel, value)}
+                  </span>
+                  <button
+                    className={styles.globalActiveTagRemove}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveGlobalFilter(filterLabel, value);
+                    }}
+                    title={`Remove ${filterLabel} filter`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* Global Controls Panel Content */}
+        {isGlobalPanelOpen && (
+          <div className={styles.globalControlsContent}>
+            {aggregatedOptions.groupByOptions.length === 0 && Object.keys(aggregatedOptions.filterOptions).length === 0 ? (
+              <div className={styles.globalControlsEmpty}>
+                <p>Loading available options from charts...</p>
+              </div>
+            ) : (
+              <>
+                {/* Group By Section */}
+                {aggregatedOptions.groupByOptions.length > 0 && (
+                  <div className={styles.globalFilterSection}>
+                    <div className={styles.globalFilterSectionTitle}>Group By</div>
+                    <div className={styles.globalFilterChips}>
+                      {aggregatedOptions.groupByOptions.map(option => (
+                        <label key={option.label} className={styles.globalFilterChip}>
+                          <input
+                            type="checkbox"
+                            checked={globalGroupBy.includes(option.label)}
+                            onChange={(e) => handleGlobalGroupByChange(option.label, e.target.checked)}
+                            className={styles.globalFilterCheckbox}
+                          />
+                          <span className={styles.globalFilterChipLabel}>{option.displayName}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Filter By Section */}
+                {Object.keys(aggregatedOptions.filterOptions).length > 0 && (
+                  <div className={styles.globalFilterSection}>
+                    <div className={styles.globalFilterSectionTitle}>Filter By</div>
+                    <div className={styles.globalFilterGroupsContainer}>
+                      {Object.entries(aggregatedOptions.filterOptions).map(([filterLabel, options]) => (
+                        <div key={filterLabel} className={styles.globalFilterGroup}>
+                          <div className={styles.globalFilterGroupTitle}>{filterLabel}</div>
+                          <div className={styles.globalFilterChipsScrollable}>
+                            {options.map(option => {
+                              const isChecked = globalFilterBy[filterLabel]?.includes(option.value) || false;
+                              return (
+                                <label key={option.value} className={styles.globalFilterChip}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => handleGlobalFilterChange(filterLabel, option.value, e.target.checked)}
+                                    className={styles.globalFilterCheckbox}
+                                  />
+                                  <span className={styles.globalFilterChipLabel}>{option.displayName}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Charts Grid Container - full width */}
       <div className={styles.chartsViewContainer}>
         <div className={styles.chartsGrid}>
@@ -210,8 +530,8 @@ const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
             <div key={`${instanceId}-chart-${context}`} className={styles.chartCard}>
               <ContextChart
                 context={context}
-                groupBy={applyGlobally ? globalGroupBy : []}
-                filterBy={applyGlobally ? globalFilterBy : []}
+                groupBy={applyGlobally ? memoizedGlobalGroupBy : []}
+                filterBy={applyGlobally ? memoizedGlobalFilterBy : {}}
                 valueAgg="avg"
                 timeAgg="average"
                 after={timeRange.after}
@@ -220,6 +540,7 @@ const ChartsView = ({ selectedContexts, onRemoveContext, onClearAll }) => {
                 space={selectedSpace}
                 room={selectedRoom}
                 onRemove={() => onRemoveContext(context)}
+                onSummaryUpdate={handleChartSummary}
               />
             </div>
           ))}
