@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import * as d3 from 'd3';
+import NetdataSpinner from '../common/NetdataSpinner';
 import styles from './TimeSeriesChartBlock.module.css';
 
 /**
@@ -537,7 +538,7 @@ const TimeSeriesChartBlock = ({ toolInput, toolResult }) => {
         </div>
         <div className={styles.loadingContainer}>
           <div className={styles.loadingContent}>
-            <div className={styles.loadingSpinner}></div>
+            <NetdataSpinner size={40} />
             <div className={styles.loadingText}>Waiting for chart data...</div>
           </div>
         </div>
