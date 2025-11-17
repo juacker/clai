@@ -322,28 +322,34 @@ const ContextChart = ({
     // Nodes
     if (summary.nodes && summary.nodes.length > 1) {
       groupByOptions.push({ label: 'node', displayName: 'Node' });
-      filterOptions.node = summary.nodes.map(n => ({
-        value: n.mg,
-        displayName: n.nm || n.mg
-      }));
+      filterOptions.node = summary.nodes
+        .map(n => ({
+          value: n.mg,
+          displayName: n.nm || n.mg
+        }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
 
     // Dimensions
     if (summary.dimensions && summary.dimensions.length > 1) {
       groupByOptions.push({ label: 'dimension', displayName: 'Dimension' });
-      filterOptions.dimension = summary.dimensions.map(d => ({
-        value: d.id,
-        displayName: d.id
-      }));
+      filterOptions.dimension = summary.dimensions
+        .map(d => ({
+          value: d.id,
+          displayName: d.id
+        }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
 
     // Instances
     if (summary.instances && summary.instances.length > 1) {
       groupByOptions.push({ label: 'instance', displayName: 'Instance' });
-      filterOptions.instance = summary.instances.map(i => ({
-        value: i.id,
-        displayName: i.id
-      }));
+      filterOptions.instance = summary.instances
+        .map(i => ({
+          value: i.id,
+          displayName: i.id
+        }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
 
     // Custom labels
@@ -351,10 +357,12 @@ const ContextChart = ({
       summary.labels.forEach(labelObj => {
         if (labelObj.vl && labelObj.vl.length > 1) {
           groupByOptions.push({ label: labelObj.id, displayName: labelObj.id });
-          filterOptions[labelObj.id] = labelObj.vl.map(v => ({
-            value: v.id,
-            displayName: v.id
-          }));
+          filterOptions[labelObj.id] = labelObj.vl
+            .map(v => ({
+              value: v.id,
+              displayName: v.id
+            }))
+            .sort((a, b) => a.displayName.localeCompare(b.displayName));
         }
       });
     }
@@ -502,8 +510,10 @@ const ContextChart = ({
 
     const timestamp = d3.timeFormat('%Y-%m-%d %H:%M:%S %z')(validPoints[0].point.date);
 
-    const limitedPoints = validPoints.slice(0, 10);
-    const hasMore = validPoints.length > 10;
+    // Sort by value in descending order before limiting
+    const sortedPoints = validPoints.sort((a, b) => b.point.value - a.point.value);
+    const limitedPoints = sortedPoints.slice(0, 10);
+    const hasMore = sortedPoints.length > 10;
 
     const dataRows = limitedPoints.map(({ dataset, point }) => ({
       color: dataset.color,
@@ -1096,30 +1106,36 @@ const ContextChart = ({
         {chartData?.datasets && chartData.datasets.length > 0 && (
           <div className={styles.legendWrapper}>
             <div className={styles.legend}>
-              {chartData.datasets.map((dataset, index) => {
-                const seriesLabel = dataset.label || `Series ${index + 1}`;
-                const isSelected = isSeriesSelected(seriesLabel);
+              {[...chartData.datasets]
+                .sort((a, b) => {
+                  const labelA = a.label || '';
+                  const labelB = b.label || '';
+                  return labelA.localeCompare(labelB);
+                })
+                .map((dataset, index) => {
+                  const seriesLabel = dataset.label || `Series ${index + 1}`;
+                  const isSelected = isSeriesSelected(seriesLabel);
 
-                return (
-                  <div
-                    key={index}
-                    className={`${styles.legendItem} ${!isSelected ? styles.legendItemInactive : ''}`}
-                    onClick={(e) => handleLegendClick(seriesLabel, e)}
-                    style={{ cursor: 'pointer' }}
-                    title={`Click to select only ${seriesLabel}, Ctrl+Click to toggle`}
-                  >
-                    <span
-                      className={styles.legendColor}
-                      style={{
-                        backgroundColor:
-                          dataset.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length],
-                        opacity: isSelected ? 1 : 0.3,
-                      }}
-                    ></span>
-                    <span className={styles.legendLabel}>{seriesLabel}</span>
-                  </div>
-                );
-              })}
+                  return (
+                    <div
+                      key={index}
+                      className={`${styles.legendItem} ${!isSelected ? styles.legendItemInactive : ''}`}
+                      onClick={(e) => handleLegendClick(seriesLabel, e)}
+                      style={{ cursor: 'pointer' }}
+                      title={`Click to select only ${seriesLabel}, Ctrl+Click to toggle`}
+                    >
+                      <span
+                        className={styles.legendColor}
+                        style={{
+                          backgroundColor:
+                            dataset.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length],
+                          opacity: isSelected ? 1 : 0.3,
+                        }}
+                      ></span>
+                      <span className={styles.legendLabel}>{seriesLabel}</span>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         )}
