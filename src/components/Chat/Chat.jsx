@@ -887,6 +887,9 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
       msg => !conversationMessageIds.has(msg.id)
     );
 
+    // Check if any message is currently streaming
+    const isStreaming = uniqueStreamingMessages.some(msg => msg.isStreaming);
+
     return (
       <>
         <div className={styles.chatHeader}>
@@ -961,6 +964,13 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                     </div>
                   ))}
 
+                  {/* Show streaming spinner when AI is generating response */}
+                  {isStreaming && (
+                    <div className={styles.streamingSpinnerContainer}>
+                      <NetdataSpinner size={24} />
+                    </div>
+                  )}
+
                   <div ref={messagesEndRef} />
                 </>
               ) : (
@@ -988,6 +998,14 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                           </div>
                         </div>
                       ))}
+
+                      {/* Show streaming spinner when AI is generating response */}
+                      {isStreaming && (
+                        <div className={styles.streamingSpinnerContainer}>
+                          <NetdataSpinner size={24} />
+                        </div>
+                      )}
+
                       <div ref={messagesEndRef} />
                     </>
                   ) : (

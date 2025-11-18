@@ -99,7 +99,6 @@ const MarkdownMessage = ({ content, isStreaming = false }) => {
       >
         {content}
       </ReactMarkdown>
-      {isStreaming && <span className={styles.streamingCursor}>▊</span>}
     </div>
   );
 };
