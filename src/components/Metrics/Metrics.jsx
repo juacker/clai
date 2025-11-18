@@ -330,6 +330,31 @@ function getColorForAnomalyRate(anomalyRate) {
   }
 }
 
+/**
+ * Get severity level for sorting (higher = more critical)
+ * - 4: Critical (>= 100%)
+ * - 3: High (50-100%)
+ * - 2: Moderate (10-50%)
+ * - 1: Low (< 10%)
+ * - 0: No data
+ *
+ * @param {number} anomalyRate - Anomaly rate percentage (0-100+)
+ * @returns {number} Severity level for sorting
+ */
+function getSeverityLevel(anomalyRate) {
+  if (anomalyRate === null || anomalyRate === undefined) {
+    return 0; // No data - lowest priority
+  } else if (anomalyRate >= 100) {
+    return 4; // Critical
+  } else if (anomalyRate >= 50) {
+    return 3; // High
+  } else if (anomalyRate >= 10) {
+    return 2; // Moderate
+  } else {
+    return 1; // Low
+  }
+}
+
 // ============================================================================
 // METRICS COMPONENT
 // ============================================================================
@@ -363,6 +388,7 @@ const Metrics = ({ command }) => {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const filterTimeoutRef = useRef(null);
+  const filterInputRef = useRef(null);
 
   const sortedContexts = useMemo(() => {
     console.time('sortContexts');
@@ -478,10 +504,56 @@ const Metrics = ({ command }) => {
       });
     });
 
+    // Sort by severity (most critical first) then alphabetically
+    matchingContexts.sort((a, b) => {
+      const severityA = getSeverityLevel(anomalyRates.get(a));
+      const severityB = getSeverityLevel(anomalyRates.get(b));
+
+      // Sort by severity descending (higher severity = more critical = comes first)
+      if (severityB !== severityA) {
+        return severityB - severityA;
+      }
+
+      // If same severity, sort alphabetically
+      return a.localeCompare(b);
+    });
+
     console.timeEnd('Filter contexts');
     console.log(`Filtered ${matchingContexts.length} contexts from ${debouncedFilterText}`);
-    return matchingContexts.sort();
-  }, [debouncedFilterText, visualGroups]);
+    return matchingContexts;
+  }, [debouncedFilterText, visualGroups, anomalyRates]);
+
+  // Sort metrics for selected group by severity then alphabetically
+  const sortedGroupMetrics = useMemo(() => {
+    if (!selectedGroup || selectedGroup === 'filter-results') {
+      return null;
+    }
+
+    const metrics = visualGroups.get(selectedGroup);
+    if (!metrics) {
+      return null;
+    }
+
+    console.time('Sort group metrics');
+
+    // Create a copy and sort by severity then alphabetically
+    const sorted = [...metrics].sort((a, b) => {
+      const severityA = getSeverityLevel(anomalyRates.get(a));
+      const severityB = getSeverityLevel(anomalyRates.get(b));
+
+      // Sort by severity descending (higher severity = more critical = comes first)
+      if (severityB !== severityA) {
+        return severityB - severityA;
+      }
+
+      // If same severity, sort alphabetically
+      return a.localeCompare(b);
+    });
+
+    console.timeEnd('Sort group metrics');
+    console.log(`Sorted ${sorted.length} metrics for group '${selectedGroup}'`);
+    return sorted;
+  }, [selectedGroup, visualGroups, anomalyRates]);
 
   // Canvas rendering effect
   useEffect(() => {
@@ -674,16 +746,18 @@ const Metrics = ({ command }) => {
       clearTimeout(filterTimeoutRef.current);
     }
 
-    // Debounce the filter - wait 300ms after user stops typing
+    // Debounce the filter - wait 500ms after user stops typing
     filterTimeoutRef.current = setTimeout(() => {
-      setDebouncedFilterText(value);
-      // Auto-open panel when user types
-      if (value.trim()) {
+      // Only search if input has 3 or more characters
+      if (value.trim().length >= 3) {
+        setDebouncedFilterText(value);
         setSelectedGroup('filter-results');
       } else {
+        // Clear search if less than 3 characters
+        setDebouncedFilterText('');
         setSelectedGroup(null);
       }
-    }, 300);
+    }, 500);
   };
 
   // Clear filter
@@ -743,9 +817,10 @@ const Metrics = ({ command }) => {
     };
   }, []);
 
-  // Handle Escape key to close panel
+  // Handle keyboard shortcuts (Escape and Ctrl/Cmd+F)
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Escape key: close panel and clear filter
       if (e.key === 'Escape' && selectedGroup) {
         setSelectedGroup(null);
         setFilterText('');
@@ -754,13 +829,22 @@ const Metrics = ({ command }) => {
           clearTimeout(filterTimeoutRef.current);
         }
       }
+
+      // Ctrl+F (Windows/Linux) or Cmd+F (Mac): focus filter input
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && viewMode === 'canvas') {
+        e.preventDefault(); // Prevent browser's default find
+        if (filterInputRef.current) {
+          filterInputRef.current.focus();
+          filterInputRef.current.select(); // Select existing text for easy replacement
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedGroup]);
+  }, [selectedGroup, viewMode]);
 
   // Toggle metric selection
   const toggleMetric = (context) => {
@@ -971,8 +1055,9 @@ const Metrics = ({ command }) => {
           {viewMode === 'canvas' && (
             <>
               <input
+                ref={filterInputRef}
                 type="text"
-                placeholder="Filter metrics..."
+                placeholder="Find metrics..."
                 className={styles.filterInput}
                 value={filterText}
                 onChange={handleFilterChange}
@@ -1054,7 +1139,7 @@ const Metrics = ({ command }) => {
                     <div className={styles.noResults}>Searching...</div>
                   )
                 ) : (
-                  visualGroups.get(selectedGroup)?.map((context) => {
+                  sortedGroupMetrics?.map((context) => {
                     const anomalyRate = anomalyRates.get(context);
                     const color = getColorForAnomalyRate(anomalyRate);
                     const isSelected = selectedMetrics.has(context);

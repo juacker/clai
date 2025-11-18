@@ -1,33 +1,33 @@
-/* ChartsView Component Styles - Mobile-First Approach */
+/* ChartsView Component Styles - Minimalist Design */
 
-/* Wrapper - contains all ChartsView elements in vertical stack */
 .chartsViewWrapper {
   display: flex;
   flex-direction: column;
-  height: calc(100% - 44px); /* Subtract Metrics header height */
+  height: calc(100% - 44px);
   width: 100%;
   overflow: hidden;
-  margin-top: 44px; /* Position below Metrics header */
+  margin-top: 44px;
+  background: #fafafa;
 }
 
-/* Header Bar - matches Metrics header style */
+/* Compact Header Bar */
 .headerBar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 20px;
-  background: var(--color-bg-secondary);
-  border-bottom: 1px solid var(--color-border-light);
-  gap: 16px;
+  padding: 8px 16px;
+  background: white;
+  border-bottom: 1px solid #e5e5e5;
+  gap: 12px;
   flex-wrap: wrap;
-  flex-shrink: 0; /* Prevent header from shrinking */
-  z-index: 10; /* Below Metrics header but above content */
+  flex-shrink: 0;
+  z-index: 10;
 }
 
 .headerLeft {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   flex: 1;
   flex-wrap: wrap;
 }
@@ -35,311 +35,248 @@
 .headerRight {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-.headerTitle {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin: 0;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-}
-
-/* Container - full width, no horizontal padding */
-.chartsViewContainer {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow-y: auto;
-  background: var(--color-bg-primary);
-}
-
-.clearAllButton {
-  padding: 6px 12px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 6px;
-  color: rgba(239, 68, 68, 1);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.clearAllButton:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.5);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-}
-
-/* Time Interval Selector */
-.timeIntervalSelector {
-  display: flex;
-  flex-wrap: wrap;
   gap: 8px;
 }
 
+/* Time Interval Selector - Compact Pills */
+.timeIntervalSelector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .intervalButton {
-  padding: 8px 14px;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
-  font-size: 12px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 11px;
   font-weight: 500;
-  color: var(--color-text-secondary);
+  color: #666;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   white-space: nowrap;
 }
 
 .intervalButton:hover {
-  background: rgba(255, 255, 255, 1);
-  border-color: var(--color-primary-alpha-40);
-  color: var(--color-text-primary);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px var(--color-border-light);
+  background: #f5f5f5;
+  color: #333;
 }
 
 .intervalButton.active {
-  background: var(--color-primary-alpha-10);
-  border-color: var(--color-primary);
-  color: var(--color-primary-dark);
+  background: #00AB44;
+  color: white;
+  border-color: #00AB44;
+}
+
+/* Filter Toggle Button */
+.filterToggleButton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: white;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filterToggleButton:hover {
+  border-color: #00AB44;
+  color: #00AB44;
+}
+
+.filterToggleButton.active {
+  background: rgba(0, 171, 68, 0.05);
+  border-color: #00AB44;
+  color: #00AB44;
+}
+
+.filterBadge {
+  padding: 2px 6px;
+  background: #00AB44;
+  color: white;
+  border-radius: 10px;
+  font-size: 9px;
   font-weight: 600;
 }
 
-.intervalButton.active:hover {
-  background: var(--color-primary-alpha-15);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px var(--color-primary-alpha-20);
+/* Compact Global Toggle */
+.compactToggleContainer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-/* Custom Time Range Bar - shown below header */
+.compactToggleLabel {
+  font-size: 11px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.compactToggleSwitch {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  background: #ddd;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  padding: 0;
+}
+
+.compactToggleSwitch.active {
+  background: #00AB44;
+}
+
+.compactToggleSlider {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.compactToggleSwitch.active .compactToggleSlider {
+  transform: translateX(14px);
+}
+
+.clearAllButton {
+  padding: 4px 10px;
+  background: white;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  color: #666;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.clearAllButton:hover {
+  border-color: #EF4444;
+  color: #EF4444;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+/* Custom Time Range Bar */
 .customTimeRangeBar {
   display: flex;
-  gap: 16px;
-  padding: 12px 20px;
-  background: var(--color-bg-secondary);
-  border-bottom: 1px solid var(--color-border-light);
+  gap: 12px;
+  padding: 8px 16px;
+  background: white;
+  border-bottom: 1px solid #e5e5e5;
   flex-wrap: wrap;
 }
 
 .customTimeInput {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .customTimeLabel {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  color: var(--color-text-secondary);
+  color: #666;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .datetimeInput {
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--color-text-primary);
+  padding: 4px 8px;
+  background: white;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #333;
   font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-  transition: all 0.2s ease;
+  transition: border-color 0.15s ease;
 }
 
 .datetimeInput:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-alpha-10);
+  border-color: #00AB44;
 }
 
-/* Global Controls Bar - NEW */
-.globalControlsBar {
-  background: linear-gradient(135deg, rgba(0, 171, 68, 0.03), rgba(0, 181, 216, 0.03));
-  border-bottom: 2px solid var(--color-primary-alpha-20);
-  flex-shrink: 0;
-  /* PHASE 1: CSS containment for better performance */
-  contain: layout style;
-}
-
-.globalControlsHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 20px;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.globalControlsToggle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  transition: all 0.2s ease;
-  flex: 1;
-  text-align: left;
-}
-
-.globalControlsToggle:hover {
-  color: var(--color-primary);
-}
-
-.globalControlsToggleIcon {
-  font-size: 11px;
-  color: var(--color-primary);
-  transition: transform 0.2s ease;
-}
-
-.globalControlsTitle {
-  font-weight: 700;
-  letter-spacing: 0.01em;
-}
-
-.globalControlsBadge {
-  padding: 3px 8px;
-  background: var(--color-primary);
-  color: white;
-  border-radius: 10px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.globalControlsActions {
+/* Active Filters Bar - Green styling matching individual charts (SMALLER) */
+.activeFiltersBar {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(0, 171, 68, 0.03), rgba(0, 181, 216, 0.03));
+  border-bottom: 1px solid rgba(0, 171, 68, 0.15);
+  overflow-x: auto;
 }
 
-.globalToggleLabel {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  user-select: none;
-  transition: color 0.2s ease;
-}
-
-.globalToggleLabel:hover {
-  color: var(--color-text-primary);
-}
-
-.globalToggleCheckbox {
-  margin: 0;
-  cursor: pointer;
-  width: 18px;
-  height: 18px;
-  accent-color: var(--color-primary);
-}
-
-.clearGlobalButton {
-  padding: 6px 12px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 6px;
-  color: rgba(239, 68, 68, 1);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.clearGlobalButton:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.5);
-}
-
-/* Global Active Selections */
-.globalActiveSelections {
+.activeFiltersList {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 0 20px 12px 20px;
-  max-height: 150px;
-  overflow-y: auto;
-  contain: layout style;
+  flex: 1;
+  align-items: center;
 }
 
-.globalActiveSelections::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
-}
-
-.globalActiveSelections::-webkit-scrollbar-track {
-  background: var(--color-border-light);
-  border-radius: 3px;
-}
-
-.globalActiveSelections::-webkit-scrollbar-thumb {
-  background: var(--color-primary-alpha-40);
-  border-radius: 3px;
-}
-
-.globalActiveTag {
+.activeFilterTag {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: var(--color-primary-alpha-15);
-  border: 2px solid var(--color-primary);
-  border-radius: 16px;
-  font-size: 12px;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--color-primary-alpha-15, rgba(0, 171, 68, 0.15));
+  border: 1.5px solid var(--color-primary, #00AB44);
+  border-radius: 12px;
+  font-size: 11px;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 4px var(--color-primary-alpha-20);
+  box-shadow: 0 1px 3px rgba(0, 171, 68, 0.15);
 }
 
-.globalActiveTag:hover {
-  background: var(--color-primary-alpha-20);
-  border-color: var(--color-primary-dark);
-  box-shadow: 0 3px 6px var(--color-primary-alpha-30);
+.activeFilterTag:hover {
+  background: var(--color-primary-alpha-20, rgba(0, 171, 68, 0.2));
+  border-color: var(--color-primary-dark, #009639);
+  box-shadow: 0 2px 4px rgba(0, 171, 68, 0.25);
 }
 
-.globalActiveTagPrefix {
-  color: var(--color-text-tertiary);
+.activeFilterPrefix {
+  color: var(--color-text-tertiary, #999);
   font-weight: 600;
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.05em;
 }
 
-.globalActiveTagValue {
-  color: var(--color-primary-dark);
+.activeFilterValue {
+  color: var(--color-primary-dark, #009639);
   font-weight: 700;
-  max-width: 150px;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 11px;
 }
 
-.globalActiveTagRemove {
+.activeFilterRemove {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   padding: 0;
-  background: var(--color-primary);
+  background: var(--color-primary, #00AB44);
   border: none;
   border-radius: 50%;
   color: white;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: bold;
   line-height: 1;
   cursor: pointer;
@@ -347,270 +284,284 @@
   flex-shrink: 0;
 }
 
-.globalActiveTagRemove:hover {
-  background: var(--color-error);
+.activeFilterRemove:hover {
+  background: var(--color-error, #EF4444);
   transform: scale(1.1);
 }
 
-/* Global Controls Content */
-.globalControlsContent {
-  padding: 16px 20px;
-  border-top: 1px solid var(--color-primary-alpha-20);
-  animation: slideDown 0.25s ease-out;
-  background: rgba(255, 255, 255, 0.4);
-  /* PHASE 1: CSS containment and performance optimizations */
-  contain: layout style paint;
-  /* Use will-change sparingly - only during animations */
-  transition: max-height 0.2s ease-out, opacity 0.15s ease-out;
+.clearFiltersButton {
+  padding: 6px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: rgba(239, 68, 68, 1);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
 }
 
-@keyframes slideDown {
+.clearFiltersButton:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* Filter Modal Overlay */
+.filterModalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.filterModalContainer {
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  animation: modalSlideIn 0.2s ease-out;
+}
+
+@keyframes modalSlideIn {
   from {
     opacity: 0;
-    max-height: 0;
-    padding-top: 0;
-    padding-bottom: 0;
+    transform: translateY(-20px);
   }
   to {
     opacity: 1;
-    max-height: 1000px;
-    padding-top: 16px;
-    padding-bottom: 16px;
+    transform: translateY(0);
   }
 }
 
-.globalControlsEmpty {
-  padding: 20px;
-  text-align: center;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  font-style: italic;
+.filterModal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-/* PHASE 2: Search Input Container */
+.filterModalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e5e5;
+  background: #fafafa;
+}
+
+.filterModalTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.filterModalClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #666;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filterModalClose:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #333;
+}
+
+.filterModalBody {
+  padding: 16px;
+  overflow-y: auto;
+  max-height: calc(80vh - 60px);
+}
+
+/* Global Filter Search */
 .globalFilterSearchContainer {
   position: relative;
   margin-bottom: 16px;
-  contain: layout style;
 }
 
 .globalFilterSearchInput {
   width: 100%;
-  padding: 10px 36px 10px 12px;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--color-text-primary);
-  transition: all 0.2s ease;
-  outline: none;
+  padding: 8px 32px 8px 10px;
+  background: white;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #333;
+  transition: border-color 0.15s ease;
 }
 
 .globalFilterSearchInput:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-alpha-10);
-  background: rgba(255, 255, 255, 1);
-}
-
-.globalFilterSearchInput::placeholder {
-  color: var(--color-text-tertiary);
-  font-style: italic;
+  outline: none;
+  border-color: #00AB44;
 }
 
 .globalFilterSearchClear {
   position: absolute;
-  right: 8px;
+  right: 6px;
   top: 50%;
   transform: translateY(-50%);
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   padding: 0;
-  background: rgba(0, 0, 0, 0.05);
+  background: transparent;
   border: none;
-  border-radius: 4px;
-  color: var(--color-text-secondary);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1;
+  border-radius: 3px;
+  color: #999;
+  font-size: 18px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  transition: all 0.15s ease;
 }
 
 .globalFilterSearchClear:hover {
   background: rgba(239, 68, 68, 0.1);
-  color: rgba(239, 68, 68, 1);
-  transform: translateY(-50%) scale(1.1);
-}
-
-.globalFilterSearchClear:active {
-  transform: translateY(-50%) scale(0.95);
+  color: #EF4444;
 }
 
 .globalFilterSection {
   margin-bottom: 16px;
-  contain: layout;
-}
-
-.globalFilterSection:last-child {
-  margin-bottom: 0;
 }
 
 .globalFilterSectionTitle {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-primary-dark);
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 10px;
-  padding-left: 4px;
+  margin-bottom: 8px;
 }
 
 .globalFilterGroupsContainer {
   max-height: 400px;
   overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 4px;
-  contain: layout;
-}
-
-.globalFilterGroupsContainer::-webkit-scrollbar {
-  width: 6px;
-}
-
-.globalFilterGroupsContainer::-webkit-scrollbar-track {
-  background: var(--color-border-light);
-  border-radius: 3px;
-}
-
-.globalFilterGroupsContainer::-webkit-scrollbar-thumb {
-  background: var(--color-primary-alpha-40);
-  border-radius: 3px;
-}
-
-.globalFilterGroupsContainer::-webkit-scrollbar-thumb:hover {
-  background: var(--color-primary);
 }
 
 .globalFilterGroup {
-  margin-bottom: 14px;
-  contain: layout;
-}
-
-.globalFilterGroup:last-child {
-  margin-bottom: 0;
+  margin-bottom: 12px;
 }
 
 .globalFilterGroupTitle {
   font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  margin-bottom: 8px;
-  padding-left: 4px;
-  text-transform: capitalize;
+  font-weight: 500;
+  color: #999;
+  margin-bottom: 6px;
 }
 
 .globalFilterChips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .globalFilterChipsScrollable {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  max-height: 180px;
+  gap: 6px;
+  max-height: 200px;
   overflow-y: auto;
-  padding-right: 4px;
-  contain: layout style;
-  will-change: scroll-position;
-  /* Use GPU acceleration for scrolling */
-  transform: translateZ(0);
-  -webkit-overflow-scrolling: touch;
-}
-
-.globalFilterChipsScrollable::-webkit-scrollbar {
-  width: 5px;
-}
-
-.globalFilterChipsScrollable::-webkit-scrollbar-track {
-  background: var(--color-border-light);
-  border-radius: 2px;
-}
-
-.globalFilterChipsScrollable::-webkit-scrollbar-thumb {
-  background: var(--color-border-medium);
-  border-radius: 2px;
 }
 
 .globalFilterChip {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1.5px solid var(--color-border-medium);
-  border-radius: 18px;
-  font-size: 12px;
+  gap: 6px;
+  padding: 5px 10px;
+  background: white;
+  border: 1px solid #d0d0d0;
+  border-radius: 16px;
+  font-size: 11px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   user-select: none;
-  flex-shrink: 0;
-  contain: layout style;
 }
 
 .globalFilterChip:hover {
-  background: rgba(255, 255, 255, 1);
-  border-color: var(--color-primary-alpha-40);
-  box-shadow: 0 2px 6px var(--color-border-light);
-  transform: translateY(-1px);
+  border-color: #00AB44;
+  background: rgba(0, 171, 68, 0.03);
 }
 
 .globalFilterCheckbox {
   margin: 0;
   cursor: pointer;
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--color-primary);
-}
-
-.globalFilterCheckbox:checked + .globalFilterChipLabel {
-  font-weight: 700;
-  color: var(--color-primary-dark);
+  accent-color: #00AB44;
 }
 
 .globalFilterChip:has(.globalFilterCheckbox:checked) {
-  background: var(--color-primary-alpha-15);
-  border-color: var(--color-primary);
-  border-width: 2px;
-  box-shadow: 0 2px 8px var(--color-primary-alpha-20);
+  background: rgba(0, 171, 68, 0.08);
+  border-color: #00AB44;
 }
 
 .globalFilterChipLabel {
-  color: var(--color-text-secondary);
-  transition: all 0.2s ease;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 200px;
+  color: #666;
+  transition: color 0.15s ease;
 }
 
-/* Charts Grid - with padding */
+.globalFilterCheckbox:checked + .globalFilterChipLabel {
+  font-weight: 600;
+  color: #333;
+}
+
+.showMoreButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: rgba(0, 171, 68, 0.05);
+  border: 1px dashed #00AB44;
+  border-radius: 16px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #00AB44;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.showMoreButton:hover {
+  background: rgba(0, 171, 68, 0.1);
+  border-style: solid;
+}
+
+/* Charts Container */
+.chartsViewContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  background: #fafafa;
+}
+
+/* Charts Grid - More space for charts, 3 columns on larger screens */
 .chartsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100%, 1fr));
-  gap: 20px;
-  padding: 20px;
-  animation: fadeIn 0.3s ease-out;
+  gap: 16px;
+  padding: 16px;
+  align-items: start;
 }
 
 .chartCard {
-  min-height: 300px;
-  animation: slideInUp 0.3s ease-out;
+  min-height: 450px;
+  height: auto;
 }
 
 /* Empty State */
@@ -627,292 +578,82 @@
 .emptyStateIcon {
   font-size: 64px;
   margin-bottom: 16px;
-  opacity: 0.5;
+  opacity: 0.3;
 }
 
 .emptyStateTitle {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
-  color: var(--color-text-primary);
+  color: #333;
   margin: 0 0 8px 0;
 }
 
 .emptyStateText {
-  font-size: 14px;
-  color: var(--color-text-secondary);
+  font-size: 13px;
+  color: #666;
   margin: 0;
   max-width: 400px;
   line-height: 1.5;
 }
 
-/* Animations */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes slideInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Mobile Responsive - Smaller screens */
-@media (max-width: 768px) {
-  .headerBar {
-    padding: 10px 16px;
-    gap: 12px;
-  }
-
-  .headerTitle {
-    font-size: 13px;
-  }
-
-  .headerLeft {
-    gap: 12px;
-  }
-
-  .timeIntervalSelector {
-    gap: 6px;
-  }
-
-  .intervalButton {
-    padding: 6px 10px;
-    font-size: 11px;
-  }
-
-  .customTimeRangeBar {
-    padding: 10px 16px;
-    gap: 12px;
-  }
-
-  .datetimeInput {
-    padding: 6px 10px;
-    font-size: 12px;
-  }
-
-  .globalControlsHeader {
-    padding: 10px 16px;
-    gap: 12px;
-  }
-
-  .globalControlsToggle {
-    font-size: 12px;
-  }
-
-  .globalControlsContent {
-    padding: 12px 16px;
-  }
-
-  .globalActiveSelections {
-    padding: 0 16px 10px 16px;
-  }
-
-  .globalActiveTag {
-    padding: 5px 8px;
-    font-size: 11px;
-  }
-
-  .globalFilterChip {
-    padding: 6px 10px;
-    font-size: 11px;
-  }
-
-  .chartsGrid {
-    padding: 16px;
-    gap: 16px;
-  }
-
-  .emptyState {
-    min-height: 300px;
-    padding: 30px 16px;
-  }
-
-  .emptyStateIcon {
-    font-size: 48px;
-  }
-
-  .emptyStateTitle {
-    font-size: 16px;
-  }
-
-  .emptyStateText {
-    font-size: 13px;
-  }
-}
-
-/* Touch device optimizations */
-@media (pointer: coarse) {
-  .intervalButton {
-    padding: 10px 16px;
-    font-size: 13px;
-  }
-
-  .clearAllButton {
-    padding: 10px 18px;
-  }
-
-  .datetimeInput {
-    padding: 10px 14px;
-  }
-
-  .globalFilterChip {
-    padding: 10px 14px;
-  }
-
-  .globalToggleCheckbox {
-    width: 20px;
-    height: 20px;
-  }
-}
-
-/* No hover capability (mobile) - disable hover effects */
-@media (hover: none) {
-  .intervalButton:hover {
-    background: rgba(255, 255, 255, 0.8);
-    border-color: var(--color-border-medium);
-    color: var(--color-text-secondary);
-    transform: none;
-    box-shadow: none;
-  }
-
-  .intervalButton.active:hover {
-    background: var(--color-primary-alpha-10);
-    transform: none;
-    box-shadow: none;
-  }
-
-  .clearAllButton:hover {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.3);
-    transform: none;
-    box-shadow: none;
-  }
-
-  .globalControlsToggle:hover {
-    color: var(--color-text-primary);
-  }
-
-  .globalFilterChip:hover {
-    background: rgba(255, 255, 255, 0.9);
-    border-color: var(--color-border-medium);
-    transform: none;
-    box-shadow: none;
-  }
-
-  .globalActiveTag:hover {
-    background: var(--color-primary-alpha-15);
-    border-color: var(--color-primary);
-    box-shadow: 0 2px 4px var(--color-primary-alpha-20);
-  }
-}
-
-/* Tablet - 2 columns */
-@media (min-width: 769px) and (max-width: 1024px) {
+/* Responsive */
+@media (min-width: 769px) and (max-width: 1440px) {
   .chartsGrid {
     grid-template-columns: repeat(auto-fill, minmax(48%, 1fr));
   }
-}
-
-/* Desktop - 2 columns for better readability */
-@media (min-width: 1025px) and (max-width: 1440px) {
-  .chartsGrid {
-    grid-template-columns: repeat(auto-fill, minmax(48%, 1fr));
-    gap: 24px;
+  
+  .chartCard {
+    min-height: 420px;
   }
 }
 
-/* Large Desktop - 3 columns */
 @media (min-width: 1441px) {
   .chartsGrid {
     grid-template-columns: repeat(auto-fill, minmax(32%, 1fr));
-    gap: 28px;
+    gap: 20px;
   }
+  
+  .chartCard {
+    min-height: 480px;
+  }
+}
 
-  .emptyState {
+@media (min-width: 1920px) {
+  .chartsGrid {
+    grid-template-columns: repeat(auto-fill, minmax(32%, 1fr));
+  }
+  
+  .chartCard {
     min-height: 500px;
   }
 }
 
-/* Very Large Screens - 4 columns */
-@media (min-width: 1920px) {
-  .chartsGrid {
-    grid-template-columns: repeat(auto-fill, minmax(24%, 1fr));
-  }
-}
-
-/* Smaller mobile devices */
-@media (max-width: 480px) {
-  .chartsViewContainer {
-    padding: 12px;
-    gap: 14px;
-  }
-
-  .globalControlsHeader {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-
-  .globalControlsActions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .clearAllButton {
-    width: 100%;
+@media (max-width: 768px) {
+  .headerBar {
+    padding: 6px 12px;
   }
 
   .timeIntervalSelector {
-    gap: 6px;
+    gap: 3px;
   }
 
   .intervalButton {
-    flex: 1;
-    min-width: calc(50% - 3px);
-    padding: 8px 6px;
+    padding: 3px 8px;
     font-size: 10px;
   }
 
-  .customTimeRange {
-    gap: 8px;
+  .filterToggleButton,
+  .clearAllButton {
+    font-size: 10px;
+    padding: 3px 8px;
   }
 
   .chartsGrid {
-    gap: 14px;
+    padding: 12px;
+    gap: 12px;
   }
-}
 
-/* Scrollbar styling for container */
-.chartsViewContainer::-webkit-scrollbar {
-  width: 8px;
-}
-
-.chartsViewContainer::-webkit-scrollbar-track {
-  background: var(--color-border-light);
-  border-radius: 4px;
-}
-
-.chartsViewContainer::-webkit-scrollbar-thumb {
-  background: var(--color-border-medium);
-  border-radius: 4px;
-}
-
-.chartsViewContainer::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.3);
-}
-
-/* For Firefox */
-.chartsViewContainer {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-medium) var(--color-border-light);
+  .chartCard {
+    min-height: 320px;
+  }
 }

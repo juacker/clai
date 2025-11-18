@@ -92,24 +92,18 @@ const ChartFilterPanelContent = React.memo(({
 });
 
 /**
- * ContextChart Component
- *
- * Renders a time-series chart by fetching data from the Netdata API using the getData function.
- * This is a specialized version of LoadChartBlock for the ChartsView component.
- *
- * @param {Object} props - Component props
- * @param {string} props.context - The name of the metric context to show data for
- * @param {Array} props.groupBy - Labels to group metrics by (e.g., 'node', 'dimension', 'instance')
- * @param {Object|Array} props.filterBy - Filter data by specific label values (can be object or array)
- * @param {string} props.valueAgg - Aggregation method for grouping series
- * @param {string} props.timeAgg - Aggregation method for downsampling
- * @param {string} props.after - Start timestamp (RFC 3339 format)
- * @param {string} props.before - End timestamp (RFC 3339 format)
- * @param {number} props.intervalCount - Number of intervals in the time-range
- * @param {Object} props.space - Space object with id and name
- * @param {Object} props.room - Room object with id and name
- * @param {Function} props.onRemove - Callback when chart is removed
- * @param {Function} props.onSummaryUpdate - Callback to report summary data back to parent
+ * Downsample data to reduce points for performance
+ */
+const downsampleData = (data, targetPoints = 500) => {
+  if (!data || data.length <= targetPoints) return data;
+
+  const step = Math.ceil(data.length / targetPoints);
+  return data.filter((_, i) => i % step === 0);
+};
+
+/**
+ * ContextChart Component - Ultra-Optimized Canvas Version
+ * Minimal SVG overlay with single-circle interaction
  */
 const ContextChart = ({
   context,
@@ -126,6 +120,7 @@ const ContextChart = ({
   onSummaryUpdate
 }) => {
 
+  const canvasRef = useRef(null);
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const tooltipRef = useRef(null);
@@ -141,6 +136,9 @@ const ContextChart = ({
     content: null,
   });
   const [selectedSeries, setSelectedSeries] = useState(null);
+
+  // Track the computed interval count to avoid excessive refetching
+  const [computedIntervalCount, setComputedIntervalCount] = useState(intervalCount);
 
   // Filter and grouping state
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
@@ -160,14 +158,11 @@ const ContextChart = ({
     '#34495E',  // Dark Gray
   ], []);
 
-  // Convert filterBy prop to object format if it's an array (for backward compatibility)
+  // Convert filterBy prop to object format if it's an array
   const normalizeFilterBy = useCallback((filterByProp) => {
     if (!filterByProp) return {};
-
-    // If it's already an object, return as-is
     if (!Array.isArray(filterByProp)) return filterByProp;
 
-    // Convert array format to object format
     const filters = {};
     filterByProp.forEach(filter => {
       if (!filters[filter.label]) {
@@ -178,7 +173,7 @@ const ContextChart = ({
     return filters;
   }, []);
 
-  // Memoize normalized props to prevent unnecessary updates
+  // Memoize normalized props
   const normalizedGroupBy = useMemo(() => {
     return groupBy && Array.isArray(groupBy) ? groupBy : [];
   }, [JSON.stringify(groupBy)]);
@@ -189,27 +184,49 @@ const ContextChart = ({
 
   // Initialize active filters and groups from props - ONLY ON MOUNT
   useEffect(() => {
-    // Initialize groupBy from props
     setActiveGroupBy(normalizedGroupBy);
-
-    // Initialize filters from props
     setActiveFilters(normalizedFilterBy);
-
-    // Mark initialization as complete
     setIsInitialized(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty dependency array - only run on mount
+  }, []);
 
-  // Update filters/groups when props change (for global controls)
+  // Update filters/groups when props change
   useEffect(() => {
     if (!isInitialized) return;
-
-    // Only update if the values actually changed (deep comparison via JSON.stringify in memos)
     setActiveGroupBy(normalizedGroupBy);
     setActiveFilters(normalizedFilterBy);
   }, [normalizedGroupBy, normalizedFilterBy, isInitialized]);
 
-  // Handle container resizing with ResizeObserver
+  // Calculate dynamic interval count based on chart width
+  // Formula: chart_region_width_px / 10, with reasonable min/max bounds
+  const dynamicIntervalCount = useMemo(() => {
+    if (dimensions.width === 0) return intervalCount;
+
+    const margin = { left: 70, right: 80 };
+    const chartRegionWidth = dimensions.width - margin.left - margin.right;
+
+    // Calculate points: 1 point per 10 pixels
+    const calculatedPoints = Math.floor(chartRegionWidth / 10);
+
+    // Apply reasonable bounds: min 10, max 200
+    const boundedPoints = Math.max(10, Math.min(200, calculatedPoints));
+
+    return boundedPoints;
+  }, [dimensions.width, intervalCount]);
+
+  // Update computed interval count with debouncing to prevent excessive API calls
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (dynamicIntervalCount !== computedIntervalCount) {
+        console.log(`Dynamic interval count updated: ${computedIntervalCount} → ${dynamicIntervalCount} (chart width: ${dimensions.width}px)`);
+        setComputedIntervalCount(dynamicIntervalCount);
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [dynamicIntervalCount, computedIntervalCount, dimensions.width]);
+
+  // Handle container resizing
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -237,7 +254,6 @@ const ContextChart = ({
   // Filter out groupBy/filterBy that don't exist in this chart's summary
   const getApplicableFilters = useCallback((groupByParam, filters, summaryData) => {
     if (!summaryData) {
-      // If no summary yet, return everything (will be filtered after first load)
       return { applicableGroupBy: groupByParam, applicableFilters: filters, skipped: { groupBy: [], filters: {} } };
     }
 
@@ -245,7 +261,6 @@ const ContextChart = ({
     const skippedGroupBy = [];
     const skippedFilters = {};
 
-    // Add custom labels from summary
     if (summaryData.labels && Array.isArray(summaryData.labels)) {
       summaryData.labels.forEach(labelObj => {
         if (labelObj.id) {
@@ -254,7 +269,6 @@ const ContextChart = ({
       });
     }
 
-    // Filter groupBy to only include available labels
     const applicableGroupBy = groupByParam.filter(label => {
       const isAvailable = availableLabels.has(label);
       if (!isAvailable) {
@@ -263,16 +277,13 @@ const ContextChart = ({
       return isAvailable;
     });
 
-    // Filter filterBy to only include available labels and values
     const applicableFilters = {};
     Object.entries(filters).forEach(([filterLabel, values]) => {
-      // Check if the label exists
       if (!availableLabels.has(filterLabel)) {
         skippedFilters[filterLabel] = values;
         return;
       }
 
-      // For system labels, check if values exist
       if (filterLabel === 'node' && summaryData.nodes) {
         const availableNodeIds = new Set(summaryData.nodes.map(n => n.mg));
         const applicableValues = values.filter(v => availableNodeIds.has(v));
@@ -307,7 +318,6 @@ const ContextChart = ({
           skippedFilters[filterLabel] = skippedValues;
         }
       } else {
-        // For custom labels, check if values exist
         const labelObj = summaryData.labels?.find(l => l.id === filterLabel);
         if (labelObj && labelObj.vl) {
           const availableValues = new Set(labelObj.vl.map(v => v.id));
@@ -321,7 +331,6 @@ const ContextChart = ({
             skippedFilters[filterLabel] = skippedValues;
           }
         } else {
-          // Label doesn't exist, skip all values
           skippedFilters[filterLabel] = values;
         }
       }
@@ -340,7 +349,6 @@ const ContextChart = ({
     const instances = [];
     const labels = [];
 
-    // Build filters from activeFilters state
     Object.keys(filters).forEach(label => {
       const values = filters[label];
       values.forEach(value => {
@@ -365,7 +373,6 @@ const ContextChart = ({
     const groupedBy = [];
     const groupedByLabel = [];
 
-    // Build groupBy from activeGroupBy state
     groupByParam.forEach(label => {
       if (systemLabels.includes(label)) {
         groupedBy.push(label);
@@ -410,17 +417,99 @@ const ContextChart = ({
       window: {
         after: afterTimestamp,
         before: beforeTimestamp,
-        points: intervalCount
+        points: computedIntervalCount
       }
     };
-  }, [context, valueAgg, timeAgg, after, before, intervalCount]);
+  }, [context, valueAgg, timeAgg, after, before, computedIntervalCount]);
+
+  // Deduplicate summary data
+  const deduplicateSummary = useCallback((summaryData) => {
+    if (!summaryData) return summaryData;
+
+    const deduplicated = { ...summaryData };
+
+    if (summaryData.nodes && Array.isArray(summaryData.nodes)) {
+      const seenNodeIds = new Map();
+      const uniqueNodes = [];
+
+      summaryData.nodes.forEach(node => {
+        if (node.mg && !seenNodeIds.has(node.mg)) {
+          seenNodeIds.set(node.mg, true);
+          uniqueNodes.push(node);
+        }
+      });
+
+      deduplicated.nodes = uniqueNodes;
+    }
+
+    if (summaryData.dimensions && Array.isArray(summaryData.dimensions)) {
+      const seenDimIds = new Map();
+      const uniqueDimensions = [];
+
+      summaryData.dimensions.forEach(dim => {
+        if (dim.id && !seenDimIds.has(dim.id)) {
+          seenDimIds.set(dim.id, true);
+          uniqueDimensions.push(dim);
+        }
+      });
+
+      deduplicated.dimensions = uniqueDimensions;
+    }
+
+    if (summaryData.instances && Array.isArray(summaryData.instances)) {
+      const seenInstIds = new Map();
+      const uniqueInstances = [];
+
+      summaryData.instances.forEach(inst => {
+        if (inst.id && !seenInstIds.has(inst.id)) {
+          seenInstIds.set(inst.id, true);
+          uniqueInstances.push(inst);
+        }
+      });
+
+      deduplicated.instances = uniqueInstances;
+    }
+
+    if (summaryData.labels && Array.isArray(summaryData.labels)) {
+      const seenLabelIds = new Map();
+      const uniqueLabels = [];
+
+      summaryData.labels.forEach(label => {
+        if (label.id && !seenLabelIds.has(label.id)) {
+          seenLabelIds.set(label.id, true);
+
+          if (label.vl && Array.isArray(label.vl)) {
+            const seenValueIds = new Map();
+            const uniqueValues = [];
+
+            label.vl.forEach(val => {
+              if (val.id && !seenValueIds.has(val.id)) {
+                seenValueIds.set(val.id, true);
+                uniqueValues.push(val);
+              }
+            });
+
+            uniqueLabels.push({ ...label, vl: uniqueValues });
+          } else {
+            uniqueLabels.push(label);
+          }
+        }
+      });
+
+      deduplicated.labels = uniqueLabels;
+    }
+
+    return deduplicated;
+  }, []);
 
   const buildNodeMapping = (summaryData) => {
     const nodeMap = new Map();
     if (summaryData?.nodes && Array.isArray(summaryData.nodes)) {
       summaryData.nodes.forEach(node => {
         if (node.mg && node.nm) {
-          nodeMap.set(node.mg, node.nm);
+          if (!nodeMap.has(node.mg)) {
+            nodeMap.set(node.mg, node.nm);
+          }
         }
       });
     }
@@ -449,12 +538,11 @@ const ContextChart = ({
     const { labels, data } = response.result;
     const { view, summary: summaryData } = response;
 
-    // Store summary for filter/group UI
-    setSummary(summaryData);
+    const deduplicatedSummary = deduplicateSummary(summaryData);
+    setSummary(deduplicatedSummary);
 
-    // Report summary back to parent if callback provided
-    if (onSummaryUpdate && summaryData) {
-      onSummaryUpdate(context, summaryData);
+    if (onSummaryUpdate && deduplicatedSummary) {
+      onSummaryUpdate(context, deduplicatedSummary);
     }
 
     const nodeMap = buildNodeMapping(summaryData);
@@ -462,25 +550,48 @@ const ContextChart = ({
 
     const metricLabels = labels.slice(1);
 
-    const datasets = metricLabels.map((label, labelIndex) => {
-      const seriesData = data.map(row => {
-        const timestamp = row[0];
-        const valueArray = row[labelIndex + 1];
-        const value = Array.isArray(valueArray) ? valueArray[0] : valueArray;
+    const seenLabels = new Map();
+    const datasets = [];
 
-        return {
-          dt: new Date(timestamp).toISOString(),
-          v: value || 0
-        };
-      });
-
+    metricLabels.forEach((label, labelIndex) => {
       const displayLabel = replaceNodeIdsInLabel(label, nodeMap, isGroupedByNode);
 
-      return {
-        label: displayLabel,
-        data: seriesData,
-        color: DEFAULT_COLORS[labelIndex % DEFAULT_COLORS.length]
-      };
+      if (seenLabels.has(displayLabel)) {
+        const existingIndex = seenLabels.get(displayLabel);
+        const existingDataset = datasets[existingIndex];
+
+        data.forEach((row, rowIndex) => {
+          const valueArray = row[labelIndex + 1];
+          const value = Array.isArray(valueArray) ? valueArray[0] : valueArray;
+
+          const existingPoint = existingDataset.data[rowIndex];
+          if (existingPoint) {
+            const currentValue = parseFloat(existingPoint.v) || 0;
+            const newValue = value || 0;
+            existingPoint.v = (currentValue + newValue) / 2;
+          }
+        });
+      } else {
+        const seriesData = data.map(row => {
+          const timestamp = row[0];
+          const valueArray = row[labelIndex + 1];
+          const value = Array.isArray(valueArray) ? valueArray[0] : valueArray;
+
+          return {
+            dt: new Date(timestamp).toISOString(),
+            v: value || 0
+          };
+        });
+
+        const datasetIndex = datasets.length;
+        datasets.push({
+          label: displayLabel,
+          data: seriesData,
+          color: DEFAULT_COLORS[datasetIndex % DEFAULT_COLORS.length]
+        });
+
+        seenLabels.set(displayLabel, datasetIndex);
+      }
     });
 
     let unit = view?.units || '';
@@ -494,7 +605,7 @@ const ContextChart = ({
       context: context || "context not set",
       unit: unit
     };
-  }, [context, DEFAULT_COLORS, activeGroupBy, onSummaryUpdate]);
+  }, [context, DEFAULT_COLORS, activeGroupBy, onSummaryUpdate, deduplicateSummary]);
 
   // Fetch data from API
   const fetchData = useCallback(async (groupByParam, filters) => {
@@ -511,8 +622,6 @@ const ContextChart = ({
         throw new Error('Space ID or Room ID not found. Please select a space and room.');
       }
 
-      // Filter out inapplicable filters/groupings based on summary
-      // Use the current summary from the closure, not from dependencies
       const currentSummary = summary;
       const { applicableGroupBy, applicableFilters } = getApplicableFilters(
         groupByParam,
@@ -533,12 +642,10 @@ const ContextChart = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [space?.id, room?.id, buildGetDataParams, transformResponseToChartData, getApplicableFilters]);
-  // Note: summary is intentionally NOT in deps to avoid refetch loops
 
   // Fetch data when initialized and when filters/grouping changes
   useEffect(() => {
-    if (!isInitialized) return; // Wait for initialization to complete
-
+    if (!isInitialized) return;
     fetchData(activeGroupBy, activeFilters);
   }, [isInitialized, activeGroupBy, activeFilters, fetchData]);
 
@@ -549,7 +656,6 @@ const ContextChart = ({
     const groupByOptions = [];
     const filterOptions = {};
 
-    // Nodes
     if (summary.nodes && summary.nodes.length > 1) {
       groupByOptions.push({ label: 'node', displayName: 'Node' });
       filterOptions.node = summary.nodes
@@ -560,7 +666,6 @@ const ContextChart = ({
         .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
 
-    // Dimensions
     if (summary.dimensions && summary.dimensions.length > 1) {
       groupByOptions.push({ label: 'dimension', displayName: 'Dimension' });
       filterOptions.dimension = summary.dimensions
@@ -571,7 +676,6 @@ const ContextChart = ({
         .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
 
-    // Instances
     if (summary.instances && summary.instances.length > 1) {
       groupByOptions.push({ label: 'instance', displayName: 'Instance' });
       filterOptions.instance = summary.instances
@@ -582,7 +686,6 @@ const ContextChart = ({
         .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
 
-    // Custom labels
     if (summary.labels && Array.isArray(summary.labels)) {
       summary.labels.forEach(labelObj => {
         if (labelObj.vl && labelObj.vl.length > 1) {
@@ -659,11 +762,9 @@ const ContextChart = ({
 
   // Check if current state differs from initial props
   const hasChanges = useMemo(() => {
-    // Check groupBy changes
     if (activeGroupBy.length !== normalizedGroupBy.length) return true;
     if (!activeGroupBy.every(g => normalizedGroupBy.includes(g))) return true;
 
-    // Check filter changes
     const activeFilterKeys = Object.keys(activeFilters);
     const normalizedFilterKeys = Object.keys(normalizedFilterBy);
 
@@ -691,12 +792,10 @@ const ContextChart = ({
   const skippedFiltersInfo = useMemo(() => {
     if (!summary) return { groupBy: [], filters: {} };
 
-    // Inline the filter logic here to avoid dependency on getApplicableFilters
     const availableLabels = new Set(['node', 'dimension', 'instance']);
     const skippedGroupBy = [];
     const skippedFilters = {};
 
-    // Add custom labels from summary
     if (summary.labels && Array.isArray(summary.labels)) {
       summary.labels.forEach(labelObj => {
         if (labelObj.id) {
@@ -705,21 +804,18 @@ const ContextChart = ({
       });
     }
 
-    // Check groupBy
     activeGroupBy.forEach(label => {
       if (!availableLabels.has(label)) {
         skippedGroupBy.push(label);
       }
     });
 
-    // Check filters
     Object.entries(activeFilters).forEach(([filterLabel, values]) => {
       if (!availableLabels.has(filterLabel)) {
         skippedFilters[filterLabel] = values;
         return;
       }
 
-      // Check values for system labels
       if (filterLabel === 'node' && summary.nodes) {
         const availableNodeIds = new Set(summary.nodes.map(n => n.mg));
         const skippedValues = values.filter(v => !availableNodeIds.has(v));
@@ -755,25 +851,6 @@ const ContextChart = ({
     return { groupBy: skippedGroupBy, filters: skippedFilters };
   }, [summary, activeGroupBy, activeFilters]);
 
-  // Render line chart
-  const renderLine = useCallback((g, datasets, xScale, yScale) => {
-    const line = d3
-      .line()
-      .x((d) => xScale(d.date))
-      .y((d) => yScale(d.value))
-      .curve(d3.curveMonotoneX);
-
-    datasets.forEach((dataset) => {
-      g.append('path')
-        .datum(dataset.data)
-        .attr('class', styles.line)
-        .attr('fill', 'none')
-        .attr('stroke', dataset.color)
-        .attr('stroke-width', 2)
-        .attr('d', line);
-    });
-  }, []);
-
   // Show tooltip with data values and smart positioning
   const showTooltip = useCallback((event, nearestPoints) => {
     if (!nearestPoints || nearestPoints.length === 0) return;
@@ -783,7 +860,6 @@ const ContextChart = ({
 
     const timestamp = d3.timeFormat('%Y-%m-%d %H:%M:%S %z')(validPoints[0].point.date);
 
-    // Sort by value in descending order before limiting
     const sortedPoints = validPoints.sort((a, b) => b.point.value - a.point.value);
     const limitedPoints = sortedPoints.slice(0, 10);
     const hasMore = sortedPoints.length > 10;
@@ -875,202 +951,16 @@ const ContextChart = ({
     return selectedSeries.has(seriesLabel);
   }, [selectedSeries]);
 
-  // Add interactive features (tooltip, crosshair, hover circles)
-  const addInteractivity = useCallback((g, datasets, xScale, yScale, width, height) => {
-    const crosshair = g
-      .append('line')
-      .attr('class', styles.crosshair)
-      .attr('y1', 0)
-      .attr('y2', height)
-      .style('display', 'none')
-      .style('opacity', 0);
-
-    const overlay = g
-      .append('rect')
-      .attr('class', styles.overlay)
-      .attr('width', width)
-      .attr('height', height)
-      .style('fill', 'none')
-      .style('pointer-events', 'all')
-      .style('cursor', 'crosshair');
-
-    const hoverCirclesGroup = g.append('g').attr('class', 'hover-circles');
-
-    const hoverCircles = datasets.map((dataset) => {
-      return hoverCirclesGroup
-        .append('circle')
-        .attr('class', 'hover-circle')
-        .attr('r', 5)
-        .attr('fill', dataset.color)
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 2)
-        .style('display', 'none')
-        .style('opacity', 0)
-        .style('pointer-events', 'none');
-    });
-
-    let hideTimeout = null;
-    let isOverCircle = false;
-
-    const hideAllElements = () => {
-      crosshair
-        .transition()
-        .duration(150)
-        .style('opacity', 0)
-        .on('end', function () {
-          d3.select(this).style('display', 'none');
-        });
-
-      hoverCircles.forEach((circle) => {
-        circle
-          .transition()
-          .duration(150)
-          .style('opacity', 0)
-          .on('end', function () {
-            d3.select(this).style('display', 'none');
-          });
-      });
-
-      clickCircles.forEach((circle) => {
-        circle.style('display', 'none');
-      });
-
-      hideTooltip();
-    };
-
-    const clickCircles = datasets.map((dataset, index) => {
-      return hoverCirclesGroup
-        .append('circle')
-        .attr('class', 'click-circle')
-        .attr('r', 12)
-        .attr('fill', 'transparent')
-        .style('display', 'none')
-        .style('pointer-events', 'all')
-        .style('cursor', 'pointer')
-        .on('click', function (event) {
-          event.stopPropagation();
-
-          const seriesLabel = dataset.label;
-          const syntheticEvent = {
-            ctrlKey: event.ctrlKey || event.metaKey,
-            metaKey: event.metaKey,
-            stopPropagation: () => { }
-          };
-
-          handleLegendClick(seriesLabel, syntheticEvent);
-
-          d3.select(hoverCircles[index].node())
-            .transition()
-            .duration(200)
-            .attr('r', 8)
-            .transition()
-            .duration(200)
-            .attr('r', 5);
-        })
-        .on('mouseenter', function (event) {
-          event.stopPropagation();
-
-          isOverCircle = true;
-
-          if (hideTimeout) {
-            clearTimeout(hideTimeout);
-            hideTimeout = null;
-          }
-
-          d3.select(hoverCircles[index].node())
-            .transition()
-            .duration(100)
-            .attr('r', 7)
-            .attr('stroke-width', 3);
-        })
-        .on('mouseleave', function (event) {
-          event.stopPropagation();
-
-          isOverCircle = false;
-
-          d3.select(hoverCircles[index].node())
-            .transition()
-            .duration(100)
-            .attr('r', 5)
-            .attr('stroke-width', 2);
-
-          hideTimeout = setTimeout(() => {
-            if (!isOverCircle) {
-              hideAllElements();
-            }
-          }, 150);
-        });
-    });
-
-    overlay
-      .on('mousemove', function (event) {
-        if (hideTimeout) {
-          clearTimeout(hideTimeout);
-          hideTimeout = null;
-        }
-
-        const [mouseX] = d3.pointer(event);
-        const date = xScale.invert(mouseX);
-
-        crosshair
-          .attr('x1', mouseX)
-          .attr('x2', mouseX)
-          .style('display', null)
-          .transition()
-          .duration(100)
-          .style('opacity', 1);
-
-        const nearestPoints = datasets.map((dataset) => {
-          const bisect = d3.bisector((d) => d.date).left;
-          const index = bisect(dataset.data, date, 1);
-          const d0 = dataset.data[index - 1];
-          const d1 = dataset.data[index];
-          if (!d0) return { dataset, point: d1 };
-          if (!d1) return { dataset, point: d0 };
-          const point = date - d0.date > d1.date - date ? d1 : d0;
-          return { dataset, point };
-        });
-
-        nearestPoints.forEach(({ point }, index) => {
-          if (point) {
-            const cx = xScale(point.date);
-            const cy = yScale(point.value);
-
-            hoverCircles[index]
-              .attr('cx', cx)
-              .attr('cy', cy)
-              .style('display', null)
-              .transition()
-              .duration(100)
-              .style('opacity', 1);
-
-            clickCircles[index]
-              .attr('cx', cx)
-              .attr('cy', cy)
-              .style('display', null);
-          }
-        });
-
-        showTooltip(event, nearestPoints);
-      })
-      .on('mouseleave', function () {
-        hideTimeout = setTimeout(() => {
-          if (!isOverCircle) {
-            hideAllElements();
-          }
-        }, 200);
-      });
-  }, [showTooltip, hideTooltip, handleLegendClick]);
-
-  // Main D3 rendering logic
+  // ULTRA-OPTIMIZED CANVAS + MINIMAL SVG RENDERING
   useEffect(() => {
-    if (!svgRef.current || dimensions.width === 0 || dimensions.height === 0 || !chartData) return;
+    if (!canvasRef.current || !svgRef.current || dimensions.width === 0 || dimensions.height === 0 || !chartData) return;
 
     try {
       if (!chartData?.datasets || chartData.datasets.length === 0) {
         throw new Error('No data available');
       }
 
+      // Parse and prepare datasets with downsampling
       const datasets = chartData.datasets.map((dataset, index) => {
         if (!dataset.data || dataset.data.length === 0) {
           throw new Error(`Dataset "${dataset.label}" has no data`);
@@ -1089,34 +979,29 @@ const ContextChart = ({
 
         parsedData.sort((a, b) => a.date - b.date);
 
+        // Downsample data for performance
+        const downsampledData = downsampleData(parsedData, 500);
+
         return {
           label: dataset.label || `Series ${index + 1}`,
           color: dataset.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length],
-          data: parsedData,
+          data: downsampledData,
+          originalData: parsedData, // Keep original for tooltip
         };
       });
 
       setError(null);
 
+      // Filter datasets based on selection
       const filteredDatasets = selectedSeries
         ? datasets.filter(d => selectedSeries.has(d.label))
         : datasets;
-
-      d3.select(svgRef.current).selectAll('*').remove();
 
       const margin = { top: 30, right: 80, bottom: 70, left: 70 };
       const width = dimensions.width - margin.left - margin.right;
       const height = dimensions.height - margin.top - margin.bottom;
 
-      const svg = d3
-        .select(svgRef.current)
-        .attr('width', dimensions.width)
-        .attr('height', dimensions.height);
-
-      const g = svg
-        .append('g')
-        .attr('transform', `translate(${margin.left},${margin.top})`);
-
+      // Setup scales
       const allDates = datasets.flatMap((d) => d.data.map((p) => p.date));
       const xDomain = d3.extent(allDates);
 
@@ -1132,13 +1017,68 @@ const ContextChart = ({
       const xScale = d3.scaleTime().domain(xDomain).range([0, width]);
       const yScale = d3.scaleLinear().domain(yDomain).range([height, 0]);
 
-      const xAxis = d3.axisBottom(xScale).ticks(6).tickSizeOuter(0);
-      const yAxis = d3
-        .axisLeft(yScale)
-        .ticks(5)
-        .tickFormat((d) => `${d}`)
-        .tickSizeOuter(0);
+      // === CANVAS RENDERING ===
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d', { alpha: false });
 
+      // Set canvas size with device pixel ratio
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = (width + margin.left + margin.right) * dpr;
+      canvas.height = (height + margin.top + margin.bottom) * dpr;
+      canvas.style.width = `${width + margin.left + margin.right}px`;
+      canvas.style.height = `${height + margin.top + margin.bottom}px`;
+
+      ctx.scale(dpr, dpr);
+      ctx.translate(margin.left, margin.top);
+
+      // Clear canvas
+      ctx.clearRect(-margin.left, -margin.top, canvas.width, canvas.height);
+
+      // Fill background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-margin.left, -margin.top, canvas.width, canvas.height);
+
+      // Performance measurement
+      const drawStart = performance.now();
+
+      // Draw all lines on canvas
+      filteredDatasets.forEach(dataset => {
+        ctx.beginPath();
+        ctx.strokeStyle = dataset.color;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+
+        dataset.data.forEach((point, i) => {
+          const x = xScale(point.date);
+          const y = yScale(point.value);
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        });
+
+        ctx.stroke();
+      });
+
+      const drawEnd = performance.now();
+      console.log(`Canvas: Drew ${filteredDatasets.length} series in ${(drawEnd - drawStart).toFixed(2)}ms`);
+
+      // === MINIMAL SVG (Axes + Simple Crosshair Only) ===
+      const svg = d3.select(svgRef.current);
+      svg.selectAll('*').remove();
+
+      svg
+        .attr('width', dimensions.width)
+        .attr('height', dimensions.height);
+
+      const g = svg
+        .append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
+
+      // Grid
       g.append('g')
         .attr('class', styles.grid)
         .attr('opacity', 0.1)
@@ -1149,6 +1089,14 @@ const ContextChart = ({
             .tickSize(-width)
             .tickFormat('')
         );
+
+      // Axes
+      const xAxis = d3.axisBottom(xScale).ticks(6).tickSizeOuter(0);
+      const yAxis = d3
+        .axisLeft(yScale)
+        .ticks(5)
+        .tickFormat((d) => `${d}`)
+        .tickSizeOuter(0);
 
       g.append('g')
         .attr('class', styles.xAxis)
@@ -1166,7 +1114,7 @@ const ContextChart = ({
         .attr('class', styles.yAxis)
         .call(yAxis);
 
-      // Add Y-axis label with unit
+      // Y-axis label with unit
       if (chartData.unit) {
         g.append('text')
           .attr('class', styles.yAxisLabel)
@@ -1175,23 +1123,89 @@ const ContextChart = ({
           .text(chartData.unit);
       }
 
-      renderLine(g, filteredDatasets, xScale, yScale);
-      addInteractivity(g, filteredDatasets, xScale, yScale, width, height);
+      // === ULTRA-SIMPLIFIED INTERACTION ===
+      // Just a crosshair line - NO circles per series
+      const crosshair = g
+        .append('line')
+        .attr('class', styles.crosshair)
+        .attr('y1', 0)
+        .attr('y2', height)
+        .attr('stroke', 'rgba(0, 0, 0, 0.3)')
+        .attr('stroke-width', 1)
+        .attr('stroke-dasharray', '4,4')
+        .style('pointer-events', 'none')
+        .style('display', 'none');
+
+      // Interaction overlay
+      const overlay = g
+        .append('rect')
+        .attr('class', styles.overlay)
+        .attr('width', width)
+        .attr('height', height)
+        .style('fill', 'none')
+        .style('pointer-events', 'all')
+        .style('cursor', 'crosshair');
+
+      // Use requestAnimationFrame for smooth mousemove
+      let rafId = null;
+
+      overlay
+        .on('mousemove', function (event) {
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+          }
+
+          rafId = requestAnimationFrame(() => {
+            // Get mouse coordinates relative to the g element (not the overlay)
+            const [mouseX] = d3.pointer(event, g.node());
+
+            // Clamp mouseX to the chart bounds
+            const clampedX = Math.max(0, Math.min(width, mouseX));
+            const date = xScale.invert(clampedX);
+
+            // Show crosshair (no transitions, instant)
+            crosshair
+              .attr('x1', clampedX)
+              .attr('x2', clampedX)
+              .style('display', null);
+
+            // Use original data for tooltip precision
+            const nearestPoints = filteredDatasets.map((dataset) => {
+              const bisect = d3.bisector((d) => d.date).left;
+              const dataToUse = dataset.originalData || dataset.data;
+              const index = bisect(dataToUse, date, 1);
+              const d0 = dataToUse[index - 1];
+              const d1 = dataToUse[index];
+              if (!d0) return { dataset, point: d1 };
+              if (!d1) return { dataset, point: d0 };
+              const point = date - d0.date > d1.date - date ? d1 : d0;
+              return { dataset, point };
+            });
+
+            showTooltip(event, nearestPoints);
+          });
+        })
+        .on('mouseleave', function () {
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
+
+          crosshair.style('display', 'none');
+          hideTooltip();
+        });
 
     } catch (err) {
       console.error('Chart rendering error:', err);
       setError(err.message);
     }
-  }, [dimensions, chartData, selectedSeries, DEFAULT_COLORS, renderLine, addInteractivity]);
+  }, [dimensions, chartData, selectedSeries, DEFAULT_COLORS, showTooltip, hideTooltip]);
 
-  // Generate chart title from chartData or use default
+  // Generate chart title
   const getChartTitle = () => {
-    // Use the title and context from chartData if available (comes from view.title in the API response)
     if (chartData?.title && chartData?.context) {
       return `${chartData.title} (${chartData.context})`;
     }
-
-    // Fallback to context name
     return context || 'Context Chart';
   };
 
@@ -1274,10 +1288,8 @@ const ContextChart = ({
               )}
             </div>
 
-            {/* Active selections shown as tags when collapsed */}
             {!isFilterPanelOpen && (activeGroupBy.length > 0 || Object.keys(activeFilters).length > 0) && (
               <div className={styles.activeSelections}>
-                {/* Group By Tags */}
                 {activeGroupBy.map(group => {
                   const isSkipped = skippedFiltersInfo.groupBy.includes(group);
                   return (
@@ -1301,7 +1313,6 @@ const ContextChart = ({
                   );
                 })}
 
-                {/* Filter Tags */}
                 {Object.entries(activeFilters).map(([filterLabel, values]) =>
                   values.map(value => {
                     const isSkipped = skippedFiltersInfo.filters[filterLabel]?.includes(value);
@@ -1329,7 +1340,6 @@ const ContextChart = ({
               </div>
             )}
 
-            {/* OPTIMIZED: Only render content when panel is open */}
             {isFilterPanelOpen && (
               <div className={styles.filterPanelContent}>
                 <ChartFilterPanelContent
@@ -1391,8 +1401,17 @@ const ContextChart = ({
       )}
 
       <div className={styles.chartWrapper}>
+        {/* Canvas for drawing lines */}
+        <canvas
+          ref={canvasRef}
+          className={styles.chartCanvas}
+        />
+
+        {/* SVG overlay for axes and interactions */}
         <svg ref={svgRef} className={styles.chartSvg}></svg>
       </div>
+
+      {/* Tooltip */}
       {tooltip.visible && tooltip.content && ReactDOM.createPortal(
         <div
           ref={tooltipRef}
