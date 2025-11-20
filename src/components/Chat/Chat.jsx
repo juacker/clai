@@ -5,6 +5,7 @@ import {
   deleteConversation,
   createConversation,
   createChatCompletion,
+  createConversationTitle,
 } from '../../api/client';
 import MarkdownMessage from './MarkdownMessage';
 import ToolBlock from './ToolBlock';
@@ -258,9 +259,61 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
 
     try {
       const data = await getConversation(token, space.id, room.id, conversationId);
+
+      // Set conversation immediately to show it to the user without delay
       setCurrentConversation(data);
       // Scroll to bottom after loading conversation
       setTimeout(scrollToBottom, 100);
+
+      // Generate title in the background if missing or empty (non-blocking)
+      if (!data.title || data.title.trim() === '') {
+        // Find the first user message
+        const firstUserMessage = data.messages?.find(msg => msg.role === 'user');
+
+        if (firstUserMessage) {
+          // Extract text content from the message
+          let messageContent = '';
+
+          if (typeof firstUserMessage.content === 'string') {
+            messageContent = firstUserMessage.content;
+          } else if (Array.isArray(firstUserMessage.content)) {
+            // Extract text from content blocks
+            messageContent = firstUserMessage.content
+              .filter(block => block.type === 'text')
+              .map(block => block.text)
+              .join(' ');
+          }
+
+          // Only generate title if we have message content
+          if (messageContent && messageContent.trim() !== '') {
+            // Run title generation in the background without blocking
+            createConversationTitle(
+              token,
+              space.id,
+              room.id,
+              conversationId,
+              messageContent
+            ).then(titleResponse => {
+              // Update conversation with new title
+              if (titleResponse && titleResponse.title) {
+                setCurrentConversation(prevConversation => {
+                  // Only update if we're still viewing the same conversation
+                  if (prevConversation?.id === conversationId) {
+                    return {
+                      ...prevConversation,
+                      title: titleResponse.title
+                    };
+                  }
+                  return prevConversation;
+                });
+              }
+            }).catch(titleError => {
+              // Log error but don't fail the conversation load
+              console.error('Failed to generate conversation title:', titleError);
+            });
+          }
+        }
+      }
     } catch (error) {
       console.error('Failed to load conversation:', error);
       setConversationError(error.message);

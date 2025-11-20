@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const NETDATA_CLOUD_BASE_URL = 'https://testing.netdata.cloud/api';
+const NETDATA_CLOUD_BASE_URL = 'https://testing.netdata.cloud';
 
 const client = axios.create({
   baseURL: NETDATA_CLOUD_BASE_URL,
@@ -37,7 +37,7 @@ client.interceptors.response.use(
  */
 export const getUserInfo = async (token) => {
   try {
-    const response = await client.get('/v2/accounts/me', {
+    const response = await client.get('/api/v2/accounts/me', {
       headers: {
         'Authorization': `Bearer ${token}`,
       },
@@ -67,7 +67,7 @@ export const getUserInfo = async (token) => {
  */
 export const getSpaces = async (token) => {
   try {
-    const response = await client.get('/v3/spaces', {
+    const response = await client.get('/api/v3/spaces', {
       headers: {
         'Authorization': `Bearer ${token}`,
       },
@@ -98,7 +98,7 @@ export const getSpaces = async (token) => {
  */
 export const getRooms = async (token, spaceId) => {
   try {
-    const response = await client.get(`/v2/spaces/${spaceId}/rooms`, {
+    const response = await client.get(`/api/v2/spaces/${spaceId}/rooms`, {
       headers: {
         'Authorization': `Bearer ${token}`,
       },
@@ -136,7 +136,7 @@ export const getRooms = async (token, spaceId) => {
 export const createConversation = async (token, spaceId, roomId, data = {}) => {
   try {
     const response = await client.post(
-      `/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations`,
+      `/api/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations`,
       data,
       {
         headers: {
@@ -173,7 +173,7 @@ export const createConversation = async (token, spaceId, roomId, data = {}) => {
 export const getConversation = async (token, spaceId, roomId, conversationId) => {
   try {
     const response = await client.get(
-      `/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations/${conversationId}`,
+      `/api/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations/${conversationId}`,
       {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -208,7 +208,7 @@ export const getConversation = async (token, spaceId, roomId, conversationId) =>
 export const listConversations = async (token, spaceId, roomId) => {
   try {
     const response = await client.get(
-      `/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations`,
+      `/api/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations`,
       {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -244,7 +244,7 @@ export const listConversations = async (token, spaceId, roomId) => {
 export const deleteConversation = async (token, spaceId, roomId, conversationId) => {
   try {
     const response = await client.delete(
-      `/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations/${conversationId}`,
+      `/api/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations/${conversationId}`,
       {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -264,6 +264,55 @@ export const deleteConversation = async (token, spaceId, roomId, conversationId)
     } else {
       // Error setting up the request
       throw new Error(`Failed to delete conversation: ${error.message}`);
+    }
+  }
+};
+
+/**
+ * Create a title for a conversation based on message content
+ * @param {string} token - Authentication token (Bearer token)
+ * @param {string} spaceId - Space ID
+ * @param {string} roomId - Room ID
+ * @param {string} conversationId - Conversation ID
+ * @param {string} messageContent - The message content to generate a title from (required, must not be empty)
+ * @returns {Promise<Object>} Object containing the generated title
+ * @throws {Error} If the request fails
+ *
+ * @example
+ * const result = await createConversationTitle(token, spaceId, roomId, convId, "What's the current CPU usage?");
+ * console.log(result.title); // "CPU Usage Analysis"
+ */
+export const createConversationTitle = async (token, spaceId, roomId, conversationId, messageContent) => {
+  try {
+    // Validate that messageContent is not empty
+    if (!messageContent || messageContent.trim() === '') {
+      throw new Error('message_content is required and must not be empty');
+    }
+
+    const response = await client.post(
+      `/api/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations/${conversationId}/title`,
+      {
+        message_content: messageContent,
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    if (error.response) {
+      // Server responded with error status
+      throw new Error(
+        `Failed to create conversation title: ${error.response.status} - ${error.response.data?.message || error.response.statusText}`
+      );
+    } else if (error.request) {
+      // Request was made but no response received
+      throw new Error('Failed to create conversation title: No response from server');
+    } else {
+      // Error setting up the request
+      throw new Error(`Failed to create conversation title: ${error.message}`);
     }
   }
 };
@@ -298,7 +347,7 @@ export const createChatCompletion = async (token, spaceId, roomId, conversationI
       requestBody.parent_message_id = parentMessageId;
     }
 
-    const url = `${NETDATA_CLOUD_BASE_URL}/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations/${conversationId}/completion`;
+    const url = `${NETDATA_CLOUD_BASE_URL}/api/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations/${conversationId}/completion`;
 
     // Use Fetch API for SSE streaming support
     const response = await fetch(url, {
@@ -527,7 +576,7 @@ export const getData = async (token, spaceId, roomId, params) => {
     };
 
     const response = await client.post(
-      `/v3/spaces/${spaceId}/rooms/${roomId}/data`,
+      `/api/v3/spaces/${spaceId}/rooms/${roomId}/data`,
       requestBody,
       {
         headers: {
@@ -610,7 +659,7 @@ export const getContexts = async (token, spaceId, roomId, params) => {
     };
 
     const response = await client.post(
-      `/v3/spaces/${spaceId}/rooms/${roomId}/contexts`,
+      `/api/v3/spaces/${spaceId}/rooms/${roomId}/contexts`,
       requestBody,
       {
         headers: {
