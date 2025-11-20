@@ -272,6 +272,7 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
             avatarUrl={userInfo?.avatarUrl}
             userName={userInfo?.name || userInfo?.email}
             size="small"
+            showMenu={true}
           />
         </div>
 

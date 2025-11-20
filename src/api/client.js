@@ -1,14 +1,31 @@
 import axios from 'axios';
 
-const NETDATA_CLOUD_BASE_URL = 'https://testing.netdata.cloud';
+/**
+ * Get the base URL from localStorage or use default
+ * @returns {string} The base URL for Netdata Cloud
+ */
+const getBaseUrl = () => {
+  return localStorage.getItem('netdata_base_url') || 'https://app.netdata.cloud';
+};
 
 const client = axios.create({
-  baseURL: NETDATA_CLOUD_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
     'User-Agent': 'netdata-clai',
   },
 });
+
+// Add request interceptor to set baseURL dynamically
+client.interceptors.request.use(
+  (config) => {
+    // Set baseURL from localStorage on each request
+    config.baseURL = getBaseUrl();
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
 // Add response interceptor to handle authentication errors globally
 client.interceptors.response.use(
@@ -347,7 +364,7 @@ export const createChatCompletion = async (token, spaceId, roomId, conversationI
       requestBody.parent_message_id = parentMessageId;
     }
 
-    const url = `${NETDATA_CLOUD_BASE_URL}/api/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations/${conversationId}/completion`;
+    const url = `${getBaseUrl()}/api/v1/spaces/${spaceId}/rooms/${roomId}/insights/conversations/${conversationId}/completion`;
 
     // Use Fetch API for SSE streaming support
     const response = await fetch(url, {
