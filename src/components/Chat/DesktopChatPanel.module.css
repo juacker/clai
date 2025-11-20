@@ -34,8 +34,8 @@
     display: block;
     position: fixed;
     top: 0;
-    right: 0;
-    bottom: 0px;
+    left: 0;
+    bottom: 132px; /* Leave space for terminal panel base height */
 
     /* Dimensions */
     width: 0;
@@ -45,7 +45,7 @@
     background: var(--color-bg-glass);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border-left: none;
+    border-right: none;
     box-shadow: var(--shadow-lg);
 
     /* Layering */
@@ -108,8 +108,8 @@
   @media (min-width: 769px) and (pointer: fine) {
     .desktopChatPanel {
       background: rgba(30, 30, 30, 0.98);
-      border-left-color: rgba(255, 255, 255, 0.12);
-      box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
+      border-right-color: rgba(255, 255, 255, 0.12);
+      box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
     }
   }
 }
