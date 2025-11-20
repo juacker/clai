@@ -239,67 +239,7 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 
-/* Mobile Styles */
-@media (max-width: 768px) {
-  .selector {
-    min-width: 90vw;
-    max-width: 95vw;
-    max-height: 75vh;
-    border-radius: 20px;
-  }
-
-  .header {
-    padding: 20px 24px;
-  }
-
-  .title {
-    font-size: 18px;
-  }
-
-  .closeButton {
-    width: 40px;
-    height: 40px;
-    font-size: 36px;
-  }
-
-  .searchContainer {
-    padding: 16px 20px;
-  }
-
-  .searchInput {
-    padding: 14px 18px;
-    font-size: 16px; /* Prevent zoom on iOS */
-    border-radius: 12px;
-  }
-
-  .item {
-    padding: 16px 18px;
-    min-height: 52px; /* Touch-friendly */
-    border-radius: 12px;
-  }
-
-  .itemName {
-    font-size: 16px;
-  }
-
-  .itemsList {
-    max-height: 55vh;
-    padding: 12px;
-  }
-}
-
 /* Touch Device Optimizations */
-@media (pointer: coarse) {
-  .item {
-    min-height: 52px;
-    padding: 16px 18px;
-  }
-
-  .closeButton {
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
 
 /* Tablet and larger screens - optimize layout */
 @media (min-width: 769px) {

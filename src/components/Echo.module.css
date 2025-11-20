@@ -30,14 +30,3 @@
   max-width: 100%;
 }
 
-/* Mobile responsive */
-@media (max-width: 768px) {
-  .echoContainer {
-    padding: 20px;
-  }
-
-  .echoText {
-    font-size: clamp(1.5rem, 10vw, 8rem);
-  }
-}
-

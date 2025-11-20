@@ -115,27 +115,7 @@
   }
 }
 
-/* Mobile Styles */
-@media (max-width: 768px) {
-  .badge {
-    padding: 8px 14px;
-    font-size: 14px;
-    border-radius: 8px;
-    gap: 8px;
-  }
-
-  .icon {
-    font-size: 16px;
-  }
-}
-
 /* Touch Device Optimizations */
-@media (pointer: coarse) {
-  .badge {
-    padding: 10px 16px;
-    min-height: 36px;
-  }
-}
 
 /* Accessibility - Focus Styles */
 .badge:focus-visible {

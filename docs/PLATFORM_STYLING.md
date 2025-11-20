@@ -4,34 +4,31 @@ This document explains how to implement platform-specific styling in the Netdata
 
 ## Overview
 
-The application uses a hybrid approach for platform-specific styling that combines:
-1. **Tauri Platform Detection** - Accurate OS/platform detection at runtime
-2. **CSS Custom Properties + Platform Classes** - Platform-specific classes for targeted styling
-3. **Media Queries as Fallback** - Responsive design for additional viewport-based adjustments
+**Note: This application is now desktop-only.** Mobile support has been removed.
+
+The application uses platform detection for desktop OS-specific styling:
+1. **Tauri Platform Detection** - Accurate OS detection at runtime
+2. **CSS Custom Properties + Platform Classes** - OS-specific classes for targeted styling
 
 ## Architecture
 
 ### 1. Platform Detection Hook (`src/hooks/usePlatform.js`)
 
-The `usePlatform` hook provides platform information to React components:
+The `usePlatform` hook provides OS information to React components:
 
 ```javascript
 import { usePlatform } from './hooks/usePlatform';
 
 function MyComponent() {
-  const { os, type, isDesktop, isMobile, isLoading } = usePlatform();
-  // os: 'windows' | 'macos' | 'linux' | 'android' | 'ios' | 'unknown'
-  // type: 'desktop' | 'mobile' | 'unknown'
-  // isDesktop: boolean
-  // isMobile: boolean
-  // isLoading: boolean
+  const { os } = usePlatform();
+  // os: 'windows' | 'macos' | 'linux' | 'unknown'
 }
 ```
 
 **Features:**
 - Uses Tauri's `@tauri-apps/plugin-os` for accurate platform detection
 - Falls back to user agent detection during browser development
-- Provides both specific OS and general device type information
+- Provides OS-specific information for desktop platforms only
 
 ### 2. Root Element Classes (`src/App.jsx`)
 
@@ -40,11 +37,11 @@ The App component automatically applies platform-specific classes to the documen
 ```javascript
 // Applied attributes:
 document.documentElement.setAttribute('data-platform', os);
-document.documentElement.setAttribute('data-device-type', type);
+document.documentElement.setAttribute('data-device-type', 'desktop');
 
 // Applied classes:
 document.documentElement.classList.add(`platform-${os}`);
-document.documentElement.classList.add(`device-${type}`);
+document.documentElement.classList.add('device-desktop');
 ```
 
 **Result:**

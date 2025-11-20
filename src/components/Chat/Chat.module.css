@@ -1,17 +1,17 @@
-/* Chat Component Styles - Mobile-first responsive design with light, elegant, modern aesthetic */
+
 
 .chatContainer {
   display: flex;
   flex-direction: column;
 
-  /* Mobile-first: Light, elegant, modern styling */
+
   background: #ffffff;
   border-radius: 0;
   box-shadow: none;
   backdrop-filter: none;
   overflow: hidden;
 
-  /* Mobile-first: Full width, no margin (controlled by parent) */
+
   width: 100%;
   max-width: 100%;
   /* Use flex: 1 instead of height: 100% for proper flexbox behavior */
@@ -46,7 +46,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 16px 20px;
-  /* Mobile-first: Light, elegant header styling */
+
   background: rgba(0, 0, 0, 0.02);
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
@@ -66,7 +66,7 @@
   gap: 10px;
   font-size: 16px;
   font-weight: 600;
-  /* Mobile-first: Dark text for light background */
+
   color: rgba(0, 0, 0, 0.85);
 }
 
@@ -91,7 +91,7 @@
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  /* Mobile-first: Dark text for light background */
+
   color: rgba(0, 0, 0, 0.5);
   flex-wrap: wrap;
 }
@@ -106,7 +106,7 @@
 
 .contextLabel {
   font-weight: 500;
-  /* Mobile-first: Dark text for light background */
+
   color: rgba(0, 0, 0, 0.5);
 }
 
@@ -118,7 +118,7 @@
 }
 
 .contextValue {
-  /* Mobile-first: Netdata Green */
+
   color: var(--color-primary);
   font-weight: 500;
   background-color: var(--color-primary-alpha-08);
@@ -138,7 +138,7 @@
 }
 
 .contextSeparator {
-  /* Mobile-first: Dark separator for light background */
+
   color: rgba(0, 0, 0, 0.2);
 }
 
@@ -174,7 +174,7 @@
 }
 
 .chatBody::-webkit-scrollbar-track {
-  /* Mobile-first: Light scrollbar track */
+
   background: rgba(0, 0, 0, 0.03);
   border-radius: 3px;
 }
@@ -187,7 +187,7 @@
 }
 
 .chatBody::-webkit-scrollbar-thumb {
-  /* Mobile-first: Light scrollbar thumb */
+
   background: rgba(0, 0, 0, 0.15);
   border-radius: 3px;
 }
@@ -200,7 +200,7 @@
 }
 
 .chatBody::-webkit-scrollbar-thumb:hover {
-  /* Mobile-first: Light scrollbar thumb hover */
+
   background: rgba(0, 0, 0, 0.25);
 }
 
@@ -224,14 +224,14 @@
 
 .placeholderText {
   font-size: 14px;
-  /* Mobile-first: Dark text for light background */
+
   color: rgba(0, 0, 0, 0.6);
   margin: 0;
 }
 
 .placeholderSubtext {
   font-size: 12px;
-  /* Mobile-first: Dark text for light background */
+
   color: rgba(0, 0, 0, 0.4);
   margin: 0;
 }
@@ -594,7 +594,7 @@
 .chatInput {
   width: 100%;
   padding: 10px 12px;
-  /* Mobile-first: Light input styling */
+
   background: rgba(0, 0, 0, 0.04);
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 6px;
@@ -617,7 +617,7 @@
 }
 
 .chatInput:focus {
-  /* Mobile-first: Light focus styling with Netdata Green */
+
   background: #ffffff;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-primary-alpha-08);
@@ -638,7 +638,7 @@
 }
 
 .chatInput::placeholder {
-  /* Mobile-first: Light placeholder */
+
   color: rgba(0, 0, 0, 0.4);
 }
 
@@ -646,35 +646,6 @@
 @media (min-width: 769px) and (pointer: fine) {
   .chatInput::placeholder {
     color: rgba(0, 0, 0, 0.4);
-  }
-}
-
-/* Touch device optimizations */
-@media (pointer: coarse) {
-  .chatInput {
-    padding: 12px 14px;
-    font-size: 16px; /* Prevent zoom on iOS */
-  }
-
-  .chatTitle {
-    font-size: 18px;
-  }
-}
-
-/* Small mobile devices */
-@media (max-width: 480px) {
-  .chatContainer {
-    width: calc(100% - 16px);
-    margin: 8px;
-    height: 350px;
-  }
-
-  .chatHeader {
-    padding: 10px 12px;
-  }
-
-  .chatBody {
-    padding: 12px;
   }
 }
 
@@ -691,12 +662,12 @@
 }
 
 .messageBubble {
-  /* Mobile-first: Full width for assistant messages with equal margins */
+
   max-width: 100%;
   width: auto;
   padding: 10px 14px;
   border-radius: 12px;
-  /* Mobile-first: Light message bubbles */
+
   background-color: rgba(0, 0, 0, 0.04);
   border: 1px solid rgba(0, 0, 0, 0.08);
   display: flex;
@@ -717,7 +688,7 @@
 }
 
 .messageBubbleOwn {
-  /* Mobile-first: Constrained width for user messages with Netdata Green */
+
   max-width: 75%;
   width: auto;
   background-color: var(--color-primary-alpha-08);
@@ -737,7 +708,7 @@
 .messageSender {
   font-size: 11px;
   font-weight: 600;
-  /* Mobile-first: Dark text for sender */
+
   color: rgba(0, 0, 0, 0.6);
   margin-bottom: 2px;
 }
@@ -752,7 +723,7 @@
 
 .messageText {
   font-size: 15px;
-  /* Mobile-first: Dark text for messages */
+
   color: rgba(0, 0, 0, 0.85);
   line-height: 1.5;
   word-wrap: break-word;
@@ -769,7 +740,7 @@
 
 .messageTimestamp {
   font-size: 10px;
-  /* Mobile-first: Dark text for timestamp */
+
   color: rgba(0, 0, 0, 0.4);
   align-self: flex-end;
   margin-top: 2px;
@@ -791,18 +762,6 @@
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-/* Mobile optimizations for messages */
-@media (max-width: 480px) {
-  .messageBubble {
-    max-width: 85%;
-    padding: 8px 12px;
-  }
-
-  .messageText {
-    font-size: 13px;
   }
 }
 

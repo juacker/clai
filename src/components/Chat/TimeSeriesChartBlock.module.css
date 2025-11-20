@@ -1,6 +1,5 @@
 /* TimeSeriesChartBlock Component Styles - Elegant & Minimalistic */
 
-/* Chart Container - Mobile-First */
 .chartContainer {
   margin: 12px 0;
   border: 1px solid var(--chart-border);
@@ -226,7 +225,6 @@
   flex-shrink: 0;
 }
 
-
 /* Loading Container */
 .loadingContainer {
   display: flex;
@@ -266,103 +264,6 @@
   flex-shrink: 0;
 }
 
-/* Mobile Responsive - Screen width detection */
-@media (max-width: 768px) {
-  .chartContainer {
-    border-radius: 8px;
-    margin: 10px 0;
-  }
-
-  .chartHeader {
-    padding: 12px 14px;
-    gap: 10px;
-  }
-
-  .chartTitle {
-    font-size: 13px;
-  }
-
-  .chartWrapper {
-    padding: 16px 14px;
-    min-height: 220px;
-  }
-
-  .legend {
-    gap: 10px;
-  }
-
-  .legendItem {
-    font-size: 10px;
-  }
-
-  .legendColor {
-    width: 10px;
-    height: 10px;
-  }
-
-  .xAxis :global(text),
-  .yAxis :global(text) {
-    font-size: 10px;
-  }
-
-  .axisLabel {
-    font-size: 11px;
-  }
-
-  .tooltip {
-    max-width: 220px;
-    padding: 8px 10px;
-  }
-
-  .tooltipDate {
-    font-size: 10px;
-    margin-bottom: 6px;
-    padding-bottom: 4px;
-  }
-
-  .tooltipRow {
-    font-size: 10px;
-    gap: 6px;
-  }
-
-  .tooltipColor {
-    width: 8px;
-    height: 8px;
-  }
-}
-
-/* Touch device optimizations */
-@media (pointer: coarse) {
-  .chartHeader {
-    padding: 14px 16px;
-  }
-
-  .chartWrapper {
-    padding: 18px 16px;
-  }
-
-  .overlay {
-    cursor: default;
-  }
-
-  /* Increase touch target sizes */
-  .legendItem {
-    padding: 4px 0;
-  }
-}
-
-/* No hover capability (mobile) - disable hover effects */
-@media (hover: none) {
-  .chartContainer:hover {
-    transform: none;
-    box-shadow: none;
-  }
-
-  .legendItem:hover {
-    color: var(--color-text-secondary);
-  }
-}
-
 /* Desktop enhancements */
 @media (min-width: 769px) and (pointer: fine) {
   .chartContainer:hover {
@@ -375,39 +276,6 @@
 
   .tooltip {
     max-width: 320px;
-  }
-}
-
-/* Smaller mobile devices */
-@media (max-width: 480px) {
-  .chartHeader {
-    padding: 10px 12px;
-  }
-
-  .chartTitle {
-    font-size: 12px;
-  }
-
-  .chartWrapper {
-    padding: 14px 12px;
-    min-height: 200px;
-  }
-
-  .legend {
-    gap: 8px;
-  }
-
-  .legendItem {
-    font-size: 9px;
-  }
-
-  .xAxis :global(text),
-  .yAxis :global(text) {
-    font-size: 9px;
-  }
-
-  .axisLabel {
-    font-size: 10px;
   }
 }
 

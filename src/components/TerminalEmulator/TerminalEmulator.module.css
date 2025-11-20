@@ -1,9 +1,8 @@
 /* Terminal Emulator - Cross-Platform Component */
 /* Modern, light theme matching the app's design philosophy */
-/* Mobile-first approach with desktop enhancements */
 
 .terminal {
-  /* Default: Mobile styles (will be wrapped in bottom sheet) */
+
   position: relative;
   width: 100%;
   background: transparent;
@@ -373,55 +372,3 @@
   font-size: 13px;
 }
 
-/* ===== MOBILE-SPECIFIC STYLES ===== */
-/* Mobile: Adjust padding and sizing for better touch experience */
-@media (max-width: 768px) {
-  .contextPanelWrapper :global(.contextPanel) {
-    padding: 10px 16px 6px;
-  }
-
-  .terminalContent {
-    padding: 12px 16px;
-    gap: 8px;
-  }
-
-  .terminalPrompt {
-    font-size: 13px;
-  }
-
-  .terminalInputWrapper {
-    padding: 10px;
-    min-height: 44px; /* iOS minimum touch target */
-  }
-
-  .terminalInput,
-  .terminalInputDisplay {
-    font-size: 14px;
-    line-height: 22px;
-  }
-
-  .outputArea {
-    padding: 10px 16px 14px;
-  }
-
-  .outputMessage {
-    padding: 6px 10px;
-    font-size: 12px;
-  }
-
-  /* Hide chat toggle button on mobile - chat is always open by default */
-  .chatToggleButtonInline {
-    display: none;
-  }
-}
-
-/* Touch device detection */
-@media (pointer: coarse) {
-  .terminalInputWrapper {
-    min-height: 44px;
-  }
-
-  .terminalInput {
-    font-size: 16px; /* Prevent zoom on iOS */
-  }
-}

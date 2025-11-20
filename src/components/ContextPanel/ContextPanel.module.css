@@ -18,8 +18,8 @@
   padding: 8px 16px;
 
   /* iOS Safe Area Support */
-  padding-left: max(16px, env(safe-area-inset-left));
-  padding-right: max(16px, env(safe-area-inset-right));
+  padding-left: max(16px, 0);
+  padding-right: max(16px, 0);
 }
 
 /* Context Container - Horizontal layout for badges */
@@ -55,28 +55,7 @@
   animation: panelEnter 0.3s ease;
 }
 
-/* Mobile Styles */
-@media (max-width: 768px) {
-  .contextPanel {
-    top: 48px; /* Below mobile TabBar */
-    padding: 10px 16px;
-  }
-
-  .contextContainer {
-    gap: 10px;
-  }
-}
-
 /* Touch Device Optimizations */
-@media (pointer: coarse) {
-  .contextPanel {
-    padding: 12px 16px;
-  }
-
-  .contextContainer {
-    gap: 12px;
-  }
-}
 
 /* Tablet and larger screens - more horizontal space */
 @media (min-width: 769px) {

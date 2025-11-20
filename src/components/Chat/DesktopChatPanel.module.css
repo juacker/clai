@@ -5,12 +5,8 @@
  * Follows project guidelines for platform-specific styling with light, elegant, modern design
  */
 
-/* ============================================================================
-   1. DEFAULT STYLES (Mobile - Hidden)
-   ============================================================================ */
-
 .desktopChatPanel {
-  /* Hidden on mobile by default */
+
   display: none;
 }
 
@@ -21,34 +17,12 @@
 }
 
 /* ============================================================================
-   2. MOBILE DETECTION - Ensure hidden on small screens
-   ============================================================================ */
-
-@media (max-width: 768px) {
-  .desktopChatPanel {
-    display: none;
-  }
-}
-
-/* ============================================================================
    3. TOUCH DEVICE DETECTION - Hide on touch devices
    ============================================================================ */
-
-@media (pointer: coarse) {
-  .desktopChatPanel {
-    display: none;
-  }
-}
 
 /* ============================================================================
    4. NO HOVER CAPABILITY - Hide on devices without hover
    ============================================================================ */
-
-@media (hover: none) {
-  .desktopChatPanel {
-    display: none;
-  }
-}
 
 /* ============================================================================
    5. DESKTOP STYLES - Show as fixed right panel

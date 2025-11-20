@@ -601,7 +601,7 @@
   .chartsGrid {
     grid-template-columns: repeat(auto-fill, minmax(48%, 1fr));
   }
-  
+
   .chartCard {
     min-height: 420px;
   }
@@ -612,7 +612,7 @@
     grid-template-columns: repeat(auto-fill, minmax(32%, 1fr));
     gap: 20px;
   }
-  
+
   .chartCard {
     min-height: 480px;
   }
@@ -622,38 +622,9 @@
   .chartsGrid {
     grid-template-columns: repeat(auto-fill, minmax(32%, 1fr));
   }
-  
+
   .chartCard {
     min-height: 500px;
   }
 }
 
-@media (max-width: 768px) {
-  .headerBar {
-    padding: 6px 12px;
-  }
-
-  .timeIntervalSelector {
-    gap: 3px;
-  }
-
-  .intervalButton {
-    padding: 3px 8px;
-    font-size: 10px;
-  }
-
-  .filterToggleButton,
-  .clearAllButton {
-    font-size: 10px;
-    padding: 3px 8px;
-  }
-
-  .chartsGrid {
-    padding: 12px;
-    gap: 12px;
-  }
-
-  .chartCard {
-    min-height: 320px;
-  }
-}

@@ -5,17 +5,16 @@ import Chat from './Chat';
 import styles from './DesktopChatPanel.module.css';
 
 /**
- * DesktopChatPanel - Desktop-specific chat panel container
+ * DesktopChatPanel - Chat panel container
  *
  * This component provides a full-height, fixed-position chat panel
- * that appears on the right side of the screen on desktop devices.
+ * that appears on the right side of the screen.
  * It expands from right to left when opened.
  *
  * Features:
  * - Full viewport height (0 to 100vh)
  * - Fixed positioning on right side
  * - Smooth expand/collapse animations
- * - Hidden on mobile (mobile uses MobileTerminalSheet)
  * - Integrates with ChatManagerContext for state management
  * - Supports forwarding messages from terminal when chat is visible
  *

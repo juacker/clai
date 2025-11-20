@@ -172,64 +172,7 @@
   outline-offset: 2px;
 }
 
-/* Mobile Styles */
-@media (max-width: 768px) {
-  .tabBar {
-    background: rgba(255, 255, 255, 0.95);
-  }
-
-  .tabBar:has(.tabList > .tab:only-of-type) {
-    background: transparent;
-  }
-
-  .tabList {
-    padding: 0 12px;
-    min-height: 48px;
-    gap: 6px;
-  }
-
-  .tab {
-    min-width: 100px;
-    max-width: 180px;
-    height: 40px;
-    padding: 10px 14px;
-    border-radius: 8px;
-  }
-
-  .tabTitle {
-    font-size: 14px;
-  }
-
-  .tabCloseButton {
-    width: 24px;
-    height: 24px;
-    opacity: 1; /* Always visible on mobile */
-  }
-
-  .newTabButton {
-    width: 40px;
-    height: 40px;
-    margin-left: 6px;
-  }
-}
-
 /* Touch Device Optimizations */
-@media (pointer: coarse) {
-  .tab {
-    min-height: 44px; /* Larger touch target */
-  }
-
-  .tabCloseButton {
-    width: 28px;
-    height: 28px;
-    opacity: 1; /* Always visible on touch devices */
-  }
-
-  .newTabButton {
-    width: 44px;
-    height: 44px;
-  }
-}
 
 /* Smooth Scroll Behavior */
 .tabList {

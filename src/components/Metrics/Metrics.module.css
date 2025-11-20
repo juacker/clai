@@ -6,7 +6,7 @@
  */
 
 .metricsContainer {
-  /* Mobile-first: Full viewport with clean background */
+
   display: flex;
   flex-direction: column;
   padding: 0;
@@ -575,108 +575,6 @@
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
   line-height: 1.6;
-}
-
-/* Mobile responsive - screen width */
-@media (max-width: 768px) {
-  .metricsContainer {
-    background: #ffffff;
-  }
-
-  .headerBar {
-    height: 40px;
-    padding: 0 8px;
-  }
-
-  .metricsCanvas {
-    top: 40px;
-  }
-
-  .filterInput {
-    max-width: none;
-    height: 28px;
-    font-size: 12px;
-  }
-
-  .infoBanner {
-    top: 48px;
-    right: 8px;
-    padding: 8px 12px;
-    font-size: 10px;
-    max-width: calc(100% - 16px);
-  }
-
-  .contextPanel {
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 90%;
-    max-width: 480px;
-    max-height: calc(100% - 80px);
-  }
-
-  .contextPanelTitle {
-    font-size: 13px;
-  }
-
-  .contextItem {
-    font-size: 12px;
-  }
-  
-  .contextName {
-    padding: 9px 10px;
-  }
-}
-
-/* Touch device adjustments */
-@media (pointer: coarse) {
-  .metricsContainer {
-    background: #ffffff;
-  }
-
-  .headerBar {
-    height: 40px;
-    padding: 0 8px;
-  }
-
-  .metricsCanvas {
-    top: 40px;
-  }
-
-  .chartsView {
-    top: 40px;
-  }
-
-  .infoBanner {
-    top: 48px;
-    right: 8px;
-    padding: 8px 12px;
-  }
-
-  .contextPanel {
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 90%;
-    max-width: 480px;
-    max-height: calc(100% - 80px);
-  }
-}
-
-/* No hover capability (mobile) */
-@media (hover: none) {
-  .infoBanner:hover {
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  }
-
-  .infoBannerSuccess:hover {
-    background: rgba(209, 250, 229, 0.95);
-  }
-
-  .infoBannerInfo:hover {
-    background: rgba(219, 234, 254, 1);
-  }
 }
 
 /* Desktop override (fine pointer + larger screen) */

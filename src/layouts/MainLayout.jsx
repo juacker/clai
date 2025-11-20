@@ -2,13 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { getUserInfo } from '../api/client';
 import TerminalEmulatorWrapper from '../components/TerminalEmulator/TerminalEmulatorWrapper';
-import MobileTerminalSheet from '../components/TerminalEmulator/MobileTerminalSheet';
 import DesktopChatPanel from '../components/Chat/DesktopChatPanel';
 import { SharedSpaceRoomDataProvider } from '../contexts/SharedSpaceRoomDataContext';
 import { CommandProvider } from '../contexts/CommandContext';
 import { TabManagerProvider } from '../contexts/TabManagerContext';
 import { ChatManagerProvider } from '../contexts/ChatManagerContext';
-import { usePlatform } from '../hooks/usePlatform';
 import styles from './MainLayout.module.css';
 
 const MainLayout = () => {
@@ -24,7 +22,6 @@ const MainLayout = () => {
     });
   };
   const navigate = useNavigate();
-  const { isDesktop, isMobile } = usePlatform();
 
   // Callback to handle when chat has processed the message
   const handleMessageProcessed = () => {
@@ -70,34 +67,17 @@ const MainLayout = () => {
         <TabManagerProvider>
           <ChatManagerProvider>
             <div className={styles.mainLayout}>
-              {/* Desktop: Fixed chat panel on right side (full height) */}
-              {isDesktop && (
-                <DesktopChatPanel
-                  message={messageForChat}
-                  onMessageProcessed={handleMessageProcessed}
-                />
-              )}
+              {/* Fixed chat panel on right side (full height) */}
+              <DesktopChatPanel
+                message={messageForChat}
+                onMessageProcessed={handleMessageProcessed}
+              />
 
-              {/* Desktop: Fixed TerminalEmulator at bottom */}
-              {isDesktop && (
-                <TerminalEmulatorWrapper
-                  userInfo={userInfo}
-                  onSendToChat={handleSendToChat}
-                />
-              )}
-
-              {/* Mobile: Unified draggable bottom sheet with terminal and chat */}
-              {isMobile && (
-                <MobileTerminalSheet
-                  message={messageForChat}
-                  onMessageProcessed={handleMessageProcessed}
-                >
-                  <TerminalEmulatorWrapper
-                    userInfo={userInfo}
-                    onSendToChat={handleSendToChat}
-                  />
-                </MobileTerminalSheet>
-              )}
+              {/* Fixed TerminalEmulator at bottom */}
+              <TerminalEmulatorWrapper
+                userInfo={userInfo}
+                onSendToChat={handleSendToChat}
+              />
 
               {/* Content area - takes remaining flex space */}
               <div className={styles.contentArea}>

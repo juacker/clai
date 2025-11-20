@@ -14,27 +14,6 @@
   flex-direction: column;
 }
 
-/* Mobile devices: Add padding for status bar */
-@media (max-width: 768px) {
-  .mainLayout {
-    padding-top: env(safe-area-inset-top, 24px);
-  }
-}
-
-/* Touch device detection */
-@media (pointer: coarse) {
-  .mainLayout {
-    padding-top: env(safe-area-inset-top, 24px);
-  }
-}
-
-/* No hover capability (mobile) */
-@media (hover: none) {
-  .mainLayout {
-    padding-top: env(safe-area-inset-top, 24px);
-  }
-}
-
 /* Desktop override: Remove padding */
 @media (min-width: 769px) and (pointer: fine) {
   .mainLayout {
@@ -42,12 +21,11 @@
   }
 }
 
-/* Space/Room Selector Wrapper - Mobile Only (default visible) */
 .spaceRoomWrapper {
   position: fixed;
   z-index: 999;
   transition: all 0.3s ease;
-  /* Mobile: top-left positioning */
+
   top: 16px;
   left: 16px;
 }
@@ -59,14 +37,6 @@
   }
 }
 
-/* Mobile devices: adjust space/room wrapper for safe areas */
-@media (max-width: 768px) {
-  .spaceRoomWrapper {
-    top: max(16px, env(safe-area-inset-top, 16px));
-    left: max(16px, env(safe-area-inset-left, 16px));
-  }
-}
-
 /* Content Area - takes remaining flex space after TerminalEmulator */
 .contentArea {
   flex: 1;
@@ -75,13 +45,6 @@
   /* Leave space at bottom for TerminalEmulator (desktop only) */
   /* TerminalEmulator has max-height: 50vh, so we reserve space for it */
   padding-bottom: 130px; /* Safe fallback for terminal space */
-}
-
-/* Mobile: No terminal, so no bottom padding needed */
-@media (max-width: 768px) {
-  .contentArea {
-    padding-bottom: 0;
-  }
 }
 
 .loadingContainer {
