@@ -105,14 +105,6 @@
   }
 }
 
-/* Terminal Avatar - Positioned at the left side */
-.terminalAvatar {
-  flex-shrink: 0;
-  margin-right: 0;
-  display: flex;
-  align-items: center;
-}
-
 /* Chat Toggle Button - Inline with input */
 .chatToggleButtonInline {
   flex-shrink: 0;
@@ -149,6 +141,38 @@
 
 .chatToggleButtonInline:hover .chatToggleIconInline {
   opacity: 1;
+}
+
+/* Settings Icon Button - Inline with input */
+.settingsIconButton {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+  padding: 0;
+  text-decoration: none;
+  font-size: 18px;
+  line-height: 1;
+  user-select: none;
+  opacity: 0.7;
+}
+
+.settingsIconButton:hover {
+  background: var(--color-primary-alpha-08);
+  opacity: 1;
+}
+
+.settingsIconButton:active {
+  background: var(--color-primary-alpha-12);
+  transform: scale(0.95);
 }
 
 /* Terminal Prompt Symbol - Subtle indicator */

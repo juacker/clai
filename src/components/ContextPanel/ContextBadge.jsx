@@ -34,26 +34,44 @@ const CustomIcon = () => (
   </svg>
 );
 
+const PluginIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+    <rect x="9" y="9" width="6" height="6" />
+    <path d="M15 2v2m-6 0V2m-2 7H2m0 6h5m15-6h-5m0 6h5" />
+  </svg>
+);
+
+const CloseIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
 /**
  * ContextBadge displays a single context item
  *
  * @param {Object} props
- * @param {string} props.type - Type of badge: 'space', 'room', or 'custom'
+ * @param {string} props.type - Type of badge: 'space', 'room', 'custom', or 'plugin'
  * @param {string} props.label - Label to display (for custom badges, this is the key)
  * @param {string} props.value - Value to display
  * @param {Function} props.onClick - Optional click handler for interactive badges
  * @param {boolean} props.clickable - Whether the badge is clickable (default: false)
+ * @param {Function} props.onRemove - Optional remove handler for removable badges
+ * @param {boolean} props.removable - Whether the badge can be removed (default: false)
  */
-const ContextBadge = ({ type = 'custom', label, value, onClick, clickable = false }) => {
+const ContextBadge = ({ type = 'custom', label, value, onClick, clickable = false, onRemove, removable = false }) => {
   // Determine badge style based on type
-  const badgeClass = `${styles.badge} ${styles[`badge${type.charAt(0).toUpperCase() + type.slice(1)}`] || ''} ${clickable ? styles.clickable : ''}`;
+  const badgeClass = `${styles.badge} ${styles[`badge${type.charAt(0).toUpperCase() + type.slice(1)}`] || ''} ${clickable ? styles.clickable : ''} ${removable ? styles.removable : ''}`;
 
   // Select the appropriate icon based on type
-  const IconComponent = type === 'space' ? SpaceIcon : type === 'room' ? RoomIcon : CustomIcon;
+  const IconComponent = type === 'space' ? SpaceIcon : type === 'room' ? RoomIcon : type === 'plugin' ? PluginIcon : CustomIcon;
 
   // For space and room, we show just the value
   // For custom, we show key=value
-  const displayText = type === 'space' || type === 'room'
+  // For plugin, we show the value (display name)
+  const displayText = type === 'space' || type === 'room' || type === 'plugin'
     ? value
     : `${label}=${value}`;
 
@@ -62,6 +80,14 @@ const ContextBadge = ({ type = 'custom', label, value, onClick, clickable = fals
     if (clickable && onClick) {
       e.stopPropagation();
       onClick();
+    }
+  };
+
+  // Handle remove if removable
+  const handleRemove = (e) => {
+    e.stopPropagation();
+    if (onRemove) {
+      onRemove();
     }
   };
 
@@ -83,6 +109,16 @@ const ContextBadge = ({ type = 'custom', label, value, onClick, clickable = fals
         <IconComponent />
       </span>
       <span className={styles.text}>{displayText}</span>
+      {removable && (
+        <button
+          className={styles.removeButton}
+          onClick={handleRemove}
+          aria-label={`Remove ${label}`}
+          title="Remove"
+        >
+          <CloseIcon />
+        </button>
+      )}
     </div>
   );
 };

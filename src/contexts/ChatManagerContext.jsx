@@ -3,9 +3,9 @@ import React, { createContext, useContext, useState, useCallback, useRef, useMem
 /**
  * ChatManagerContext
  *
- * Manages multiple chat instances based on space/room combinations.
+ * Manages multiple chat instances based on plugin instances.
  * Each chat instance is stored in memory and persists across tab switches.
- * When switching tabs with different space/room contexts, the appropriate
+ * When switching tabs with different plugin contexts, the appropriate
  * chat instance is shown/hidden without being destroyed.
  */
 
@@ -20,47 +20,36 @@ export const useChatManager = () => {
 };
 
 export const ChatManagerProvider = ({ children }) => {
-  // Store all chat instances by space-room key
-  // Format: { 'space-room': { isOpen: boolean, messages: [], ...otherState } }
+  // Store all chat instances by plugin instance ID
+  // Format: { 'plugin_id': { isOpen: boolean, messages: [], ...otherState } }
   const [chatInstances, setChatInstances] = useState({});
 
-  // Track the currently active space-room
-  const [activeSpaceRoom, setActiveSpaceRoom] = useState(null);
+  // Track the currently active plugin instance ID
+  const [activePluginId, setActivePluginId] = useState(null);
 
   // Reference to prevent unnecessary re-renders
   const chatInstancesRef = useRef(chatInstances);
   chatInstancesRef.current = chatInstances;
 
   /**
-   * Generate a unique key for space-room combination
+   * Get or create a chat instance for a specific plugin
    */
-  const generateKey = useCallback((space, room) => {
-    // Handle null/undefined values
-    const spaceKey = space || 'no-space';
-    const roomKey = room || 'no-room';
-    return `${spaceKey}--${roomKey}`;
+  const getChatInstance = useCallback((pluginId) => {
+    if (!pluginId) return null;
+    return chatInstancesRef.current[pluginId] || null;
   }, []);
-
-  /**
-   * Get or create a chat instance for a specific space-room
-   */
-  const getChatInstance = useCallback((space, room) => {
-    const key = generateKey(space, room);
-    return chatInstancesRef.current[key] || null;
-  }, [generateKey]);
 
   /**
    * Initialize a chat instance if it doesn't exist
    */
-  const initializeChatInstance = useCallback((space, room) => {
-    const key = generateKey(space, room);
+  const initializeChatInstance = useCallback((pluginId) => {
+    if (!pluginId) return null;
 
-    if (!chatInstancesRef.current[key]) {
+    if (!chatInstancesRef.current[pluginId]) {
       setChatInstances(prev => ({
         ...prev,
-        [key]: {
-          space,
-          room,
+        [pluginId]: {
+          pluginId,
           isOpen: false,
           messages: [],
           createdAt: new Date(),
@@ -69,26 +58,29 @@ export const ChatManagerProvider = ({ children }) => {
       }));
     }
 
-    return key;
-  }, [generateKey]);
+    return pluginId;
+  }, []);
 
   /**
-   * Set the active space-room context
+   * Set the active plugin context
    * This is called when switching tabs or when context changes
    */
-  const setActiveContext = useCallback((space, room) => {
-    const key = generateKey(space, room);
+  const setActiveContext = useCallback((pluginId) => {
+    if (!pluginId) {
+      setActivePluginId(null);
+      return;
+    }
 
     // Initialize the chat instance if it doesn't exist
-    initializeChatInstance(space, room);
+    initializeChatInstance(pluginId);
 
     // Update last accessed time for the active chat
     setChatInstances(prev => {
-      if (prev[key]) {
+      if (prev[pluginId]) {
         return {
           ...prev,
-          [key]: {
-            ...prev[key],
+          [pluginId]: {
+            ...prev[pluginId],
             lastAccessedAt: new Date()
           }
         };
@@ -96,85 +88,85 @@ export const ChatManagerProvider = ({ children }) => {
       return prev;
     });
 
-    setActiveSpaceRoom(key);
-  }, [generateKey, initializeChatInstance]);
+    setActivePluginId(pluginId);
+  }, [initializeChatInstance]);
 
   /**
-   * Toggle the chat open/closed state for the active space-room
+   * Toggle the chat open/closed state for the active plugin
    */
   const toggleChat = useCallback(() => {
-    if (!activeSpaceRoom) return;
+    if (!activePluginId) return;
 
     setChatInstances(prev => ({
       ...prev,
-      [activeSpaceRoom]: {
-        ...prev[activeSpaceRoom],
-        isOpen: !prev[activeSpaceRoom]?.isOpen
+      [activePluginId]: {
+        ...prev[activePluginId],
+        isOpen: !prev[activePluginId]?.isOpen
       }
     }));
-  }, [activeSpaceRoom]);
+  }, [activePluginId]);
 
   /**
-   * Open the chat for the active space-room
+   * Open the chat for the active plugin
    */
   const openChat = useCallback(() => {
-    if (!activeSpaceRoom) return;
+    if (!activePluginId) return;
 
     setChatInstances(prev => ({
       ...prev,
-      [activeSpaceRoom]: {
-        ...prev[activeSpaceRoom],
+      [activePluginId]: {
+        ...prev[activePluginId],
         isOpen: true
       }
     }));
-  }, [activeSpaceRoom]);
+  }, [activePluginId]);
 
   /**
-   * Close the chat for the active space-room
+   * Close the chat for the active plugin
    */
   const closeChat = useCallback(() => {
-    if (!activeSpaceRoom) return;
+    if (!activePluginId) return;
 
     setChatInstances(prev => ({
       ...prev,
-      [activeSpaceRoom]: {
-        ...prev[activeSpaceRoom],
+      [activePluginId]: {
+        ...prev[activePluginId],
         isOpen: false
       }
     }));
-  }, [activeSpaceRoom]);
+  }, [activePluginId]);
 
   /**
    * Check if the current chat is open
    */
   const isCurrentChatOpen = useCallback(() => {
-    if (!activeSpaceRoom) return false;
-    return chatInstancesRef.current[activeSpaceRoom]?.isOpen || false;
-  }, [activeSpaceRoom]);
+    if (!activePluginId) return false;
+    return chatInstancesRef.current[activePluginId]?.isOpen || false;
+  }, [activePluginId]);
 
   /**
    * Get the current active chat instance
    */
   const getCurrentChatInstance = useCallback(() => {
-    if (!activeSpaceRoom) return null;
-    return chatInstancesRef.current[activeSpaceRoom] || null;
-  }, [activeSpaceRoom]);
+    if (!activePluginId) return null;
+    return chatInstancesRef.current[activePluginId] || null;
+  }, [activePluginId]);
 
   /**
    * Add a message to a specific chat instance
    * (Placeholder for future implementation)
    */
-  const addMessage = useCallback((space, room, message) => {
-    const key = generateKey(space, room);
+  const addMessage = useCallback((pluginId, message) => {
+    if (!pluginId) return;
 
     setChatInstances(prev => {
-      if (!prev[key]) return prev;
+      if (!prev[pluginId]) return prev;
 
       return {
         ...prev,
-        [key]: {
-          ...prev[key],
-          messages: [...prev[key].messages, {
+        [pluginId]: {
+          ...prev[pluginId],
+          messages: [...prev[pluginId].messages, {
             id: Date.now() + Math.random(),
             ...message,
             timestamp: new Date()
@@ -182,20 +174,27 @@ export const ChatManagerProvider = ({ children }) => {
         }
       };
     });
-  }, [generateKey]);
+  }, []);
 
   /**
    * Clear all chat instances (useful for logout/reset)
    */
   const clearAllChats = useCallback(() => {
     setChatInstances({});
-    setActiveSpaceRoom(null);
+    setActivePluginId(null);
   }, []);
+
+  /**
+   * Get the active plugin ID
+   */
+  const getActivePluginId = useCallback(() => {
+    return activePluginId;
+  }, [activePluginId]);
 
   const value = useMemo(() => {
     return {
       chatInstances,
-      activeSpaceRoom,
+      activePluginId,
       setActiveContext,
       toggleChat,
       openChat,
@@ -204,11 +203,12 @@ export const ChatManagerProvider = ({ children }) => {
       getCurrentChatInstance,
       getChatInstance,
       addMessage,
-      clearAllChats
+      clearAllChats,
+      getActivePluginId
     };
   }, [
     chatInstances,
-    activeSpaceRoom,
+    activePluginId,
     setActiveContext,
     toggleChat,
     openChat,
@@ -217,7 +217,8 @@ export const ChatManagerProvider = ({ children }) => {
     getCurrentChatInstance,
     getChatInstance,
     addMessage,
-    clearAllChats
+    clearAllChats,
+    getActivePluginId
   ]);
 
   return (
@@ -228,4 +229,3 @@ export const ChatManagerProvider = ({ children }) => {
 };
 
 export default ChatManagerContext;
-

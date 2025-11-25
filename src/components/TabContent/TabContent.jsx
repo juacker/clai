@@ -1,16 +1,17 @@
 /**
  * TabContent Component
  *
- * Renders the content of the active tab wrapped with TabContext.
- * Each tab has its own isolated context (space/room selection).
- * Phase 3: Renders TileView with split layouts for multiple command visualizations.
+ * Renders the content of the active tab wrapped with TabContext and TabPluginProvider.
+ * Each tab has its own isolated context with active plugins.
+ * Phase 3B: Integrated TabPluginProvider for plugin system support.
  */
 
-import React, { useCallback } from 'react';
-import { useTabManager } from '../../contexts/TabManagerContext';
-import { TabContextProvider } from '../../contexts/TabContext';
-import TileView from '../TileView';
-import styles from './TabContent.module.css';
+import React, { useCallback } from "react";
+import { useTabManager } from "../../contexts/TabManagerContext";
+import { TabContextProvider } from "../../contexts/TabContext";
+import { TabPluginProvider } from "../../contexts/PluginContext";
+import TileView from "../TileView";
+import styles from "./TabContent.module.css";
 
 const TabContent = () => {
   const { tabs, activeTabId, activeTileId, updateTabContext } = useTabManager();
@@ -74,12 +75,31 @@ const TabContent = () => {
 /**
  * TabPanel - Individual tab content wrapper
  * Keeps tab mounted but hidden when inactive to preserve state
+ * Wrapped with TabPluginProvider to provide plugin access to all components in the tab
  */
 const TabPanel = ({ tab, isActive, activeTileId, updateTabContext }) => {
   // Handle context changes for this specific tab
-  const handleContextChange = useCallback((context) => {
-    updateTabContext(tab.id, context);
-  }, [tab.id, updateTabContext]);
+  const handleContextChange = useCallback(
+    (context) => {
+      updateTabContext(tab.id, context);
+    },
+    [tab.id, updateTabContext]
+  );
+
+  // Handle active plugins changes
+  const handleActivePluginsChange = useCallback(
+    (newActivePlugins) => {
+      // Update tab context with new active plugins
+      updateTabContext(tab.id, {
+        ...tab.context,
+        activePlugins: newActivePlugins,
+      });
+    },
+    [tab.id, tab.context, updateTabContext]
+  );
+
+  // Get active plugin IDs from tab context
+  const activePluginIds = tab.context?.activePlugins || [];
 
   return (
     <TabContextProvider
@@ -87,16 +107,19 @@ const TabPanel = ({ tab, isActive, activeTileId, updateTabContext }) => {
       initialContext={tab.context}
       onContextChange={handleContextChange}
     >
-      <div
-        className={styles.tabPanel}
-        data-active={isActive}
-        aria-hidden={!isActive}
+      <TabPluginProvider
+        tabId={tab.id}
+        activePluginIds={activePluginIds}
+        onActivePluginsChange={handleActivePluginsChange}
       >
-        <TileView
-          tile={tab.rootTile}
-          activeTileId={activeTileId}
-        />
-      </div>
+        <div
+          className={styles.tabPanel}
+          data-active={isActive}
+          aria-hidden={!isActive}
+        >
+          <TileView tile={tab.rootTile} activeTileId={activeTileId} />
+        </div>
+      </TabPluginProvider>
     </TabContextProvider>
   );
 };

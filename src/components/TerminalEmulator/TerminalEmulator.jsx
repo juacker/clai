@@ -7,10 +7,10 @@ import { parseCommand, isLayoutCommand } from '../../utils/commandParser';
 import { handleContextCommand, isContextCommand } from '../../utils/contextCommandHandler';
 import { isCommandSupported } from '../../utils/commandRegistry';
 import ContextPanel from '../ContextPanel/ContextPanel';
-import UserAvatar from '../UserAvatar';
+import SettingsModal from '../SettingsModal';
 import styles from './TerminalEmulator.module.css';
 
-const TerminalEmulator = ({ userInfo, onSendToChat }) => {
+const TerminalEmulator = ({ onSendToChat }) => {
   const { executeCommand, commandHistory } = useCommand();
   const { handleLayoutCommand, getActiveTab } = useTabManager();
   const { setActiveContext, toggleChat, isCurrentChatOpen } = useChatManager();
@@ -21,6 +21,7 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
   const [outputMessages, setOutputMessages] = useState([]);
   const [isOutputVisible, setIsOutputVisible] = useState(true);
   const [isHoveringOutput, setIsHoveringOutput] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const inputRef = useRef(null);
   const outputRef = useRef(null);
   const autoCollapseTimerRef = useRef(null);
@@ -266,15 +267,18 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
           </span>
         </button>
 
-        {/* User Avatar - positioned at the left */}
-        <div className={styles.terminalAvatar}>
-          <UserAvatar
-            avatarUrl={userInfo?.avatarUrl}
-            userName={userInfo?.name || userInfo?.email}
-            size="small"
-            showMenu={true}
-          />
-        </div>
+        {/* Settings Icon - positioned at the left */}
+        <button
+          className={styles.settingsIconButton}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowSettingsModal(true);
+          }}
+          aria-label="Settings"
+          title="Settings"
+        >
+          ⚙️
+        </button>
 
         {/* Terminal Prompt Symbol */}
         <span className={styles.terminalPrompt}>%</span>
@@ -313,6 +317,12 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
           ))}
         </div>
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+      />
     </div>
   );
 };

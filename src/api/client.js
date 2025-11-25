@@ -36,10 +36,8 @@ client.interceptors.response.use(
   (error) => {
     // Check if the error is an authentication error (401 Unauthorized or 403 Forbidden)
     if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-      // Clear the stored token
-      localStorage.removeItem('netdata_token');
-      // Redirect to login page
-      window.location.href = '/login';
+      // Authentication errors should be handled by individual plugins
+      console.warn('Authentication error:', error.response.status, error.response.statusText);
     }
     // Return the error to be handled by the calling code
     return Promise.reject(error);

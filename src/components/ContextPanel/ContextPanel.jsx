@@ -1,182 +1,126 @@
 /**
  * ContextPanel Component
  *
- * Displays the current tab's context information as a clean panel with badges.
- * Shows space, room, and custom key-value context pairs.
- * Positioned below the TabBar to provide clear context visibility.
+ * Displays the current tab's active plugins as chips.
+ * Each chip shows the plugin's context and has an X button to remove it.
+ * A "+" button allows adding more plugins to the tab.
+ *
+ * Phase 3: Refactored to use plugin system instead of SharedSpaceRoomDataContext.
  *
  * Note: This component reads from TabManagerContext (not TabContext) because it's
  * rendered at the TabView level, outside of the TabContextProvider.
  */
 
 import React, { useMemo, useState, useCallback } from 'react';
-import ReactDOM from 'react-dom';
 import { useTabManager } from '../../contexts/TabManagerContext';
-import { useSharedSpaceRoomData } from '../../contexts/SharedSpaceRoomDataContext';
+import { usePlugin } from '../../contexts/PluginContext';
 import ContextBadge from './ContextBadge';
-import ContextSelector from './ContextSelector';
+import AddPluginToTabDialog from '../PluginManagement/AddPluginToTabDialog';
 import styles from './ContextPanel.module.css';
 
 const ContextPanel = () => {
   const { getActiveTab, updateTabContext } = useTabManager();
-  const { spaces, getRoomsForSpace, getSpaceById, getRoomById } = useSharedSpaceRoomData();
+  const { getPluginMetadata } = usePlugin();
 
-  // Selector state
-  const [showSpaceSelector, setShowSpaceSelector] = useState(false);
-  const [showRoomSelector, setShowRoomSelector] = useState(false);
-  const [availableRooms, setAvailableRooms] = useState([]);
+  // Plugin selector state
+  const [showPluginSelector, setShowPluginSelector] = useState(false);
 
   // Get the active tab's context
   const activeTab = getActiveTab();
   const tabContext = activeTab?.context;
+  const activePluginIds = tabContext?.activePlugins || [];
 
-  // Find the actual space and room objects from the context IDs
-  const selectedSpace = useMemo(() => {
-    if (!tabContext?.spaceRoom?.selectedSpaceId) return null;
-    const space = getSpaceById(tabContext.spaceRoom.selectedSpaceId);
-    console.log('[ContextPanel] Selected space:', space);
-    return space;
-  }, [tabContext?.spaceRoom?.selectedSpaceId, getSpaceById]);
+  // Get metadata for all active plugins
+  const activePluginsWithMetadata = useMemo(() => {
+    return activePluginIds
+      .map(pluginId => {
+        const metadata = getPluginMetadata(pluginId);
+        return metadata ? { id: pluginId, ...metadata } : null;
+      })
+      .filter(Boolean);
+  }, [activePluginIds, getPluginMetadata]);
 
-  const selectedRoom = useMemo(() => {
-    if (!tabContext?.spaceRoom?.selectedSpaceId || !tabContext?.spaceRoom?.selectedRoomId) return null;
-    const room = getRoomById(tabContext.spaceRoom.selectedSpaceId, tabContext.spaceRoom.selectedRoomId);
-    console.log('[ContextPanel] Selected room:', room);
-    return room;
-  }, [tabContext?.spaceRoom?.selectedSpaceId, tabContext?.spaceRoom?.selectedRoomId, getRoomById]);
+  // Check if there are any active plugins to display
+  const hasActivePlugins = activePluginsWithMetadata.length > 0;
 
-  const customContext = tabContext?.customContext || {};
-
-  // Check if there's any context to display
-  const hasSpaceRoom = selectedSpace || selectedRoom;
-  const hasCustomContext = Object.keys(customContext).length > 0;
-  const hasAnyContext = hasSpaceRoom || hasCustomContext;
-
-  console.log('[ContextPanel] Has context:', {
-    hasSpaceRoom,
-    hasCustomContext,
-    hasAnyContext,
-    selectedSpace,
-    selectedRoom,
+  console.log('[ContextPanel] Active plugins:', {
+    activePluginIds,
+    activePluginsWithMetadata,
+    hasActivePlugins,
   });
 
-  // Load rooms when room selector is opened
-  const handleRoomSelectorOpen = useCallback(async () => {
-    if (!selectedSpace) return;
-
-    setShowRoomSelector(true);
-    const rooms = await getRoomsForSpace(selectedSpace.id);
-    setAvailableRooms(rooms || []);
-  }, [selectedSpace, getRoomsForSpace]);
-
-  // Handle space selection
-  const handleSpaceSelect = useCallback(async (space) => {
+  // Handle removing a plugin from the tab
+  const handleRemovePlugin = useCallback((pluginId) => {
     if (!activeTab) return;
 
-    console.log('[ContextPanel] Space selected:', space);
+    console.log('[ContextPanel] Removing plugin:', pluginId);
 
-    // Fetch rooms for the new space
-    const rooms = await getRoomsForSpace(space.id);
-
-    // Find "All Nodes" room (case-insensitive) or fallback to first room
-    const allNodesRoom = rooms.find(room =>
-      room.name?.toLowerCase() === 'all nodes'
-    ) || rooms[0];
-
-    console.log('[ContextPanel] Auto-selecting room:', allNodesRoom);
-
-    // Update the tab context with new space and room
+    // Remove the plugin from the tab's active plugins
+    const updatedPlugins = activePluginIds.filter(id => id !== pluginId);
     updateTabContext(activeTab.id, {
-      spaceRoom: {
-        selectedSpaceId: space.id,
-        selectedRoomId: allNodesRoom?.id || null,
-      },
+      activePlugins: updatedPlugins,
     });
-  }, [activeTab, getRoomsForSpace, updateTabContext]);
+  }, [activeTab, activePluginIds, updateTabContext]);
 
-  // Handle room selection
-  const handleRoomSelect = useCallback((room) => {
-    if (!activeTab || !selectedSpace) return;
+  // Handle adding a plugin
+  const handleAddPlugin = useCallback(() => {
+    console.log('[ContextPanel] Add plugin clicked');
+    setShowPluginSelector(true);
+  }, []);
 
-    console.log('[ContextPanel] Room selected:', room);
+  // Handle instance selected (from pre-configured instances)
+  const handleInstanceSelected = useCallback((instanceId) => {
+    if (!activeTab) return;
 
-    // Update the tab context with new room
+    console.log('[ContextPanel] Instance selected:', instanceId);
+
+    // Add the selected instance to the tab's active plugins
+    const updatedPlugins = [...activePluginIds, instanceId];
     updateTabContext(activeTab.id, {
-      spaceRoom: {
-        selectedSpaceId: selectedSpace.id,
-        selectedRoomId: room.id,
-      },
+      activePlugins: updatedPlugins,
     });
-  }, [activeTab, selectedSpace, updateTabContext]);
 
-  // If no context, don't render the panel
-  if (!hasAnyContext) {
-    return null;
-  }
+    setShowPluginSelector(false);
+  }, [activeTab, activePluginIds, updateTabContext]);
+
+  // Always render the panel (even if empty) to show the "+" button
+  // Users can add plugins even if none are active yet
 
   return (
-    <>
-      <div className={styles.contextPanel}>
-        <div className={styles.contextContainer}>
-          {/* Space Badge */}
-          {selectedSpace && (
-            <ContextBadge
-              type="space"
-              label="Space"
-              value={selectedSpace.name}
-              onClick={() => setShowSpaceSelector(true)}
-              clickable={true}
-            />
-          )}
+    <div className={styles.contextPanel}>
+      <div className={styles.contextContainer}>
+        {/* Active Plugin Chips */}
+        {activePluginsWithMetadata.map((plugin) => (
+          <ContextBadge
+            key={plugin.id}
+            type="plugin"
+            label={plugin.name}
+            value={plugin.displayName || plugin.name}
+            onRemove={() => handleRemovePlugin(plugin.id)}
+            clickable={false}
+            removable={true}
+          />
+        ))}
 
-          {/* Room Badge */}
-          {selectedRoom && (
-            <ContextBadge
-              type="room"
-              label="Room"
-              value={selectedRoom.name}
-              onClick={handleRoomSelectorOpen}
-              clickable={true}
-            />
-          )}
-
-          {/* Custom Context Badges */}
-          {hasCustomContext &&
-            Object.entries(customContext).map(([key, value]) => (
-              <ContextBadge
-                key={key}
-                type="custom"
-                label={key}
-                value={String(value)}
-              />
-            ))}
-        </div>
+        {/* Add Plugin Button */}
+        <button
+          className={styles.addPluginButton}
+          onClick={handleAddPlugin}
+          aria-label="Add plugin"
+          title="Add plugin to this tab"
+        >
+          +
+        </button>
       </div>
 
-      {/* Space Selector Modal - Rendered via Portal */}
-      {showSpaceSelector && ReactDOM.createPortal(
-        <ContextSelector
-          items={spaces}
-          selectedId={selectedSpace?.id}
-          onSelect={handleSpaceSelect}
-          onClose={() => setShowSpaceSelector(false)}
-          type="space"
-        />,
-        document.body
-      )}
-
-      {/* Room Selector Modal - Rendered via Portal */}
-      {showRoomSelector && ReactDOM.createPortal(
-        <ContextSelector
-          items={availableRooms}
-          selectedId={selectedRoom?.id}
-          onSelect={handleRoomSelect}
-          onClose={() => setShowRoomSelector(false)}
-          type="room"
-        />,
-        document.body
-      )}
-    </>
+      {/* Add Plugin to Tab Dialog */}
+      <AddPluginToTabDialog
+        isOpen={showPluginSelector}
+        onClose={() => setShowPluginSelector(false)}
+        onInstanceSelected={handleInstanceSelected}
+        excludeInstanceIds={activePluginIds}
+      />
+    </div>
   );
 };
 

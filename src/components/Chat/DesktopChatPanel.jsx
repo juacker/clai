@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
-import { useChatManager } from '../../contexts/ChatManagerContext';
-import { useSharedSpaceRoomData } from '../../contexts/SharedSpaceRoomDataContext';
-import Chat from './Chat';
-import styles from './DesktopChatPanel.module.css';
+import React, { useMemo } from "react";
+import { useChatManager } from "../../contexts/ChatManagerContext";
+import { usePlugin } from "../../contexts/PluginContext";
+import Chat from "./Chat";
+import styles from "./DesktopChatPanel.module.css";
 
 /**
  * DesktopChatPanel - Chat panel container
@@ -11,11 +11,14 @@ import styles from './DesktopChatPanel.module.css';
  * that appears on the right side of the screen.
  * It expands from right to left when opened.
  *
+ * Phase 3B: Updated to use plugin system instead of SharedSpaceRoomDataContext
+ *
  * Features:
  * - Full viewport height (0 to 100vh)
  * - Fixed positioning on right side
  * - Smooth expand/collapse animations
  * - Integrates with ChatManagerContext for state management
+ * - Queries active plugins with chat capability
  * - Supports forwarding messages from terminal when chat is visible
  *
  * @param {Object} props - Component props
@@ -23,8 +26,9 @@ import styles from './DesktopChatPanel.module.css';
  * @param {function} props.onMessageProcessed - Callback when message is processed
  */
 const DesktopChatPanel = ({ message, onMessageProcessed }) => {
-  const { isCurrentChatOpen, getCurrentChatInstance } = useChatManager();
-  const { getSpaceById, getRoomById } = useSharedSpaceRoomData();
+  const { isCurrentChatOpen, getCurrentChatInstance, getActivePluginId } =
+    useChatManager();
+  const { getPluginInstance } = usePlugin();
 
   // Get the current chat instance (if any)
   const chatInstance = getCurrentChatInstance();
@@ -32,30 +36,29 @@ const DesktopChatPanel = ({ message, onMessageProcessed }) => {
   // Determine if panel should be visible
   const isOpen = isCurrentChatOpen();
 
-  // Resolve space and room IDs to full objects
-  const space = useMemo(() => {
-    if (!chatInstance?.space) return null;
-    return getSpaceById(chatInstance.space);
-  }, [chatInstance?.space, getSpaceById]);
+  // Get active plugin ID from chat manager
+  const activePluginId = getActivePluginId();
 
-  const room = useMemo(() => {
-    if (!chatInstance?.space || !chatInstance?.room) return null;
-    return getRoomById(chatInstance.space, chatInstance.room);
-  }, [chatInstance?.space, chatInstance?.room, getRoomById]);
+  // Get the plugin instance from global context
+  const pluginInstance = useMemo(() => {
+    if (!activePluginId) {
+      return null;
+    }
+    return getPluginInstance(activePluginId);
+  }, [activePluginId, getPluginInstance]);
 
   return (
     <div
       id="desktop-chat-panel"
-      className={`${styles.desktopChatPanel} ${isOpen ? styles.open : ''}`}
+      className={`${styles.desktopChatPanel} ${isOpen ? styles.open : ""}`}
       role="complementary"
       aria-label="Chat panel"
       aria-hidden={!isOpen}
     >
       <div className={styles.chatContainer}>
-        {chatInstance && (
+        {chatInstance && pluginInstance && (
           <Chat
-            space={space}
-            room={room}
+            pluginInstance={pluginInstance}
             isOpen={isOpen}
             message={message}
             onMessageProcessed={onMessageProcessed}

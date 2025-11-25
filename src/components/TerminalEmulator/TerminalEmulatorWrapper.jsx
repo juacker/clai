@@ -6,7 +6,6 @@
  * Also forwards the onSendToChat callback to enable terminal-to-chat message forwarding.
  *
  * @param {Object} props - Component props
- * @param {Object} props.userInfo - User information object
  * @param {function} props.onSendToChat - Callback to send message to chat
  */
 
@@ -15,7 +14,7 @@ import { useTabManager } from '../../contexts/TabManagerContext';
 import { TabContextProvider } from '../../contexts/TabContext';
 import TerminalEmulator from './TerminalEmulator';
 
-const TerminalEmulatorWrapper = ({ userInfo, onSendToChat }) => {
+const TerminalEmulatorWrapper = ({ onSendToChat }) => {
   const { tabs, activeTabId, updateTabContext } = useTabManager();
 
   // Get active tab
@@ -30,7 +29,7 @@ const TerminalEmulatorWrapper = ({ userInfo, onSendToChat }) => {
 
   // If no active tab, render terminal without context
   if (!activeTab) {
-    return <TerminalEmulator userInfo={userInfo} onSendToChat={onSendToChat} />;
+    return <TerminalEmulator onSendToChat={onSendToChat} />;
   }
 
   // Wrap terminal with the active tab's context
@@ -40,7 +39,7 @@ const TerminalEmulatorWrapper = ({ userInfo, onSendToChat }) => {
       initialContext={activeTab.context}
       onContextChange={handleContextChange}
     >
-      <TerminalEmulator userInfo={userInfo} onSendToChat={onSendToChat} />
+      <TerminalEmulator onSendToChat={onSendToChat} />
     </TabContextProvider>
   );
 };

@@ -1,44 +1,38 @@
 /**
  * TabContext
  *
- * Provides tab-specific context including space/room selection and custom context data.
+ * Provides tab-specific context including active plugins and custom context data.
  * Each tab has its own TabContext instance, allowing independent context per tab.
  *
  * This context wraps tab content and provides:
- * - Space/Room selection (per tab)
- * - Custom context key-value pairs (future)
- * - Access to shared space/room data cache
+ * - Active plugin management (per tab)
+ * - Custom context key-value pairs
+ * - Access to plugin instances
  *
  * Architecture:
- * - Uses SharedSpaceRoomData for cached spaces/rooms data
- * - Manages tab-specific selection state
+ * - Uses PluginContext for global plugin instances
+ * - Manages tab-specific active plugin IDs
  * - Syncs changes back to TabManagerContext
  */
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { useSharedSpaceRoomData } from './SharedSpaceRoomDataContext';
+import { usePlugin } from './PluginContext';
 
 const TabContext = createContext(null);
 
 export function TabContextProvider({ children, tabId, initialContext, onContextChange }) {
-  // Access shared space/room data cache
+  // Access global plugin system
   const {
-    spaces,
-    getRoomsForSpace,
-    getSpaceById,
-    getRoomById,
-    loading: sharedDataLoading,
-  } = useSharedSpaceRoomData();
+    allPluginInstances,
+    getPluginInstance,
+    isInitialized,
+    isLoading: pluginSystemLoading,
+  } = usePlugin();
 
   // Tab-specific state
-  const [selectedSpaceId, setSelectedSpaceId] = useState(
-    initialContext?.spaceRoom?.selectedSpaceId || null
+  const [activePluginIds, setActivePluginIds] = useState(
+    initialContext?.activePlugins || []
   );
-  const [selectedRoomId, setSelectedRoomId] = useState(
-    initialContext?.spaceRoom?.selectedRoomId || null
-  );
-  const [rooms, setRooms] = useState([]);
-  const [roomsLoading, setRoomsLoading] = useState(false);
   const [customContext, setCustomContextState] = useState(
     initialContext?.customContext || {}
   );
@@ -46,105 +40,108 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
   // CRITICAL: Sync internal state when tabId or initialContext changes (tab switching)
   // This ensures each tab displays its own isolated context
   useEffect(() => {
-    setSelectedSpaceId(initialContext?.spaceRoom?.selectedSpaceId || null);
-    setSelectedRoomId(initialContext?.spaceRoom?.selectedRoomId || null);
+    setActivePluginIds(initialContext?.activePlugins || []);
     setCustomContextState(initialContext?.customContext || {});
   }, [tabId, initialContext]);
 
-  // Derived state: Get full space/room objects
-  const selectedSpace = useMemo(() => {
-    return getSpaceById(selectedSpaceId);
-  }, [selectedSpaceId, getSpaceById]);
-
-  const selectedRoom = useMemo(() => {
-    return getRoomById(selectedSpaceId, selectedRoomId);
-  }, [selectedSpaceId, selectedRoomId, getRoomById]);
-
-  // Load rooms when space changes
-  useEffect(() => {
-    if (selectedSpaceId) {
-      loadRoomsForSpace(selectedSpaceId);
-    } else {
-      setRooms([]);
-      setSelectedRoomId(null);
-    }
-  }, [selectedSpaceId]);
+  // Derived state: Get full plugin instances for active plugins
+  const activePlugins = useMemo(() => {
+    return activePluginIds
+      .map(id => getPluginInstance(id))
+      .filter(Boolean); // Filter out null/undefined (plugins that don't exist)
+  }, [activePluginIds, getPluginInstance, allPluginInstances]);
 
   /**
-   * Load rooms for a specific space
+   * Add a plugin to this tab
+   * @param {string} pluginId - Plugin instance ID to add
    */
-  const loadRoomsForSpace = useCallback(async (spaceId) => {
-    if (!spaceId) {
-      setRooms([]);
+  const addPluginToTab = useCallback((pluginId) => {
+    if (!pluginId) {
+      console.warn('Cannot add plugin: pluginId is required');
       return;
     }
 
-    try {
-      setRoomsLoading(true);
-      const roomsData = await getRoomsForSpace(spaceId);
-      setRooms(roomsData);
-
-      // If current room is not in new rooms list, clear selection
-      if (selectedRoomId && !roomsData.find(r => r.id === selectedRoomId)) {
-        setSelectedRoomId(null);
-      }
-    } catch (error) {
-      console.error('Error loading rooms:', error);
-      setRooms([]);
-    } finally {
-      setRoomsLoading(false);
-    }
-  }, [getRoomsForSpace, selectedRoomId]);
-
-  /**
-   * Change to a different space
-   * This will also clear the room selection and load new rooms
-   */
-  const changeSpace = useCallback((space) => {
-    if (!space) {
-      setSelectedSpaceId(null);
-      setSelectedRoomId(null);
-      setRooms([]);
+    // Check if plugin exists
+    const plugin = getPluginInstance(pluginId);
+    if (!plugin) {
+      console.warn(`Cannot add plugin: Plugin with ID "${pluginId}" not found`);
       return;
     }
 
-    const newSpaceId = space.id;
-    setSelectedSpaceId(newSpaceId);
-    setSelectedRoomId(null); // Clear room when changing space
+    // Check if already active
+    if (activePluginIds.includes(pluginId)) {
+      console.warn(`Plugin "${pluginId}" is already active in this tab`);
+      return;
+    }
+
+    const newActivePlugins = [...activePluginIds, pluginId];
+    setActivePluginIds(newActivePlugins);
 
     // Notify parent of context change
     if (onContextChange) {
       onContextChange({
-        spaceRoom: {
-          selectedSpaceId: newSpaceId,
-          selectedRoomId: null,
-        },
+        activePlugins: newActivePlugins,
         customContext,
       });
     }
-  }, [onContextChange, customContext]);
+  }, [activePluginIds, getPluginInstance, onContextChange, customContext]);
 
   /**
-   * Change to a different room within current space
+   * Remove a plugin from this tab
+   * @param {string} pluginId - Plugin instance ID to remove
    */
-  const changeRoom = useCallback((room) => {
-    if (!room) {
-      setSelectedRoomId(null);
-    } else {
-      setSelectedRoomId(room.id);
+  const removePluginFromTab = useCallback((pluginId) => {
+    if (!pluginId) {
+      console.warn('Cannot remove plugin: pluginId is required');
+      return;
     }
+
+    if (!activePluginIds.includes(pluginId)) {
+      console.warn(`Plugin "${pluginId}" is not active in this tab`);
+      return;
+    }
+
+    const newActivePlugins = activePluginIds.filter(id => id !== pluginId);
+    setActivePluginIds(newActivePlugins);
 
     // Notify parent of context change
     if (onContextChange) {
       onContextChange({
-        spaceRoom: {
-          selectedSpaceId,
-          selectedRoomId: room?.id || null,
-        },
+        activePlugins: newActivePlugins,
         customContext,
       });
     }
-  }, [selectedSpaceId, onContextChange, customContext]);
+  }, [activePluginIds, onContextChange, customContext]);
+
+  /**
+   * Get active plugin instances
+   * @returns {Array} Array of plugin instances
+   */
+  const getActivePlugins = useCallback(() => {
+    return activePlugins;
+  }, [activePlugins]);
+
+  /**
+   * Get plugins with specific capability
+   * @param {string} capability - Capability name (e.g., 'chat', 'data')
+   * @returns {Array} Array of plugin instances with the capability
+   */
+  const getPluginsWithCapability = useCallback((capability) => {
+    return activePlugins.filter(plugin =>
+      plugin.hasCapability && plugin.hasCapability(capability)
+    );
+  }, [activePlugins]);
+
+  /**
+   * Check if any active plugin has a specific capability
+   * @param {string} capability - Capability name
+   * @returns {boolean} True if at least one active plugin has the capability
+   */
+  const hasCapability = useCallback((capability) => {
+    return activePlugins.some(plugin =>
+      plugin.hasCapability && plugin.hasCapability(capability)
+    );
+  }, [activePlugins]);
 
   /**
    * Set a custom context value
@@ -158,17 +155,14 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
       // Notify parent of context change
       if (onContextChange) {
         onContextChange({
-          spaceRoom: {
-            selectedSpaceId,
-            selectedRoomId,
-          },
+          activePlugins: activePluginIds,
           customContext: newContext,
         });
       }
 
       return newContext;
     });
-  }, [selectedSpaceId, selectedRoomId, onContextChange]);
+  }, [activePluginIds, onContextChange]);
 
   /**
    * Get a custom context value
@@ -191,17 +185,14 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
       // Notify parent of context change
       if (onContextChange) {
         onContextChange({
-          spaceRoom: {
-            selectedSpaceId,
-            selectedRoomId,
-          },
+          activePlugins: activePluginIds,
           customContext: newContext,
         });
       }
 
       return newContext;
     });
-  }, [selectedSpaceId, selectedRoomId, onContextChange]);
+  }, [activePluginIds, onContextChange]);
 
   /**
    * Clear all custom context
@@ -212,94 +203,48 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
     // Notify parent of context change
     if (onContextChange) {
       onContextChange({
-        spaceRoom: {
-          selectedSpaceId,
-          selectedRoomId,
-        },
+        activePlugins: activePluginIds,
         customContext: {},
       });
     }
-  }, [selectedSpaceId, selectedRoomId, onContextChange]);
+  }, [activePluginIds, onContextChange]);
 
   /**
-   * Navigate using cd command syntax
-   * Supports: cd <space> [room]
-   *
-   * @param {string} spaceName - Space name or ID
-   * @param {string} roomName - Optional room name or ID
+   * Get summary of active plugins (for display in terminal prompt, etc.)
+   * @returns {string} Summary string (e.g., "netdata-prod, prometheus-dev")
    */
-  const navigate = useCallback(async (spaceName, roomName = null) => {
-    if (!spaceName) {
-      // cd with no args - go to root (clear selection)
-      changeSpace(null);
-      return;
+  const getActivePluginsSummary = useCallback(() => {
+    if (activePlugins.length === 0) {
+      return 'no plugins';
     }
 
-    // Find space by name or ID
-    const space = spaces.find(s =>
-      s.id === spaceName ||
-      s.name?.toLowerCase() === spaceName.toLowerCase()
-    );
-
-    if (!space) {
-      throw new Error(`Space not found: ${spaceName}`);
-    }
-
-    // Change to the space
-    changeSpace(space);
-
-    // If room is specified, wait for rooms to load and select it
-    if (roomName) {
-      const roomsData = await getRoomsForSpace(space.id);
-      const room = roomsData.find(r =>
-        r.id === roomName ||
-        r.name?.toLowerCase() === roomName.toLowerCase()
-      );
-
-      if (!room) {
-        throw new Error(`Room not found: ${roomName}`);
-      }
-
-      changeRoom(room);
-    }
-  }, [spaces, changeSpace, changeRoom, getRoomsForSpace]);
-
-  /**
-   * Get current path (for pwd command)
-   * @returns {string} Current path in format: /space/room or /space or /
-   */
-  const getCurrentPath = useCallback(() => {
-    if (!selectedSpace) {
-      return '/';
-    }
-
-    if (!selectedRoom) {
-      return `/${selectedSpace.name || selectedSpace.id}`;
-    }
-
-    return `/${selectedSpace.name || selectedSpace.id}/${selectedRoom.name || selectedRoom.id}`;
-  }, [selectedSpace, selectedRoom]);
+    return activePlugins
+      .map(plugin => {
+        const display = plugin.getContextDisplay ? plugin.getContextDisplay() : null;
+        return display?.primary || plugin.id;
+      })
+      .join(', ');
+  }, [activePlugins]);
 
   const value = {
     // Tab ID
     tabId,
 
-    // Space/Room state
-    selectedSpace,
-    selectedRoom,
-    rooms,
-    loading: sharedDataLoading || roomsLoading,
+    // Plugin state
+    activePluginIds,
+    activePlugins,
+    loading: pluginSystemLoading,
+    isInitialized,
 
-    // Space/Room methods
-    changeSpace,
-    changeRoom,
-    navigate,
-    getCurrentPath,
+    // Plugin methods
+    addPluginToTab,
+    removePluginFromTab,
+    getActivePlugins,
+    getPluginsWithCapability,
+    hasCapability,
+    getActivePluginsSummary,
 
-    // Access to all spaces (for ls command, etc.)
-    allSpaces: spaces,
-
-    // Custom context (future)
+    // Custom context
     customContext,
     setCustomContext,
     getCustomContext,
@@ -331,4 +276,3 @@ export function useTabContext() {
 }
 
 export default TabContext;
-

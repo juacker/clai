@@ -1,12 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  listConversations,
-  getConversation,
-  deleteConversation,
-  createConversation,
-  createChatCompletion,
-  createConversationTitle,
-} from '../../api/client';
 import MarkdownMessage from './MarkdownMessage';
 import ToolBlock from './ToolBlock';
 import TimeSeriesChartBlock from './TimeSeriesChartBlock';
@@ -20,11 +12,11 @@ import styles from './Chat.module.css';
  * Chat Component
  *
  * A chat component with two modes:
- * 1. List Mode: Display all conversations for the current space/room
+ * 1. List Mode: Display all conversations for the current plugin
  * 2. Single Conversation Mode: Display a specific conversation with messages
  *
  * This component handles:
- * - List all conversations in the current space/room
+ * - List all conversations in the current plugin
  * - View a specific conversation with its messages
  * - Delete conversations
  * - Process incoming messages from terminal emulator
@@ -32,13 +24,12 @@ import styles from './Chat.module.css';
  * - Display tool_use and tool_result content blocks
  *
  * Props:
- * - space: The space object with id and name
- * - room: The room object with id and name
+ * - pluginInstance: The plugin instance with chat capability
  * - message: New message from terminal emulator (triggers completion)
  * - onMessageProcessed: Callback when message processing is complete
  */
 
-const Chat = ({ space, room, message, onMessageProcessed }) => {
+const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
   // Mode state: 'list' or 'conversation'
   const [mode, setMode] = useState('list');
 
@@ -60,24 +51,24 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
   // Refs
   const messagesEndRef = useRef(null);
   const lastProcessedMessageRef = useRef(null);
-  // State cache to remember chat state for each space/room combination
+  // State cache to remember chat state for each plugin
   const stateCache = useRef({});
 
-  // Get token from localStorage
-  const getToken = () => {
-    return localStorage.getItem('netdata_token');
-  };
+  // Get plugin instance ID and metadata
+  const pluginId = pluginInstance?.metadata?.id;
+  const pluginName = pluginInstance?.metadata?.name || "Chat";
+  const pluginConfig = pluginInstance?.config || {};
 
-  // Generate cache key for current space/room
-  const getCacheKey = (spaceId, roomId) => {
-    return `${spaceId}-${roomId}`;
+  // Generate cache key for current plugin
+  const getCacheKey = (pluginInstanceId) => {
+    return pluginInstanceId;
   };
 
   // Save current state to cache
-  const saveStateToCache = (spaceId, roomId) => {
-    if (!spaceId || !roomId) return;
+  const saveStateToCache = (pluginInstanceId) => {
+    if (!pluginInstanceId) return;
 
-    const key = getCacheKey(spaceId, roomId);
+    const key = getCacheKey(pluginInstanceId);
     stateCache.current[key] = {
       mode,
       currentConversation,
@@ -86,10 +77,10 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
   };
 
   // Restore state from cache
-  const restoreStateFromCache = async (spaceId, roomId) => {
-    if (!spaceId || !roomId) return;
+  const restoreStateFromCache = async (pluginInstanceId) => {
+    if (!pluginInstanceId) return;
 
-    const key = getCacheKey(spaceId, roomId);
+    const key = getCacheKey(pluginInstanceId);
     const cachedState = stateCache.current[key];
 
     if (cachedState) {
@@ -168,47 +159,42 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
     return formatTimestamp(conversation.created_at, true);
   };
 
-  // Track previous space/room to detect changes
-  const prevSpaceRoomRef = useRef({ spaceId: null, roomId: null });
+  // Track previous plugin to detect changes
+  const prevPluginIdRef = useRef(null);
 
-  // Handle space/room changes: save current state and restore state for new space/room
+  // Handle plugin changes: save current state and restore state for new plugin
   useEffect(() => {
-    const currentSpaceId = space?.id;
-    const currentRoomId = room?.id;
-    const prevSpaceId = prevSpaceRoomRef.current.spaceId;
-    const prevRoomId = prevSpaceRoomRef.current.roomId;
+    const currentPluginId = pluginId;
+    const prevPluginId = prevPluginIdRef.current;
 
-    // Check if space or room has changed
-    const hasChanged = currentSpaceId !== prevSpaceId || currentRoomId !== prevRoomId;
+    // Check if plugin has changed
+    const hasChanged = currentPluginId !== prevPluginId;
 
-    if (hasChanged && prevSpaceId && prevRoomId) {
+    if (hasChanged && prevPluginId) {
       // Save current state before switching
-      saveStateToCache(prevSpaceId, prevRoomId);
+      saveStateToCache(prevPluginId);
     }
 
-    if (hasChanged && currentSpaceId && currentRoomId) {
-      // Restore state for new space/room
-      restoreStateFromCache(currentSpaceId, currentRoomId);
+    if (hasChanged && currentPluginId) {
+      // Restore state for new plugin
+      restoreStateFromCache(currentPluginId);
     }
 
-    // Update ref to current space/room
-    prevSpaceRoomRef.current = {
-      spaceId: currentSpaceId,
-      roomId: currentRoomId,
-    };
-  }, [space?.id, room?.id]);
+    // Update ref to current plugin
+    prevPluginIdRef.current = currentPluginId;
+  }, [pluginId]);
 
   // Load conversations list when in list mode
   useEffect(() => {
-    if (space?.id && room?.id && mode === 'list') {
+    if (pluginInstance && mode === 'list') {
       loadConversations();
     }
-  }, [space?.id, room?.id, mode]);
+  }, [pluginInstance, mode]);
 
   // Process incoming messages from terminal emulator
   useEffect(() => {
     // Only process if we have a message and it's different from the last processed one
-    if (!message || !space?.id || !room?.id || message?.id === lastProcessedMessageRef.current) {
+    if (!message || !pluginInstance || message?.id === lastProcessedMessageRef.current) {
       return;
     }
 
@@ -217,13 +203,17 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
 
     // Process the message text
     processIncomingMessage(message.text);
-  }, [message, space?.id, room?.id]);
+  }, [message, pluginInstance]);
 
   // Load conversations list
   const loadConversations = async () => {
-    const token = getToken();
-    if (!token) {
-      setConversationsError('Authentication token not found');
+    if (!pluginInstance) {
+      setConversationsError('No plugin instance available');
+      return;
+    }
+
+    if (!pluginInstance.hasCapability('chat')) {
+      setConversationsError('Plugin does not support chat');
       return;
     }
 
@@ -231,8 +221,7 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
     setConversationsError(null);
 
     try {
-      const data = await listConversations(token, space.id, room.id);
-      // API returns array directly, not an object with conversations property
+      const data = await pluginInstance.listChats();
       setConversations(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to load conversations:', error);
@@ -244,9 +233,8 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
 
   // Load a specific conversation
   const loadConversation = async (conversationId) => {
-    const token = getToken();
-    if (!token) {
-      setConversationError('Authentication token not found');
+    if (!pluginInstance) {
+      setConversationError('No plugin instance available');
       return;
     }
 
@@ -258,7 +246,7 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
     setStreamingMessages([]);
 
     try {
-      const data = await getConversation(token, space.id, room.id, conversationId);
+      const data = await pluginInstance.getChat(conversationId);
 
       // Set conversation immediately to show it to the user without delay
       setCurrentConversation(data);
@@ -287,30 +275,25 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
           // Only generate title if we have message content
           if (messageContent && messageContent.trim() !== '') {
             // Run title generation in the background without blocking
-            createConversationTitle(
-              token,
-              space.id,
-              room.id,
-              conversationId,
-              messageContent
-            ).then(titleResponse => {
-              // Update conversation with new title
-              if (titleResponse && titleResponse.title) {
-                setCurrentConversation(prevConversation => {
-                  // Only update if we're still viewing the same conversation
-                  if (prevConversation?.id === conversationId) {
-                    return {
-                      ...prevConversation,
-                      title: titleResponse.title
-                    };
-                  }
-                  return prevConversation;
-                });
-              }
-            }).catch(titleError => {
-              // Log error but don't fail the conversation load
-              console.error('Failed to generate conversation title:', titleError);
-            });
+            pluginInstance.updateChatTitle(conversationId, messageContent)
+              .then(titleResponse => {
+                // Update conversation with new title
+                if (titleResponse && titleResponse.title) {
+                  setCurrentConversation(prevConversation => {
+                    // Only update if we're still viewing the same conversation
+                    if (prevConversation?.id === conversationId) {
+                      return {
+                        ...prevConversation,
+                        title: titleResponse.title
+                      };
+                    }
+                    return prevConversation;
+                  });
+                }
+              }).catch(titleError => {
+                // Log error but don't fail the conversation load
+                console.error('Failed to generate conversation title:', titleError);
+              });
           }
         }
       }
@@ -343,9 +326,8 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
       event.stopPropagation();
     }
 
-    const token = getToken();
-    if (!token) {
-      setConversationsError('Authentication token not found');
+    if (!pluginInstance) {
+      setConversationsError('No plugin instance available');
       return;
     }
 
@@ -354,7 +336,7 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
     }
 
     try {
-      await deleteConversation(token, space.id, room.id, conversationId);
+      await pluginInstance.deleteChat(conversationId);
       // Reload conversations list
       await loadConversations();
     } catch (error) {
@@ -381,9 +363,8 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
 
   // Process incoming message from terminal emulator
   const processIncomingMessage = async (userMessage) => {
-    const token = getToken();
-    if (!token) {
-      setProcessingError('Authentication token not found');
+    if (!pluginInstance) {
+      setProcessingError('No plugin instance available');
       if (onMessageProcessed) {
         onMessageProcessed();
       }
@@ -400,7 +381,7 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
 
       // If in list mode, create a new conversation
       if (mode === 'list') {
-        const newConversation = await createConversation(token, space.id, room.id, {
+        const newConversation = await pluginInstance.createChat({
           title: `Chat ${new Date().toLocaleString()}`,
         });
         conversationId = newConversation.id;
@@ -417,16 +398,11 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
           : undefined;
       }
 
-      // Create chat completion with SSE streaming
-      await createChatCompletion(
-        token,
-        space.id,
-        room.id,
-        conversationId,
-        userMessage,
-        handleSSEChunk,
-        parentMessageId
-      );
+      // Send message with SSE streaming
+      await pluginInstance.sendMessage(conversationId, userMessage, {
+        onChunk: handleSSEChunk,
+        parentMessageId: parentMessageId,
+      });
 
       // Clear streaming messages before reloading to prevent duplicates
       setStreamingMessages([]);
@@ -670,8 +646,8 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                       id: toolResult.id,
                       text: toolResult.text || ''
                     } : null}
-                    space={space}
-                    room={room}
+                    space={{ id: pluginConfig.spaceId }}
+                    room={{ id: pluginConfig.roomId }}
                   />
                 );
               }
@@ -780,8 +756,8 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                     id: toolResult.id,
                     text: toolResult.text || ''
                   } : null}
-                  space={space}
-                  room={room}
+                  space={{ id: pluginConfig.spaceId }}
+                  room={{ id: pluginConfig.roomId }}
                 />
               );
             }
@@ -819,11 +795,8 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
             <span className={styles.chatTitleText}>Conversations</span>
           </div>
           <div className={styles.chatContext}>
-            <span className={styles.contextLabel}>Space:</span>
-            <span className={styles.contextValue}>{space?.name || 'No Space'}</span>
-            <span className={styles.contextSeparator}>•</span>
-            <span className={styles.contextLabel}>Room:</span>
-            <span className={styles.contextValue}>{room?.name || 'No Room'}</span>
+            <span className={styles.contextLabel}>Plugin:</span>
+            <span className={styles.contextValue}>{pluginName}</span>
           </div>
         </div>
 
