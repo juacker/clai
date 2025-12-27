@@ -15,39 +15,14 @@ import styles from './TabContent.module.css';
 const TabContent = () => {
   const { tabs, activeTabId, activeTileId, updateTabContext } = useTabManager();
 
-  // No tabs - show default dashboard
+  // No tabs - show minimal empty state (rare: only if user closes all tabs)
   if (tabs.length === 0) {
     return (
       <div className={styles.tabContent}>
         <div className={styles.emptyState}>
-          <div className={styles.emptyStateIcon}>
-            <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
-              <path
-                d="M32 8L8 20V44L32 56L56 44V20L32 8Z"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity="0.3"
-              />
-              <path
-                d="M32 32L8 20M32 32L56 20M32 32V56"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity="0.3"
-              />
-            </svg>
-          </div>
-          <h2 className={styles.emptyStateTitle}>Welcome to Netdata AI</h2>
           <p className={styles.emptyStateDescription}>
-            Type a command in the terminal below to get started
+            Type <code>/help</code> to get started
           </p>
-          <div className={styles.emptyStateHint}>
-            <span className={styles.hintLabel}>Try:</span>
-            <code className={styles.hintCommand}>echo hello world</code>
-          </div>
         </div>
       </div>
     );

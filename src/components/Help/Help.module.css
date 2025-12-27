@@ -34,20 +34,6 @@
   margin: 0;
 }
 
-.hint {
-  font-size: 10px;
-  color: var(--color-text-tertiary);
-}
-
-.hint code {
-  background: var(--color-primary-alpha-10);
-  color: var(--color-primary);
-  border-radius: 2px;
-  padding: 0 3px;
-  font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 9px;
-}
-
 /* Content */
 .content {
   flex: 1;
@@ -83,6 +69,23 @@
   letter-spacing: 0.04em;
   color: var(--color-text-tertiary);
   margin: 0 0 3px 0;
+}
+
+/* Chat Row - Prominent call to action */
+.chatRow {
+  display: flex;
+  align-items: center;
+  line-height: 1.6;
+  margin-bottom: 6px;
+}
+
+.chatHighlight {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-primary-dark);
+  background: var(--color-primary-alpha-10);
+  border-radius: 4px;
+  padding: 4px 8px;
 }
 
 /* Command Row */

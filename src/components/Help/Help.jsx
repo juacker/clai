@@ -17,14 +17,14 @@ const Help = () => {
     <div className={styles.helpContainer}>
       <div className={styles.header}>
         <h2 className={styles.title}>Commands & Shortcuts</h2>
-        <span className={styles.hint}>Type without <code>/</code> to chat</span>
       </div>
 
       <div className={styles.content}>
         <div className={styles.columns}>
           {/* Left column - Commands */}
           <div className={styles.column}>
-            <h3 className={styles.sectionTitle}>Commands</h3>
+            <h3 className={styles.sectionTitle}>Terminal</h3>
+            <div className={styles.chatRow}><span className={styles.chatHighlight}>Just type to chat with AI</span></div>
             <div className={styles.commandRow}><code>/ctx</code> <span>Show/set context</span></div>
             <div className={styles.commandRow}><code>/echo &lt;text&gt;</code> <span>Display text</span></div>
             <div className={styles.commandRow}><code>/help</code> <span>This reference</span></div>

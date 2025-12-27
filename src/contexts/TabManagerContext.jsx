@@ -303,8 +303,8 @@ export const TabManagerProvider = ({ children }) => {
   // Active tile ID (within active tab)
   const [activeTileId, setActiveTileId] = useState(null);
 
-  // Get current command from CommandContext
-  const { currentCommand } = useCommand();
+  // Get current command and executeCommand from CommandContext
+  const { currentCommand, executeCommand } = useCommand();
 
   // Get shared space/room data for default initialization
   const { spaces, getRoomsForSpace, loading: spacesLoading } = useSharedSpaceRoomData();
@@ -321,8 +321,11 @@ export const TabManagerProvider = ({ children }) => {
   /**
    * Load tabs from localStorage on mount
    * Includes migration for old tabs without context field
+   * If no tabs exist, creates initial tab with /help command
    */
   useEffect(() => {
+    let tabsLoaded = false;
+
     try {
       const savedTabs = localStorage.getItem('netdata_tabs');
       const savedActiveTabId = localStorage.getItem('netdata_active_tab_id');
@@ -386,6 +389,8 @@ export const TabManagerProvider = ({ children }) => {
           if (activeTab) {
             setActiveTileId(activeTab.rootTile.id);
           }
+
+          tabsLoaded = true;
         }
       }
     } catch (err) {
@@ -394,7 +399,15 @@ export const TabManagerProvider = ({ children }) => {
       localStorage.removeItem('netdata_tabs');
       localStorage.removeItem('netdata_active_tab_id');
     }
-  }, []);
+
+    // If no tabs were loaded, create initial tab with /help command
+    if (!tabsLoaded) {
+      // Use setTimeout to ensure CommandContext is ready
+      setTimeout(() => {
+        executeCommand('help'); // Pass as string so parseCommand generates proper id
+      }, 0);
+    }
+  }, [executeCommand]);
 
   /**
    * Save tabs to localStorage whenever they change
