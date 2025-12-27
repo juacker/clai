@@ -12,6 +12,8 @@
   /* CRITICAL: Use flex layout to properly distribute height */
   display: flex;
   flex-direction: column;
+  /* Solid white background so transparency works properly */
+  background: var(--color-bg-primary);
 }
 
 /* Desktop override: Remove padding */

@@ -41,8 +41,8 @@
     width: 0;
     height: auto;
 
-    /* Unified visual treatment - solid, not glass */
-    background: var(--color-bg-primary);
+    /* Transparent - chatContainer handles the background */
+    background: transparent;
     border-right: 1px solid var(--color-border-light);
     border-bottom: 1px solid var(--color-border-light); /* Connect to terminal */
 
@@ -106,7 +106,7 @@
 @media (prefers-color-scheme: dark) {
   @media (min-width: 769px) and (pointer: fine) {
     .desktopChatPanel {
-      background: rgba(30, 30, 30, 1);
+      background: rgba(30, 30, 30, 0.95);
       border-right-color: rgba(255, 255, 255, 0.12);
     }
 
