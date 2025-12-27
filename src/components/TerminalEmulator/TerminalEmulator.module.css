@@ -20,12 +20,10 @@
     left: 0;
     right: 0;
     z-index: 100;
-    background: var(--color-bg-glass);
-    backdrop-filter: blur(20px);
+    /* Unified visual treatment - solid, not glass */
+    background: var(--color-bg-primary);
     border-top: 1px solid var(--color-border-light);
-    box-shadow: var(--shadow-lg);
     max-height: 50vh;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     flex: none;
   }
 }
@@ -36,7 +34,6 @@
   width: 100%;
   /* FIXED: Removed border-bottom to prevent double border */
   background: transparent;
-  transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Override ContextPanel styles when inside terminal */
@@ -57,53 +54,8 @@
   gap: 12px;
   padding: 16px 24px;
   background: transparent;
-  transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Desktop: Adjust content margin when chat is open - Shrink from right side */
-@media (min-width: 769px) and (pointer: fine) {
-  .terminal.chatOpen .terminalContent {
-    margin-right: 420px;
-  }
-
-  .terminal.chatOpen .contextPanelWrapper {
-    margin-right: 420px;
-  }
-
-  .terminal.chatOpen .outputArea {
-    margin-right: 420px;
-  }
-}
-
-/* Large desktop: Match wider chat panel */
-@media (min-width: 1200px) and (pointer: fine) {
-  .terminal.chatOpen .terminalContent {
-    margin-right: 580px;
-  }
-
-  .terminal.chatOpen .contextPanelWrapper {
-    margin-right: 580px;
-  }
-
-  .terminal.chatOpen .outputArea {
-    margin-right: 580px;
-  }
-}
-
-/* Extra large desktop: Match even wider chat panel */
-@media (min-width: 1600px) and (pointer: fine) {
-  .terminal.chatOpen .terminalContent {
-    margin-right: 780px;
-  }
-
-  .terminal.chatOpen .contextPanelWrapper {
-    margin-right: 780px;
-  }
-
-  .terminal.chatOpen .outputArea {
-    margin-right: 780px;
-  }
-}
 
 /* Terminal Avatar - Positioned at the left side */
 .terminalAvatar {
@@ -235,7 +187,7 @@
   max-height: calc(50vh - 120px);
   min-height: 0;
   opacity: 1;
-  transition: opacity 0.2s ease, max-height 0.2s ease, padding 0.2s ease, margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.2s ease, max-height 0.2s ease, padding 0.2s ease;
   /* FIXED: Added subtle border-top to separate from input area */
   border-top: 1px solid var(--color-border-light);
 }

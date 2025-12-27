@@ -35,18 +35,16 @@
     position: fixed;
     top: 0;
     left: 0;
-    bottom: 132px; /* Leave space for terminal panel base height */
+    bottom: 132px; /* Stop above terminal (context panel ~44px + input area ~52px + margin) */
 
     /* Dimensions */
     width: 0;
-    height: auto; /* Auto height to respect bottom spacing */
+    height: auto;
 
-    /* Light, elegant, modern visual styling */
-    background: var(--color-bg-glass);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-right: none;
-    box-shadow: var(--shadow-lg);
+    /* Unified visual treatment - solid, not glass */
+    background: var(--color-bg-primary);
+    border-right: 1px solid var(--color-border-light);
+    border-bottom: 1px solid var(--color-border-light); /* Connect to terminal */
 
     /* Layering */
     z-index: 101;
@@ -61,6 +59,7 @@
   /* Open state - expand to full width */
   .desktopChatPanel.open {
     width: 420px;
+    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.05);
   }
 
   /* Chat container fills the panel with proper flex layout */
@@ -107,9 +106,12 @@
 @media (prefers-color-scheme: dark) {
   @media (min-width: 769px) and (pointer: fine) {
     .desktopChatPanel {
-      background: rgba(30, 30, 30, 0.98);
+      background: rgba(30, 30, 30, 1);
       border-right-color: rgba(255, 255, 255, 0.12);
-      box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+    }
+
+    .desktopChatPanel.open {
+      box-shadow: 4px 0 12px rgba(0, 0, 0, 0.2);
     }
   }
 }
