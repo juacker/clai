@@ -86,6 +86,22 @@ const ContextSelector = ({ items, selectedId, onSelect, onClose, type, position 
 
   const title = type === 'space' ? 'Select Space' : 'Select Room';
 
+  // Sort items: selected first, then "All nodes" for rooms, then alphabetically
+  const sortedItems = [...items].sort((a, b) => {
+    // Selected item always first
+    if (a.id === selectedId) return -1;
+    if (b.id === selectedId) return 1;
+
+    // For rooms, "All nodes" comes second (after selected)
+    if (type === 'room') {
+      if (a.name === 'All nodes') return -1;
+      if (b.name === 'All nodes') return 1;
+    }
+
+    // Alphabetical sort for the rest
+    return a.name.localeCompare(b.name);
+  });
+
   return (
     <div className={styles.overlay}>
       <div
@@ -106,10 +122,10 @@ const ContextSelector = ({ items, selectedId, onSelect, onClose, type, position 
 
         {/* Items List */}
         <div className={styles.itemsList}>
-          {items.length === 0 ? (
+          {sortedItems.length === 0 ? (
             <div className={styles.noResults}>No items available</div>
           ) : (
-            items.map((item) => (
+            sortedItems.map((item) => (
               <button
                 key={item.id}
                 className={`${styles.item} ${item.id === selectedId ? styles.itemSelected : ''}`}
