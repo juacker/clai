@@ -13,7 +13,7 @@ import styles from './TerminalEmulator.module.css';
 const TerminalEmulator = ({ onSendToChat }) => {
   const { executeCommand, commandHistory } = useCommand();
   const { handleLayoutCommand, getActiveTab } = useTabManager();
-  const { setActiveContext, toggleChat, isCurrentChatOpen } = useChatManager();
+  const { toggleChat, isChatOpen: isChatOpenFn } = useChatManager();
   // Try to get tab context, but don't throw error if not available
   const tabContext = useContext(TabContext);
   const [inputValue, setInputValue] = useState('');
@@ -29,7 +29,7 @@ const TerminalEmulator = ({ onSendToChat }) => {
   const inputWrapperRef = useRef(null);
 
   // Check if desktop chat panel is open
-  const isChatOpen = isCurrentChatOpen();
+  const isChatOpen = isChatOpenFn();
 
   // Maximum number of messages to keep
   const MAX_MESSAGES = 5;
@@ -109,14 +109,8 @@ const TerminalEmulator = ({ onSendToChat }) => {
     }
   }, [outputMessages]);
 
-  // Sync chat context with active tab's space/room
-  useEffect(() => {
-    const activeTab = getActiveTab();
-    if (activeTab?.context?.spaceRoom) {
-      const { selectedSpaceId, selectedRoomId } = activeTab.context.spaceRoom;
-      setActiveContext(selectedSpaceId, selectedRoomId);
-    }
-  }, [getActiveTab, setActiveContext]);
+  // Note: Chat is now a core feature and gets active plugins from PluginContext
+  // No need to sync chat context here anymore
 
   // Handle command execution
   const handleCommandExecution = async (input) => {

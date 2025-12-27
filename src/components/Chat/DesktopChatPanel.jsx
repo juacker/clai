@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { useChatManager } from "../../contexts/ChatManagerContext";
 import { usePlugin } from "../../contexts/PluginContext";
 import Chat from "./Chat";
@@ -11,14 +11,18 @@ import styles from "./DesktopChatPanel.module.css";
  * that appears on the right side of the screen.
  * It expands from right to left when opened.
  *
- * Phase 3B: Updated to use plugin system instead of SharedSpaceRoomDataContext
+ * Since chat is now a core feature (not a plugin), this component:
+ * - Gets the chat panel state from ChatManagerContext
+ * - Gets all active plugins from PluginContext (via TabPluginProvider)
+ * - Passes the array of active plugins to the Chat component
+ * - Chat component will check which plugins implement useful interfaces
  *
  * Features:
  * - Full viewport height (0 to 100vh)
  * - Fixed positioning on right side
  * - Smooth expand/collapse animations
- * - Integrates with ChatManagerContext for state management
- * - Queries active plugins with chat capability
+ * - Integrates with ChatManagerContext for panel state
+ * - Passes active plugins to Chat for tool/context discovery
  * - Supports forwarding messages from terminal when chat is visible
  *
  * @param {Object} props - Component props
@@ -26,26 +30,11 @@ import styles from "./DesktopChatPanel.module.css";
  * @param {function} props.onMessageProcessed - Callback when message is processed
  */
 const DesktopChatPanel = ({ message, onMessageProcessed }) => {
-  const { isCurrentChatOpen, getCurrentChatInstance, getActivePluginId } =
-    useChatManager();
-  const { getPluginInstance } = usePlugin();
-
-  // Get the current chat instance (if any)
-  const chatInstance = getCurrentChatInstance();
+  const { isChatOpen } = useChatManager();
+  const { activePlugins = [] } = usePlugin();
 
   // Determine if panel should be visible
-  const isOpen = isCurrentChatOpen();
-
-  // Get active plugin ID from chat manager
-  const activePluginId = getActivePluginId();
-
-  // Get the plugin instance from global context
-  const pluginInstance = useMemo(() => {
-    if (!activePluginId) {
-      return null;
-    }
-    return getPluginInstance(activePluginId);
-  }, [activePluginId, getPluginInstance]);
+  const isOpen = isChatOpen();
 
   return (
     <div
@@ -56,14 +45,12 @@ const DesktopChatPanel = ({ message, onMessageProcessed }) => {
       aria-hidden={!isOpen}
     >
       <div className={styles.chatContainer}>
-        {chatInstance && pluginInstance && (
-          <Chat
-            pluginInstance={pluginInstance}
-            isOpen={isOpen}
-            message={message}
-            onMessageProcessed={onMessageProcessed}
-          />
-        )}
+        <Chat
+          activePlugins={activePlugins}
+          isOpen={isOpen}
+          message={message}
+          onMessageProcessed={onMessageProcessed}
+        />
       </div>
     </div>
   );

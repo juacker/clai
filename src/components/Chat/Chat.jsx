@@ -6,30 +6,32 @@ import BarChartBlock from './BarChartBlock';
 import BubbleChartBlock from './BubbleChartBlock';
 import LoadChartBlock from './LoadChartBlock';
 import NetdataSpinner from '../common/NetdataSpinner';
+import * as chatService from '../../services/chatService';
 import styles from './Chat.module.css';
 
 /**
  * Chat Component
  *
  * A chat component with two modes:
- * 1. List Mode: Display all conversations for the current plugin
+ * 1. List Mode: Display all conversations
  * 2. Single Conversation Mode: Display a specific conversation with messages
  *
  * This component handles:
- * - List all conversations in the current plugin
+ * - List all conversations using core chat service (Rust backend)
  * - View a specific conversation with its messages
  * - Delete conversations
  * - Process incoming messages from terminal emulator
- * - Real-time streaming of AI responses via SSE
+ * - Real-time streaming of AI responses
  * - Display tool_use and tool_result content blocks
  *
  * Props:
- * - pluginInstance: The plugin instance with chat capability
+ * - activePlugins: Array of active plugin instances (for checking capabilities/interfaces)
+ * - isOpen: Whether the chat panel is open
  * - message: New message from terminal emulator (triggers completion)
  * - onMessageProcessed: Callback when message processing is complete
  */
 
-const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
+const Chat = ({ activePlugins = [], isOpen, message, onMessageProcessed }) => {
   // Mode state: 'list' or 'conversation'
   const [mode, setMode] = useState('list');
 
@@ -44,110 +46,16 @@ const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
   const [conversationError, setConversationError] = useState(null);
 
   // Message processing state
-  const [isProcessingMessage, setIsProcessingMessage] = useState(false);
   const [streamingMessages, setStreamingMessages] = useState([]);
   const [processingError, setProcessingError] = useState(null);
 
   // Refs
   const messagesEndRef = useRef(null);
   const lastProcessedMessageRef = useRef(null);
-  // State cache to remember chat state for each plugin
-  const stateCache = useRef({});
-
-  // Get plugin instance ID and metadata
-  const pluginId = pluginInstance?.metadata?.id;
-  const pluginName = pluginInstance?.metadata?.name || "Chat";
-  const pluginConfig = pluginInstance?.config || {};
-
-  // Generate cache key for current plugin
-  const getCacheKey = (pluginInstanceId) => {
-    return pluginInstanceId;
-  };
-
-  // Save current state to cache
-  const saveStateToCache = (pluginInstanceId) => {
-    if (!pluginInstanceId) return;
-
-    const key = getCacheKey(pluginInstanceId);
-    stateCache.current[key] = {
-      mode,
-      currentConversation,
-      conversationId: currentConversation?.id,
-    };
-  };
-
-  // Restore state from cache
-  const restoreStateFromCache = async (pluginInstanceId) => {
-    if (!pluginInstanceId) return;
-
-    const key = getCacheKey(pluginInstanceId);
-    const cachedState = stateCache.current[key];
-
-    if (cachedState) {
-      // Restore mode
-      setMode(cachedState.mode);
-
-      // If in conversation mode, restore the conversation
-      if (cachedState.mode === 'conversation' && cachedState.conversationId) {
-        await loadConversation(cachedState.conversationId);
-      }
-    } else {
-      // No cached state, reset to list mode
-      setMode('list');
-      setCurrentConversation(null);
-      setConversationError(null);
-      setStreamingMessages([]);
-      setProcessingError(null);
-    }
-  };
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  // Extract text from message content array
-  const extractMessageText = (content) => {
-    if (!content) return '';
-    if (typeof content === 'string') return content;
-    if (Array.isArray(content)) {
-      return content
-        .filter(item => item.type === 'text')
-        .map(item => item.text)
-        .join(' ');
-    }
-    return '';
-  };
-
-  // Extract tool blocks from message content array
-  const extractToolBlocks = (content) => {
-    if (!content || !Array.isArray(content)) return [];
-
-    // Filter out tool_use blocks - these have name property
-    const toolUses = content.filter(item =>
-      (item.type === 'tool_use' || item.name) && item.id
-    );
-
-    // Filter out tool_result blocks - these have text but no name
-    const toolResults = content.filter(item =>
-      (item.type === 'tool_result' || (item.text !== undefined && !item.name)) && item.id
-    );
-
-    // Match tool uses with their results by id
-    return toolUses.map(toolUse => {
-      const result = toolResults.find(r => r.id === toolUse.id);
-      return {
-        toolUse: {
-          id: toolUse.id,
-          name: toolUse.name,
-          input: toolUse.input || {}
-        },
-        toolResult: result ? {
-          id: result.id,
-          text: result.text || ''
-        } : null
-      };
-    });
   };
 
   // Format conversation title - use title or creation date
@@ -159,42 +67,17 @@ const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
     return formatTimestamp(conversation.created_at, true);
   };
 
-  // Track previous plugin to detect changes
-  const prevPluginIdRef = useRef(null);
-
-  // Handle plugin changes: save current state and restore state for new plugin
+  // Load conversations list when in list mode and chat is open
   useEffect(() => {
-    const currentPluginId = pluginId;
-    const prevPluginId = prevPluginIdRef.current;
-
-    // Check if plugin has changed
-    const hasChanged = currentPluginId !== prevPluginId;
-
-    if (hasChanged && prevPluginId) {
-      // Save current state before switching
-      saveStateToCache(prevPluginId);
-    }
-
-    if (hasChanged && currentPluginId) {
-      // Restore state for new plugin
-      restoreStateFromCache(currentPluginId);
-    }
-
-    // Update ref to current plugin
-    prevPluginIdRef.current = currentPluginId;
-  }, [pluginId]);
-
-  // Load conversations list when in list mode
-  useEffect(() => {
-    if (pluginInstance && mode === 'list') {
+    if (isOpen && mode === 'list') {
       loadConversations();
     }
-  }, [pluginInstance, mode]);
+  }, [isOpen, mode]);
 
   // Process incoming messages from terminal emulator
   useEffect(() => {
     // Only process if we have a message and it's different from the last processed one
-    if (!message || !pluginInstance || message?.id === lastProcessedMessageRef.current) {
+    if (!message || !isOpen || message?.id === lastProcessedMessageRef.current) {
       return;
     }
 
@@ -203,25 +86,15 @@ const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
 
     // Process the message text
     processIncomingMessage(message.text);
-  }, [message, pluginInstance]);
+  }, [message, isOpen]);
 
   // Load conversations list
   const loadConversations = async () => {
-    if (!pluginInstance) {
-      setConversationsError('No plugin instance available');
-      return;
-    }
-
-    if (!pluginInstance.hasCapability('chat')) {
-      setConversationsError('Plugin does not support chat');
-      return;
-    }
-
     setConversationsLoading(true);
     setConversationsError(null);
 
     try {
-      const data = await pluginInstance.listChats();
+      const data = await chatService.listChats();
       setConversations(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to load conversations:', error);
@@ -233,11 +106,6 @@ const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
 
   // Load a specific conversation
   const loadConversation = async (conversationId) => {
-    if (!pluginInstance) {
-      setConversationError('No plugin instance available');
-      return;
-    }
-
     // Switch to conversation mode immediately and clear old data
     setMode('conversation');
     setCurrentConversation(null);
@@ -246,7 +114,7 @@ const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
     setStreamingMessages([]);
 
     try {
-      const data = await pluginInstance.getChat(conversationId);
+      const data = await chatService.getChat(conversationId);
 
       // Set conversation immediately to show it to the user without delay
       setCurrentConversation(data);
@@ -275,7 +143,7 @@ const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
           // Only generate title if we have message content
           if (messageContent && messageContent.trim() !== '') {
             // Run title generation in the background without blocking
-            pluginInstance.updateChatTitle(conversationId, messageContent)
+            chatService.updateChatTitle(conversationId, messageContent)
               .then(titleResponse => {
                 // Update conversation with new title
                 if (titleResponse && titleResponse.title) {
@@ -326,17 +194,12 @@ const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
       event.stopPropagation();
     }
 
-    if (!pluginInstance) {
-      setConversationsError('No plugin instance available');
-      return;
-    }
-
     if (!window.confirm('Are you sure you want to delete this conversation?')) {
       return;
     }
 
     try {
-      await pluginInstance.deleteChat(conversationId);
+      await chatService.deleteChat(conversationId);
       // Reload conversations list
       await loadConversations();
     } catch (error) {
@@ -363,15 +226,6 @@ const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
 
   // Process incoming message from terminal emulator
   const processIncomingMessage = async (userMessage) => {
-    if (!pluginInstance) {
-      setProcessingError('No plugin instance available');
-      if (onMessageProcessed) {
-        onMessageProcessed();
-      }
-      return;
-    }
-
-    setIsProcessingMessage(true);
     setProcessingError(null);
     setStreamingMessages([]);
 
@@ -381,7 +235,7 @@ const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
 
       // If in list mode, create a new conversation
       if (mode === 'list') {
-        const newConversation = await pluginInstance.createChat({
+        const newConversation = await chatService.createChat({
           title: `Chat ${new Date().toLocaleString()}`,
         });
         conversationId = newConversation.id;
@@ -398,24 +252,24 @@ const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
           : undefined;
       }
 
-      // Send message with SSE streaming
-      await pluginInstance.sendMessage(conversationId, userMessage, {
-        onChunk: handleSSEChunk,
-        parentMessageId: parentMessageId,
-      });
+      // Send message with simulated streaming
+      await chatService.sendMessageStreaming(
+        conversationId,
+        userMessage,
+        handleSSEChunk,
+        parentMessageId
+      );
 
       // Clear streaming messages before reloading to prevent duplicates
       setStreamingMessages([]);
 
-      // Reload conversation to get final state from API
+      // Reload conversation to get final state
       await loadConversation(conversationId);
 
     } catch (error) {
       console.error('Failed to process message:', error);
       setProcessingError(error.message || 'Failed to process message');
     } finally {
-      setIsProcessingMessage(false);
-
       // Call callback to notify that message processing is complete
       if (onMessageProcessed) {
         onMessageProcessed();
@@ -646,8 +500,6 @@ const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
                       id: toolResult.id,
                       text: toolResult.text || ''
                     } : null}
-                    space={{ id: pluginConfig.spaceId }}
-                    room={{ id: pluginConfig.roomId }}
                   />
                 );
               }
@@ -793,10 +645,6 @@ const Chat = ({ pluginInstance, message, onMessageProcessed }) => {
           <div className={styles.chatTitle}>
             <span className={styles.chatIcon}>💬</span>
             <span className={styles.chatTitleText}>Conversations</span>
-          </div>
-          <div className={styles.chatContext}>
-            <span className={styles.contextLabel}>Plugin:</span>
-            <span className={styles.contextValue}>{pluginName}</span>
           </div>
         </div>
 

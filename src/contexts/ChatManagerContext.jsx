@@ -1,12 +1,14 @@
-import React, { createContext, useContext, useState, useCallback, useRef, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 
 /**
  * ChatManagerContext
  *
- * Manages multiple chat instances based on plugin instances.
- * Each chat instance is stored in memory and persists across tab switches.
- * When switching tabs with different plugin contexts, the appropriate
- * chat instance is shown/hidden without being destroyed.
+ * Manages the chat panel state for the core chat feature.
+ * Since chat is now a core feature (not a plugin), this context
+ * simply manages the open/closed state of the chat panel.
+ *
+ * Note: Chat conversations and messages are managed by the chat service
+ * (via Tauri backend), not by this context.
  */
 
 const ChatManagerContext = createContext(null);
@@ -20,205 +22,51 @@ export const useChatManager = () => {
 };
 
 export const ChatManagerProvider = ({ children }) => {
-  // Store all chat instances by plugin instance ID
-  // Format: { 'plugin_id': { isOpen: boolean, messages: [], ...otherState } }
-  const [chatInstances, setChatInstances] = useState({});
-
-  // Track the currently active plugin instance ID
-  const [activePluginId, setActivePluginId] = useState(null);
-
-  // Reference to prevent unnecessary re-renders
-  const chatInstancesRef = useRef(chatInstances);
-  chatInstancesRef.current = chatInstances;
+  // Simple state to track if chat panel is open
+  const [isOpen, setIsOpen] = useState(false);
 
   /**
-   * Get or create a chat instance for a specific plugin
-   */
-  const getChatInstance = useCallback((pluginId) => {
-    if (!pluginId) return null;
-    return chatInstancesRef.current[pluginId] || null;
-  }, []);
-
-  /**
-   * Initialize a chat instance if it doesn't exist
-   */
-  const initializeChatInstance = useCallback((pluginId) => {
-    if (!pluginId) return null;
-
-    if (!chatInstancesRef.current[pluginId]) {
-      setChatInstances(prev => ({
-        ...prev,
-        [pluginId]: {
-          pluginId,
-          isOpen: false,
-          messages: [],
-          createdAt: new Date(),
-          lastAccessedAt: new Date()
-        }
-      }));
-    }
-
-    return pluginId;
-  }, []);
-
-  /**
-   * Set the active plugin context
-   * This is called when switching tabs or when context changes
-   */
-  const setActiveContext = useCallback((pluginId) => {
-    if (!pluginId) {
-      setActivePluginId(null);
-      return;
-    }
-
-    // Initialize the chat instance if it doesn't exist
-    initializeChatInstance(pluginId);
-
-    // Update last accessed time for the active chat
-    setChatInstances(prev => {
-      if (prev[pluginId]) {
-        return {
-          ...prev,
-          [pluginId]: {
-            ...prev[pluginId],
-            lastAccessedAt: new Date()
-          }
-        };
-      }
-      return prev;
-    });
-
-    setActivePluginId(pluginId);
-  }, [initializeChatInstance]);
-
-  /**
-   * Toggle the chat open/closed state for the active plugin
+   * Toggle the chat panel open/closed state
    */
   const toggleChat = useCallback(() => {
-    if (!activePluginId) return;
-
-    setChatInstances(prev => ({
-      ...prev,
-      [activePluginId]: {
-        ...prev[activePluginId],
-        isOpen: !prev[activePluginId]?.isOpen
-      }
-    }));
-  }, [activePluginId]);
+    setIsOpen(prev => !prev);
+  }, []);
 
   /**
-   * Open the chat for the active plugin
+   * Open the chat panel
    */
   const openChat = useCallback(() => {
-    if (!activePluginId) return;
-
-    setChatInstances(prev => ({
-      ...prev,
-      [activePluginId]: {
-        ...prev[activePluginId],
-        isOpen: true
-      }
-    }));
-  }, [activePluginId]);
+    setIsOpen(true);
+  }, []);
 
   /**
-   * Close the chat for the active plugin
+   * Close the chat panel
    */
   const closeChat = useCallback(() => {
-    if (!activePluginId) return;
-
-    setChatInstances(prev => ({
-      ...prev,
-      [activePluginId]: {
-        ...prev[activePluginId],
-        isOpen: false
-      }
-    }));
-  }, [activePluginId]);
-
-  /**
-   * Check if the current chat is open
-   */
-  const isCurrentChatOpen = useCallback(() => {
-    if (!activePluginId) return false;
-    return chatInstancesRef.current[activePluginId]?.isOpen || false;
-  }, [activePluginId]);
-
-  /**
-   * Get the current active chat instance
-   */
-  const getCurrentChatInstance = useCallback(() => {
-    if (!activePluginId) return null;
-    return chatInstancesRef.current[activePluginId] || null;
-  }, [activePluginId]);
-
-  /**
-   * Add a message to a specific chat instance
-   * (Placeholder for future implementation)
-   */
-  const addMessage = useCallback((pluginId, message) => {
-    if (!pluginId) return;
-
-    setChatInstances(prev => {
-      if (!prev[pluginId]) return prev;
-
-      return {
-        ...prev,
-        [pluginId]: {
-          ...prev[pluginId],
-          messages: [...prev[pluginId].messages, {
-            id: Date.now() + Math.random(),
-            ...message,
-            timestamp: new Date()
-          }]
-        }
-      };
-    });
+    setIsOpen(false);
   }, []);
 
   /**
-   * Clear all chat instances (useful for logout/reset)
+   * Check if the chat panel is open
    */
-  const clearAllChats = useCallback(() => {
-    setChatInstances({});
-    setActivePluginId(null);
-  }, []);
-
-  /**
-   * Get the active plugin ID
-   */
-  const getActivePluginId = useCallback(() => {
-    return activePluginId;
-  }, [activePluginId]);
+  const isChatOpen = useCallback(() => {
+    return isOpen;
+  }, [isOpen]);
 
   const value = useMemo(() => {
     return {
-      chatInstances,
-      activePluginId,
-      setActiveContext,
+      isOpen,
       toggleChat,
       openChat,
       closeChat,
-      isCurrentChatOpen,
-      getCurrentChatInstance,
-      getChatInstance,
-      addMessage,
-      clearAllChats,
-      getActivePluginId
+      isChatOpen
     };
   }, [
-    chatInstances,
-    activePluginId,
-    setActiveContext,
+    isOpen,
     toggleChat,
     openChat,
     closeChat,
-    isCurrentChatOpen,
-    getCurrentChatInstance,
-    getChatInstance,
-    addMessage,
-    clearAllChats,
-    getActivePluginId
+    isChatOpen
   ]);
 
   return (
