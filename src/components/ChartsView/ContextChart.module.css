@@ -1,21 +1,9 @@
 /* ContextChart Component Styles - Canvas Optimized */
 
 .chartContainer {
-  margin: 12px 0;
-  border: 1px solid var(--chart-border);
-  border-radius: 10px;
-  background: var(--chart-bg);
-  overflow: visible;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(8px);
   position: relative;
   contain: layout;
-}
-
-.chartContainer:hover {
-  border-color: var(--chart-border-hover);
-  background: var(--chart-bg-hover);
-  box-shadow: var(--shadow-md);
+  height: 100%;
 }
 
 /* Chart Header */
@@ -464,12 +452,10 @@
 
 /* Chart Wrapper - Canvas + SVG Container */
 .chartWrapper {
-  padding: 10px 0px;
   position: relative;
   min-height: 250px;
-  height: 400px; /* Add explicit height */
-  overflow: visible;
-  contain: strict;
+  overflow: hidden;
+  background: white;
 }
 
 /* Loading Overlay for refetching */
@@ -489,22 +475,15 @@
 
 /* Canvas Element - positioned absolutely behind SVG */
 .chartCanvas {
-  position: absolute;
-  top: 10px;
-  left: 0;
-  width: 100%; /* Add explicit width */
-  height: calc(100% - 10px); /* Match the height minus top offset */
-  pointer-events: none;
-  z-index: 1;
+  display: block;
+  background: white;
 }
 
 /* SVG Element - positioned relatively on top of canvas */
 .chartSvg {
-  position: absolute; /* Change to absolute */
-  top: 10px; /* Match canvas top */
+  position: absolute;
+  top: 0;
   left: 0;
-  width: 100%;
-  height: calc(100% - 10px); /* Match canvas height */
   display: block;
   overflow: visible;
   z-index: 2;
@@ -722,10 +701,6 @@
 
 /* Desktop enhancements */
 @media (min-width: 769px) and (pointer: fine) {
-  .chartContainer:hover {
-    transform: translateY(-1px);
-  }
-
   .chartWrapper {
     min-height: 280px;
   }
@@ -760,6 +735,3 @@
   }
 }
 
-.chartContainer {
-  animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}

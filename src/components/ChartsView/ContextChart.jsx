@@ -1008,35 +1008,39 @@ const ContextChart = ({
       const allValues = datasets.flatMap((d) => d.data.map((p) => p.value));
       const minValue = Math.min(...allValues);
       const maxValue = Math.max(...allValues);
-      const padding = (maxValue - minValue) * 0.1;
-      const yDomain = [
-        Math.max(0, minValue - padding),
-        maxValue + padding,
-      ];
+      const valuePadding = (maxValue - minValue) * 0.1 || Math.abs(maxValue) * 0.1 || 1;
+
+      // Calculate y-domain to include all values (including negative)
+      // If all values are non-negative, start from 0 for better visualization
+      const yMin = minValue >= 0 ? 0 : minValue - valuePadding;
+      const yMax = maxValue + valuePadding;
+      const yDomain = [yMin, yMax];
 
       const xScale = d3.scaleTime().domain(xDomain).range([0, width]);
       const yScale = d3.scaleLinear().domain(yDomain).range([height, 0]);
 
       // === CANVAS RENDERING ===
       const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d', { alpha: false });
+      const ctx = canvas.getContext('2d');
+
+      // Calculate full canvas dimensions
+      const canvasWidth = width + margin.left + margin.right;
+      const canvasHeight = height + margin.top + margin.bottom;
 
       // Set canvas size with device pixel ratio
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = (width + margin.left + margin.right) * dpr;
-      canvas.height = (height + margin.top + margin.bottom) * dpr;
-      canvas.style.width = `${width + margin.left + margin.right}px`;
-      canvas.style.height = `${height + margin.top + margin.bottom}px`;
+      canvas.width = canvasWidth * dpr;
+      canvas.height = canvasHeight * dpr;
+      canvas.style.width = `${canvasWidth}px`;
+      canvas.style.height = `${canvasHeight}px`;
 
-      ctx.scale(dpr, dpr);
-      ctx.translate(margin.left, margin.top);
-
-      // Clear canvas
-      ctx.clearRect(-margin.left, -margin.top, canvas.width, canvas.height);
-
-      // Fill background
+      // Reset transform and fill entire canvas with white first
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(-margin.left, -margin.top, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Now scale and translate for chart drawing
+      ctx.setTransform(dpr, 0, 0, dpr, margin.left * dpr, margin.top * dpr);
 
       // Performance measurement
       const drawStart = performance.now();

@@ -62,134 +62,277 @@ function generateHilbertPoints(order) {
 // ============================================================================
 
 /**
- * Group metrics incrementally - only group enough to reach target
- * Groups siblings with the same prefix one at a time
+ * Group metrics using multi-level deterministic grouping
+ *
+ * Determinism guarantees:
+ * - Metrics are always sorted alphabetically before processing
+ * - Prefixes are grouped starting from deepest level first
+ * - At each level, prefixes are processed alphabetically
+ * - Same input metrics always produce same output grouping
+ *
+ * @param {string[]} metrics - Array of metric names
+ * @param {number} targetCount - Target number of groups to achieve
+ * @returns {Map} Map of groupName -> [originalMetrics]
  */
-function groupMetricsIncremental(metrics, targetCount) {
-  console.time('groupMetricsIncremental');
-  console.log(`groupMetricsIncremental: input=${metrics.length}, target=${targetCount}`);
+function groupMetricsMultiLevel(metrics, targetCount) {
+  console.time('groupMetricsMultiLevel');
+  console.log(`groupMetricsMultiLevel: input=${metrics.length}, target=${targetCount}`);
 
   if (metrics.length <= targetCount) {
-    console.timeEnd('groupMetricsIncremental');
-    return new Map(metrics.map(m => [m, [m]]));
+    console.timeEnd('groupMetricsMultiLevel');
+    // Sort for determinism
+    const sorted = [...metrics].sort();
+    return new Map(sorted.map(m => [m, [m]]));
   }
 
-  // Build a map of potential group candidates (metrics that share prefix)
-  const prefixMap = new Map(); // prefix -> [metrics]
+  // Sort metrics alphabetically for determinism
+  const sortedMetrics = [...metrics].sort();
 
-  metrics.forEach(metric => {
-    const parts = metric.split('.');
-    if (parts.length >= 3) {
-      const prefix = parts.slice(0, -1).join('.');
-      if (!prefixMap.has(prefix)) {
-        prefixMap.set(prefix, []);
-      }
-      prefixMap.get(prefix).push(metric);
+  // Current state: map of displayName -> [originalMetrics]
+  let currentGroups = new Map(sortedMetrics.map(m => [m, [m]]));
+
+  // Find max depth in metrics
+  const maxDepth = Math.max(...sortedMetrics.map(m => m.split('.').length));
+
+  // Group level by level, starting from deepest (most specific)
+  // This ensures we group "system.cpu.idle" + "system.cpu.user" -> "system.cpu"
+  // before we'd ever group "system.cpu" + "system.memory" -> "system"
+  for (let depth = maxDepth - 1; depth >= 1; depth--) {
+    if (currentGroups.size <= targetCount) {
+      console.log(`Reached target at depth ${depth}, stopping`);
+      break;
     }
-  });
 
-  // Sort by prefix to have consistent grouping
-  const sortedPrefixes = Array.from(prefixMap.entries())
-    .filter(([prefix, items]) => items.length >= 2)
-    .sort((a, b) => b[1].length - a[1].length);
+    console.log(`Grouping at depth ${depth}, current groups: ${currentGroups.size}`);
 
-  console.log(`Found ${sortedPrefixes.length} groupable prefixes`);
+    // Build prefix map for current depth
+    const prefixMap = new Map(); // prefix -> [currentGroupNames]
 
-  // Start with all metrics ungrouped
-  const currentMetrics = new Set(metrics);
-  const grouped = new Map();
-  let reductionNeeded = metrics.length - targetCount;
+    for (const [groupName] of currentGroups) {
+      const parts = groupName.split('.');
+      if (parts.length > depth) {
+        const prefix = parts.slice(0, depth).join('.');
+        if (!prefixMap.has(prefix)) {
+          prefixMap.set(prefix, []);
+        }
+        prefixMap.get(prefix).push(groupName);
+      }
+    }
 
-  // Group incrementally until we reach target
-  for (const [prefix, siblings] of sortedPrefixes) {
-    if (reductionNeeded <= 0) break;
+    // Sort prefixes alphabetically for determinism
+    const sortedPrefixes = Array.from(prefixMap.entries())
+      .filter(([, items]) => items.length >= 2) // Only group if 2+ items share prefix
+      .sort((a, b) => a[0].localeCompare(b[0]));
 
-    const availableSiblings = siblings.filter(m => currentMetrics.has(m));
+    if (sortedPrefixes.length === 0) {
+      console.log(`No groupable prefixes at depth ${depth}`);
+      continue;
+    }
 
-    if (availableSiblings.length >= 2) {
-      grouped.set(prefix, availableSiblings);
-      availableSiblings.forEach(m => currentMetrics.delete(m));
-      currentMetrics.add(prefix);
+    // Calculate how many groups we can reduce by
+    let reductionNeeded = currentGroups.size - targetCount;
 
-      const reduction = availableSiblings.length - 1;
+    // Group prefixes until we reach target or run out
+    for (const [prefix, groupNames] of sortedPrefixes) {
+      if (reductionNeeded <= 0) break;
+
+      // Merge all groups under this prefix
+      const mergedOriginals = [];
+      for (const name of groupNames) {
+        const originals = currentGroups.get(name);
+        if (originals) {
+          mergedOriginals.push(...originals);
+          currentGroups.delete(name);
+        }
+      }
+
+      // Sort merged originals for determinism
+      mergedOriginals.sort();
+      currentGroups.set(prefix, mergedOriginals);
+
+      const reduction = groupNames.length - 1;
       reductionNeeded -= reduction;
 
-      console.log(`Grouped ${availableSiblings.length} metrics into '${prefix}', reduction: ${reduction}, remaining needed: ${reductionNeeded}`);
+      console.log(`Grouped ${groupNames.length} items into '${prefix}', reduction: ${reduction}`);
     }
   }
 
-  // Add remaining ungrouped metrics
-  currentMetrics.forEach(m => {
-    if (!grouped.has(m)) {
-      grouped.set(m, [m]);
-    }
-  });
-
-  console.log(`Final grouped count: ${grouped.size}`);
-  console.timeEnd('groupMetricsIncremental');
-  return grouped;
+  console.log(`Final grouped count: ${currentGroups.size}`);
+  console.timeEnd('groupMetricsMultiLevel');
+  return currentGroups;
 }
 
 /**
- * Calculate optimal Hilbert configuration
+ * Calculate proportional cell allocation for groups
+ *
+ * Distributes grid cells proportionally based on each group's weight (original metric count).
+ * Uses largest remainder method to ensure exact cell count.
+ *
+ * @param {Map} groupedMetrics - Map of groupName -> [originalMetrics]
+ * @param {number} totalCells - Total cells available in grid
+ * @returns {Map} Map of groupName -> cellCount
+ */
+function calculateProportionalCells(groupedMetrics, totalCells) {
+  const totalOriginals = Array.from(groupedMetrics.values())
+    .reduce((sum, arr) => sum + arr.length, 0);
+
+  // Calculate initial allocation and remainders
+  const allocations = [];
+  let allocatedCells = 0;
+
+  for (const [name, originals] of groupedMetrics) {
+    const exactShare = (originals.length / totalOriginals) * totalCells;
+    const floorShare = Math.floor(exactShare);
+    const remainder = exactShare - floorShare;
+
+    allocations.push({ name, cells: floorShare, remainder, originals: originals.length });
+    allocatedCells += floorShare;
+  }
+
+  // Distribute remaining cells using largest remainder method
+  const remainingCells = totalCells - allocatedCells;
+  allocations.sort((a, b) => b.remainder - a.remainder);
+
+  for (let i = 0; i < remainingCells && i < allocations.length; i++) {
+    allocations[i].cells++;
+  }
+
+  // Ensure every group gets at least 1 cell
+  for (const alloc of allocations) {
+    if (alloc.cells === 0) {
+      alloc.cells = 1;
+    }
+  }
+
+  // Sort back to alphabetical order for determinism
+  allocations.sort((a, b) => a.name.localeCompare(b.name));
+
+  return new Map(allocations.map(a => [a.name, a.cells]));
+}
+
+/**
+ * Calculate optimal Hilbert configuration with proportional cell allocation
+ *
+ * Strategy:
+ * 1. Find the smallest order where grid >= metrics (no grouping needed)
+ * 2. If waste > threshold, try progressively smaller orders with grouping
+ * 3. Allocate cells proportionally based on group sizes
+ *
+ * Waste threshold: 20% - allows some empty space but avoids half-empty grids
  */
 function calculateHilbertConfig(metrics) {
   console.time('calculateHilbertConfig');
+
   if (metrics.length === 0) {
     console.timeEnd('calculateHilbertConfig');
-    return { order: 0, gridSize: 1, totalCells: 1, processedMetrics: [], groupedMetrics: new Map() };
+    return {
+      order: 0,
+      gridSize: 1,
+      totalCells: 1,
+      processedMetrics: [],
+      groupedMetrics: new Map(),
+      cellAllocations: new Map()
+    };
   }
 
-  let order = 0;
-  while (Math.pow(2, order) * Math.pow(2, order) < metrics.length) {
-    order++;
+  // Sort metrics alphabetically for determinism
+  const sortedMetrics = [...metrics].sort();
+
+  // Find smallest order that fits all metrics without grouping
+  let maxOrder = 0;
+  while (Math.pow(2, maxOrder) * Math.pow(2, maxOrder) < sortedMetrics.length) {
+    maxOrder++;
   }
 
-  const gridSize = Math.pow(2, order);
-  let totalCells = gridSize * gridSize;
-  let waste = ((totalCells - metrics.length) / totalCells) * 100;
+  const maxGridSize = Math.pow(2, maxOrder);
+  const maxTotalCells = maxGridSize * maxGridSize;
+  const initialWaste = ((maxTotalCells - sortedMetrics.length) / maxTotalCells) * 100;
 
-  console.log(`Initial: order=${order}, gridSize=${gridSize}, totalCells=${totalCells}, metrics=${metrics.length}, waste=${waste.toFixed(2)}%`);
+  console.log(`Initial: order=${maxOrder}, grid=${maxGridSize}x${maxGridSize}, cells=${maxTotalCells}, metrics=${sortedMetrics.length}, waste=${initialWaste.toFixed(1)}%`);
 
-  if (waste > 5 && order > 0) {
-    const targetOrder = order - 1;
-    const targetGridSize = Math.pow(2, targetOrder);
-    const targetCells = targetGridSize * targetGridSize;
+  // If waste is acceptable (< 20%), use individual metrics (1 cell each)
+  const WASTE_THRESHOLD = 20;
+  if (initialWaste <= WASTE_THRESHOLD) {
+    console.log(`Waste ${initialWaste.toFixed(1)}% <= ${WASTE_THRESHOLD}%, using individual metrics`);
+    const groupedMetrics = new Map(sortedMetrics.map(m => [m, [m]]));
+    const cellAllocations = new Map(sortedMetrics.map(m => [m, 1]));
+    console.timeEnd('calculateHilbertConfig');
+    return {
+      order: maxOrder,
+      gridSize: maxGridSize,
+      totalCells: maxTotalCells,
+      processedMetrics: sortedMetrics,
+      groupedMetrics,
+      cellAllocations
+    };
+  }
 
-    console.log(`Waste > 5%, trying to fit into order=${targetOrder}, targetCells=${targetCells}`);
+  // Try progressively smaller orders with grouping
+  let bestConfig = null;
+  let bestWaste = initialWaste;
 
-    const grouped = groupMetricsIncremental(metrics, targetCells);
-    const currentMetrics = Array.from(grouped.keys()).sort();
+  // Minimum order to try (order 3 = 8x8 = 64 cells minimum)
+  const minOrder = 3;
 
-    console.log(`After incremental grouping: ${currentMetrics.length} metrics (target was ${targetCells})`);
+  for (let tryOrder = maxOrder - 1; tryOrder >= minOrder; tryOrder--) {
+    const tryGridSize = Math.pow(2, tryOrder);
+    const tryCells = tryGridSize * tryGridSize;
 
-    const groupedMetrics = new Map();
-    grouped.forEach((originals, groupName) => {
-      groupedMetrics.set(groupName, originals);
-    });
+    console.log(`Trying order=${tryOrder}, grid=${tryGridSize}x${tryGridSize}, cells=${tryCells}`);
 
-    if (currentMetrics.length <= targetCells) {
-      console.log(`Fits in target dimension! Using order=${targetOrder}`);
-      console.timeEnd('calculateHilbertConfig');
-      return {
-        order: targetOrder,
-        gridSize: targetGridSize,
-        totalCells: targetCells,
-        processedMetrics: currentMetrics,
-        groupedMetrics
-      };
+    // Try to group metrics to fit this grid
+    const grouped = groupMetricsMultiLevel(sortedMetrics, tryCells);
+    const groupedCount = grouped.size;
+
+    if (groupedCount <= tryCells) {
+      // Calculate proportional cell allocation
+      const cellAllocations = calculateProportionalCells(grouped, tryCells);
+      const allocatedCells = Array.from(cellAllocations.values()).reduce((a, b) => a + b, 0);
+      const waste = ((tryCells - allocatedCells) / tryCells) * 100;
+
+      console.log(`Order ${tryOrder}: ${groupedCount} groups, ${allocatedCells} cells allocated, waste=${waste.toFixed(1)}%`);
+
+      if (waste < bestWaste) {
+        bestWaste = waste;
+        bestConfig = {
+          order: tryOrder,
+          gridSize: tryGridSize,
+          totalCells: tryCells,
+          processedMetrics: Array.from(grouped.keys()).sort(),
+          groupedMetrics: grouped,
+          cellAllocations
+        };
+        console.log(`New best config: order=${tryOrder}, waste=${waste.toFixed(1)}%`);
+      }
+
+      if (waste <= 5) {
+        console.log(`Achieved ${waste.toFixed(1)}% waste, stopping search`);
+        break;
+      }
+    } else {
+      console.log(`Order ${tryOrder}: could not fit (${groupedCount} > ${tryCells}), stopping`);
+      break;
     }
-
-    console.log('Could not fit in smaller dimension, using original');
   }
 
+  if (bestConfig) {
+    console.log(`Selected: order=${bestConfig.order}, waste=${bestWaste.toFixed(1)}%`);
+    console.timeEnd('calculateHilbertConfig');
+    return bestConfig;
+  }
+
+  // Fallback to original (no grouping)
+  console.log('No better configuration found, using original');
+  const groupedMetrics = new Map(sortedMetrics.map(m => [m, [m]]));
+  const cellAllocations = new Map(sortedMetrics.map(m => [m, 1]));
   console.timeEnd('calculateHilbertConfig');
   return {
-    order,
-    gridSize,
-    totalCells,
-    processedMetrics: metrics,
-    groupedMetrics: new Map(metrics.map(m => [m, [m]]))
+    order: maxOrder,
+    gridSize: maxGridSize,
+    totalCells: maxTotalCells,
+    processedMetrics: sortedMetrics,
+    groupedMetrics,
+    cellAllocations
   };
 }
 
@@ -197,52 +340,83 @@ function calculateHilbertConfig(metrics) {
 // VISUAL GROUPING ALGORITHM
 // ============================================================================
 
-function createVisualGroups(metrics) {
+/**
+ * Create visual groups from grouped metrics
+ *
+ * Groups metrics by their common prefix at a reasonable depth.
+ * Uses adaptive depth based on cell count - larger groups get subdivided more.
+ *
+ * @param {Map} groupedMetrics - Map of displayName -> [originalMetrics]
+ * @param {Map} cellAllocations - Map of displayName -> cellCount
+ * @returns {Map} Map of visualGroupKey -> [displayNames]
+ */
+function createVisualGroups(groupedMetrics, cellAllocations) {
   console.time('createVisualGroups');
   const groups = new Map();
 
-  // Pre-calculate all prefix counts at all depths - do this ONCE
-  const maxDepth = Math.max(...metrics.map(m => m.split('.').length));
-  const prefixCounts = new Map(); // "depth:prefix" -> count
+  // Target: visual groups should have roughly 8-24 cells for good visual clarity
+  const TARGET_MIN_CELLS = 8;
+  const TARGET_MAX_CELLS = 24;
 
-  metrics.forEach(metric => {
-    const parts = metric.split('.');
+  // Get all display names sorted for determinism
+  const displayNames = Array.from(groupedMetrics.keys()).sort();
+
+  // Build prefix tree to find natural groupings
+  const prefixCells = new Map(); // "depth:prefix" -> total cells
+
+  for (const name of displayNames) {
+    const cells = cellAllocations.get(name) || 1;
+    const parts = name.split('.');
+
     for (let depth = 1; depth <= parts.length; depth++) {
       const prefix = parts.slice(0, depth).join('.');
       const key = `${depth}:${prefix}`;
-      prefixCounts.set(key, (prefixCounts.get(key) || 0) + 1);
+      prefixCells.set(key, (prefixCells.get(key) || 0) + cells);
     }
-  });
+  }
 
-  // Now assign each metric to a visual group using pre-calculated counts
-  metrics.forEach(metric => {
-    const parts = metric.split('.');
-    let groupKey = parts[0];
-    let depth = 1;
+  // For each metric, find the best visual group
+  for (const name of displayNames) {
+    const parts = name.split('.');
+    let bestGroup = parts[0]; // Default to top-level
+    let bestDepth = 1;
 
-    while (depth < parts.length) {
-      const currentPrefix = parts.slice(0, depth).join('.');
-      const key = `${depth}:${currentPrefix}`;
-      const count = prefixCounts.get(key) || 0;
+    // Find the deepest prefix that stays within target range
+    // or the shallowest prefix that's not too large
+    for (let depth = 1; depth <= parts.length; depth++) {
+      const prefix = parts.slice(0, depth).join('.');
+      const key = `${depth}:${prefix}`;
+      const cellCount = prefixCells.get(key) || 0;
 
-      if (count <= 32) {
-        groupKey = currentPrefix;
+      if (cellCount >= TARGET_MIN_CELLS && cellCount <= TARGET_MAX_CELLS) {
+        // Perfect size - use this
+        bestGroup = prefix;
+        bestDepth = depth;
         break;
-      }
-
-      depth++;
-      if (depth < parts.length) {
-        groupKey = parts.slice(0, depth).join('.');
+      } else if (cellCount < TARGET_MIN_CELLS) {
+        // Too small - use parent (previous depth) if it exists
+        if (depth > 1) {
+          bestGroup = parts.slice(0, depth - 1).join('.');
+        } else {
+          bestGroup = prefix;
+        }
+        break;
+      } else if (cellCount > TARGET_MAX_CELLS && depth < parts.length) {
+        // Too large - go deeper
+        continue;
+      } else {
+        // At max depth or no better option
+        bestGroup = prefix;
       }
     }
 
-    if (!groups.has(groupKey)) {
-      groups.set(groupKey, []);
+    if (!groups.has(bestGroup)) {
+      groups.set(bestGroup, []);
     }
-    groups.get(groupKey).push(metric);
-  });
+    groups.get(bestGroup).push(name);
+  }
 
-  console.log(`Created ${groups.size} visual groups`);
+  console.log(`Created ${groups.size} visual groups from ${displayNames.length} metrics`);
   console.timeEnd('createVisualGroups');
   return groups;
 }
@@ -409,30 +583,39 @@ const Metrics = ({ command }) => {
     console.time('Generate cells');
     if (dimensions.width === 0 || dimensions.height === 0) return [];
 
-    const { order, gridSize, processedMetrics, groupedMetrics } = hilbertConfig;
+    const { order, gridSize, processedMetrics, groupedMetrics, cellAllocations } = hilbertConfig;
     const hilbertPoints = generateHilbertPoints(order);
 
     const cellWidth = dimensions.width / gridSize;
     const cellHeight = dimensions.height / gridSize;
 
     const cells = [];
+    let hilbertIndex = 0;
 
-    for (let i = 0; i < processedMetrics.length; i++) {
-      const [hx, hy] = hilbertPoints[i];
-      const metricName = processedMetrics[i];
+    // For each processed metric, allocate its proportional number of cells
+    for (const metricName of processedMetrics) {
       const originalMetrics = groupedMetrics.get(metricName) || [metricName];
+      const cellCount = cellAllocations.get(metricName) || 1;
 
-      cells.push({
-        name: metricName,
-        originalMetrics,
-        isGrouped: originalMetrics.length > 1,
-        x: hx * cellWidth,
-        y: hy * cellHeight,
-        width: cellWidth,
-        height: cellHeight,
-      });
+      // Create multiple cells for this metric based on its allocation
+      for (let c = 0; c < cellCount && hilbertIndex < hilbertPoints.length; c++) {
+        const [hx, hy] = hilbertPoints[hilbertIndex];
+
+        cells.push({
+          name: metricName,
+          originalMetrics,
+          isGrouped: originalMetrics.length > 1,
+          x: hx * cellWidth,
+          y: hy * cellHeight,
+          width: cellWidth,
+          height: cellHeight,
+        });
+
+        hilbertIndex++;
+      }
     }
 
+    console.log(`Generated ${cells.length} cells for ${processedMetrics.length} metrics`);
     console.timeEnd('Generate cells');
     return cells;
   }, [dimensions, hilbertConfig]);
@@ -444,8 +627,8 @@ const Metrics = ({ command }) => {
       return { groupBorders: [], visualGroups: new Map() };
     }
 
-    const { processedMetrics } = hilbertConfig;
-    const visualGroups = createVisualGroups(processedMetrics);
+    const { groupedMetrics, cellAllocations } = hilbertConfig;
+    const visualGroups = createVisualGroups(groupedMetrics, cellAllocations);
     const groupBorders = calculateGroupBorders(allCells, visualGroups);
 
     console.timeEnd('visualGroups and borders useMemo');
@@ -459,25 +642,45 @@ const Metrics = ({ command }) => {
       return [];
     }
 
-    const metricToCell = new Map();
+    // Build map of metric name -> ALL cells (since each metric can have multiple cells)
+    const metricToCells = new Map();
     allCells.forEach(cell => {
-      metricToCell.set(cell.name, cell);
+      if (!metricToCells.has(cell.name)) {
+        metricToCells.set(cell.name, []);
+      }
+      metricToCells.get(cell.name).push(cell);
     });
 
     const labels = [];
     visualGroups.forEach((metrics, groupKey) => {
-      const cells = metrics.map(m => metricToCell.get(m)).filter(Boolean);
+      // Collect ALL cells for all metrics in this visual group
+      const groupCells = [];
+      for (const metric of metrics) {
+        const cells = metricToCells.get(metric);
+        if (cells) {
+          groupCells.push(...cells);
+        }
+      }
 
-      if (cells.length === 0) return;
+      if (groupCells.length === 0) return;
 
-      const cx = cells.reduce((sum, c) => sum + c.x + c.width / 2, 0) / cells.length;
-      const cy = cells.reduce((sum, c) => sum + c.y + c.height / 2, 0) / cells.length;
+      // Calculate bounding box center (more stable than centroid for irregular shapes)
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const cell of groupCells) {
+        minX = Math.min(minX, cell.x);
+        minY = Math.min(minY, cell.y);
+        maxX = Math.max(maxX, cell.x + cell.width);
+        maxY = Math.max(maxY, cell.y + cell.height);
+      }
+
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
 
       labels.push({
         text: groupKey,
         x: cx,
         y: cy,
-        count: cells.length
+        count: groupCells.length
       });
     });
 
@@ -486,6 +689,7 @@ const Metrics = ({ command }) => {
   }, [allCells, visualGroups]);
 
   // Filter contexts based on debounced filter text
+  // Searches through original metrics (expanding grouped ones)
   const filteredContexts = useMemo(() => {
     if (!debouncedFilterText.trim()) {
       return null; // No filter applied
@@ -494,13 +698,20 @@ const Metrics = ({ command }) => {
     console.time('Filter contexts');
     const lowerFilter = debouncedFilterText.toLowerCase();
     const matchingContexts = [];
+    const { groupedMetrics } = hilbertConfig;
 
-    // Search through all visual groups
-    visualGroups.forEach((metrics, groupKey) => {
-      metrics.forEach(metric => {
-        if (metric.toLowerCase().includes(lowerFilter)) {
-          matchingContexts.push(metric);
-        }
+    // Search through all visual groups, expanding grouped metrics
+    visualGroups.forEach((processedMetrics) => {
+      processedMetrics.forEach(metric => {
+        // Get original metrics (expand if grouped)
+        const originals = groupedMetrics.get(metric);
+        const metricsToSearch = (originals && originals.length > 0) ? originals : [metric];
+
+        metricsToSearch.forEach(original => {
+          if (original.toLowerCase().includes(lowerFilter)) {
+            matchingContexts.push(original);
+          }
+        });
       });
     });
 
@@ -509,51 +720,63 @@ const Metrics = ({ command }) => {
       const severityA = getSeverityLevel(anomalyRates.get(a));
       const severityB = getSeverityLevel(anomalyRates.get(b));
 
-      // Sort by severity descending (higher severity = more critical = comes first)
       if (severityB !== severityA) {
         return severityB - severityA;
       }
 
-      // If same severity, sort alphabetically
       return a.localeCompare(b);
     });
 
     console.timeEnd('Filter contexts');
     console.log(`Filtered ${matchingContexts.length} contexts from ${debouncedFilterText}`);
     return matchingContexts;
-  }, [debouncedFilterText, visualGroups, anomalyRates]);
+  }, [debouncedFilterText, visualGroups, anomalyRates, hilbertConfig]);
 
   // Sort metrics for selected group by severity then alphabetically
+  // Expands grouped metrics to show original individual metrics
   const sortedGroupMetrics = useMemo(() => {
     if (!selectedGroup || selectedGroup === 'filter-results') {
       return null;
     }
 
-    const metrics = visualGroups.get(selectedGroup);
-    if (!metrics) {
+    const processedMetrics = visualGroups.get(selectedGroup);
+    if (!processedMetrics) {
       return null;
     }
 
     console.time('Sort group metrics');
 
-    // Create a copy and sort by severity then alphabetically
-    const sorted = [...metrics].sort((a, b) => {
+    // Expand grouped metrics to get original individual metrics
+    const { groupedMetrics } = hilbertConfig;
+    const expandedMetrics = [];
+
+    for (const metric of processedMetrics) {
+      const originals = groupedMetrics.get(metric);
+      if (originals && originals.length > 0) {
+        // This metric was grouped - add all originals
+        expandedMetrics.push(...originals);
+      } else {
+        // Not grouped - add as-is
+        expandedMetrics.push(metric);
+      }
+    }
+
+    // Sort by severity then alphabetically
+    const sorted = expandedMetrics.sort((a, b) => {
       const severityA = getSeverityLevel(anomalyRates.get(a));
       const severityB = getSeverityLevel(anomalyRates.get(b));
 
-      // Sort by severity descending (higher severity = more critical = comes first)
       if (severityB !== severityA) {
         return severityB - severityA;
       }
 
-      // If same severity, sort alphabetically
       return a.localeCompare(b);
     });
 
     console.timeEnd('Sort group metrics');
-    console.log(`Sorted ${sorted.length} metrics for group '${selectedGroup}'`);
+    console.log(`Sorted ${sorted.length} metrics (expanded from ${processedMetrics.length}) for group '${selectedGroup}'`);
     return sorted;
-  }, [selectedGroup, visualGroups, anomalyRates]);
+  }, [selectedGroup, visualGroups, anomalyRates, hilbertConfig]);
 
   // Canvas rendering effect
   useEffect(() => {
@@ -1018,17 +1241,18 @@ const Metrics = ({ command }) => {
   }
 
   const { order, gridSize, totalCells, processedMetrics, groupedMetrics } = hilbertConfig;
-  const waste = ((totalCells - processedMetrics.length) / totalCells) * 100;
-  const totalGrouped = Array.from(groupedMetrics.values()).reduce((sum, arr) => sum + arr.length, 0);
+  const cellsUsed = allCells.length;
+  const waste = ((totalCells - cellsUsed) / totalCells) * 100;
+  const totalOriginalMetrics = Array.from(groupedMetrics.values()).reduce((sum, arr) => sum + arr.length, 0);
 
   console.log('Final render stats:', {
     order,
     gridSize,
     totalCells,
-    processedMetrics: processedMetrics.length,
+    groups: processedMetrics.length,
+    cellsUsed,
     waste: waste.toFixed(1) + '%',
-    totalGrouped,
-    cellsRendered: allCells.length,
+    totalOriginalMetrics,
     borderSegments: groupBorders.length
   });
 
@@ -1083,10 +1307,10 @@ const Metrics = ({ command }) => {
       <div style={{ display: viewMode === 'canvas' ? 'block' : 'none', height: '100%' }}>
         {/* Info banner */}
         <div className={`${styles.infoBanner} ${waste <= 5 ? styles.infoBannerSuccess : styles.infoBannerInfo}`}>
-          Order: {order} • Grid: {gridSize}×{gridSize} •
-          Cells: {processedMetrics.length}/{totalCells} •
-          Waste: {waste.toFixed(1)}% •
-          Original: {totalGrouped} metrics
+          Grid: {gridSize}×{gridSize} •
+          Cells: {cellsUsed}/{totalCells} •
+          Groups: {processedMetrics.length} •
+          Metrics: {totalOriginalMetrics}
         </div>
 
         {dimensions.width > 0 && dimensions.height > 0 && (
@@ -1165,7 +1389,7 @@ const Metrics = ({ command }) => {
       </div>
 
       {/* Charts View - Hidden with CSS when not active */}
-      <div style={{ display: viewMode === 'charts' ? 'block' : 'none', height: '100%' }}>
+      <div style={{ display: viewMode === 'charts' ? 'block' : 'none', height: '100%', background: '#fafafa' }}>
         <ChartsView
           selectedContexts={selectedMetrics}
           onRemoveContext={removeMetric}
