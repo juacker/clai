@@ -425,6 +425,27 @@
   color: rgba(0, 0, 0, 0.5);
 }
 
+.conversationCredits {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.conversationHeaderCredits {
+  font-size: 12px;
+  color: var(--color-primary);
+  font-weight: 500;
+  background-color: var(--color-primary-alpha-08);
+  padding: 4px 10px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+@media (min-width: 769px) and (pointer: fine) {
+  .conversationHeaderCredits {
+    font-size: 13px;
+  }
+}
+
 .conversationPreview {
   font-size: 13px;
   color: rgba(0, 0, 0, 0.6);

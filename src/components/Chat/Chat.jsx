@@ -379,6 +379,13 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
     }
   };
 
+  // Format microcredits to credits with 2 decimal places
+  const formatCredits = (microcredits) => {
+    if (microcredits === undefined || microcredits === null) return null;
+    const credits = microcredits / 1000000;
+    return credits.toFixed(2);
+  };
+
   // Process incoming message from terminal emulator
   const processIncomingMessage = async (userMessage) => {
     const token = getToken();
@@ -888,6 +895,14 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                         </span>
                       </>
                     )}
+                    {conversation.metadata?.usage?.amount_microcredits && (
+                      <>
+                        <span className={styles.conversationSeparator}>•</span>
+                        <span className={styles.conversationCredits}>
+                          {formatCredits(conversation.metadata.usage.amount_microcredits)} credits
+                        </span>
+                      </>
+                    )}
                   </div>
                   {conversation.last_message && (
                     <div className={styles.conversationPreview}>
@@ -955,6 +970,11 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                 {currentConversation?.title || 'Conversation'}
               </span>
             </div>
+            {currentConversation?.metadata?.usage?.amount_microcredits && (
+              <span className={styles.conversationHeaderCredits}>
+                {formatCredits(currentConversation.metadata.usage.amount_microcredits)} credits
+              </span>
+            )}
           </div>
         </div>
 
