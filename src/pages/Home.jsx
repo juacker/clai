@@ -54,17 +54,17 @@ const Home = () => {
       switchToPrevTab();
     },
 
-    // Ctrl/Cmd+\: Split tile vertically
+    // Ctrl/Cmd+Shift+V: Vim-style vertical split (side by side)
     onSplitVertical: () => {
       if (activeTileId) {
-        splitTile(activeTileId, 'vertical');
+        splitTile(activeTileId, 'horizontal'); // horizontal direction = side by side
       }
     },
 
-    // Ctrl/Cmd+-: Split tile horizontally
+    // Ctrl/Cmd+-: Vim-style horizontal split (stacked)
     onSplitHorizontal: () => {
       if (activeTileId) {
-        splitTile(activeTileId, 'horizontal');
+        splitTile(activeTileId, 'vertical'); // vertical direction = stacked
       }
     },
 

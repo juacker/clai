@@ -32,7 +32,8 @@ const Help = () => {
             <div className={styles.commandRow}><code>/reset-all</code> <span>Reset layout</span></div>
             <div className={styles.commandRow}><code>/tab</code> <span>New tab</span></div>
             <div className={styles.commandRow}><code>/tab close</code> / <code>next</code> / <code>prev</code> / <code>list</code></div>
-            <div className={styles.commandRow}><code>/tile split-h</code> / <code>split-v</code></div>
+            <div className={styles.commandRow}><code>/tile split-v</code> <span>left|right</span></div>
+            <div className={styles.commandRow}><code>/tile split-h</code> <span>top/bottom</span></div>
             <div className={styles.commandRow}><code>/tile close</code> / <code>next</code> / <code>prev</code></div>
           </div>
 
@@ -46,8 +47,8 @@ const Help = () => {
             <div className={styles.shortcutRow}><kbd>{mod}</kbd><kbd>Tab</kbd> <span>Next tab</span></div>
             <div className={styles.shortcutRow}><kbd>{mod}</kbd><kbd>Shift</kbd><kbd>Tab</kbd> <span>Prev tab</span></div>
             <div className={styles.shortcutRow}><kbd>Alt</kbd><kbd>1-9</kbd> <span>Go to tab</span></div>
-            <div className={styles.shortcutRow}><kbd>{mod}</kbd><kbd>Shift</kbd><kbd>V</kbd> <span>Split vertical</span></div>
-            <div className={styles.shortcutRow}><kbd>{mod}</kbd><kbd>-</kbd> <span>Split horizontal</span></div>
+            <div className={styles.shortcutRow}><kbd>{mod}</kbd><kbd>Shift</kbd><kbd>V</kbd> <span>Split left|right</span></div>
+            <div className={styles.shortcutRow}><kbd>{mod}</kbd><kbd>-</kbd> <span>Split top/bottom</span></div>
             <div className={styles.shortcutRow}><kbd>{mod}</kbd><kbd>Shift</kbd><kbd>W</kbd> <span>Close tile</span></div>
             <div className={styles.shortcutRow}><kbd>{mod}</kbd><kbd>]</kbd> / <kbd>[</kbd> <span>Next/prev tile</span></div>
           </div>

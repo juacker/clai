@@ -59,8 +59,8 @@ const isOnlyAlt = (event) => {
  * @param {Function} handlers.onNextTab - Called when Ctrl/Cmd+Tab is pressed
  * @param {Function} handlers.onPrevTab - Called when Ctrl/Cmd+Shift+Tab is pressed
  * @param {Function} handlers.onReopenTab - Called when Ctrl/Cmd+Shift+T is pressed
- * @param {Function} handlers.onSplitVertical - Called when Ctrl/Cmd+\ is pressed
- * @param {Function} handlers.onSplitHorizontal - Called when Ctrl/Cmd+- is pressed
+ * @param {Function} handlers.onSplitVertical - Called when Ctrl/Cmd+Shift+V is pressed (vim-style: side by side)
+ * @param {Function} handlers.onSplitHorizontal - Called when Ctrl/Cmd+- is pressed (vim-style: stacked)
  * @param {Function} handlers.onCloseTile - Called when Ctrl/Cmd+Shift+W is pressed
  * @param {Function} handlers.onNextTile - Called when Ctrl/Cmd+] is pressed
  * @param {Function} handlers.onPrevTile - Called when Ctrl/Cmd+[ is pressed
@@ -149,7 +149,7 @@ export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
       return;
     }
 
-    // Split Vertical: Ctrl/Cmd+Shift+V
+    // Split Vertical (vim-style: side by side): Ctrl/Cmd+Shift+V
     if (isPrimaryModifier(event, os) && event.shiftKey && key === 'v') {
       event.preventDefault();
       if (handlers.onSplitVertical) {
@@ -158,7 +158,7 @@ export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
       return;
     }
 
-    // Split Horizontal: Ctrl/Cmd+-
+    // Split Horizontal (vim-style: stacked): Ctrl/Cmd+-
     if (isPrimaryModifier(event, os) && !event.shiftKey && (key === '-' || event.code === 'Minus')) {
       event.preventDefault();
       if (handlers.onSplitHorizontal) {
@@ -237,8 +237,8 @@ export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
       {
         category: 'Tile Management',
         items: [
-          { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', '\\'], description: 'Split tile vertically' },
-          { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', '-'], description: 'Split tile horizontally' },
+          { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'Shift', 'V'], description: 'Split tile (left|right)' },
+          { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', '-'], description: 'Split tile (top/bottom)' },
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'Shift', 'W'], description: 'Close current tile' },
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', ']'], description: 'Next tile' },
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', '['], description: 'Previous tile' },
