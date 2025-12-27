@@ -12,6 +12,7 @@
 
 import Echo from '../components/Echo';
 import Metrics from '../components/Metrics/Metrics';
+import Help from '../components/Help/Help';
 
 /**
  * Command Component Registry
@@ -20,6 +21,7 @@ import Metrics from '../components/Metrics/Metrics';
 export const COMMAND_COMPONENTS = {
   echo: Echo,
   metrics: Metrics,
+  help: Help,
 };
 
 /**

@@ -13,7 +13,7 @@ import styles from './TerminalEmulator.module.css';
 const TerminalEmulator = ({ userInfo, onSendToChat }) => {
   const { executeCommand, commandHistory } = useCommand();
   const { handleLayoutCommand, getActiveTab } = useTabManager();
-  const { setActiveContext, toggleChat, isCurrentChatOpen } = useChatManager();
+  const { setActiveContext, toggleChat, openChat, isCurrentChatOpen } = useChatManager();
   // Try to get tab context, but don't throw error if not available
   const tabContext = useContext(TabContext);
   const [inputValue, setInputValue] = useState('');
@@ -126,14 +126,25 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
     setInputValue('');
     setHistoryIndex(-1);
 
-    // Check if chat is open - if so, forward the input to chat instead of processing as command
-    if (isChatOpen && onSendToChat) {
-      onSendToChat(trimmed);
+    // Check if input starts with "/" - it's a command
+    const isSlashCommand = trimmed.startsWith('/');
+
+    // If NOT a slash command, send to chat (auto-open if needed)
+    if (!isSlashCommand) {
+      if (!isChatOpen) {
+        openChat();
+      }
+      if (onSendToChat) {
+        onSendToChat(trimmed);
+      }
       return;
     }
 
+    // Strip the leading "/" and parse as command
+    const commandInput = trimmed.slice(1);
+
     // Parse the command
-    const command = parseCommand(trimmed);
+    const command = parseCommand(commandInput);
 
     // Check if it's a context command (ctx)
     if (isContextCommand(command)) {
@@ -167,7 +178,7 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
     else {
       // Validate command type using registry - no hardcoded list needed!
       if (!isCommandSupported(command.type)) {
-        addOutputMessage(`Unknown command: ${trimmed}`, 'error');
+        addOutputMessage(`Unknown command: /${command.type}. Type /help for available commands.`, 'error');
         return;
       }
       executeCommand(command);
@@ -289,7 +300,7 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onClick={(e) => e.stopPropagation()}
-            placeholder="Type a command..."
+            placeholder="Type to chat, or /help for commands..."
             spellCheck={false}
             autoComplete="off"
             autoCorrect="off"
