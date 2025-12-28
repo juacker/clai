@@ -7,6 +7,7 @@ import {
   createChatCompletion,
   createConversationTitle,
 } from '../../api/client';
+import { openExternal } from '../../utils/openExternal';
 import MarkdownMessage from './MarkdownMessage';
 import ToolBlock from './ToolBlock';
 import TimeSeriesChartBlock from './TimeSeriesChartBlock';
@@ -1126,7 +1127,7 @@ const Chat = ({ space, room, message, onMessageProcessed, aiPermissions = { canR
     const handleUpgradeClick = () => {
       if (space?.slug) {
         const baseUrl = localStorage.getItem('netdata_base_url') || 'https://app.netdata.cloud';
-        window.open(`${baseUrl}/spaces/${space.slug}/settings/billing`, '_blank');
+        openExternal(`${baseUrl}/spaces/${space.slug}/settings/billing`);
       }
     };
 

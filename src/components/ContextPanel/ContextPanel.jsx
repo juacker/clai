@@ -14,6 +14,7 @@ import ReactDOM from 'react-dom';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import { useSharedSpaceRoomData } from '../../contexts/SharedSpaceRoomDataContext';
 import { getSpaceBillingPlan } from '../../api/client';
+import { openExternal } from '../../utils/openExternal';
 import ContextBadge from './ContextBadge';
 import ContextSelector from './ContextSelector';
 import styles from './ContextPanel.module.css';
@@ -176,7 +177,7 @@ const ContextPanel = () => {
               value={`${availableCredits} credits`}
               onClick={() => {
                 const baseUrl = localStorage.getItem('netdata_base_url') || 'https://app.netdata.cloud';
-                window.open(`${baseUrl}/spaces/${selectedSpace.slug}/settings/billing`, '_blank');
+                openExternal(`${baseUrl}/spaces/${selectedSpace.slug}/settings/billing`);
               }}
               clickable={true}
               variant={parseFloat(availableCredits) < 1.5 ? 'danger' : parseFloat(availableCredits) < 3 ? 'warning' : undefined}
