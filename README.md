@@ -26,13 +26,25 @@ Download the latest release for your platform from the [Releases page](https://g
 | Windows | `.msi` or `.exe` installer |
 | macOS (Apple Silicon) | `.dmg` |
 | macOS (Intel) | `.dmg` |
-| Linux | `.deb` or `.AppImage` |
+| Linux (Debian/Ubuntu) | `.deb` |
+| Linux (Fedora/RHEL) | `.rpm` |
+| Linux (Universal) | `.flatpak` |
+
+### Flatpak Installation
+
+```bash
+# Install from file
+flatpak install clai.flatpak
+
+# Run
+flatpak run com.juacker.clai
+```
 
 ### Build from Source
 
 #### Prerequisites
 
-- Node.js (v18+)
+- Node.js (v20+)
 - Rust (for Tauri)
 - Platform-specific build tools (see [Tauri prerequisites](https://tauri.app/start/prerequisites/))
 
@@ -45,6 +57,12 @@ cd clai
 
 # Install dependencies
 npm install
+
+# Run in development mode
+make dev
+
+# Build for production
+make build
 ```
 
 ## Usage
