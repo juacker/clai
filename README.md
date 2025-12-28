@@ -1,5 +1,9 @@
 # CLAI - Command Line AI Interface
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![GitHub release](https://img.shields.io/github/v/release/juacker/clai)](https://github.com/juacker/clai/releases)
+[![CI](https://github.com/juacker/clai/actions/workflows/ci.yml/badge.svg)](https://github.com/juacker/clai/actions/workflows/ci.yml)
+
 A cross-platform desktop application that integrates Netdata Cloud monitoring with AI-powered insights through a terminal-like interface.
 
 ## Features
@@ -13,13 +17,26 @@ A cross-platform desktop application that integrates Netdata Cloud monitoring wi
 
 ## Installation
 
-### Prerequisites
+### Download
+
+Download the latest release for your platform from the [Releases page](https://github.com/juacker/clai/releases):
+
+| Platform | Download |
+|----------|----------|
+| Windows | `.msi` or `.exe` installer |
+| macOS (Apple Silicon) | `.dmg` |
+| macOS (Intel) | `.dmg` |
+| Linux | `.deb` or `.AppImage` |
+
+### Build from Source
+
+#### Prerequisites
 
 - Node.js (v18+)
 - Rust (for Tauri)
 - Platform-specific build tools (see [Tauri prerequisites](https://tauri.app/start/prerequisites/))
 
-### Setup
+#### Setup
 
 ```bash
 # Clone the repository

@@ -82,18 +82,6 @@ export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
     // Get normalized key
     const key = normalizeKey(event.key);
 
-    // Debug: Log key presses with modifiers (remove after debugging)
-    if (isPrimaryModifier(event, os)) {
-      console.log('Key pressed:', {
-        key: event.key,
-        normalized: key,
-        code: event.code,
-        shiftKey: event.shiftKey,
-        ctrlKey: event.ctrlKey,
-        metaKey: event.metaKey
-      });
-    }
-
     // Tab switching: Alt+1 through Alt+9
     if (isOnlyAlt(event) && key >= '1' && key <= '9') {
       event.preventDefault();

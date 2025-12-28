@@ -35,16 +35,12 @@ const ContextPanel = () => {
   // Find the actual space and room objects from the context IDs
   const selectedSpace = useMemo(() => {
     if (!tabContext?.spaceRoom?.selectedSpaceId) return null;
-    const space = getSpaceById(tabContext.spaceRoom.selectedSpaceId);
-    console.log('[ContextPanel] Selected space:', space);
-    return space;
+    return getSpaceById(tabContext.spaceRoom.selectedSpaceId);
   }, [tabContext?.spaceRoom?.selectedSpaceId, getSpaceById]);
 
   const selectedRoom = useMemo(() => {
     if (!tabContext?.spaceRoom?.selectedSpaceId || !tabContext?.spaceRoom?.selectedRoomId) return null;
-    const room = getRoomById(tabContext.spaceRoom.selectedSpaceId, tabContext.spaceRoom.selectedRoomId);
-    console.log('[ContextPanel] Selected room:', room);
-    return room;
+    return getRoomById(tabContext.spaceRoom.selectedSpaceId, tabContext.spaceRoom.selectedRoomId);
   }, [tabContext?.spaceRoom?.selectedSpaceId, tabContext?.spaceRoom?.selectedRoomId, getRoomById]);
 
   const customContext = tabContext?.customContext || {};
@@ -98,14 +94,6 @@ const ContextPanel = () => {
   const hasCustomContext = Object.keys(customContext).length > 0;
   const hasAnyContext = hasSpaceRoom || hasCustomContext;
 
-  console.log('[ContextPanel] Has context:', {
-    hasSpaceRoom,
-    hasCustomContext,
-    hasAnyContext,
-    selectedSpace,
-    selectedRoom,
-  });
-
   // Load rooms when room selector is opened
   const handleRoomSelectorOpen = useCallback(async () => {
     if (!selectedSpace) return;
@@ -119,8 +107,6 @@ const ContextPanel = () => {
   const handleSpaceSelect = useCallback(async (space) => {
     if (!activeTab) return;
 
-    console.log('[ContextPanel] Space selected:', space);
-
     // Fetch rooms for the new space
     const rooms = await getRoomsForSpace(space.id);
 
@@ -128,8 +114,6 @@ const ContextPanel = () => {
     const allNodesRoom = rooms.find(room =>
       room.name?.toLowerCase() === 'all nodes'
     ) || rooms[0];
-
-    console.log('[ContextPanel] Auto-selecting room:', allNodesRoom);
 
     // Update the tab context with new space and room
     updateTabContext(activeTab.id, {
@@ -143,8 +127,6 @@ const ContextPanel = () => {
   // Handle room selection
   const handleRoomSelect = useCallback((room) => {
     if (!activeTab || !selectedSpace) return;
-
-    console.log('[ContextPanel] Room selected:', room);
 
     // Update the tab context with new room
     updateTabContext(activeTab.id, {

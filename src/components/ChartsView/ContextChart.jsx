@@ -218,13 +218,12 @@ const ContextChart = ({
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (dynamicIntervalCount !== computedIntervalCount) {
-        console.log(`Dynamic interval count updated: ${computedIntervalCount} → ${dynamicIntervalCount} (chart width: ${dimensions.width}px)`);
         setComputedIntervalCount(dynamicIntervalCount);
       }
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [dynamicIntervalCount, computedIntervalCount, dimensions.width]);
+  }, [dynamicIntervalCount, computedIntervalCount]);
 
   // Handle container resizing
   useEffect(() => {
@@ -1066,9 +1065,6 @@ const ContextChart = ({
 
         ctx.stroke();
       });
-
-      const drawEnd = performance.now();
-      console.log(`Canvas: Drew ${filteredDatasets.length} series in ${(drawEnd - drawStart).toFixed(2)}ms`);
 
       // === MINIMAL SVG (Axes + Simple Crosshair Only) ===
       const svg = d3.select(svgRef.current);

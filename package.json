@@ -2,17 +2,27 @@
   "name": "clai",
   "private": true,
   "version": "0.1.0",
+  "description": "Command Line AI Interface for Netdata",
+  "author": "juacker",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/juacker/clai"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-os": "^2.3.2",
+    "@tauri-apps/plugin-updater": "^2",
     "axios": "^1.13.1",
     "d3": "^7.9.0",
     "react": "^19.2.0",
