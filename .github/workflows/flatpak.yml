@@ -55,7 +55,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
           sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak install -y flathub org.gnome.Platform//48
+          sudo flatpak install -y flathub org.gnome.Platform//48 org.gnome.Sdk//48
 
       - name: Create Flatpak
         run: |
