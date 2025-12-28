@@ -142,6 +142,34 @@ export const getRooms = async (token, spaceId) => {
 };
 
 /**
+ * Get billing plan information for a specific space
+ * @param {string} token - Authentication token (Bearer token)
+ * @param {string} spaceId - Space ID
+ * @returns {Promise<Object>} Billing plan information
+ * @throws {Error} If the request fails
+ */
+export const getSpaceBillingPlan = async (token, spaceId) => {
+  try {
+    const response = await client.get(`/api/v2/spaces/${spaceId}/billing/plan`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    if (error.response) {
+      throw new Error(
+        `Failed to get billing plan: ${error.response.status} - ${error.response.data?.message || error.response.statusText}`
+      );
+    } else if (error.request) {
+      throw new Error('Failed to get billing plan: No response from server');
+    } else {
+      throw new Error(`Failed to get billing plan: ${error.message}`);
+    }
+  }
+};
+
+/**
  * Create a new conversation in Netdata Cloud
  * @param {string} token - Authentication token (Bearer token)
  * @param {string} spaceId - Space ID

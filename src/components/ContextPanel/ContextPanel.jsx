@@ -9,10 +9,11 @@
  * rendered at the TabView level, outside of the TabContextProvider.
  */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import { useSharedSpaceRoomData } from '../../contexts/SharedSpaceRoomDataContext';
+import { getSpaceBillingPlan } from '../../api/client';
 import ContextBadge from './ContextBadge';
 import ContextSelector from './ContextSelector';
 import styles from './ContextPanel.module.css';
@@ -25,6 +26,7 @@ const ContextPanel = () => {
   const [showSpaceSelector, setShowSpaceSelector] = useState(false);
   const [showRoomSelector, setShowRoomSelector] = useState(false);
   const [availableRooms, setAvailableRooms] = useState([]);
+  const [availableCredits, setAvailableCredits] = useState(null);
 
   // Get the active tab's context
   const activeTab = getActiveTab();
@@ -46,6 +48,31 @@ const ContextPanel = () => {
   }, [tabContext?.spaceRoom?.selectedSpaceId, tabContext?.spaceRoom?.selectedRoomId, getRoomById]);
 
   const customContext = tabContext?.customContext || {};
+
+  // Fetch billing plan when space changes
+  useEffect(() => {
+    const fetchBillingPlan = async () => {
+      if (!selectedSpace?.id) {
+        setAvailableCredits(null);
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem('netdata_token');
+        if (!token) return;
+
+        const billingPlan = await getSpaceBillingPlan(token, selectedSpace.id);
+        const microcredits = billingPlan?.ai?.total_available_microcredits || 0;
+        const credits = (microcredits / 1000000).toFixed(2);
+        setAvailableCredits(credits);
+      } catch (error) {
+        console.error('[ContextPanel] Failed to fetch billing plan:', error);
+        setAvailableCredits(null);
+      }
+    };
+
+    fetchBillingPlan();
+  }, [selectedSpace?.id]);
 
   // Check if there's any context to display
   const hasSpaceRoom = selectedSpace || selectedRoom;
@@ -137,6 +164,21 @@ const ContextPanel = () => {
               value={selectedRoom.name}
               onClick={handleRoomSelectorOpen}
               clickable={true}
+            />
+          )}
+
+          {/* Credits Badge */}
+          {availableCredits !== null && selectedSpace?.slug && (
+            <ContextBadge
+              type="credits"
+              label="Credits"
+              value={`${availableCredits} credits`}
+              onClick={() => {
+                const baseUrl = localStorage.getItem('netdata_base_url') || 'https://app.netdata.cloud';
+                window.open(`${baseUrl}/spaces/${selectedSpace.slug}/settings/billing`, '_blank');
+              }}
+              clickable={true}
+              variant={parseFloat(availableCredits) < 1.5 ? 'danger' : parseFloat(availableCredits) < 3 ? 'warning' : undefined}
             />
           )}
 

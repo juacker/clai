@@ -34,26 +34,37 @@ const CustomIcon = () => (
   </svg>
 );
 
+const CreditsIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
+    <path d="M12 18V6" />
+  </svg>
+);
+
 /**
  * ContextBadge displays a single context item
  *
  * @param {Object} props
- * @param {string} props.type - Type of badge: 'space', 'room', or 'custom'
+ * @param {string} props.type - Type of badge: 'space', 'room', 'credits', or 'custom'
  * @param {string} props.label - Label to display (for custom badges, this is the key)
  * @param {string} props.value - Value to display
  * @param {Function} props.onClick - Optional click handler for interactive badges
  * @param {boolean} props.clickable - Whether the badge is clickable (default: false)
+ * @param {string} props.variant - Optional variant for styling: 'warning', 'danger' (only for credits type)
  */
-const ContextBadge = ({ type = 'custom', label, value, onClick, clickable = false }) => {
-  // Determine badge style based on type
-  const badgeClass = `${styles.badge} ${styles[`badge${type.charAt(0).toUpperCase() + type.slice(1)}`] || ''} ${clickable ? styles.clickable : ''}`;
+const ContextBadge = ({ type = 'custom', label, value, onClick, clickable = false, variant }) => {
+  // Determine badge style based on type and variant
+  const typeClass = type.charAt(0).toUpperCase() + type.slice(1);
+  const variantClass = variant ? variant.charAt(0).toUpperCase() + variant.slice(1) : '';
+  const badgeClass = `${styles.badge} ${styles[`badge${typeClass}${variantClass}`] || styles[`badge${typeClass}`] || ''} ${clickable ? styles.clickable : ''}`;
 
   // Select the appropriate icon based on type
-  const IconComponent = type === 'space' ? SpaceIcon : type === 'room' ? RoomIcon : CustomIcon;
+  const IconComponent = type === 'space' ? SpaceIcon : type === 'room' ? RoomIcon : type === 'credits' ? CreditsIcon : CustomIcon;
 
-  // For space and room, we show just the value
+  // For space, room, and credits, we show just the value
   // For custom, we show key=value
-  const displayText = type === 'space' || type === 'room'
+  const displayText = type === 'space' || type === 'room' || type === 'credits'
     ? value
     : `${label}=${value}`;
 

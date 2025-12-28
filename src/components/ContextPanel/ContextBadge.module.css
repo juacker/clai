@@ -91,6 +91,39 @@
   color: var(--color-text-tertiary);
 }
 
+/* Credits Badge - Success green theme (default) */
+.badgeCredits {
+  background: var(--color-success-alpha-06);
+  color: var(--color-success-dark);
+  border-color: var(--color-success-alpha-20);
+}
+
+.badgeCredits .icon {
+  color: var(--color-success);
+}
+
+/* Credits Badge - Warning variant (low credits) */
+.badgeCreditsWarning {
+  background: var(--color-warning-alpha-06);
+  color: var(--color-warning-dark);
+  border-color: var(--color-warning-alpha-20);
+}
+
+.badgeCreditsWarning .icon {
+  color: var(--color-warning);
+}
+
+/* Credits Badge - Danger variant (critical credits) */
+.badgeCreditsDanger {
+  background: var(--color-error-alpha-06);
+  color: var(--color-error-dark);
+  border-color: var(--color-error-alpha-20);
+}
+
+.badgeCreditsDanger .icon {
+  color: var(--color-error);
+}
+
 /* Hover Effects (Desktop) */
 @media (hover: hover) {
   .badge:hover {
@@ -111,6 +144,21 @@
   .badgeCustom:hover {
     background: var(--color-overlay-08);
     border-color: var(--color-border-medium);
+  }
+
+  .badgeCredits:hover {
+    background: var(--color-success-alpha-10);
+    border-color: var(--color-success);
+  }
+
+  .badgeCreditsWarning:hover {
+    background: var(--color-warning-alpha-10);
+    border-color: var(--color-warning);
+  }
+
+  .badgeCreditsDanger:hover {
+    background: var(--color-error-alpha-10);
+    border-color: var(--color-error);
   }
 }
 
