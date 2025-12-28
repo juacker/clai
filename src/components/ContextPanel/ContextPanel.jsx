@@ -49,30 +49,43 @@ const ContextPanel = () => {
 
   const customContext = tabContext?.customContext || {};
 
+  // Fetch billing plan function
+  const fetchBillingPlan = useCallback(async () => {
+    if (!selectedSpace?.id) {
+      setAvailableCredits(null);
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('netdata_token');
+      if (!token) return;
+
+      const billingPlan = await getSpaceBillingPlan(token, selectedSpace.id);
+      const microcredits = billingPlan?.ai?.total_available_microcredits || 0;
+      const credits = (microcredits / 1000000).toFixed(2);
+      setAvailableCredits(credits);
+    } catch (error) {
+      console.error('[ContextPanel] Failed to fetch billing plan:', error);
+      setAvailableCredits(null);
+    }
+  }, [selectedSpace?.id]);
+
   // Fetch billing plan when space changes
   useEffect(() => {
-    const fetchBillingPlan = async () => {
-      if (!selectedSpace?.id) {
-        setAvailableCredits(null);
-        return;
-      }
+    fetchBillingPlan();
+  }, [fetchBillingPlan]);
 
-      try {
-        const token = localStorage.getItem('netdata_token');
-        if (!token) return;
-
-        const billingPlan = await getSpaceBillingPlan(token, selectedSpace.id);
-        const microcredits = billingPlan?.ai?.total_available_microcredits || 0;
-        const credits = (microcredits / 1000000).toFixed(2);
-        setAvailableCredits(credits);
-      } catch (error) {
-        console.error('[ContextPanel] Failed to fetch billing plan:', error);
-        setAvailableCredits(null);
-      }
+  // Listen for credits refresh event (triggered after chat messages)
+  useEffect(() => {
+    const handleCreditsRefresh = () => {
+      fetchBillingPlan();
     };
 
-    fetchBillingPlan();
-  }, [selectedSpace?.id]);
+    window.addEventListener('credits-refresh', handleCreditsRefresh);
+    return () => {
+      window.removeEventListener('credits-refresh', handleCreditsRefresh);
+    };
+  }, [fetchBillingPlan]);
 
   // Check if there's any context to display
   const hasSpaceRoom = selectedSpace || selectedRoom;

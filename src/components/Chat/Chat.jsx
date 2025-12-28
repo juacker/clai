@@ -441,6 +441,9 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
       // Reload conversation to get final state from API
       await loadConversation(conversationId);
 
+      // Trigger credits refresh
+      window.dispatchEvent(new CustomEvent('credits-refresh'));
+
     } catch (error) {
       console.error('Failed to process message:', error);
       setProcessingError(error.message || 'Failed to process message');
