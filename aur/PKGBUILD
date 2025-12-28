@@ -1,0 +1,44 @@
+# Maintainer: juacker <your-email@example.com>
+pkgname=clai-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Command Line AI Interface for Netdata"
+arch=('x86_64')
+url="https://github.com/juacker/clai"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libappindicator-gtk3')
+provides=('clai')
+conflicts=('clai')
+source=("${pkgname}-${pkgver}.AppImage::https://github.com/juacker/clai/releases/download/v${pkgver}/clai_${pkgver}_amd64.AppImage")
+sha256sums=('SKIP')  # Update with actual checksum after first release
+options=(!strip)
+
+prepare() {
+    chmod +x "${pkgname}-${pkgver}.AppImage"
+    "./${pkgname}-${pkgver}.AppImage" --appimage-extract
+}
+
+package() {
+    # Install the application
+    install -d "${pkgdir}/opt/clai"
+    cp -r squashfs-root/* "${pkgdir}/opt/clai/"
+
+    # Create executable symlink
+    install -d "${pkgdir}/usr/bin"
+    ln -s /opt/clai/clai "${pkgdir}/usr/bin/clai"
+
+    # Install desktop file
+    install -Dm644 squashfs-root/clai.desktop "${pkgdir}/usr/share/applications/clai.desktop"
+    sed -i 's|Exec=.*|Exec=/opt/clai/clai|' "${pkgdir}/usr/share/applications/clai.desktop"
+
+    # Install icons
+    for size in 32x32 128x128 256x256 512x512; do
+        if [ -f "squashfs-root/usr/share/icons/hicolor/${size}/apps/clai.png" ]; then
+            install -Dm644 "squashfs-root/usr/share/icons/hicolor/${size}/apps/clai.png" \
+                "${pkgdir}/usr/share/icons/hicolor/${size}/apps/clai.png"
+        fi
+    done
+
+    # Install license
+    install -Dm644 "${srcdir}/../LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE" 2>/dev/null || true
+}
