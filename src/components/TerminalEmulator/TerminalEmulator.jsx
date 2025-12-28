@@ -289,7 +289,7 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
         {/* User Avatar - positioned at the left */}
         <div className={styles.terminalAvatar}>
           <UserAvatar
-            avatarUrl={userInfo?.avatarUrl}
+            avatarUrl={userInfo?.avatarURL}
             userName={userInfo?.name || userInfo?.email}
             size="small"
             showMenu={true}
