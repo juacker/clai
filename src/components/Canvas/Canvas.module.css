@@ -6,6 +6,7 @@
  */
 
 .canvasWrapper {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -389,7 +390,7 @@
 
 /* Filter Modal Overlay */
 .filterModalOverlay {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;

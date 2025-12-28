@@ -1,6 +1,7 @@
 /* ChartsView Component Styles - Minimalist Design */
 
 .chartsViewWrapper {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: calc(100% - 44px);
@@ -309,7 +310,7 @@
 
 /* Filter Modal Overlay */
 .filterModalOverlay {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
