@@ -1,45 +1,33 @@
 /**
- * Metrics Component CSS Module - Light, elegant, modern design
- *
- * Hilbert curve layout that fills viewport with mobile-first responsive design
- * NO ZOOM - Static overview only
+ * Anomalies Component CSS Module
+ * Hilbert curve visualization with click-to-canvas functionality
  */
 
 .metricsContainer {
-
   display: flex;
   flex-direction: column;
   padding: 0;
   overflow: hidden;
   background: #fafafa;
   position: relative;
-
-  /* Light, elegant styling */
   border-radius: 0;
   box-shadow: none;
-
-  /* Smooth transitions */
   transition: background 0.3s ease;
-  /* Inset by 2px to allow parent's focus border (box-shadow) to be visible */
   box-sizing: border-box;
   margin: 2px;
   width: calc(100% - 4px);
   height: calc(100% - 4px);
 }
 
-/* Canvas element */
 .metricsCanvas {
   position: absolute;
-  top: 44px; /* Account for header bar */
+  top: 44px;
   left: 0;
   cursor: default;
-
-  /* Smooth rendering */
   image-rendering: -webkit-optimize-contrast;
   image-rendering: crisp-edges;
 }
 
-/* Header toolbar */
 .headerBar {
   position: absolute;
   top: 0;
@@ -65,42 +53,11 @@
   position: relative;
 }
 
-.viewToggle {
-  display: flex;
-  background: rgba(0, 0, 0, 0.05);
-  border-radius: 6px;
-  padding: 2px;
-  gap: 2px;
-}
-
-.viewToggleButton {
-  padding: 6px 14px;
-  border: none;
-  background: transparent;
-  color: #666;
+.headerTitle {
   font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: all 0.2s ease;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-  white-space: nowrap;
-}
-
-.viewToggleButton:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.05);
+  font-weight: 600;
   color: #333;
-}
-
-.viewToggleButton.active {
-  background: #ffffff;
-  color: #00AB44;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.viewToggleButton:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  margin-right: 8px;
 }
 
 .toolbarRight {
@@ -109,23 +66,9 @@
   gap: 8px;
 }
 
-.clearAllButton {
-  padding: 6px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  background: #ffffff;
-  color: #666;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: all 0.2s ease;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-}
-
-.clearAllButton:hover {
-  background: #f8f8f8;
-  border-color: rgba(0, 0, 0, 0.15);
-  color: #333;
+.hint {
+  font-size: 11px;
+  color: #999;
 }
 
 .filterInput {
@@ -175,10 +118,6 @@
   color: #666;
 }
 
-.clearButton:active {
-  background: rgba(0, 0, 0, 0.1);
-}
-
 /* Backdrop for context panel */
 .backdrop {
   position: fixed;
@@ -193,12 +132,8 @@
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* Context panel */
@@ -270,7 +205,7 @@
   color: #333;
   margin-bottom: 6px;
   transition: all 0.2s ease;
-  cursor: default;
+  cursor: pointer;
   overflow: hidden;
 }
 
@@ -280,7 +215,16 @@
 
 .contextItem:hover {
   background: #f8f8f8;
-  border-color: rgba(0, 0, 0, 0.12);
+  border-color: #00AB44;
+}
+
+.contextItem.inCanvas {
+  background: rgba(0, 171, 68, 0.05);
+  border-color: rgba(0, 171, 68, 0.2);
+}
+
+.contextItem.inCanvas:hover {
+  background: rgba(0, 171, 68, 0.08);
 }
 
 .contextBand {
@@ -300,38 +244,49 @@
   word-break: break-all;
 }
 
-.addButton {
-  width: 32px;
-  height: 32px;
-  margin: 6px 6px 6px 0;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  background: #ffffff;
-  color: #00AB44;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  border-radius: 4px;
+.statusIndicator {
   display: flex;
   align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
+  padding-right: 12px;
 }
 
-.addButton:hover {
-  background: #f0fdf4;
-  border-color: #00AB44;
+.addHint {
+  font-size: 12px;
+  font-weight: 500;
+  color: #00AB44;
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
-.addButton.selected {
-  background: #00AB44;
+.contextItem:hover .addHint {
+  opacity: 1;
+}
+
+.inCanvasBadge {
+  font-size: 10px;
+  font-weight: 600;
+  color: #00AB44;
+  background: rgba(0, 171, 68, 0.1);
+  padding: 3px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sentBadge {
+  font-size: 10px;
+  font-weight: 600;
   color: #ffffff;
-  border-color: #00AB44;
+  background: #00AB44;
+  padding: 3px 8px;
+  border-radius: 10px;
+  animation: pulse 0.3s ease;
 }
 
-.addButton.selected:hover {
-  background: #009939;
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
 }
 
 .noResults {
@@ -342,146 +297,10 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
 }
 
-/* Charts View */
-.chartsView {
-  position: absolute;
-  top: 44px;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow-y: auto;
-  background: #fafafa;
-  padding: 16px;
-}
-
-.chartsGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  gap: 16px;
-  max-width: 1600px;
-  margin: 0 auto;
-}
-
-.chartCard {
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
-  transition: box-shadow 0.2s ease;
-}
-
-.chartCard:hover {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
-}
-
-.chartHeader {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.chartBand {
-  width: 4px;
-  height: 24px;
-  border-radius: 2px;
-  margin-right: 12px;
-  flex-shrink: 0;
-}
-
-.chartTitle {
-  flex: 1;
-  font-size: 13px;
-  font-weight: 500;
-  color: #333;
-  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-  word-break: break-all;
-}
-
-.removeButton {
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: transparent;
-  color: #999;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-  margin-left: 8px;
-}
-
-.removeButton:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #666;
-}
-
-.chartContent {
-  padding: 16px;
-  min-height: 200px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.chartPlaceholder {
-  text-align: center;
-  color: #999;
-  font-size: 13px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-}
-
-.chartInfo {
-  margin-top: 8px;
-  font-size: 12px;
-  color: #666;
-}
-
-.emptyChartsView {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  gap: 16px;
-}
-
-.emptyChartsView p {
-  margin: 0;
-  font-size: 14px;
-  color: #999;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-}
-
-.backToCanvasButton {
-  padding: 10px 20px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  background: #ffffff;
-  color: #00AB44;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: 6px;
-  transition: all 0.2s ease;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-}
-
-.backToCanvasButton:hover {
-  background: #f0fdf4;
-  border-color: #00AB44;
-}
-
-/* Info banner - Desktop default */
+/* Info banner */
 .infoBanner {
   position: absolute;
-  top: 56px; /* Account for header bar + spacing */
+  top: 56px;
   right: 12px;
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
@@ -495,8 +314,6 @@
   border: 1px solid rgba(0, 0, 0, 0.06);
   line-height: 1.5;
   max-width: 90%;
-
-  /* Smooth transitions */
   transition: all 0.3s ease;
 }
 
@@ -577,7 +394,7 @@
   line-height: 1.6;
 }
 
-/* Desktop override (fine pointer + larger screen) */
+/* Desktop override */
 @media (min-width: 769px) and (pointer: fine) {
   .metricsContainer {
     background: #fafafa;
@@ -589,10 +406,6 @@
   }
 
   .metricsCanvas {
-    top: 44px;
-  }
-
-  .chartsView {
     top: 44px;
   }
 

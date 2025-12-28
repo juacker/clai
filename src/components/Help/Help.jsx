@@ -28,7 +28,8 @@ const Help = () => {
             <div className={styles.commandRow}><code>/ctx</code> <span>Show/set context</span></div>
             <div className={styles.commandRow}><code>/echo &lt;text&gt;</code> <span>Display text</span></div>
             <div className={styles.commandRow}><code>/help</code> <span>This reference</span></div>
-            <div className={styles.commandRow}><code>/metrics</code> <span>Metrics chart</span></div>
+            <div className={styles.commandRow}><code>/anomalies</code> <span>Anomaly detection</span></div>
+            <div className={styles.commandRow}><code>/canvas</code> <span>Chart display</span></div>
             <div className={styles.commandRow}><code>/reset-all</code> <span>Reset layout</span></div>
             <div className={styles.commandRow}><code>/tab</code> <span>New tab</span></div>
             <div className={styles.commandRow}><code>/tab close</code> / <code>next</code> / <code>prev</code> / <code>list</code></div>

@@ -1,25 +1,25 @@
 /**
- * Metrics Component with Single Hilbert Curve
+ * Anomalies Component - Hilbert Curve Visualization
  *
- * Uses a single Hilbert square that fills the viewport
- * Groups metrics if waste > 5%
- * CANVAS VERSION - High performance rendering
- * NO ZOOM - Static overview only
+ * Displays metrics using a Hilbert curve layout with anomaly rate coloring.
+ * Clicking on a metric sends it to the Canvas component for charting.
+ *
+ * This component is focused on anomaly visualization only.
+ * Charts are handled by the separate Canvas command.
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useTabContext } from '../../contexts/TabContext';
+import { useCommandMessaging } from '../../contexts/CommandMessagingContext';
 import { getContexts, getData } from '../../api/client';
 import NetdataSpinner from '../common/NetdataSpinner';
-import ChartsView from '../ChartsView/ChartsView';
-import styles from './Metrics.module.css';
+import styles from './Anomalies.module.css';
 
 // ============================================================================
 // HILBERT CURVE ALGORITHM
 // ============================================================================
 
 function generateHilbertPoints(order) {
-  console.time('generateHilbertPoints');
   const n = Math.pow(2, order);
   const points = [];
 
@@ -53,7 +53,6 @@ function generateHilbertPoints(order) {
     points.push(hilbertD2XY(n, i));
   }
 
-  console.timeEnd('generateHilbertPoints');
   return points;
 }
 
@@ -61,52 +60,20 @@ function generateHilbertPoints(order) {
 // METRIC GROUPING ALGORITHM
 // ============================================================================
 
-/**
- * Group metrics using multi-level deterministic grouping
- *
- * Determinism guarantees:
- * - Metrics are always sorted alphabetically before processing
- * - Prefixes are grouped starting from deepest level first
- * - At each level, prefixes are processed alphabetically
- * - Same input metrics always produce same output grouping
- *
- * @param {string[]} metrics - Array of metric names
- * @param {number} targetCount - Target number of groups to achieve
- * @returns {Map} Map of groupName -> [originalMetrics]
- */
 function groupMetricsMultiLevel(metrics, targetCount) {
-  console.time('groupMetricsMultiLevel');
-  console.log(`groupMetricsMultiLevel: input=${metrics.length}, target=${targetCount}`);
-
   if (metrics.length <= targetCount) {
-    console.timeEnd('groupMetricsMultiLevel');
-    // Sort for determinism
     const sorted = [...metrics].sort();
     return new Map(sorted.map(m => [m, [m]]));
   }
 
-  // Sort metrics alphabetically for determinism
   const sortedMetrics = [...metrics].sort();
-
-  // Current state: map of displayName -> [originalMetrics]
   let currentGroups = new Map(sortedMetrics.map(m => [m, [m]]));
-
-  // Find max depth in metrics
   const maxDepth = Math.max(...sortedMetrics.map(m => m.split('.').length));
 
-  // Group level by level, starting from deepest (most specific)
-  // This ensures we group "system.cpu.idle" + "system.cpu.user" -> "system.cpu"
-  // before we'd ever group "system.cpu" + "system.memory" -> "system"
   for (let depth = maxDepth - 1; depth >= 1; depth--) {
-    if (currentGroups.size <= targetCount) {
-      console.log(`Reached target at depth ${depth}, stopping`);
-      break;
-    }
+    if (currentGroups.size <= targetCount) break;
 
-    console.log(`Grouping at depth ${depth}, current groups: ${currentGroups.size}`);
-
-    // Build prefix map for current depth
-    const prefixMap = new Map(); // prefix -> [currentGroupNames]
+    const prefixMap = new Map();
 
     for (const [groupName] of currentGroups) {
       const parts = groupName.split('.');
@@ -119,24 +86,17 @@ function groupMetricsMultiLevel(metrics, targetCount) {
       }
     }
 
-    // Sort prefixes alphabetically for determinism
     const sortedPrefixes = Array.from(prefixMap.entries())
-      .filter(([, items]) => items.length >= 2) // Only group if 2+ items share prefix
+      .filter(([, items]) => items.length >= 2)
       .sort((a, b) => a[0].localeCompare(b[0]));
 
-    if (sortedPrefixes.length === 0) {
-      console.log(`No groupable prefixes at depth ${depth}`);
-      continue;
-    }
+    if (sortedPrefixes.length === 0) continue;
 
-    // Calculate how many groups we can reduce by
     let reductionNeeded = currentGroups.size - targetCount;
 
-    // Group prefixes until we reach target or run out
     for (const [prefix, groupNames] of sortedPrefixes) {
       if (reductionNeeded <= 0) break;
 
-      // Merge all groups under this prefix
       const mergedOriginals = [];
       for (const name of groupNames) {
         const originals = currentGroups.get(name);
@@ -146,40 +106,35 @@ function groupMetricsMultiLevel(metrics, targetCount) {
         }
       }
 
-      // Sort merged originals for determinism
       mergedOriginals.sort();
       currentGroups.set(prefix, mergedOriginals);
 
       const reduction = groupNames.length - 1;
       reductionNeeded -= reduction;
-
-      console.log(`Grouped ${groupNames.length} items into '${prefix}', reduction: ${reduction}`);
     }
   }
 
-  console.log(`Final grouped count: ${currentGroups.size}`);
-  console.timeEnd('groupMetricsMultiLevel');
   return currentGroups;
 }
 
-/**
- * Calculate proportional cell allocation for groups
- *
- * Distributes grid cells proportionally based on each group's weight (original metric count).
- * Uses largest remainder method to ensure exact cell count.
- *
- * @param {Map} groupedMetrics - Map of groupName -> [originalMetrics]
- * @param {number} totalCells - Total cells available in grid
- * @returns {Map} Map of groupName -> cellCount
- */
 function calculateProportionalCells(groupedMetrics, totalCells) {
   const totalOriginals = Array.from(groupedMetrics.values())
     .reduce((sum, arr) => sum + arr.length, 0);
 
-  // Calculate initial allocation and remainders
+  const groupCount = groupedMetrics.size;
+
+  // If we have more groups than cells, each group gets exactly 1 cell
+  if (groupCount >= totalCells) {
+    const allocations = Array.from(groupedMetrics.keys())
+      .sort()
+      .map(name => ({ name, cells: 1 }));
+    return new Map(allocations.map(a => [a.name, a.cells]));
+  }
+
   const allocations = [];
   let allocatedCells = 0;
 
+  // First pass: calculate proportional shares (floor values)
   for (const [name, originals] of groupedMetrics) {
     const exactShare = (originals.length / totalOriginals) * totalCells;
     const floorShare = Math.floor(exactShare);
@@ -189,42 +144,43 @@ function calculateProportionalCells(groupedMetrics, totalCells) {
     allocatedCells += floorShare;
   }
 
-  // Distribute remaining cells using largest remainder method
-  const remainingCells = totalCells - allocatedCells;
-  allocations.sort((a, b) => b.remainder - a.remainder);
-
-  for (let i = 0; i < remainingCells && i < allocations.length; i++) {
-    allocations[i].cells++;
-  }
-
   // Ensure every group gets at least 1 cell
   for (const alloc of allocations) {
     if (alloc.cells === 0) {
       alloc.cells = 1;
+      allocatedCells++;
     }
   }
 
-  // Sort back to alphabetical order for determinism
+  // Distribute remaining cells by remainder (highest first)
+  const remainingCells = totalCells - allocatedCells;
+  if (remainingCells > 0) {
+    allocations.sort((a, b) => b.remainder - a.remainder);
+    for (let i = 0; i < remainingCells && i < allocations.length; i++) {
+      allocations[i].cells++;
+    }
+  } else if (remainingCells < 0) {
+    // We over-allocated! Need to reduce some allocations
+    // Sort by cells descending, reduce the largest ones first
+    allocations.sort((a, b) => b.cells - a.cells);
+    let toReduce = -remainingCells;
+    for (const alloc of allocations) {
+      if (toReduce <= 0) break;
+      // Only reduce if group has more than 1 cell
+      while (alloc.cells > 1 && toReduce > 0) {
+        alloc.cells--;
+        toReduce--;
+      }
+    }
+  }
+
   allocations.sort((a, b) => a.name.localeCompare(b.name));
 
   return new Map(allocations.map(a => [a.name, a.cells]));
 }
 
-/**
- * Calculate optimal Hilbert configuration with proportional cell allocation
- *
- * Strategy:
- * 1. Find the smallest order where grid >= metrics (no grouping needed)
- * 2. If waste > threshold, try progressively smaller orders with grouping
- * 3. Allocate cells proportionally based on group sizes
- *
- * Waste threshold: 20% - allows some empty space but avoids half-empty grids
- */
 function calculateHilbertConfig(metrics) {
-  console.time('calculateHilbertConfig');
-
   if (metrics.length === 0) {
-    console.timeEnd('calculateHilbertConfig');
     return {
       order: 0,
       gridSize: 1,
@@ -235,10 +191,8 @@ function calculateHilbertConfig(metrics) {
     };
   }
 
-  // Sort metrics alphabetically for determinism
   const sortedMetrics = [...metrics].sort();
 
-  // Find smallest order that fits all metrics without grouping
   let maxOrder = 0;
   while (Math.pow(2, maxOrder) * Math.pow(2, maxOrder) < sortedMetrics.length) {
     maxOrder++;
@@ -248,15 +202,10 @@ function calculateHilbertConfig(metrics) {
   const maxTotalCells = maxGridSize * maxGridSize;
   const initialWaste = ((maxTotalCells - sortedMetrics.length) / maxTotalCells) * 100;
 
-  console.log(`Initial: order=${maxOrder}, grid=${maxGridSize}x${maxGridSize}, cells=${maxTotalCells}, metrics=${sortedMetrics.length}, waste=${initialWaste.toFixed(1)}%`);
-
-  // If waste is acceptable (< 20%), use individual metrics (1 cell each)
   const WASTE_THRESHOLD = 20;
   if (initialWaste <= WASTE_THRESHOLD) {
-    console.log(`Waste ${initialWaste.toFixed(1)}% <= ${WASTE_THRESHOLD}%, using individual metrics`);
     const groupedMetrics = new Map(sortedMetrics.map(m => [m, [m]]));
     const cellAllocations = new Map(sortedMetrics.map(m => [m, 1]));
-    console.timeEnd('calculateHilbertConfig');
     return {
       order: maxOrder,
       gridSize: maxGridSize,
@@ -267,30 +216,21 @@ function calculateHilbertConfig(metrics) {
     };
   }
 
-  // Try progressively smaller orders with grouping
   let bestConfig = null;
   let bestWaste = initialWaste;
-
-  // Minimum order to try (order 3 = 8x8 = 64 cells minimum)
   const minOrder = 3;
 
   for (let tryOrder = maxOrder - 1; tryOrder >= minOrder; tryOrder--) {
     const tryGridSize = Math.pow(2, tryOrder);
     const tryCells = tryGridSize * tryGridSize;
 
-    console.log(`Trying order=${tryOrder}, grid=${tryGridSize}x${tryGridSize}, cells=${tryCells}`);
-
-    // Try to group metrics to fit this grid
     const grouped = groupMetricsMultiLevel(sortedMetrics, tryCells);
     const groupedCount = grouped.size;
 
     if (groupedCount <= tryCells) {
-      // Calculate proportional cell allocation
       const cellAllocations = calculateProportionalCells(grouped, tryCells);
       const allocatedCells = Array.from(cellAllocations.values()).reduce((a, b) => a + b, 0);
       const waste = ((tryCells - allocatedCells) / tryCells) * 100;
-
-      console.log(`Order ${tryOrder}: ${groupedCount} groups, ${allocatedCells} cells allocated, waste=${waste.toFixed(1)}%`);
 
       if (waste < bestWaste) {
         bestWaste = waste;
@@ -302,30 +242,20 @@ function calculateHilbertConfig(metrics) {
           groupedMetrics: grouped,
           cellAllocations
         };
-        console.log(`New best config: order=${tryOrder}, waste=${waste.toFixed(1)}%`);
       }
 
-      if (waste <= 5) {
-        console.log(`Achieved ${waste.toFixed(1)}% waste, stopping search`);
-        break;
-      }
+      if (waste <= 5) break;
     } else {
-      console.log(`Order ${tryOrder}: could not fit (${groupedCount} > ${tryCells}), stopping`);
       break;
     }
   }
 
   if (bestConfig) {
-    console.log(`Selected: order=${bestConfig.order}, waste=${bestWaste.toFixed(1)}%`);
-    console.timeEnd('calculateHilbertConfig');
     return bestConfig;
   }
 
-  // Fallback to original (no grouping)
-  console.log('No better configuration found, using original');
   const groupedMetrics = new Map(sortedMetrics.map(m => [m, [m]]));
   const cellAllocations = new Map(sortedMetrics.map(m => [m, 1]));
-  console.timeEnd('calculateHilbertConfig');
   return {
     order: maxOrder,
     gridSize: maxGridSize,
@@ -340,93 +270,90 @@ function calculateHilbertConfig(metrics) {
 // VISUAL GROUPING ALGORITHM
 // ============================================================================
 
-/**
- * Create visual groups from grouped metrics
- *
- * Groups metrics by their common prefix at a reasonable depth.
- * Uses adaptive depth based on cell count - larger groups get subdivided more.
- *
- * @param {Map} groupedMetrics - Map of displayName -> [originalMetrics]
- * @param {Map} cellAllocations - Map of displayName -> cellCount
- * @returns {Map} Map of visualGroupKey -> [displayNames]
- */
 function createVisualGroups(groupedMetrics, cellAllocations) {
-  console.time('createVisualGroups');
-  const groups = new Map();
+  // For large groups, extract more subgroups to reduce fragmentation
+  // More extracted subgroups = smaller remaining parent = less scattered
 
-  // Target: visual groups should have roughly 8-24 cells for good visual clarity
-  const TARGET_MIN_CELLS = 8;
-  const TARGET_MAX_CELLS = 24;
-
-  // Get all display names sorted for determinism
+  const MAX_VISUAL_GROUPS = 60;
+  const MIN_SUBGROUP_CELLS = 20; // Lower threshold = more subgroups extracted
   const displayNames = Array.from(groupedMetrics.keys()).sort();
 
-  // Build prefix tree to find natural groupings
-  const prefixCells = new Map(); // "depth:prefix" -> total cells
+  // Step 1: Calculate cell counts for each first-level and second-level prefix
+  const firstLevelCounts = new Map();
+  const firstLevelMetrics = new Map();
+  const secondLevelCounts = new Map();
 
   for (const name of displayNames) {
-    const cells = cellAllocations.get(name) || 1;
     const parts = name.split('.');
+    const firstLevel = parts[0];
+    const secondLevel = parts.length > 1 ? `${parts[0]}.${parts[1]}` : null;
+    const cells = cellAllocations.get(name) || 1;
 
-    for (let depth = 1; depth <= parts.length; depth++) {
-      const prefix = parts.slice(0, depth).join('.');
-      const key = `${depth}:${prefix}`;
-      prefixCells.set(key, (prefixCells.get(key) || 0) + cells);
+    firstLevelCounts.set(firstLevel, (firstLevelCounts.get(firstLevel) || 0) + cells);
+    if (!firstLevelMetrics.has(firstLevel)) {
+      firstLevelMetrics.set(firstLevel, []);
+    }
+    firstLevelMetrics.get(firstLevel).push(name);
+
+    if (secondLevel) {
+      const key = `${firstLevel}|${secondLevel}`;
+      if (!secondLevelCounts.has(key)) {
+        secondLevelCounts.set(key, { secondLevel, cells: 0, metrics: [] });
+      }
+      const entry = secondLevelCounts.get(key);
+      entry.cells += cells;
+      entry.metrics.push(name);
     }
   }
 
-  // For each metric, find the best visual group
-  for (const name of displayNames) {
-    const parts = name.split('.');
-    let bestGroup = parts[0]; // Default to top-level
-    let bestDepth = 1;
+  // Step 2: Calculate threshold for large groups
+  const totalCells = Array.from(firstLevelCounts.values()).reduce((a, b) => a + b, 0);
+  const largeGroupThreshold = totalCells * 0.10; // 10% of total (lower = more groups split)
 
-    // Find the deepest prefix that stays within target range
-    // or the shallowest prefix that's not too large
-    for (let depth = 1; depth <= parts.length; depth++) {
-      const prefix = parts.slice(0, depth).join('.');
-      const key = `${depth}:${prefix}`;
-      const cellCount = prefixCells.get(key) || 0;
+  // Step 3: Build visual groups
+  const groups = new Map();
 
-      if (cellCount >= TARGET_MIN_CELLS && cellCount <= TARGET_MAX_CELLS) {
-        // Perfect size - use this
-        bestGroup = prefix;
-        bestDepth = depth;
-        break;
-      } else if (cellCount < TARGET_MIN_CELLS) {
-        // Too small - use parent (previous depth) if it exists
-        if (depth > 1) {
-          bestGroup = parts.slice(0, depth - 1).join('.');
-        } else {
-          bestGroup = prefix;
-        }
-        break;
-      } else if (cellCount > TARGET_MAX_CELLS && depth < parts.length) {
-        // Too large - go deeper
-        continue;
-      } else {
-        // At max depth or no better option
-        bestGroup = prefix;
+  for (const [firstLevel, metrics] of firstLevelMetrics) {
+    const cellCount = firstLevelCounts.get(firstLevel);
+
+    if (cellCount < largeGroupThreshold) {
+      groups.set(firstLevel, metrics);
+      continue;
+    }
+
+    // Large group - extract subgroups
+    const subgroups = [];
+    for (const [key, entry] of secondLevelCounts) {
+      if (key.startsWith(`${firstLevel}|`)) {
+        subgroups.push(entry);
       }
     }
 
-    if (!groups.has(bestGroup)) {
-      groups.set(bestGroup, []);
+    subgroups.sort((a, b) => b.cells - a.cells);
+
+    const extractedMetrics = new Set();
+
+    for (const subgroup of subgroups) {
+      if (groups.size >= MAX_VISUAL_GROUPS - 1) break;
+
+      // Extract if subgroup has enough cells
+      if (subgroup.cells >= MIN_SUBGROUP_CELLS) {
+        groups.set(subgroup.secondLevel, subgroup.metrics);
+        subgroup.metrics.forEach(m => extractedMetrics.add(m));
+      }
     }
-    groups.get(bestGroup).push(name);
+
+    // Keep remaining under parent (only if there are remaining metrics)
+    const remainingMetrics = metrics.filter(m => !extractedMetrics.has(m));
+    if (remainingMetrics.length > 0) {
+      groups.set(firstLevel, remainingMetrics);
+    }
   }
 
-  console.log(`Created ${groups.size} visual groups from ${displayNames.length} metrics`);
-  console.timeEnd('createVisualGroups');
   return groups;
 }
 
-/**
- * Calculate group borders for canvas rendering
- */
 function calculateGroupBorders(cells, visualGroups) {
-  console.time('calculateGroupBorders');
-
   const metricToGroup = new Map();
   visualGroups.forEach((metrics, groupKey) => {
     metrics.forEach(metric => metricToGroup.set(metric, groupKey));
@@ -465,8 +392,6 @@ function calculateGroupBorders(cells, visualGroups) {
     }
   });
 
-  console.timeEnd('calculateGroupBorders');
-  console.log(`Created ${borders.length} border segments`);
   return borders;
 }
 
@@ -474,78 +399,45 @@ function calculateGroupBorders(cells, visualGroups) {
 // COLOR MAPPING
 // ============================================================================
 
-/**
- * Get color for a cell based on anomaly rate
- * Uses theme colors for semantic indication:
- * - Success (green): No/low anomaly (< 10%)
- * - Info (teal): Moderate anomaly (10-50%)
- * - Warning (orange): High anomaly (50-100%)
- * - Error (red): Critical anomaly (> 100%)
- *
- * @param {number} anomalyRate - Anomaly rate percentage (0-100+)
- * @returns {string} CSS color from theme
- */
 function getColorForAnomalyRate(anomalyRate) {
-  // No data or low anomaly - Success (Netdata Green)
   if (anomalyRate === null || anomalyRate === undefined || anomalyRate < 10) {
-    return '#E6F9EE'; // --color-success-lighter
-  }
-  // Moderate anomaly - Info (Netdata Teal)
-  else if (anomalyRate >= 10 && anomalyRate < 50) {
-    return '#E6F7FB'; // --color-info-lighter
-  }
-  // High anomaly - Warning (Orange)
-  else if (anomalyRate >= 50 && anomalyRate < 100) {
-    return '#FEF5E7'; // --color-warning-lighter
-  }
-  // Critical anomaly - Error (Red)
-  else {
-    return '#FCE8E6'; // --color-error-lighter
+    return '#E6F9EE';
+  } else if (anomalyRate >= 10 && anomalyRate < 50) {
+    return '#E6F7FB';
+  } else if (anomalyRate >= 50 && anomalyRate < 100) {
+    return '#FEF5E7';
+  } else {
+    return '#FCE8E6';
   }
 }
 
-/**
- * Get severity level for sorting (higher = more critical)
- * - 4: Critical (>= 100%)
- * - 3: High (50-100%)
- * - 2: Moderate (10-50%)
- * - 1: Low (< 10%)
- * - 0: No data
- *
- * @param {number} anomalyRate - Anomaly rate percentage (0-100+)
- * @returns {number} Severity level for sorting
- */
 function getSeverityLevel(anomalyRate) {
   if (anomalyRate === null || anomalyRate === undefined) {
-    return 0; // No data - lowest priority
+    return 0;
   } else if (anomalyRate >= 100) {
-    return 4; // Critical
+    return 4;
   } else if (anomalyRate >= 50) {
-    return 3; // High
+    return 3;
   } else if (anomalyRate >= 10) {
-    return 2; // Moderate
+    return 2;
   } else {
-    return 1; // Low
+    return 1;
   }
 }
 
 // ============================================================================
-// METRICS COMPONENT
+// ANOMALIES COMPONENT
 // ============================================================================
 
-const Metrics = ({ command }) => {
+const Anomalies = ({ command }) => {
   const { selectedSpace, selectedRoom } = useTabContext();
+  const { sendToCanvas, isMetricInCanvas } = useCommandMessaging();
 
-  // DEBUG: Track mounts and unmounts
-  useEffect(() => {
-    console.log('🔵 Metrics MOUNTED');
-    return () => console.log('🔴 Metrics UNMOUNTED');
-  }, []);
-
-  // DEBUG: Track re-renders
-  useEffect(() => {
-    console.log('🔄 Metrics RE-RENDERED', { selectedSpace, selectedRoom, command });
-  });
+  // Create space/room key for canvas storage
+  const spaceRoomKey = useMemo(() => {
+    if (!selectedSpace?.id || !selectedRoom?.id) return null;
+    return `${selectedSpace.id}_${selectedRoom.id}`;
+  }, [selectedSpace?.id, selectedRoom?.id]);
 
   const [contexts, setContexts] = useState([]);
   const [anomalyRates, setAnomalyRates] = useState(new Map());
@@ -556,8 +448,7 @@ const Metrics = ({ command }) => {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [filterText, setFilterText] = useState('');
   const [debouncedFilterText, setDebouncedFilterText] = useState('');
-  const [selectedMetrics, setSelectedMetrics] = useState(new Set());
-  const [viewMode, setViewMode] = useState('canvas'); // 'canvas' or 'charts'
+  const [sentFeedback, setSentFeedback] = useState(null); // Track recently sent metric for feedback
 
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
@@ -565,22 +456,15 @@ const Metrics = ({ command }) => {
   const filterInputRef = useRef(null);
 
   const sortedContexts = useMemo(() => {
-    console.time('sortContexts');
-    const sorted = [...contexts].sort((a, b) => a.name.localeCompare(b.name));
-    console.timeEnd('sortContexts');
-    return sorted;
+    return [...contexts].sort((a, b) => a.name.localeCompare(b.name));
   }, [contexts]);
 
   const hilbertConfig = useMemo(() => {
-    console.time('hilbertConfig useMemo');
     const metricNames = sortedContexts.map(c => c.name);
-    const config = calculateHilbertConfig(metricNames);
-    console.timeEnd('hilbertConfig useMemo');
-    return config;
+    return calculateHilbertConfig(metricNames);
   }, [sortedContexts]);
 
   const allCells = useMemo(() => {
-    console.time('Generate cells');
     if (dimensions.width === 0 || dimensions.height === 0) return [];
 
     const { order, gridSize, processedMetrics, groupedMetrics, cellAllocations } = hilbertConfig;
@@ -592,12 +476,10 @@ const Metrics = ({ command }) => {
     const cells = [];
     let hilbertIndex = 0;
 
-    // For each processed metric, allocate its proportional number of cells
     for (const metricName of processedMetrics) {
       const originalMetrics = groupedMetrics.get(metricName) || [metricName];
       const cellCount = cellAllocations.get(metricName) || 1;
 
-      // Create multiple cells for this metric based on its allocation
       for (let c = 0; c < cellCount && hilbertIndex < hilbertPoints.length; c++) {
         const [hx, hy] = hilbertPoints[hilbertIndex];
 
@@ -615,15 +497,11 @@ const Metrics = ({ command }) => {
       }
     }
 
-    console.log(`Generated ${cells.length} cells for ${processedMetrics.length} metrics`);
-    console.timeEnd('Generate cells');
     return cells;
   }, [dimensions, hilbertConfig]);
 
   const { groupBorders, visualGroups } = useMemo(() => {
-    console.time('visualGroups and borders useMemo');
     if (allCells.length === 0) {
-      console.timeEnd('visualGroups and borders useMemo');
       return { groupBorders: [], visualGroups: new Map() };
     }
 
@@ -631,18 +509,14 @@ const Metrics = ({ command }) => {
     const visualGroups = createVisualGroups(groupedMetrics, cellAllocations);
     const groupBorders = calculateGroupBorders(allCells, visualGroups);
 
-    console.timeEnd('visualGroups and borders useMemo');
     return { groupBorders, visualGroups };
   }, [allCells, hilbertConfig]);
 
   const groupLabels = useMemo(() => {
-    console.time('groupLabels useMemo');
     if (allCells.length === 0 || visualGroups.size === 0) {
-      console.timeEnd('groupLabels useMemo');
       return [];
     }
 
-    // Build map of metric name -> ALL cells (since each metric can have multiple cells)
     const metricToCells = new Map();
     allCells.forEach(cell => {
       if (!metricToCells.has(cell.name)) {
@@ -653,7 +527,6 @@ const Metrics = ({ command }) => {
 
     const labels = [];
     visualGroups.forEach((metrics, groupKey) => {
-      // Collect ALL cells for all metrics in this visual group
       const groupCells = [];
       for (const metric of metrics) {
         const cells = metricToCells.get(metric);
@@ -664,7 +537,6 @@ const Metrics = ({ command }) => {
 
       if (groupCells.length === 0) return;
 
-      // Calculate bounding box center (more stable than centroid for irregular shapes)
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const cell of groupCells) {
         minX = Math.min(minX, cell.x);
@@ -684,26 +556,20 @@ const Metrics = ({ command }) => {
       });
     });
 
-    console.timeEnd('groupLabels useMemo');
     return labels;
   }, [allCells, visualGroups]);
 
-  // Filter contexts based on debounced filter text
-  // Searches through original metrics (expanding grouped ones)
   const filteredContexts = useMemo(() => {
     if (!debouncedFilterText.trim()) {
-      return null; // No filter applied
+      return null;
     }
 
-    console.time('Filter contexts');
     const lowerFilter = debouncedFilterText.toLowerCase();
     const matchingContexts = [];
     const { groupedMetrics } = hilbertConfig;
 
-    // Search through all visual groups, expanding grouped metrics
     visualGroups.forEach((processedMetrics) => {
       processedMetrics.forEach(metric => {
-        // Get original metrics (expand if grouped)
         const originals = groupedMetrics.get(metric);
         const metricsToSearch = (originals && originals.length > 0) ? originals : [metric];
 
@@ -715,7 +581,6 @@ const Metrics = ({ command }) => {
       });
     });
 
-    // Sort by severity (most critical first) then alphabetically
     matchingContexts.sort((a, b) => {
       const severityA = getSeverityLevel(anomalyRates.get(a));
       const severityB = getSeverityLevel(anomalyRates.get(b));
@@ -727,13 +592,9 @@ const Metrics = ({ command }) => {
       return a.localeCompare(b);
     });
 
-    console.timeEnd('Filter contexts');
-    console.log(`Filtered ${matchingContexts.length} contexts from ${debouncedFilterText}`);
     return matchingContexts;
   }, [debouncedFilterText, visualGroups, anomalyRates, hilbertConfig]);
 
-  // Sort metrics for selected group by severity then alphabetically
-  // Expands grouped metrics to show original individual metrics
   const sortedGroupMetrics = useMemo(() => {
     if (!selectedGroup || selectedGroup === 'filter-results') {
       return null;
@@ -744,24 +605,18 @@ const Metrics = ({ command }) => {
       return null;
     }
 
-    console.time('Sort group metrics');
-
-    // Expand grouped metrics to get original individual metrics
     const { groupedMetrics } = hilbertConfig;
     const expandedMetrics = [];
 
     for (const metric of processedMetrics) {
       const originals = groupedMetrics.get(metric);
       if (originals && originals.length > 0) {
-        // This metric was grouped - add all originals
         expandedMetrics.push(...originals);
       } else {
-        // Not grouped - add as-is
         expandedMetrics.push(metric);
       }
     }
 
-    // Sort by severity then alphabetically
     const sorted = expandedMetrics.sort((a, b) => {
       const severityA = getSeverityLevel(anomalyRates.get(a));
       const severityB = getSeverityLevel(anomalyRates.get(b));
@@ -773,43 +628,31 @@ const Metrics = ({ command }) => {
       return a.localeCompare(b);
     });
 
-    console.timeEnd('Sort group metrics');
-    console.log(`Sorted ${sorted.length} metrics (expanded from ${processedMetrics.length}) for group '${selectedGroup}'`);
     return sorted;
   }, [selectedGroup, visualGroups, anomalyRates, hilbertConfig]);
 
   // Canvas rendering effect
   useEffect(() => {
-    console.time('Canvas render');
     const canvas = canvasRef.current;
-    if (!canvas || allCells.length === 0) {
-      console.timeEnd('Canvas render');
-      return;
-    }
+    if (!canvas || allCells.length === 0) return;
 
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
 
-    // Set canvas size with device pixel ratio for sharp rendering
     canvas.width = dimensions.width * dpr;
     canvas.height = dimensions.height * dpr;
     canvas.style.width = `${dimensions.width}px`;
     canvas.style.height = `${dimensions.height}px`;
     ctx.scale(dpr, dpr);
 
-    // Clear canvas
     ctx.clearRect(0, 0, dimensions.width, dimensions.height);
 
-    // Draw cells with color based on anomaly rates
     const hoveredGroupMetrics = hoveredGroup ? visualGroups.get(hoveredGroup) : null;
 
     allCells.forEach(cell => {
-      // Get anomaly rate for this cell
-      // For grouped cells, calculate average anomaly rate
       let anomalyRate = null;
 
       if (cell.isGrouped) {
-        // Calculate average anomaly rate for grouped metrics
         const rates = cell.originalMetrics
           .map(metric => anomalyRates.get(metric))
           .filter(rate => rate !== undefined && rate !== null);
@@ -818,16 +661,13 @@ const Metrics = ({ command }) => {
           anomalyRate = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
         }
       } else {
-        // Single metric - get its anomaly rate
         anomalyRate = anomalyRates.get(cell.name);
       }
 
-      // Apply color based on anomaly rate
       ctx.fillStyle = getColorForAnomalyRate(anomalyRate);
       ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
     });
 
-    // Draw group borders (always visible)
     ctx.strokeStyle = '#e5e5e5';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -837,13 +677,11 @@ const Metrics = ({ command }) => {
     });
     ctx.stroke();
 
-    // Draw highlighted group border if hovering
     if (hoveredGroupMetrics) {
       ctx.strokeStyle = '#00AB44';
       ctx.lineWidth = 1.0;
       ctx.beginPath();
 
-      // Create a map for quick lookup of cells by grid position
       const gridMap = new Map();
       allCells.forEach(cell => {
         const gridX = Math.round(cell.x / cell.width);
@@ -851,20 +689,17 @@ const Metrics = ({ command }) => {
         gridMap.set(`${gridX},${gridY}`, cell);
       });
 
-      // Draw border for each cell in the hovered group
       allCells.forEach(cell => {
         if (!hoveredGroupMetrics.includes(cell.name)) return;
 
         const gridX = Math.round(cell.x / cell.width);
         const gridY = Math.round(cell.y / cell.height);
 
-        // Check each neighbor
         const top = gridMap.get(`${gridX},${gridY - 1}`);
         const right = gridMap.get(`${gridX + 1},${gridY}`);
         const bottom = gridMap.get(`${gridX},${gridY + 1}`);
         const left = gridMap.get(`${gridX - 1},${gridY}`);
 
-        // Draw border if neighbor is not in the same group
         if (!top || !hoveredGroupMetrics.includes(top.name)) {
           ctx.moveTo(cell.x, cell.y);
           ctx.lineTo(cell.x + cell.width, cell.y);
@@ -886,24 +721,19 @@ const Metrics = ({ command }) => {
       ctx.stroke();
     }
 
-    // Draw labels (group names)
     ctx.fillStyle = '#666';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const fontSize = 12;
 
     groupLabels.forEach(label => {
-      // Make text bold if this group is hovered
       const isBold = hoveredGroup === label.text;
       ctx.font = `${isBold ? '700' : '500'} ${fontSize}px sans-serif`;
       ctx.fillText(label.text, label.x, label.y);
     });
-
-    console.timeEnd('Canvas render');
   }, [allCells, groupBorders, groupLabels, dimensions, visualGroups, hoveredGroup, anomalyRates]);
 
-  // Handle mouse move - update hover state for group
-  const handleMouseMove = (e) => {
+  const handleMouseMove = useCallback((e) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -924,16 +754,15 @@ const Metrics = ({ command }) => {
       setHoveredGroup(null);
       canvas.style.cursor = 'default';
     }
-  };
+  }, [allCells]);
 
-  const handleMouseLeave = () => {
+  const handleMouseLeave = useCallback(() => {
     const canvas = canvasRef.current;
     if (canvas) canvas.style.cursor = 'default';
     setHoveredGroup(null);
-  };
+  }, []);
 
-  // Handle click - select group and show context list
-  const handleCanvasClick = (e) => {
+  const handleCanvasClick = useCallback((e) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -950,58 +779,65 @@ const Metrics = ({ command }) => {
       const groupKey = getGroupForCell(cell);
       setSelectedGroup(groupKey);
     }
-  };
+  }, [allCells]);
 
-  // Handle click on backdrop to close panel
-  const handleBackdropClick = (e) => {
+  const handleBackdropClick = useCallback((e) => {
     if (e.target === e.currentTarget) {
       setSelectedGroup(null);
     }
-  };
+  }, []);
 
-  // Handle filter input change
-  const handleFilterChange = (e) => {
+  const handleFilterChange = useCallback((e) => {
     const value = e.target.value;
     setFilterText(value);
 
-    // Clear existing timeout
     if (filterTimeoutRef.current) {
       clearTimeout(filterTimeoutRef.current);
     }
 
-    // Debounce the filter - wait 500ms after user stops typing
     filterTimeoutRef.current = setTimeout(() => {
-      // Only search if input has 3 or more characters
       if (value.trim().length >= 3) {
         setDebouncedFilterText(value);
         setSelectedGroup('filter-results');
       } else {
-        // Clear search if less than 3 characters
         setDebouncedFilterText('');
         setSelectedGroup(null);
       }
     }, 500);
-  };
+  }, []);
 
-  // Clear filter
-  const handleClearFilter = () => {
+  const handleClearFilter = useCallback(() => {
     setFilterText('');
     setDebouncedFilterText('');
     setSelectedGroup(null);
     if (filterTimeoutRef.current) {
       clearTimeout(filterTimeoutRef.current);
     }
-  };
+  }, []);
 
-  // Get group for a cell
-  const getGroupForCell = (cell) => {
+  const getGroupForCell = useCallback((cell) => {
     for (const [groupKey, metrics] of visualGroups.entries()) {
       if (metrics.includes(cell.name)) {
         return groupKey;
       }
     }
     return null;
-  };
+  }, [visualGroups]);
+
+  // Send metric to canvas
+  const handleMetricClick = useCallback((context) => {
+    if (!spaceRoomKey) return; // Need space/room context
+
+    if (isMetricInCanvas(context, spaceRoomKey)) {
+      return; // Already in canvas
+    }
+
+    const result = sendToCanvas(context, spaceRoomKey);
+    if (result.success) {
+      setSentFeedback(context);
+      setTimeout(() => setSentFeedback(null), 1500);
+    }
+  }, [sendToCanvas, isMetricInCanvas, spaceRoomKey]);
 
   // Handle container resizing
   useEffect(() => {
@@ -1040,10 +876,9 @@ const Metrics = ({ command }) => {
     };
   }, []);
 
-  // Handle keyboard shortcuts (Escape and Ctrl/Cmd+F)
+  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Escape key: close panel and clear filter
       if (e.key === 'Escape' && selectedGroup) {
         setSelectedGroup(null);
         setFilterText('');
@@ -1053,12 +888,11 @@ const Metrics = ({ command }) => {
         }
       }
 
-      // Ctrl+F (Windows/Linux) or Cmd+F (Mac): focus filter input
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && viewMode === 'canvas') {
-        e.preventDefault(); // Prevent browser's default find
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
         if (filterInputRef.current) {
           filterInputRef.current.focus();
-          filterInputRef.current.select(); // Select existing text for easy replacement
+          filterInputRef.current.select();
         }
       }
     };
@@ -1067,40 +901,7 @@ const Metrics = ({ command }) => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedGroup, viewMode]);
-
-  // Toggle metric selection
-  const toggleMetric = (context) => {
-    setSelectedMetrics(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(context)) {
-        newSet.delete(context);
-      } else {
-        newSet.add(context);
-      }
-      return newSet;
-    });
-  };
-
-  // Remove metric from selection
-  const removeMetric = (context) => {
-    setSelectedMetrics(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(context);
-      return newSet;
-    });
-  };
-
-  // Switch to charts view
-  const switchToChartsView = () => {
-    setViewMode('charts');
-    setSelectedGroup(null);
-  };
-
-  // Switch to canvas view
-  const switchToCanvasView = () => {
-    setViewMode('canvas');
-  };
+  }, [selectedGroup]);
 
   // Fetch contexts and anomaly data
   useEffect(() => {
@@ -1125,7 +926,6 @@ const Metrics = ({ command }) => {
         const now = Math.floor(Date.now() / 1000);
         const fifteenMinutesAgo = now - (15 * 60);
 
-        // Fetch contexts and anomaly data in parallel
         const [contextsResponse, anomalyResponse] = await Promise.all([
           getContexts(token, selectedSpace.id, selectedRoom.id, {
             window: {
@@ -1161,7 +961,6 @@ const Metrics = ({ command }) => {
           }),
         ]);
 
-        // Process contexts
         if (contextsResponse && contextsResponse.contexts) {
           const contextList = Object.entries(contextsResponse.contexts).map(([name, data]) => ({
             name,
@@ -1172,7 +971,6 @@ const Metrics = ({ command }) => {
           setContexts([]);
         }
 
-        // Process anomaly rates
         if (anomalyResponse && anomalyResponse.result) {
           const { labels, data } = anomalyResponse.result;
           const rates = new Map();
@@ -1180,12 +978,10 @@ const Metrics = ({ command }) => {
           if (data && data.length > 0 && labels && labels.length > 0) {
             const firstRow = data[0];
 
-            // Skip the first label (time) and process the rest
             for (let i = 1; i < labels.length; i++) {
               const contextName = labels[i];
               const valueArray = firstRow[i];
 
-              // Extract the first value from the array [value, arp, pa]
               if (Array.isArray(valueArray) && valueArray.length > 0) {
                 const anomalyRate = valueArray[0];
                 rates.set(contextName, anomalyRate);
@@ -1193,7 +989,6 @@ const Metrics = ({ command }) => {
             }
           }
 
-          console.log(`Loaded anomaly rates for ${rates.size} contexts`);
           setAnomalyRates(rates);
         } else {
           setAnomalyRates(new Map());
@@ -1214,7 +1009,7 @@ const Metrics = ({ command }) => {
       <div className={styles.metricsContainer}>
         <div className={styles.loadingContainer}>
           <NetdataSpinner />
-          <p className={styles.loadingText}>Loading metrics...</p>
+          <p className={styles.loadingText}>Loading anomalies...</p>
         </div>
       </div>
     );
@@ -1240,164 +1035,133 @@ const Metrics = ({ command }) => {
     );
   }
 
-  const { order, gridSize, totalCells, processedMetrics, groupedMetrics } = hilbertConfig;
+  const { gridSize, totalCells, processedMetrics, groupedMetrics } = hilbertConfig;
   const cellsUsed = allCells.length;
   const waste = ((totalCells - cellsUsed) / totalCells) * 100;
   const totalOriginalMetrics = Array.from(groupedMetrics.values()).reduce((sum, arr) => sum + arr.length, 0);
-
-  console.log('Final render stats:', {
-    order,
-    gridSize,
-    totalCells,
-    groups: processedMetrics.length,
-    cellsUsed,
-    waste: waste.toFixed(1) + '%',
-    totalOriginalMetrics,
-    borderSegments: groupBorders.length
-  });
 
   return (
     <div className={styles.metricsContainer} ref={containerRef}>
       {/* Header toolbar */}
       <div className={styles.headerBar}>
         <div className={styles.toolbarLeft}>
-          <div className={styles.viewToggle}>
-            <button
-              className={`${styles.viewToggleButton} ${viewMode === 'canvas' ? styles.active : ''}`}
-              onClick={switchToCanvasView}
-            >
-              Canvas
+          <span className={styles.headerTitle}>Anomalies</span>
+          <input
+            ref={filterInputRef}
+            type="text"
+            placeholder="Find metrics..."
+            className={styles.filterInput}
+            value={filterText}
+            onChange={handleFilterChange}
+          />
+          {filterText && (
+            <button className={styles.clearButton} onClick={handleClearFilter}>
+              ×
             </button>
-            <button
-              className={`${styles.viewToggleButton} ${viewMode === 'charts' ? styles.active : ''}`}
-              onClick={switchToChartsView}
-              disabled={selectedMetrics.size === 0}
-            >
-              Charts ({selectedMetrics.size})
-            </button>
-          </div>
-          {viewMode === 'canvas' && (
-            <>
-              <input
-                ref={filterInputRef}
-                type="text"
-                placeholder="Find metrics..."
-                className={styles.filterInput}
-                value={filterText}
-                onChange={handleFilterChange}
-              />
-              {filterText && (
-                <button className={styles.clearButton} onClick={handleClearFilter}>
-                  ×
-                </button>
-              )}
-            </>
           )}
         </div>
         <div className={styles.toolbarRight}>
-          {viewMode === 'charts' && (
-            <button className={styles.clearAllButton} onClick={() => setSelectedMetrics(new Set())}>
-              Clear All
-            </button>
-          )}
+          <span className={styles.hint}>Click metric to add to canvas</span>
         </div>
       </div>
 
-      {/* Canvas View - Hidden with CSS when not active */}
-      <div style={{ display: viewMode === 'canvas' ? 'block' : 'none', height: '100%' }}>
-        {/* Info banner */}
-        <div className={`${styles.infoBanner} ${waste <= 5 ? styles.infoBannerSuccess : styles.infoBannerInfo}`}>
-          Grid: {gridSize}×{gridSize} •
-          Cells: {cellsUsed}/{totalCells} •
-          Groups: {processedMetrics.length} •
-          Metrics: {totalOriginalMetrics}
-        </div>
+      {/* Info banner */}
+      <div className={`${styles.infoBanner} ${waste <= 5 ? styles.infoBannerSuccess : styles.infoBannerInfo}`}>
+        Grid: {gridSize}×{gridSize} •
+        Cells: {cellsUsed}/{totalCells} •
+        Groups: {processedMetrics.length} •
+        Metrics: {totalOriginalMetrics}
+      </div>
 
-        {dimensions.width > 0 && dimensions.height > 0 && (
-          <canvas
-            ref={canvasRef}
-            className={styles.metricsCanvas}
-            onMouseMove={handleMouseMove}
-            onMouseLeave={handleMouseLeave}
-            onClick={handleCanvasClick}
-          />
-        )}
+      {dimensions.width > 0 && dimensions.height > 0 && (
+        <canvas
+          ref={canvasRef}
+          className={styles.metricsCanvas}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+          onClick={handleCanvasClick}
+        />
+      )}
 
-        {/* Context list panel with backdrop */}
-        {selectedGroup && (
-          <>
-            <div className={styles.backdrop} onClick={handleBackdropClick} />
-            <div className={styles.contextPanel}>
-              <div className={styles.contextPanelHeader}>
-                <h3 className={styles.contextPanelTitle}>
-                  {selectedGroup === 'filter-results'
-                    ? `Filter: "${debouncedFilterText}" (${filteredContexts?.length || 0} results)`
-                    : selectedGroup
-                  }
-                </h3>
-              </div>
-              <div className={styles.contextList}>
-                {selectedGroup === 'filter-results' ? (
-                  filteredContexts && filteredContexts.length > 0 ? (
-                    filteredContexts.map((context) => {
-                      const anomalyRate = anomalyRates.get(context);
-                      const color = getColorForAnomalyRate(anomalyRate);
-                      const isSelected = selectedMetrics.has(context);
-                      return (
-                        <div key={context} className={styles.contextItem}>
-                          <div className={styles.contextBand} style={{ backgroundColor: color }} />
-                          <div className={styles.contextName}>{context}</div>
-                          <button
-                            className={`${styles.addButton} ${isSelected ? styles.selected : ''}`}
-                            onClick={() => toggleMetric(context)}
-                            title={isSelected ? 'Remove from charts' : 'Add to charts'}
-                          >
-                            {isSelected ? '✓' : '+'}
-                          </button>
-                        </div>
-                      );
-                    })
-                  ) : debouncedFilterText ? (
-                    <div className={styles.noResults}>No matching contexts found</div>
-                  ) : (
-                    <div className={styles.noResults}>Searching...</div>
-                  )
-                ) : (
-                  sortedGroupMetrics?.map((context) => {
+      {/* Context list panel with backdrop */}
+      {selectedGroup && (
+        <>
+          <div className={styles.backdrop} onClick={handleBackdropClick} />
+          <div className={styles.contextPanel}>
+            <div className={styles.contextPanelHeader}>
+              <h3 className={styles.contextPanelTitle}>
+                {selectedGroup === 'filter-results'
+                  ? `Filter: "${debouncedFilterText}" (${filteredContexts?.length || 0} results)`
+                  : selectedGroup
+                }
+              </h3>
+            </div>
+            <div className={styles.contextList}>
+              {selectedGroup === 'filter-results' ? (
+                filteredContexts && filteredContexts.length > 0 ? (
+                  filteredContexts.map((context) => {
                     const anomalyRate = anomalyRates.get(context);
                     const color = getColorForAnomalyRate(anomalyRate);
-                    const isSelected = selectedMetrics.has(context);
+                    const inCanvas = spaceRoomKey && isMetricInCanvas(context, spaceRoomKey);
+                    const justSent = sentFeedback === context;
                     return (
-                      <div key={context} className={styles.contextItem}>
+                      <div
+                        key={context}
+                        className={`${styles.contextItem} ${inCanvas ? styles.inCanvas : ''}`}
+                        onClick={() => handleMetricClick(context)}
+                      >
                         <div className={styles.contextBand} style={{ backgroundColor: color }} />
                         <div className={styles.contextName}>{context}</div>
-                        <button
-                          className={`${styles.addButton} ${isSelected ? styles.selected : ''}`}
-                          onClick={() => toggleMetric(context)}
-                          title={isSelected ? 'Remove from charts' : 'Add to charts'}
-                        >
-                          {isSelected ? '✓' : '+'}
-                        </button>
+                        <div className={styles.statusIndicator}>
+                          {justSent ? (
+                            <span className={styles.sentBadge}>Sent!</span>
+                          ) : inCanvas ? (
+                            <span className={styles.inCanvasBadge}>In Canvas</span>
+                          ) : (
+                            <span className={styles.addHint}>+ Add</span>
+                          )}
+                        </div>
                       </div>
                     );
                   })
-                )}
-              </div>
+                ) : debouncedFilterText ? (
+                  <div className={styles.noResults}>No matching contexts found</div>
+                ) : (
+                  <div className={styles.noResults}>Searching...</div>
+                )
+              ) : (
+                sortedGroupMetrics?.map((context) => {
+                  const anomalyRate = anomalyRates.get(context);
+                  const color = getColorForAnomalyRate(anomalyRate);
+                  const inCanvas = spaceRoomKey && isMetricInCanvas(context, spaceRoomKey);
+                  const justSent = sentFeedback === context;
+                  return (
+                    <div
+                      key={context}
+                      className={`${styles.contextItem} ${inCanvas ? styles.inCanvas : ''}`}
+                      onClick={() => handleMetricClick(context)}
+                    >
+                      <div className={styles.contextBand} style={{ backgroundColor: color }} />
+                      <div className={styles.contextName}>{context}</div>
+                      <div className={styles.statusIndicator}>
+                        {justSent ? (
+                          <span className={styles.sentBadge}>Sent!</span>
+                        ) : inCanvas ? (
+                          <span className={styles.inCanvasBadge}>In Canvas</span>
+                        ) : (
+                          <span className={styles.addHint}>+ Add</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
-          </>
-        )}
-      </div>
-
-      {/* Charts View - Hidden with CSS when not active */}
-      <div style={{ display: viewMode === 'charts' ? 'block' : 'none', height: '100%', background: '#fafafa' }}>
-        <ChartsView
-          selectedContexts={selectedMetrics}
-          onRemoveContext={removeMetric}
-          onClearAll={() => setSelectedMetrics(new Set())}
-        />
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
 
-export default Metrics;
+export default Anomalies;

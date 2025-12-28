@@ -11,7 +11,8 @@
  */
 
 import Echo from '../components/Echo';
-import Metrics from '../components/Metrics/Metrics';
+import Anomalies from '../components/Anomalies/Anomalies';
+import Canvas from '../components/Canvas/Canvas';
 import Help from '../components/Help/Help';
 
 /**
@@ -20,7 +21,8 @@ import Help from '../components/Help/Help';
  */
 export const COMMAND_COMPONENTS = {
   echo: Echo,
-  metrics: Metrics,
+  anomalies: Anomalies,
+  canvas: Canvas,
   help: Help,
 };
 

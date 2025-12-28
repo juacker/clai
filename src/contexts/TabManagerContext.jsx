@@ -118,6 +118,11 @@ const createTab = (title = null, commandId = null, initialContext = null) => ({
       selectedSpaceId: null,
       selectedRoomId: null,
     },
+    // Canvas state for inter-command messaging
+    canvas: {
+      metrics: [],      // Array of metric contexts sent to canvas
+      commandId: null,  // ID of canvas command in this tab (singleton)
+    },
     customContext: {},
   },
 });
@@ -529,13 +534,30 @@ export const TabManagerProvider = ({ children }) => {
 
       // If tabs exist, add command to active tile
       if (activeTabId && activeTileId) {
-        setTabs(prev =>
-          prev.map(tab => {
+        setTabs(prev => {
+          // First, check if any tile already has this command
+          const activeTab = prev.find(t => t.id === activeTabId);
+          if (activeTab) {
+            const tileHasCommand = (tile, cmdId) => {
+              if (tile.commandId === cmdId) return true;
+              if (tile.type === 'split' && tile.children) {
+                return tile.children.some(child => tileHasCommand(child, cmdId));
+              }
+              return false;
+            };
+
+            // Skip if command already assigned to a tile (e.g., via splitTile)
+            if (tileHasCommand(activeTab.rootTile, currentCommand.id)) {
+              return prev;
+            }
+          }
+
+          return prev.map(tab => {
             if (tab.id === activeTabId) {
               // Recursively update the active tile in the tree
               const updateTileTree = (tile) => {
                 if (tile.id === activeTileId) {
-                  // Found the active tile, update its commandId
+                  // Found the active tile - update its command
                   return {
                     ...tile,
                     commandId: currentCommand.id,
@@ -557,8 +579,8 @@ export const TabManagerProvider = ({ children }) => {
               };
             }
             return tab;
-          })
-        );
+          });
+        });
       }
     }
   }, [currentCommand, tabs.length, activeTabId, activeTileId]);
@@ -804,6 +826,191 @@ export const TabManagerProvider = ({ children }) => {
     return getTabContext(activeTabId);
   }, [activeTabId, getTabContext]);
 
+  // ============================================
+  // Canvas State Management (Inter-Command Messaging)
+  // ============================================
+
+  /**
+   * Get canvas state for a tab (for a specific space/room)
+   * @param {string} tabId - Tab ID
+   * @param {string} spaceRoomKey - Optional key in format 'spaceId_roomId'
+   * @returns {Object} Canvas state { metrics: [], commandId: null }
+   */
+  const getCanvasState = useCallback((tabId, spaceRoomKey = null) => {
+    const tab = tabs.find(t => t.id === tabId);
+    const canvas = tab?.context?.canvas || {};
+    const commandId = canvas.commandId || null;
+
+    // If no space/room key provided, return empty metrics (canvas exists but no context)
+    if (!spaceRoomKey) {
+      return { metrics: [], commandId };
+    }
+
+    // Get metrics for specific space/room
+    const metrics = canvas.bySpaceRoom?.[spaceRoomKey] || [];
+    return { metrics, commandId };
+  }, [tabs]);
+
+  /**
+   * Get canvas state for active tab
+   * @param {string} spaceRoomKey - Optional key in format 'spaceId_roomId'
+   * @returns {Object} Canvas state { metrics: [], commandId: null }
+   */
+  const getActiveCanvasState = useCallback((spaceRoomKey = null) => {
+    if (!activeTabId) return { metrics: [], commandId: null };
+    return getCanvasState(activeTabId, spaceRoomKey);
+  }, [activeTabId, getCanvasState]);
+
+  /**
+   * Add a metric to canvas in a tab (for a specific space/room)
+   * @param {string} tabId - Tab ID
+   * @param {string} metric - Metric context string to add
+   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
+   */
+  const addCanvasMetric = useCallback((tabId, metric, spaceRoomKey) => {
+    if (!spaceRoomKey) return; // Require space/room context
+
+    setTabs(prev =>
+      prev.map(tab => {
+        if (tab.id !== tabId) return tab;
+
+        const bySpaceRoom = tab.context?.canvas?.bySpaceRoom || {};
+        const currentMetrics = bySpaceRoom[spaceRoomKey] || [];
+
+        // Don't add duplicates
+        if (currentMetrics.includes(metric)) return tab;
+
+        return {
+          ...tab,
+          context: {
+            ...tab.context,
+            canvas: {
+              ...tab.context?.canvas,
+              bySpaceRoom: {
+                ...bySpaceRoom,
+                [spaceRoomKey]: [...currentMetrics, metric],
+              },
+            },
+          },
+        };
+      })
+    );
+  }, []);
+
+  /**
+   * Remove a metric from canvas in a tab (for a specific space/room)
+   * @param {string} tabId - Tab ID
+   * @param {string} metric - Metric context string to remove
+   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
+   */
+  const removeCanvasMetric = useCallback((tabId, metric, spaceRoomKey) => {
+    if (!spaceRoomKey) return;
+
+    setTabs(prev =>
+      prev.map(tab => {
+        if (tab.id !== tabId) return tab;
+
+        const bySpaceRoom = tab.context?.canvas?.bySpaceRoom || {};
+        const currentMetrics = bySpaceRoom[spaceRoomKey] || [];
+
+        return {
+          ...tab,
+          context: {
+            ...tab.context,
+            canvas: {
+              ...tab.context?.canvas,
+              bySpaceRoom: {
+                ...bySpaceRoom,
+                [spaceRoomKey]: currentMetrics.filter(m => m !== metric),
+              },
+            },
+          },
+        };
+      })
+    );
+  }, []);
+
+  /**
+   * Clear all metrics from canvas in a tab (for a specific space/room)
+   * @param {string} tabId - Tab ID
+   * @param {string} spaceRoomKey - Optional key - if not provided, clears all space/rooms
+   */
+  const clearCanvasMetrics = useCallback((tabId, spaceRoomKey = null) => {
+    setTabs(prev =>
+      prev.map(tab => {
+        if (tab.id !== tabId) return tab;
+
+        if (spaceRoomKey) {
+          // Clear only specific space/room
+          const bySpaceRoom = tab.context?.canvas?.bySpaceRoom || {};
+          return {
+            ...tab,
+            context: {
+              ...tab.context,
+              canvas: {
+                ...tab.context?.canvas,
+                bySpaceRoom: {
+                  ...bySpaceRoom,
+                  [spaceRoomKey]: [],
+                },
+              },
+            },
+          };
+        } else {
+          // Clear all space/rooms
+          return {
+            ...tab,
+            context: {
+              ...tab.context,
+              canvas: {
+                ...tab.context?.canvas,
+                bySpaceRoom: {},
+              },
+            },
+          };
+        }
+      })
+    );
+  }, []);
+
+  /**
+   * Set the canvas command ID for a tab (singleton tracking)
+   * @param {string} tabId - Tab ID
+   * @param {string|null} commandId - Canvas command ID or null to clear
+   */
+  const setCanvasCommandId = useCallback((tabId, commandId) => {
+    setTabs(prev =>
+      prev.map(tab => {
+        if (tab.id !== tabId) return tab;
+
+        return {
+          ...tab,
+          context: {
+            ...tab.context,
+            canvas: {
+              ...tab.context?.canvas,
+              commandId,
+            },
+          },
+        };
+      })
+    );
+  }, []);
+
+  /**
+   * Check if a metric is already in canvas for a tab (for a specific space/room)
+   * @param {string} tabId - Tab ID
+   * @param {string} metric - Metric context string
+   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
+   * @returns {boolean} True if metric is in canvas
+   */
+  const isMetricInCanvas = useCallback((tabId, metric, spaceRoomKey) => {
+    if (!spaceRoomKey) return false;
+    const canvasState = getCanvasState(tabId, spaceRoomKey);
+    const metrics = canvasState.metrics || [];
+    return metrics.includes(metric);
+  }, [getCanvasState]);
+
   /**
    * Split a tile in the active tab
    * @param {string} tileId - Tile ID to split
@@ -816,55 +1023,65 @@ export const TabManagerProvider = ({ children }) => {
       return { success: false, message: 'No active tab' };
     }
 
-    const activeTab = tabs.find(t => t.id === activeTabId);
-    if (!activeTab) {
-      return { success: false, message: 'Active tab not found' };
-    }
+    // Use a result object that will be populated inside setTabs callback
+    let result = { success: false, message: 'Unknown error', newTileId: null };
 
-    // Find the tile to split
-    const tileToSplit = findTileById(activeTab.rootTile, tileId);
-    if (!tileToSplit) {
-      return { success: false, message: 'Tile not found' };
-    }
-
-    // Create the split tile
-    const splitTileResult = splitTileInternal(tileToSplit, direction, newCommandId);
-
-    // Update the tile tree
-    const updateTileTree = (tile) => {
-      if (tile.id === tileId) {
-        return splitTileResult;
+    // Compute everything inside setTabs to use latest state (prev)
+    setTabs(prev => {
+      const activeTab = prev.find(t => t.id === activeTabId);
+      if (!activeTab) {
+        result = { success: false, message: 'Active tab not found', newTileId: null };
+        return prev;
       }
-      if (tile.type === 'split' && tile.children) {
-        return {
-          ...tile,
-          children: tile.children.map(updateTileTree),
-        };
+
+      // Find the tile to split using prev state
+      const tileToSplit = findTileById(activeTab.rootTile, tileId);
+      if (!tileToSplit) {
+        result = { success: false, message: 'Tile not found', newTileId: null };
+        return prev;
       }
-      return tile;
-    };
 
-    const updatedRootTile = updateTileTree(activeTab.rootTile);
+      // Create the split tile
+      const splitTileResult = splitTileInternal(tileToSplit, direction, newCommandId);
 
-    // Update the tab
-    setTabs(prev =>
-      prev.map(tab =>
+      // Update the tile tree
+      const updateTileTree = (tile) => {
+        if (tile.id === tileId) {
+          return splitTileResult;
+        }
+        if (tile.type === 'split' && tile.children) {
+          return {
+            ...tile,
+            children: tile.children.map(updateTileTree),
+          };
+        }
+        return tile;
+      };
+
+      const updatedRootTile = updateTileTree(activeTab.rootTile);
+
+      // Set result with new tile ID
+      const newTileId = splitTileResult.children[1].id;
+      result = {
+        success: true,
+        message: `Tile split ${direction}`,
+        newTileId,
+      };
+
+      return prev.map(tab =>
         tab.id === activeTabId
           ? { ...tab, rootTile: updatedRootTile }
           : tab
-      )
-    );
+      );
+    });
 
     // Set the new tile as active (second child of the split)
-    const newTileId = splitTileResult.children[1].id;
-    setActiveTileId(newTileId);
+    if (result.success && result.newTileId) {
+      setActiveTileId(result.newTileId);
+    }
 
-    return {
-      success: true,
-      message: `Tile split ${direction}`,
-      newTileId,
-    };
-  }, [activeTabId, tabs]);
+    return result;
+  }, [activeTabId]);
 
   /**
    * Close a tile in the active tab
@@ -1204,6 +1421,15 @@ export const TabManagerProvider = ({ children }) => {
     getTabContext,
     getActiveTabContext,
 
+    // Canvas State Management (Inter-Command Messaging)
+    getCanvasState,
+    getActiveCanvasState,
+    addCanvasMetric,
+    removeCanvasMetric,
+    clearCanvasMetrics,
+    setCanvasCommandId,
+    isMetricInCanvas,
+
     // Command Integration
     addCommandToActiveTile,
     handleLayoutCommand,
@@ -1238,6 +1464,13 @@ export const TabManagerProvider = ({ children }) => {
     updateTabContext,
     getTabContext,
     getActiveTabContext,
+    getCanvasState,
+    getActiveCanvasState,
+    addCanvasMetric,
+    removeCanvasMetric,
+    clearCanvasMetrics,
+    setCanvasCommandId,
+    isMetricInCanvas,
     addCommandToActiveTile,
     handleLayoutCommand,
     splitTile,

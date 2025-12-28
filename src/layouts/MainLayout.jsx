@@ -6,6 +6,7 @@ import DesktopChatPanel from '../components/Chat/DesktopChatPanel';
 import { SharedSpaceRoomDataProvider } from '../contexts/SharedSpaceRoomDataContext';
 import { CommandProvider } from '../contexts/CommandContext';
 import { TabManagerProvider } from '../contexts/TabManagerContext';
+import { CommandMessagingProvider } from '../contexts/CommandMessagingContext';
 import { ChatManagerProvider } from '../contexts/ChatManagerContext';
 import styles from './MainLayout.module.css';
 
@@ -65,7 +66,8 @@ const MainLayout = () => {
     <CommandProvider>
       <SharedSpaceRoomDataProvider>
         <TabManagerProvider>
-          <ChatManagerProvider>
+          <CommandMessagingProvider>
+            <ChatManagerProvider>
             <div className={styles.mainLayout}>
               {/* Fixed chat panel on right side (full height) */}
               <DesktopChatPanel
@@ -85,6 +87,7 @@ const MainLayout = () => {
               </div>
             </div>
           </ChatManagerProvider>
+          </CommandMessagingProvider>
         </TabManagerProvider>
       </SharedSpaceRoomDataProvider>
     </CommandProvider>
