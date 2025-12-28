@@ -114,6 +114,30 @@
   box-shadow: var(--shadow-critical);
 }
 
+/* Refresh Button */
+.refreshButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.refreshButton:hover {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-medium);
+  color: var(--color-text-primary);
+}
+
+.refreshButton:active {
+  transform: rotate(180deg);
+}
+
 /* Canvas Container */
 .canvasContainer {
   display: flex;

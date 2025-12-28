@@ -48,12 +48,26 @@
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
+  opacity: 0;
+}
+
+.chartContainer:hover .removeButton {
+  opacity: 1;
 }
 
 .removeButton:hover {
   background: rgba(239, 68, 68, 0.2);
   border-color: rgba(239, 68, 68, 0.4);
   transform: scale(1.05);
+}
+
+/* Spinner replacing remove button during loading - always visible */
+.removeButtonSpinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
 }
 
 /* Filter Panel */
@@ -458,19 +472,16 @@
   background: white;
 }
 
-/* Loading Overlay for refetching */
+/* Loading Overlay for refetching - small corner indicator */
 .loadingOverlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(255, 255, 255, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  top: 8px;
+  right: 8px;
   z-index: 100;
-  backdrop-filter: blur(2px);
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 /* Canvas Element - positioned absolutely behind SVG */
@@ -672,12 +683,12 @@
   text-align: center;
 }
 
-/* Loading Spinner for overlay */
+/* Loading Spinner for button replacement */
 .loadingSpinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid var(--color-border-light);
-  border-top-color: var(--color-primary);
+  width: 18px;
+  height: 18px;
+  border: 2px solid #e5e5e5;
+  border-top-color: #00ab44;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }

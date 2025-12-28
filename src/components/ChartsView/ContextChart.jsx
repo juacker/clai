@@ -117,7 +117,8 @@ const ContextChart = ({
   space,
   room,
   onRemove,
-  onSummaryUpdate
+  onSummaryUpdate,
+  showRefreshIndicator = true
 }) => {
 
   const canvasRef = useRef(null);
@@ -1258,9 +1259,15 @@ const ContextChart = ({
         <div className={styles.chartTitleRow}>
           <h3 className={styles.chartTitle}>{getChartTitle()}</h3>
           {onRemove && (
-            <button className={styles.removeButton} onClick={onRemove} title="Remove chart">
-              ×
-            </button>
+            loading && summary ? (
+              <div className={styles.removeButtonSpinner}>
+                <div className={styles.loadingSpinner}></div>
+              </div>
+            ) : (
+              <button className={styles.removeButton} onClick={onRemove} title="Remove chart">
+                ×
+              </button>
+            )
           )}
         </div>
 
@@ -1393,12 +1400,6 @@ const ContextChart = ({
           </div>
         )}
       </div>
-
-      {loading && (
-        <div className={styles.loadingOverlay}>
-          <div className={styles.loadingSpinner}></div>
-        </div>
-      )}
 
       <div className={styles.chartWrapper}>
         {/* Canvas for drawing lines */}

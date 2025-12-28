@@ -33,6 +33,30 @@ const TIME_INTERVALS = [
   { label: '7d', value: 7, unit: 'days' },
 ];
 
+/**
+ * Get auto-refresh interval in milliseconds based on selected time range
+ */
+const getAutoRefreshInterval = (interval) => {
+  const { value, unit } = interval;
+
+  // For short time ranges, refresh more frequently
+  if (unit === 'minutes') {
+    if (value <= 5) return 5 * 1000;      // 5m range → 5s refresh
+    if (value <= 15) return 10 * 1000;    // 15m range → 10s refresh
+    return 15 * 1000;                      // 30m range → 15s refresh
+  }
+
+  if (unit === 'hours') {
+    if (value <= 1) return 30 * 1000;     // 1h range → 30s refresh
+    if (value <= 2) return 60 * 1000;     // 2h range → 1min refresh
+    if (value <= 6) return 2 * 60 * 1000; // 6h range → 2min refresh
+    return 5 * 60 * 1000;                  // 12-24h range → 5min refresh
+  }
+
+  // Days - refresh less frequently
+  return 10 * 60 * 1000;                   // 7d range → 10min refresh
+};
+
 const INITIAL_VISIBLE_COUNT = 20;
 
 /**
@@ -232,6 +256,10 @@ const Canvas = ({ command }) => {
   // Selected time interval
   const [selectedInterval, setSelectedInterval] = useState(TIME_INTERVALS[3]); // Default 1h
 
+  // Auto-refresh state
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(Date.now());
+
   // Global filter state
   const [globalGroupBy, setGlobalGroupBy] = useState([]);
   const [globalFilterBy, setGlobalFilterBy] = useState({});
@@ -255,15 +283,40 @@ const Canvas = ({ command }) => {
     };
   }, [command?.id, registerCanvas, unregisterCanvas]);
 
-  // Calculate time range based on selected interval
+  // Calculate time range based on selected interval (recalculates on refresh)
   const timeRange = useMemo(() => {
     return calculateTimeRange(selectedInterval);
-  }, [selectedInterval]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedInterval, lastRefresh]);
 
   // Handle time interval change
   const handleIntervalChange = useCallback((interval) => {
     setSelectedInterval(interval);
   }, []);
+
+  // Handle manual refresh
+  const handleRefreshNow = useCallback(() => {
+    setLastRefresh(Date.now());
+  }, []);
+
+  // Toggle auto-refresh
+  const handleToggleAutoRefresh = useCallback(() => {
+    setAutoRefreshEnabled(prev => !prev);
+  }, []);
+
+  // Auto-refresh effect
+  useEffect(() => {
+    if (!autoRefreshEnabled || canvasMetrics.length === 0) {
+      return;
+    }
+
+    const intervalMs = getAutoRefreshInterval(selectedInterval);
+    const timerId = setInterval(() => {
+      setLastRefresh(Date.now());
+    }, intervalMs);
+
+    return () => clearInterval(timerId);
+  }, [autoRefreshEnabled, selectedInterval, canvasMetrics.length]);
 
   // Handle remove metric
   const handleRemoveMetric = useCallback((metric) => {
@@ -518,6 +571,34 @@ const Canvas = ({ command }) => {
           </div>
         </div>
         <div className={styles.headerRight}>
+          {/* Refresh Now Button */}
+          <button
+            className={styles.refreshButton}
+            onClick={handleRefreshNow}
+            title="Refresh now"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 8a7 7 0 0 1 7-7 7 7 0 0 1 6.3 4" />
+              <path d="M15 8a7 7 0 0 1-7 7 7 7 0 0 1-6.3-4" />
+              <path d="M14.3 1v4h-4" />
+              <path d="M1.7 15v-4h4" />
+            </svg>
+          </button>
+
+          {/* Auto-refresh Toggle */}
+          <div className={styles.compactToggleContainer}>
+            <span className={styles.compactToggleLabel}>Auto</span>
+            <button
+              className={`${styles.compactToggleSwitch} ${autoRefreshEnabled ? styles.active : ''}`}
+              onClick={handleToggleAutoRefresh}
+              role="switch"
+              aria-checked={autoRefreshEnabled}
+              title={autoRefreshEnabled ? `Auto-refresh every ${Math.round(getAutoRefreshInterval(selectedInterval) / 1000)}s` : 'Enable auto-refresh'}
+            >
+              <span className={styles.compactToggleSlider} />
+            </button>
+          </div>
+
           {/* Filter Toggle Button */}
           <button
             className={`${styles.filterToggleButton} ${applyGlobally ? styles.active : ''}`}
@@ -614,6 +695,7 @@ const Canvas = ({ command }) => {
                 room={selectedRoom}
                 onRemove={() => handleRemoveMetric(context)}
                 onSummaryUpdate={handleChartSummary}
+                showRefreshIndicator={false}
               />
             </div>
           ))}
