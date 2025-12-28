@@ -38,7 +38,7 @@ import styles from './Chat.module.css';
  * - onMessageProcessed: Callback when message processing is complete
  */
 
-const Chat = ({ space, room, message, onMessageProcessed }) => {
+const Chat = ({ space, room, message, onMessageProcessed, aiPermissions = { canRead: true, canCreate: true, canDelete: true } }) => {
   // Mode state: 'list' or 'conversation'
   const [mode, setMode] = useState('list');
 
@@ -198,12 +198,12 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
     };
   }, [space?.id, room?.id]);
 
-  // Load conversations list when in list mode
+  // Load conversations list when in list mode (only if user has permission)
   useEffect(() => {
-    if (space?.id && room?.id && mode === 'list') {
+    if (space?.id && room?.id && mode === 'list' && aiPermissions.canRead) {
       loadConversations();
     }
-  }, [space?.id, room?.id, mode]);
+  }, [space?.id, room?.id, mode, aiPermissions.canRead]);
 
   // Process incoming messages from terminal emulator
   useEffect(() => {
@@ -388,6 +388,15 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
 
   // Process incoming message from terminal emulator
   const processIncomingMessage = async (userMessage) => {
+    // Check if user has permission to create messages
+    if (!aiPermissions.canCreate) {
+      setProcessingError('You do not have permission to send messages. Please upgrade your plan or contact your administrator.');
+      if (onMessageProcessed) {
+        onMessageProcessed();
+      }
+      return;
+    }
+
     const token = getToken();
     if (!token) {
       setProcessingError('Authentication token not found');
@@ -878,14 +887,16 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
                       {formatConversationTitle(conversation)}
                     </div>
                   </div>
-                  <button
-                    className={styles.deleteButton}
-                    onClick={(e) => handleDeleteConversation(conversation.id, e)}
-                    title="Delete conversation"
-                    aria-label="Delete conversation"
-                  >
-                    ✕
-                  </button>
+                  {aiPermissions.canDelete && (
+                    <button
+                      className={styles.deleteButton}
+                      onClick={(e) => handleDeleteConversation(conversation.id, e)}
+                      title="Delete conversation"
+                      aria-label="Delete conversation"
+                    >
+                      ✕
+                    </button>
+                  )}
                   <div className={styles.conversationMeta}>
                     <span className={styles.conversationTimestamp}>
                       {formatTimestamp(conversation.updated_at || conversation.created_at)}
@@ -1110,9 +1121,64 @@ const Chat = ({ space, room, message, onMessageProcessed }) => {
     );
   };
 
+  // Render no permissions state
+  const renderNoPermissions = () => {
+    const handleUpgradeClick = () => {
+      if (space?.slug) {
+        const baseUrl = localStorage.getItem('netdata_base_url') || 'https://app.netdata.cloud';
+        window.open(`${baseUrl}/spaces/${space.slug}/settings/billing`, '_blank');
+      }
+    };
+
+    return (
+      <>
+        <div className={styles.chatHeader}>
+          <div className={styles.chatTitle}>
+            <span className={styles.chatIcon}>💬</span>
+            <span className={styles.chatTitleText}>Conversations</span>
+          </div>
+          <div className={styles.chatContext}>
+            <span className={styles.contextLabel}>Space:</span>
+            <span className={styles.contextValue}>{space?.name || 'No Space'}</span>
+            <span className={styles.contextSeparator}>•</span>
+            <span className={styles.contextLabel}>Room:</span>
+            <span className={styles.contextValue}>{room?.name || 'No Room'}</span>
+          </div>
+        </div>
+
+        <div className={styles.chatBody}>
+          <div className={styles.emptyState}>
+            <div className={styles.emptyIcon}>🔒</div>
+            <div className={styles.emptyTitle}>AI Features Not Available</div>
+            <div className={styles.emptyDescription}>
+              Your current space plan does not include AI features.
+              Please upgrade your plan or contact your administrator to enable AI capabilities.
+            </div>
+            {space?.slug && (
+              <button className={styles.upgradeButton} onClick={handleUpgradeClick}>
+                View Billing & Upgrade
+              </button>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  // Determine what to render based on permissions and mode
+  const renderContent = () => {
+    // If user doesn't have read permission, show no permissions state
+    if (!aiPermissions.canRead) {
+      return renderNoPermissions();
+    }
+
+    // Otherwise render based on mode
+    return mode === 'list' ? renderConversationsList() : renderConversation();
+  };
+
   return (
     <div className={styles.chatContainer}>
-      {mode === 'list' ? renderConversationsList() : renderConversation()}
+      {renderContent()}
     </div>
   );
 };

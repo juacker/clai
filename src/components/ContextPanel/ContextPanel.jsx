@@ -20,7 +20,7 @@ import styles from './ContextPanel.module.css';
 
 const ContextPanel = () => {
   const { getActiveTab, updateTabContext } = useTabManager();
-  const { spaces, getRoomsForSpace, getSpaceById, getRoomById } = useSharedSpaceRoomData();
+  const { spaces, getRoomsForSpace, getSpaceById, getRoomById, getSpaceAIPermissions } = useSharedSpaceRoomData();
 
   // Selector state
   const [showSpaceSelector, setShowSpaceSelector] = useState(false);
@@ -48,6 +48,12 @@ const ContextPanel = () => {
   }, [tabContext?.spaceRoom?.selectedSpaceId, tabContext?.spaceRoom?.selectedRoomId, getRoomById]);
 
   const customContext = tabContext?.customContext || {};
+
+  // Get AI permissions for the selected space
+  const aiPermissions = useMemo(() => {
+    if (!selectedSpace?.id) return { canRead: false, canCreate: false, canDelete: false };
+    return getSpaceAIPermissions(selectedSpace.id);
+  }, [selectedSpace?.id, getSpaceAIPermissions]);
 
   // Fetch billing plan function
   const fetchBillingPlan = useCallback(async () => {
@@ -180,8 +186,8 @@ const ContextPanel = () => {
             />
           )}
 
-          {/* Credits Badge */}
-          {availableCredits !== null && selectedSpace?.slug && (
+          {/* Credits Badge - only show if user has AI permissions */}
+          {availableCredits !== null && selectedSpace?.slug && aiPermissions.canRead && (
             <ContextBadge
               type="credits"
               label="Credits"

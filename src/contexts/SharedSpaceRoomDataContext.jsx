@@ -6,6 +6,7 @@
  * - Fetching spaces from API (once)
  * - Caching rooms per space (lazy loading)
  * - Providing shared data to all tabs
+ * - Managing permissions per space
  *
  * Note: This context does NOT manage space/room selection.
  * Selection is handled per-tab by TabContext.
@@ -13,6 +14,15 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { getSpaces, getRooms } from '../api/client';
+
+/**
+ * AI-related permissions constants
+ */
+export const AI_PERMISSIONS = {
+  READ_REPORT: 'insights:ReadReport',      // List conversations
+  CREATE_REPORT: 'insights:CreateReport',  // Create conversations/messages
+  DELETE_REPORT: 'insights:DeleteReport',  // Delete conversations
+};
 
 const SharedSpaceRoomDataContext = createContext(null);
 
@@ -144,6 +154,36 @@ export function SharedSpaceRoomDataProvider({ children }) {
   }, [fetchSpaces]);
 
   /**
+   * Check if a space has a specific permission
+   *
+   * @param {string} spaceId - The space ID to check
+   * @param {string} permission - The permission to check for
+   * @returns {boolean} True if the space has the permission
+   */
+  const hasPermission = useCallback((spaceId, permission) => {
+    const space = spaces.find(s => s.id === spaceId);
+    if (!space || !space.permissions) {
+      return false;
+    }
+    return space.permissions.includes(permission);
+  }, [spaces]);
+
+  /**
+   * Get AI permissions status for a space
+   * Returns an object indicating which AI features are available
+   *
+   * @param {string} spaceId - The space ID to check
+   * @returns {Object} Object with canRead, canCreate, canDelete booleans
+   */
+  const getSpaceAIPermissions = useCallback((spaceId) => {
+    return {
+      canRead: hasPermission(spaceId, AI_PERMISSIONS.READ_REPORT),
+      canCreate: hasPermission(spaceId, AI_PERMISSIONS.CREATE_REPORT),
+      canDelete: hasPermission(spaceId, AI_PERMISSIONS.DELETE_REPORT),
+    };
+  }, [hasPermission]);
+
+  /**
    * Clear rooms cache for a specific space
    * Useful when rooms data might be stale
    *
@@ -174,6 +214,10 @@ export function SharedSpaceRoomDataProvider({ children }) {
     getRoomById,
     refetch,
     clearRoomsCache,
+
+    // Permissions
+    hasPermission,
+    getSpaceAIPermissions,
   }), [
     spaces,
     roomsCache,
@@ -183,7 +227,9 @@ export function SharedSpaceRoomDataProvider({ children }) {
     getSpaceById,
     getRoomById,
     refetch,
-    clearRoomsCache
+    clearRoomsCache,
+    hasPermission,
+    getSpaceAIPermissions,
   ]);
 
   return (

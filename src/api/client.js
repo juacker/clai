@@ -34,8 +34,10 @@ client.interceptors.response.use(
     return response;
   },
   (error) => {
-    // Check if the error is an authentication error (401 Unauthorized or 403 Forbidden)
-    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+    // Check if the error is an authentication error (401 Unauthorized)
+    // Note: 403 Forbidden is NOT treated as auth error - it means the user lacks
+    // permission for a specific feature (e.g., AI features) but is still authenticated
+    if (error.response && error.response.status === 401) {
       // Clear the stored token
       localStorage.removeItem('netdata_token');
       // Redirect to login page

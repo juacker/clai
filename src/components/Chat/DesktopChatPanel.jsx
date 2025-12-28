@@ -24,7 +24,7 @@ import styles from './DesktopChatPanel.module.css';
  */
 const DesktopChatPanel = ({ message, onMessageProcessed }) => {
   const { isCurrentChatOpen, getCurrentChatInstance } = useChatManager();
-  const { getSpaceById, getRoomById } = useSharedSpaceRoomData();
+  const { getSpaceById, getRoomById, getSpaceAIPermissions } = useSharedSpaceRoomData();
 
   // Get the current chat instance (if any)
   const chatInstance = getCurrentChatInstance();
@@ -43,6 +43,12 @@ const DesktopChatPanel = ({ message, onMessageProcessed }) => {
     return getRoomById(chatInstance.space, chatInstance.room);
   }, [chatInstance?.space, chatInstance?.room, getRoomById]);
 
+  // Get AI permissions for the current space
+  const aiPermissions = useMemo(() => {
+    if (!chatInstance?.space) return { canRead: false, canCreate: false, canDelete: false };
+    return getSpaceAIPermissions(chatInstance.space);
+  }, [chatInstance?.space, getSpaceAIPermissions]);
+
   return (
     <div
       id="desktop-chat-panel"
@@ -59,6 +65,7 @@ const DesktopChatPanel = ({ message, onMessageProcessed }) => {
             isOpen={isOpen}
             message={message}
             onMessageProcessed={onMessageProcessed}
+            aiPermissions={aiPermissions}
           />
         )}
       </div>
