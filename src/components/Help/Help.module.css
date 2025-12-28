@@ -1,7 +1,8 @@
 /**
  * Help Component CSS Module
- *
  * Compact two-column layout for commands and shortcuts
+ *
+ * Design: Clear reference, professional look, easy scanning
  */
 
 .helpContainer {
@@ -22,36 +23,38 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 10px 14px 6px;
+  padding: 12px 16px 8px;
   border-bottom: 1px solid var(--color-border-light);
   flex-shrink: 0;
+  background: var(--color-bg-secondary);
 }
 
 .title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--color-text-primary);
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
 /* Content */
 .content {
   flex: 1;
-  padding: 8px 14px;
+  padding: 12px 16px;
   overflow-y: auto;
 }
 
 /* Two-column layout */
 .columns {
   display: flex;
-  gap: 20px;
+  gap: 28px;
 }
 
 .column {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -59,16 +62,16 @@
 .section {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 4px;
 }
 
 .sectionTitle {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--color-text-tertiary);
-  margin: 0 0 3px 0;
+  margin: 0 0 6px 0;
 }
 
 /* Chat Row - Prominent call to action */
@@ -76,35 +79,38 @@
   display: flex;
   align-items: center;
   line-height: 1.6;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .chatHighlight {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-primary-dark);
   background: var(--color-primary-alpha-10);
-  border-radius: 4px;
-  padding: 4px 8px;
+  border: 1px solid var(--color-primary-alpha-20);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  box-shadow: var(--shadow-xs);
 }
 
 /* Command Row */
 .commandRow {
   display: flex;
   align-items: baseline;
-  gap: 6px;
-  line-height: 1.6;
+  gap: 8px;
+  line-height: 1.7;
   color: var(--color-text-secondary);
   flex-wrap: wrap;
+  padding: 2px 0;
 }
 
 .commandRow code {
-  font-family: 'Monaco', 'Menlo', monospace;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
   font-size: 11px;
-  color: var(--color-primary-dark);
-  background: var(--color-primary-alpha-08);
-  border-radius: 3px;
-  padding: 0 4px;
+  color: var(--color-secondary-dark);
+  background: var(--color-secondary-alpha-08);
+  border-radius: var(--radius-xs);
+  padding: 2px 6px;
   white-space: nowrap;
 }
 
@@ -117,33 +123,36 @@
 .shortcutRow {
   display: flex;
   align-items: center;
-  gap: 3px;
-  line-height: 1.6;
+  gap: 4px;
+  line-height: 1.7;
   flex-wrap: wrap;
+  padding: 2px 0;
 }
 
 .shortcutRow kbd {
-  font-family: 'Monaco', 'Menlo', monospace;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
   font-size: 10px;
   color: var(--color-text-secondary);
   background: var(--color-bg-tertiary);
   border: 1px solid var(--color-border-medium);
-  border-radius: 3px;
-  padding: 1px 4px;
+  border-radius: var(--radius-xs);
+  padding: 2px 6px;
   white-space: nowrap;
-  box-shadow: 0 1px 0 var(--color-border-medium);
+  box-shadow: 0 1px 0 var(--color-border-medium), 0 1px 2px var(--color-overlay-06);
+  min-width: 18px;
+  text-align: center;
 }
 
 .shortcutRow span {
   color: var(--color-text-tertiary);
   font-size: 11px;
-  margin-left: 4px;
+  margin-left: 6px;
 }
 
 /* Responsive: stack columns on narrow tiles */
 @media (max-width: 500px) {
   .columns {
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
   }
 }

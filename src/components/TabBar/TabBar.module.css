@@ -1,23 +1,22 @@
 /**
  * TabBar Component Styles
  *
- * Provides a clean, modern tab interface with smooth animations
- * and responsive design for both desktop and mobile.
+ * Clean, professional tab interface
  */
 
 .tabBar {
   width: 100%;
   background: var(--color-bg-glass);
   border-bottom: 1px solid var(--color-border-light);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
   z-index: 100;
   overflow: hidden;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
 }
 
-/* Transparent tab bar when only one tab exists (hide the tab itself, keep + button) */
+/* Transparent tab bar when only one tab exists */
 .tabBar:has(.tabList > .tab:only-of-type) {
   background: transparent;
   border-bottom: none;
@@ -29,17 +28,17 @@
   align-items: center;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
-  padding: 0 8px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 0 10px;
   gap: 4px;
   min-height: 44px;
-  /* Force consistent height */
   height: 44px;
+  scroll-behavior: smooth;
 }
 
 .tabList::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
+  display: none;
 }
 
 /* Individual Tab */
@@ -51,14 +50,15 @@
   min-width: 120px;
   max-width: 200px;
   height: 36px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
   position: relative;
   flex-shrink: 0;
   user-select: none;
+  color: var(--color-text-secondary);
 }
 
 /* Hide the single tab when it's the only one */
@@ -67,23 +67,24 @@
 }
 
 .tab:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--color-overlay-06);
+  color: var(--color-text-primary);
 }
 
 .tab:focus {
-  outline: 2px solid rgba(102, 126, 234, 0.3);
+  outline: 2px solid var(--color-secondary-alpha-30);
   outline-offset: 2px;
 }
 
 /* Active Tab */
 .tabActive {
-  background: rgba(102, 126, 234, 0.08);
-  color: #667eea;
+  background: var(--color-secondary-alpha-08);
+  color: var(--color-secondary);
   font-weight: 500;
 }
 
 .tabActive:hover {
-  background: rgba(102, 126, 234, 0.12);
+  background: var(--color-secondary-alpha-15);
 }
 
 /* Tab Title */
@@ -107,10 +108,10 @@
   padding: 0;
   border: none;
   background: transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
-  color: rgba(0, 0, 0, 0.5);
-  transition: all 0.15s ease;
+  color: var(--color-text-tertiary);
+  transition: all var(--transition-fast);
   flex-shrink: 0;
   opacity: 0;
 }
@@ -120,23 +121,23 @@
 }
 
 .tabCloseButton:hover {
-  background: var(--color-overlay-08);
-  color: rgba(0, 0, 0, 0.8);
+  background: var(--color-overlay-10);
+  color: var(--color-text-primary);
 }
 
 .tabCloseButton:active {
-  background: rgba(0, 0, 0, 0.12);
+  background: var(--color-overlay-15);
   transform: scale(0.95);
 }
 
 .tabActive .tabCloseButton {
-  color: rgba(102, 126, 234, 0.7);
+  color: var(--color-secondary-alpha-70);
   opacity: 1;
 }
 
 .tabActive .tabCloseButton:hover {
-  background: rgba(102, 126, 234, 0.15);
-  color: #667eea;
+  background: var(--color-secondary-alpha-15);
+  color: var(--color-secondary);
 }
 
 /* New Tab Button */
@@ -149,34 +150,27 @@
   padding: 0;
   border: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  color: rgba(0, 0, 0, 0.5);
-  transition: all 0.2s ease;
+  color: var(--color-text-tertiary);
+  transition: all var(--transition-fast);
   flex-shrink: 0;
   margin-left: 4px;
 }
 
 .newTabButton:hover {
-  background: rgba(0, 0, 0, 0.04);
-  color: rgba(0, 0, 0, 0.8);
+  background: var(--color-overlay-06);
+  color: var(--color-text-primary);
 }
 
 .newTabButton:active {
-  background: var(--color-overlay-08);
+  background: var(--color-overlay-10);
   transform: scale(0.95);
 }
 
 .newTabButton:focus {
-  outline: 2px solid rgba(102, 126, 234, 0.3);
+  outline: 2px solid var(--color-secondary-alpha-30);
   outline-offset: 2px;
-}
-
-/* Touch Device Optimizations */
-
-/* Smooth Scroll Behavior */
-.tabList {
-  scroll-behavior: smooth;
 }
 
 /* Fade edges for horizontal scroll */
@@ -189,17 +183,17 @@
   width: 20px;
   pointer-events: none;
   z-index: 1;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--transition-fast);
 }
 
 .tabBar::before {
   left: 0;
-  background: linear-gradient(to right, rgba(255, 255, 255, 0.98), transparent);
+  background: linear-gradient(to right, var(--color-bg-glass-strong), transparent);
 }
 
 .tabBar::after {
   right: 0;
-  background: linear-gradient(to left, rgba(255, 255, 255, 0.98), transparent);
+  background: linear-gradient(to left, var(--color-bg-glass-strong), transparent);
 }
 
 /* Hide fade edges when transparent */
@@ -207,4 +201,3 @@
 .tabBar:has(.tabList > .tab:only-of-type)::after {
   opacity: 0;
 }
-

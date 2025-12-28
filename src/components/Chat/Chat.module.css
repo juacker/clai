@@ -1,38 +1,32 @@
-
+/**
+ * Chat Component CSS Module
+ * AI Assistant for monitoring and troubleshooting
+ *
+ * Design: Competent, reliable assistant - helpful for production issues
+ */
 
 .chatContainer {
   display: flex;
   flex-direction: column;
-
-
-  background: #ffffff;
+  background: var(--color-bg-elevated);
   border-radius: 0;
   box-shadow: none;
   overflow: hidden;
-
-
   width: 100%;
   max-width: 100%;
-  /* Use flex: 1 instead of height: 100% for proper flexbox behavior */
   flex: 1;
-  min-height: 0; /* Important for flexbox scrolling */
+  min-height: 0;
   margin: 0;
-
-  /* Smooth transitions */
-  transition: all 0.3s ease;
+  transition: all var(--transition-base);
 }
 
-/* Desktop styles - Fill full panel height */
 @media (min-width: 769px) and (pointer: fine) {
   .chatContainer {
-    /* Fill entire desktop panel */
     width: 100%;
     max-width: 100%;
     height: 100%;
     margin: 0;
-
-    /* Clean solid white */
-    background: #ffffff;
+    background: var(--color-bg-elevated);
     border-radius: 0;
     box-shadow: none;
   }
@@ -44,17 +38,15 @@
   flex-direction: column;
   gap: 8px;
   padding: 16px 20px;
-
-  background: rgba(0, 0, 0, 0.02);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border-light);
 }
 
-/* Desktop: Light, elegant header styling */
 @media (min-width: 769px) and (pointer: fine) {
   .chatHeader {
-    background: rgba(0, 0, 0, 0.02);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-    padding: 20px 24px;
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border-light);
+    padding: 18px 24px;
   }
 }
 
@@ -64,15 +56,14 @@
   gap: 10px;
   font-size: 16px;
   font-weight: 600;
-
-  color: rgba(0, 0, 0, 0.85);
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
 }
 
-/* Desktop: Dark text for light background */
 @media (min-width: 769px) and (pointer: fine) {
   .chatTitle {
-    color: rgba(0, 0, 0, 0.85);
-    font-size: 18px;
+    color: var(--color-text-primary);
+    font-size: 17px;
   }
 }
 
@@ -89,61 +80,53 @@
   align-items: center;
   gap: 8px;
   font-size: 12px;
-
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--color-text-secondary);
   flex-wrap: wrap;
 }
 
-/* Desktop: Context styling for light theme */
 @media (min-width: 769px) and (pointer: fine) {
   .chatContext {
-    color: rgba(0, 0, 0, 0.5);
+    color: var(--color-text-secondary);
     font-size: 13px;
   }
 }
 
 .contextLabel {
   font-weight: 500;
-
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--color-text-secondary);
 }
 
-/* Desktop: Label styling */
 @media (min-width: 769px) and (pointer: fine) {
   .contextLabel {
-    color: rgba(0, 0, 0, 0.5);
+    color: var(--color-text-secondary);
   }
 }
 
 .contextValue {
-
-  color: var(--color-primary);
+  color: var(--color-primary-dark);
   font-weight: 500;
-  background-color: var(--color-primary-alpha-08);
-  padding: 3px 10px;
-  border-radius: 6px;
+  background-color: var(--color-primary-alpha-10);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
 }
 
-/* Desktop: Value badge with Netdata Green */
 @media (min-width: 769px) and (pointer: fine) {
   .contextValue {
-    color: var(--color-primary);
-    background-color: var(--color-primary-alpha-08);
-    padding: 3px 10px;
-    border-radius: 6px;
-    font-weight: 500;
+    color: var(--color-primary-dark);
+    background-color: var(--color-primary-alpha-10);
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
   }
 }
 
 .contextSeparator {
-
-  color: rgba(0, 0, 0, 0.2);
+  color: var(--color-text-disabled);
 }
 
-/* Desktop: Separator styling */
 @media (min-width: 769px) and (pointer: fine) {
   .contextSeparator {
-    color: rgba(0, 0, 0, 0.2);
+    color: var(--color-text-disabled);
   }
 }
 
@@ -156,56 +139,50 @@
   flex-direction: column;
   gap: 12px;
   min-height: 0;
+  background: var(--color-bg-primary);
 }
 
-/* Desktop: Increased padding and spacing */
 @media (min-width: 769px) and (pointer: fine) {
   .chatBody {
     padding: 20px 24px;
-    gap: 14px;
+    gap: 16px;
   }
 }
 
-/* Custom scrollbar for webkit browsers */
+/* Custom scrollbar */
 .chatBody::-webkit-scrollbar {
   width: 6px;
 }
 
 .chatBody::-webkit-scrollbar-track {
-
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--color-overlay-04);
   border-radius: 3px;
 }
 
-/* Desktop: Light scrollbar track */
 @media (min-width: 769px) and (pointer: fine) {
   .chatBody::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.03);
+    background: var(--color-overlay-04);
   }
 }
 
 .chatBody::-webkit-scrollbar-thumb {
-
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--color-overlay-20);
   border-radius: 3px;
 }
 
-/* Desktop: Light scrollbar thumb */
 @media (min-width: 769px) and (pointer: fine) {
   .chatBody::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.15);
+    background: var(--color-overlay-20);
   }
 }
 
 .chatBody::-webkit-scrollbar-thumb:hover {
-
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--color-overlay-40);
 }
 
-/* Desktop: Light scrollbar thumb hover */
 @media (min-width: 769px) and (pointer: fine) {
   .chatBody::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 0, 0, 0.25);
+    background: var(--color-overlay-40);
   }
 }
 
@@ -222,15 +199,13 @@
 
 .placeholderText {
   font-size: 14px;
-
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--color-text-secondary);
   margin: 0;
 }
 
 .placeholderSubtext {
   font-size: 12px;
-
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--color-text-tertiary);
   margin: 0;
 }
 
@@ -246,7 +221,7 @@
 
 .loadingText {
   font-size: 14px;
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--color-text-secondary);
 }
 
 /* Error State */
@@ -267,20 +242,21 @@
 
 .errorText {
   font-size: 14px;
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--color-text-secondary);
   max-width: 400px;
 }
 
 .retryButton {
-  padding: 8px 16px;
+  padding: 10px 20px;
   background: var(--color-primary);
-  color: white;
+  color: var(--color-text-on-primary);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-button);
 }
 
 .retryButton:hover {
@@ -307,21 +283,23 @@
 
 .emptyIcon {
   font-size: 64px;
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .emptyTitle {
   font-size: 18px;
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--color-text-primary);
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
 .emptyDescription {
   font-size: 14px;
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--color-text-secondary);
   max-width: 300px;
   margin: 0;
+  line-height: 1.5;
 }
 
 /* Conversations List */
@@ -333,19 +311,20 @@
 
 .conversationItem {
   position: relative;
-  padding: 14px 16px;
-  background: rgba(0, 0, 0, 0.02);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 8px;
+  padding: 14px 18px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-xs);
 }
 
 .conversationItem:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--color-bg-secondary);
   border-color: var(--color-primary-alpha-30);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 .conversationItem:active {
@@ -363,7 +342,7 @@
 .conversationTitle {
   font-size: 15px;
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.85);
+  color: var(--color-text-primary);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -373,24 +352,24 @@
 
 .deleteButton {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 10px;
+  right: 10px;
   padding: 4px;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 4px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-xs);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
   opacity: 0;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
   z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  color: rgba(0, 0, 0, 0.6);
+  width: 26px;
+  height: 26px;
+  color: var(--color-text-tertiary);
 }
 
 .conversationItem:hover .deleteButton {
@@ -398,10 +377,10 @@
 }
 
 .deleteButton:hover {
-  background: rgba(255, 59, 48, 0.1);
-  border-color: rgba(255, 59, 48, 0.3);
-  color: #ff3b30;
-  transform: scale(1.1);
+  background: var(--color-critical-bg);
+  border-color: var(--color-critical-border);
+  color: var(--color-critical);
+  transform: scale(1.05);
 }
 
 .conversationMeta {
@@ -409,7 +388,7 @@
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--color-text-tertiary);
   margin-bottom: 6px;
 }
 
@@ -418,11 +397,11 @@
 }
 
 .conversationSeparator {
-  color: rgba(0, 0, 0, 0.3);
+  color: var(--color-text-disabled);
 }
 
 .conversationMessageCount {
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--color-text-tertiary);
 }
 
 .conversationCredits {
@@ -432,23 +411,23 @@
 
 .conversationHeaderCredits {
   font-size: 12px;
-  color: var(--color-primary);
-  font-weight: 500;
-  background-color: var(--color-primary-alpha-08);
+  color: var(--color-primary-dark);
+  font-weight: 600;
+  background-color: var(--color-primary-alpha-10);
   padding: 4px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
 
 @media (min-width: 769px) and (pointer: fine) {
   .conversationHeaderCredits {
-    font-size: 13px;
+    font-size: 12px;
   }
 }
 
 .conversationPreview {
   font-size: 13px;
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -457,31 +436,32 @@
 /* Chat Footer */
 .chatFooter {
   padding: 16px 20px;
-  background: rgba(0, 0, 0, 0.02);
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-secondary);
+  border-top: 1px solid var(--color-border-light);
 }
 
 @media (min-width: 769px) and (pointer: fine) {
   .chatFooter {
-    padding: 20px 24px;
+    padding: 18px 24px;
   }
 }
 
 .newConversationButton {
   width: 100%;
-  padding: 12px 16px;
+  padding: 12px 18px;
   background: var(--color-primary);
-  color: white;
+  color: var(--color-text-on-primary);
   border: none;
-  border-radius: 8px;
-  font-size: 15px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-button);
 }
 
 .newConversationButton:hover:not(:disabled) {
@@ -504,7 +484,7 @@
 }
 
 .buttonText {
-  font-size: 15px;
+  font-size: 14px;
 }
 
 /* Back Button */
@@ -512,9 +492,9 @@
   padding: 6px 10px;
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -522,7 +502,7 @@
 }
 
 .backButton:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--color-overlay-08);
 }
 
 .backButton:active {
@@ -531,7 +511,7 @@
 
 .backIcon {
   font-size: 20px;
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--color-text-secondary);
   font-weight: 600;
 }
 
@@ -539,33 +519,34 @@
 .messagesContainer {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 /* Message Input */
 .messageInputContainer {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
 }
 
 .messageInput {
   flex: 1;
   padding: 12px 16px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 8px;
-  color: rgba(0, 0, 0, 0.85);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-medium);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
   font-size: 14px;
   font-family: inherit;
   outline: none;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-xs);
 }
 
 .messageInput:focus {
-  background: #ffffff;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-alpha-08);
+  background: var(--color-bg-elevated);
+  border-color: var(--color-secondary);
+  box-shadow: var(--shadow-input-focus);
 }
 
 .messageInput:disabled {
@@ -574,21 +555,22 @@
 }
 
 .messageInput::placeholder {
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--color-text-placeholder);
 }
 
 .sendButton {
-  padding: 12px 16px;
+  padding: 12px 18px;
   background: var(--color-primary);
-  color: white;
+  color: var(--color-text-on-primary);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 18px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: var(--shadow-button);
 }
 
 .sendButton:hover:not(:disabled) {
@@ -612,42 +594,39 @@
 
 .chatInput {
   width: 100%;
-  padding: 10px 12px;
-
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 6px;
-  color: rgba(0, 0, 0, 0.85);
+  padding: 12px 14px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-medium);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
   font-size: 14px;
   font-family: inherit;
   outline: none;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-xs);
 }
 
-/* Desktop: Light input styling */
 @media (min-width: 769px) and (pointer: fine) {
   .chatInput {
-    background: rgba(0, 0, 0, 0.04);
-    border: 1px solid rgba(0, 0, 0, 0.12);
-    color: rgba(0, 0, 0, 0.85);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-medium);
+    color: var(--color-text-primary);
     padding: 12px 16px;
     font-size: 14px;
   }
 }
 
 .chatInput:focus {
-
-  background: #ffffff;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-alpha-08);
+  background: var(--color-bg-elevated);
+  border-color: var(--color-secondary);
+  box-shadow: var(--shadow-input-focus);
 }
 
-/* Desktop: Light focus styling with Netdata Green */
 @media (min-width: 769px) and (pointer: fine) {
   .chatInput:focus {
-    background: #ffffff;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px var(--color-primary-alpha-08);
+    background: var(--color-bg-elevated);
+    border-color: var(--color-secondary);
+    box-shadow: var(--shadow-input-focus);
   }
 }
 
@@ -657,14 +636,12 @@
 }
 
 .chatInput::placeholder {
-
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--color-text-placeholder);
 }
 
-/* Desktop: Light placeholder */
 @media (min-width: 769px) and (pointer: fine) {
   .chatInput::placeholder {
-    color: rgba(0, 0, 0, 0.4);
+    color: var(--color-text-placeholder);
   }
 }
 
@@ -673,102 +650,100 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  margin-bottom: 12px;
+  margin-bottom: 4px;
 }
 
 .messageWrapperOwn {
   align-items: flex-end;
 }
 
+/* AI Assistant Messages - Left border accent */
 .messageBubble {
-
   max-width: 100%;
   width: auto;
-  padding: 10px 14px;
-  border-radius: 12px;
-
-  background-color: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 14px 18px;
+  border-radius: var(--radius-lg);
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-light);
+  border-left: 3px solid var(--color-secondary);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  animation: messageSlideIn 0.2s ease-out;
+  gap: 6px;
+  animation: messageSlideIn var(--transition-base) ease-out;
+  box-shadow: var(--shadow-xs);
 }
 
-/* Desktop: Full width for assistant messages with equal margins */
 @media (min-width: 769px) and (pointer: fine) {
   .messageBubble {
     max-width: 100%;
     width: auto;
-    background-color: rgba(0, 0, 0, 0.04);
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    padding: 12px 16px;
+    background-color: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-light);
+    border-left: 3px solid var(--color-secondary);
+    padding: 16px 20px;
   }
 }
 
+/* User Messages - Distinct styling */
 .messageBubbleOwn {
-
-  max-width: 75%;
+  max-width: 80%;
   width: auto;
   background-color: var(--color-primary-alpha-08);
-  border-color: var(--color-primary-alpha-20);
+  border: 1px solid var(--color-primary-alpha-20);
+  border-left: 3px solid var(--color-primary);
 }
 
-/* Desktop: Constrained width for user messages with Netdata Green */
 @media (min-width: 769px) and (pointer: fine) {
   .messageBubbleOwn {
     max-width: 75%;
     width: auto;
     background-color: var(--color-primary-alpha-08);
-    border-color: var(--color-primary-alpha-20);
+    border: 1px solid var(--color-primary-alpha-20);
+    border-left: 3px solid var(--color-primary);
   }
 }
 
 .messageSender {
   font-size: 11px;
   font-weight: 600;
-
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--color-text-tertiary);
   margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
-/* Desktop: Dark text for sender */
 @media (min-width: 769px) and (pointer: fine) {
   .messageSender {
-    color: rgba(0, 0, 0, 0.6);
-    font-size: 12px;
+    color: var(--color-text-tertiary);
+    font-size: 11px;
   }
 }
 
 .messageText {
-  font-size: 15px;
-
-  color: rgba(0, 0, 0, 0.85);
-  line-height: 1.5;
+  font-size: 14px;
+  color: var(--color-text-primary);
+  line-height: 1.6;
   word-wrap: break-word;
 }
 
-/* Desktop: Dark text for messages */
 @media (min-width: 769px) and (pointer: fine) {
   .messageText {
-    color: rgba(0, 0, 0, 0.85);
-    font-size: 16px;
-    line-height: 1.6;
+    color: var(--color-text-primary);
+    font-size: 15px;
+    line-height: 1.65;
   }
 }
 
 .messageTimestamp {
   font-size: 10px;
-
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--color-text-disabled);
   align-self: flex-end;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
-/* Desktop: Dark text for timestamp */
 @media (min-width: 769px) and (pointer: fine) {
   .messageTimestamp {
-    color: rgba(0, 0, 0, 0.4);
+    color: var(--color-text-disabled);
     font-size: 11px;
   }
 }
@@ -776,7 +751,7 @@
 @keyframes messageSlideIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -793,7 +768,6 @@
   margin-top: 8px;
 }
 
-/* Desktop: Slightly more padding */
 @media (min-width: 769px) and (pointer: fine) {
   .streamingSpinnerContainer {
     padding: 20px;
@@ -801,11 +775,11 @@
   }
 }
 
-/* Conversation Header Row - Single line layout */
+/* Conversation Header Row */
 .conversationHeaderRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
 }
 
@@ -819,10 +793,11 @@
 .conversationTitleText {
   font-size: 16px;
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.85);
+  color: var(--color-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.01em;
 }
 
 @media (min-width: 769px) and (pointer: fine) {

@@ -1,26 +1,26 @@
 /**
  * ContextBadge Component Styles
  *
- * Clean, minimalistic badges for displaying context information.
- * Follows mobile-first approach with responsive design.
+ * Clean badges for displaying context information
  */
 
-/* Base Badge Styles (Desktop baseline) */
+/* Base Badge Styles */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
   line-height: 1.4;
   font-weight: 500;
   white-space: nowrap;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
   user-select: none;
   background: var(--color-overlay-04);
-  color: rgba(0, 0, 0, 0.7);
-  border: 1px solid var(--color-overlay-08);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-light);
+  animation: badgeEnter var(--transition-fast) ease;
 }
 
 /* Clickable Badge */
@@ -29,7 +29,7 @@
 }
 
 .clickable:focus-visible {
-  outline: 2px solid rgba(102, 126, 234, 0.4);
+  outline: 2px solid var(--color-secondary-alpha-40);
   outline-offset: 2px;
 }
 
@@ -43,13 +43,12 @@
   line-height: 0;
 }
 
-/* SVG icons inherit color from parent */
 .icon svg {
   width: 14px;
   height: 14px;
   stroke: currentColor;
   fill: none;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
 }
 
 /* Text */
@@ -59,67 +58,65 @@
 
 /* Badge Types */
 
-/* Space Badge - Purple/Indigo theme */
+/* Space Badge - Secondary blue theme */
 .badgeSpace {
   background: var(--color-secondary-alpha-08);
-  color: #667eea;
-  border-color: rgba(102, 126, 234, 0.15);
+  color: var(--color-secondary);
+  border-color: var(--color-secondary-alpha-15);
 }
 
 .badgeSpace .icon {
-  color: #667eea;
+  color: var(--color-secondary);
 }
 
-/* Room Badge - Blue theme */
+/* Room Badge - Info blue theme */
 .badgeRoom {
-  background: rgba(59, 130, 246, 0.08);
-  color: #3b82f6;
-  border-color: rgba(59, 130, 246, 0.15);
+  background: var(--color-info-alpha-06);
+  color: var(--color-info-dark);
+  border-color: var(--color-info-border);
 }
 
 .badgeRoom .icon {
-  color: #3b82f6;
+  color: var(--color-info);
 }
 
-/* Custom Badge - Gray theme (default) */
+/* Custom Badge - Neutral theme */
 .badgeCustom {
   background: var(--color-overlay-04);
-  color: rgba(0, 0, 0, 0.7);
-  border-color: var(--color-overlay-08);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border-light);
 }
 
 .badgeCustom .icon {
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--color-text-tertiary);
 }
 
 /* Hover Effects (Desktop) */
 @media (hover: hover) {
   .badge:hover {
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px var(--color-overlay-08);
+    box-shadow: var(--shadow-sm);
   }
 
   .badgeSpace:hover {
-    background: rgba(102, 126, 234, 0.12);
-    border-color: rgba(102, 126, 234, 0.2);
+    background: var(--color-secondary-alpha-15);
+    border-color: var(--color-secondary-alpha-30);
   }
 
   .badgeRoom:hover {
-    background: rgba(59, 130, 246, 0.12);
-    border-color: rgba(59, 130, 246, 0.2);
+    background: var(--color-info-alpha-10);
+    border-color: var(--color-info);
   }
 
   .badgeCustom:hover {
-    background: var(--color-overlay-06);
-    border-color: rgba(0, 0, 0, 0.12);
+    background: var(--color-overlay-08);
+    border-color: var(--color-border-medium);
   }
 }
 
-/* Touch Device Optimizations */
-
 /* Accessibility - Focus Styles */
 .badge:focus-visible {
-  outline: 2px solid rgba(102, 126, 234, 0.4);
+  outline: 2px solid var(--color-secondary-alpha-40);
   outline-offset: 2px;
 }
 
@@ -134,8 +131,3 @@
     transform: scale(1);
   }
 }
-
-.badge {
-  animation: badgeEnter 0.2s ease;
-}
-
