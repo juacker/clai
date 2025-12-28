@@ -21,7 +21,7 @@ import styles from './TileView.module.css';
  */
 const TileView = ({ tile, activeTileId }) => {
   const { getCommand } = useCommand();
-  const { setActiveTile } = useTabManager();
+  const { setActiveTile, closeTile } = useTabManager();
 
   // Determine if this tile is active
   const isActive = tile.id === activeTileId;
@@ -31,6 +31,12 @@ const TileView = ({ tile, activeTileId }) => {
     if (tile.type === 'leaf') {
       setActiveTile(tile.id);
     }
+  };
+
+  // Handle close button click
+  const handleCloseClick = (e) => {
+    e.stopPropagation(); // Prevent tile selection
+    closeTile(tile.id);
   };
 
   // Render split tile (contains child tiles)
@@ -81,6 +87,13 @@ const TileView = ({ tile, activeTileId }) => {
         data-tile-id={tile.id}
         onClick={handleTileClick}
       >
+        <button
+          className={styles.closeButton}
+          onClick={handleCloseClick}
+          title="Close tile"
+        >
+          ×
+        </button>
         {command ? (
           <div className={styles.commandVisualization}>
             {/* Dynamically render command component from registry */}
