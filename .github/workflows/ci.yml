@@ -55,8 +55,5 @@ jobs:
         working-directory: src-tauri
         run: cargo fmt --check
 
-      - name: Build Tauri app
-        run: npm run tauri:build
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ""
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+      - name: Build Tauri app (debug, no bundle)
+        run: npm run tauri -- build --debug --no-bundle
