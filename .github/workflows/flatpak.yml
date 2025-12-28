@@ -59,6 +59,10 @@ jobs:
 
       - name: Create Flatpak
         run: |
+          # Initialize flatpak build directory
+          flatpak build-init flatpak-build com.juacker.clai org.gnome.Sdk//48 org.gnome.Platform//48
+
+          # Copy files into the build
           mkdir -p flatpak-build/files/bin
           mkdir -p flatpak-build/files/share/applications
           mkdir -p flatpak-build/files/share/icons/hicolor/128x128/apps
@@ -67,19 +71,17 @@ jobs:
           cp flatpak/com.juacker.clai.desktop flatpak-build/files/share/applications/
           cp src-tauri/icons/128x128.png flatpak-build/files/share/icons/hicolor/128x128/apps/com.juacker.clai.png
 
-          cat > flatpak-build/metadata << 'EOF'
-          [Application]
-          name=com.juacker.clai
-          runtime=org.gnome.Platform/x86_64/48
-          command=clai
+          # Finalize the build
+          flatpak build-finish flatpak-build \
+            --command=clai \
+            --share=ipc \
+            --share=network \
+            --socket=fallback-x11 \
+            --socket=wayland \
+            --device=dri \
+            --filesystem=home
 
-          [Context]
-          shared=ipc;network;
-          sockets=fallback-x11;wayland;
-          devices=dri;
-          filesystems=home;
-          EOF
-
+          # Export and bundle
           flatpak build-export repo flatpak-build
           flatpak build-bundle repo clai.flatpak com.juacker.clai
 
