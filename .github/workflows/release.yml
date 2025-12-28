@@ -9,8 +9,31 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.result }}
+    steps:
+      - name: Create draft release
+        id: create
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: release } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.ref.replace('refs/tags/', ''),
+              name: `CLAI ${context.ref.replace('refs/tags/', '')}`,
+              body: 'See [CHANGELOG.md](https://github.com/juacker/clai/blob/main/CHANGELOG.md) for details.',
+              draft: true,
+              prerelease: context.ref.includes('beta') || context.ref.includes('alpha')
+            });
+            return release.id;
+
   build:
     name: Build (${{ matrix.target }})
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -61,10 +84,5 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'CLAI ${{ github.ref_name }}'
-          releaseBody: |
-            See [CHANGELOG.md](https://github.com/juacker/clai/blob/main/CHANGELOG.md) for details.
-          releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           args: --target ${{ matrix.target }}
