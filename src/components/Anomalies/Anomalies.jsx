@@ -431,7 +431,7 @@ function getSeverityLevel(anomalyRate) {
 
 const Anomalies = ({ command }) => {
   const { selectedSpace, selectedRoom } = useTabContext();
-  const { sendToCanvas, isMetricInCanvas } = useCommandMessaging();
+  const { sendToCanvas, isElementInCanvas } = useCommandMessaging();
 
   // Create space/room key for canvas storage
   const spaceRoomKey = useMemo(() => {
@@ -828,16 +828,28 @@ const Anomalies = ({ command }) => {
   const handleMetricClick = useCallback((context) => {
     if (!spaceRoomKey) return; // Need space/room context
 
-    if (isMetricInCanvas(context, spaceRoomKey)) {
+    // Use context as element ID (it's unique)
+    const elementId = `context-chart-${context}`;
+
+    if (isElementInCanvas(elementId, spaceRoomKey)) {
       return; // Already in canvas
     }
 
-    const result = sendToCanvas(context, spaceRoomKey);
+    // Create element config
+    const element = {
+      id: elementId,
+      type: 'context-chart',
+      config: {
+        context: context,
+      },
+    };
+
+    const result = sendToCanvas(element, spaceRoomKey);
     if (result.success) {
       setSentFeedback(context);
       setTimeout(() => setSentFeedback(null), 1500);
     }
-  }, [sendToCanvas, isMetricInCanvas, spaceRoomKey]);
+  }, [sendToCanvas, isElementInCanvas, spaceRoomKey]);
 
   // Handle container resizing
   useEffect(() => {
@@ -1102,7 +1114,7 @@ const Anomalies = ({ command }) => {
                   filteredContexts.map((context) => {
                     const anomalyRate = anomalyRates.get(context);
                     const color = getColorForAnomalyRate(anomalyRate);
-                    const inCanvas = spaceRoomKey && isMetricInCanvas(context, spaceRoomKey);
+                    const inCanvas = spaceRoomKey && isElementInCanvas(`context-chart-${context}`, spaceRoomKey);
                     const justSent = sentFeedback === context;
                     return (
                       <div
@@ -1133,7 +1145,7 @@ const Anomalies = ({ command }) => {
                 sortedGroupMetrics?.map((context) => {
                   const anomalyRate = anomalyRates.get(context);
                   const color = getColorForAnomalyRate(anomalyRate);
-                  const inCanvas = spaceRoomKey && isMetricInCanvas(context, spaceRoomKey);
+                  const inCanvas = spaceRoomKey && isElementInCanvas(`context-chart-${context}`, spaceRoomKey);
                   const justSent = sentFeedback === context;
                   return (
                     <div

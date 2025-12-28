@@ -2,16 +2,23 @@
  * CommandMessagingContext
  *
  * Provides inter-command messaging capabilities, particularly for
- * sending data (metrics, charts) to the canvas command.
+ * sending data (elements, charts) to the canvas command.
  *
  * Features:
- * - sendToCanvas(metric, spaceRoomKey): Sends a metric to canvas for a space/room
- * - isMetricInCanvas(metric, spaceRoomKey): Checks if a metric is already in canvas
- * - getCanvasMetrics(spaceRoomKey): Get metrics for a specific space/room
+ * - sendToCanvas(element, spaceRoomKey): Sends an element to canvas for a space/room
+ * - isElementInCanvas(elementId, spaceRoomKey): Checks if an element is already in canvas
+ * - getCanvasElements(spaceRoomKey): Get elements for a specific space/room
  * - canvasExists: Boolean indicating if canvas command exists in current tab
  *
- * Canvas metrics are stored per space/room combination, so switching
- * space/room shows different metrics (and switching back preserves them).
+ * Element format:
+ * {
+ *   id: "unique-id",
+ *   type: "context-chart" | "timeseries-chart" | "bar-chart" | etc,
+ *   config: { ... element-specific configuration }
+ * }
+ *
+ * Canvas elements are stored per space/room combination, so switching
+ * space/room shows different elements (and switching back preserves them).
  *
  * Calling components should use useTabContext to get selectedSpace/selectedRoom
  * and create the spaceRoomKey: `${selectedSpace.id}_${selectedRoom.id}`
@@ -20,6 +27,7 @@
 import React, { createContext, useContext, useCallback, useMemo } from 'react';
 import { useTabManager } from './TabManagerContext';
 import { useCommand } from './CommandContext';
+import { validateCanvasElement } from '../utils/canvasElementValidator';
 
 const CommandMessagingContext = createContext(null);
 
@@ -45,11 +53,11 @@ export const CommandMessagingProvider = ({ children }) => {
     activeTileId,
     getCanvasState,
     getActiveCanvasState,
-    addCanvasMetric,
-    removeCanvasMetric,
+    addCanvasElement,
+    removeCanvasElement,
     clearCanvasMetrics,
     setCanvasCommandId,
-    isMetricInCanvas: checkMetricInCanvas,
+    isElementInCanvas: checkElementInCanvas,
     splitTile,
     getLeafTiles,
     setActiveTile,
@@ -66,35 +74,35 @@ export const CommandMessagingProvider = ({ children }) => {
   }, [getActiveCanvasState]);
 
   /**
-   * Get canvas metrics for a specific space/room
+   * Get canvas elements for a specific space/room
    * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
-   * @returns {Array} Array of metrics
+   * @returns {Array} Array of element configs
    */
-  const getCanvasMetrics = useCallback((spaceRoomKey) => {
+  const getCanvasElements = useCallback((spaceRoomKey) => {
     if (!spaceRoomKey) return [];
     const canvasState = getActiveCanvasState(spaceRoomKey);
-    return canvasState.metrics || [];
+    return canvasState.elements || [];
   }, [getActiveCanvasState]);
 
   /**
-   * Check if a metric is already in canvas for a space/room
-   * @param {string} metric - Metric context string
+   * Check if an element is already in canvas for a space/room
+   * @param {string} elementId - Element ID to check
    * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
-   * @returns {boolean} True if metric is in canvas
+   * @returns {boolean} True if element is in canvas
    */
-  const isMetricInCanvas = useCallback((metric, spaceRoomKey) => {
+  const isElementInCanvas = useCallback((elementId, spaceRoomKey) => {
     if (!activeTabId || !spaceRoomKey) return false;
-    return checkMetricInCanvas(activeTabId, metric, spaceRoomKey);
-  }, [activeTabId, checkMetricInCanvas]);
+    return checkElementInCanvas(activeTabId, elementId, spaceRoomKey);
+  }, [activeTabId, checkElementInCanvas]);
 
   /**
-   * Send a metric to canvas for a specific space/room
+   * Send an element to canvas for a specific space/room
    * If canvas doesn't exist, auto-creates it via horizontal split (left/right)
-   * @param {string} metric - Metric context string to send
+   * @param {Object} element - Element config { id, type, config }
    * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
    * @returns {Object} Result with success status
    */
-  const sendToCanvas = useCallback((metric, spaceRoomKey) => {
+  const sendToCanvas = useCallback((element, spaceRoomKey) => {
     if (!activeTabId) {
       return { success: false, message: 'No active tab' };
     }
@@ -103,9 +111,19 @@ export const CommandMessagingProvider = ({ children }) => {
       return { success: false, message: 'No space/room selected' };
     }
 
-    // Check if metric is already in canvas
-    if (isMetricInCanvas(metric, spaceRoomKey)) {
-      return { success: false, message: 'Metric already in canvas' };
+    if (!element || !element.id) {
+      return { success: false, message: 'Invalid element: missing id' };
+    }
+
+    // Validate element configuration
+    const validation = validateCanvasElement(element);
+    if (!validation.valid) {
+      return { success: false, message: `Invalid element: ${validation.error}` };
+    }
+
+    // Check if element is already in canvas
+    if (isElementInCanvas(element.id, spaceRoomKey)) {
+      return { success: false, message: 'Element already in canvas' };
     }
 
     const currentCanvasState = getCanvasState(activeTabId, spaceRoomKey);
@@ -130,21 +148,21 @@ export const CommandMessagingProvider = ({ children }) => {
       }
     }
 
-    // Add the metric to canvas for the space/room
-    addCanvasMetric(activeTabId, metric, spaceRoomKey);
+    // Add the element to canvas for the space/room
+    addCanvasElement(activeTabId, element, spaceRoomKey);
 
-    return { success: true, message: 'Metric sent to canvas' };
-  }, [activeTabId, activeTileId, isMetricInCanvas, getCanvasState, splitTile, executeCommand, addCanvasMetric]);
+    return { success: true, message: 'Element sent to canvas' };
+  }, [activeTabId, activeTileId, isElementInCanvas, getCanvasState, splitTile, executeCommand, addCanvasElement]);
 
   /**
-   * Remove a metric from canvas for a specific space/room
-   * @param {string} metric - Metric context string to remove
+   * Remove an element from canvas for a specific space/room
+   * @param {string} elementId - Element ID to remove
    * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
    */
-  const removeFromCanvas = useCallback((metric, spaceRoomKey) => {
+  const removeFromCanvas = useCallback((elementId, spaceRoomKey) => {
     if (!activeTabId || !spaceRoomKey) return;
-    removeCanvasMetric(activeTabId, metric, spaceRoomKey);
-  }, [activeTabId, removeCanvasMetric]);
+    removeCanvasElement(activeTabId, elementId, spaceRoomKey);
+  }, [activeTabId, removeCanvasElement]);
 
   /**
    * Clear all metrics from canvas for a specific space/room
@@ -200,11 +218,11 @@ export const CommandMessagingProvider = ({ children }) => {
     canvasExists,
 
     // Actions
-    getCanvasMetrics,
+    getCanvasElements,
     sendToCanvas,
     removeFromCanvas,
     clearCanvas,
-    isMetricInCanvas,
+    isElementInCanvas,
     focusCanvasTile,
 
     // Canvas registration (for Canvas component)
@@ -212,11 +230,11 @@ export const CommandMessagingProvider = ({ children }) => {
     unregisterCanvas,
   }), [
     canvasExists,
-    getCanvasMetrics,
+    getCanvasElements,
     sendToCanvas,
     removeFromCanvas,
     clearCanvas,
-    isMetricInCanvas,
+    isElementInCanvas,
     focusCanvasTile,
     registerCanvas,
     unregisterCanvas,

@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom';
 import * as d3 from 'd3';
 import { getData } from '../../api/client';
+import { useCommandMessaging } from '../../contexts/CommandMessagingContext';
 import NetdataSpinner from '../common/NetdataSpinner';
 import styles from './LoadChartBlock.module.css';
 
@@ -47,6 +48,61 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
   const [activeGroupBy, setActiveGroupBy] = useState([]);
   const [activeFilters, setActiveFilters] = useState({});
   const [isInitialized, setIsInitialized] = useState(false);
+
+  // Canvas integration
+  const { sendToCanvas, isElementInCanvas } = useCommandMessaging();
+  const [sentToCanvas, setSentToCanvas] = useState(false);
+
+  // Create space/room key for canvas (using props passed from Chat)
+  const spaceRoomKey = useMemo(() => {
+    if (!space?.id || !room?.id) return null;
+    return `${space.id}_${room.id}`;
+  }, [space?.id, room?.id]);
+
+  // Generate element ID based on context and current filters
+  const elementId = useMemo(() => {
+    const context = toolInput?.context || 'unknown';
+    const groupByStr = activeGroupBy.length > 0 ? `-gb-${activeGroupBy.join('-')}` : '';
+    const filterStr = Object.keys(activeFilters).length > 0
+      ? `-f-${Object.entries(activeFilters).map(([k, v]) => `${k}:${v.join(',')}`).join('-')}`
+      : '';
+    return `context-chart-${context}${groupByStr}${filterStr}`;
+  }, [toolInput?.context, activeGroupBy, activeFilters]);
+
+  // Check if already in canvas
+  const alreadyInCanvas = useMemo(() => {
+    if (!spaceRoomKey) return false;
+    return isElementInCanvas(elementId, spaceRoomKey);
+  }, [isElementInCanvas, elementId, spaceRoomKey]);
+
+  // Handle send to canvas
+  const handleSendToCanvas = useCallback(() => {
+    if (!spaceRoomKey || !toolInput?.context) return;
+
+    // Convert activeFilters to filterBy format
+    const filterBy = {};
+    Object.entries(activeFilters).forEach(([label, values]) => {
+      filterBy[label] = values;
+    });
+
+    const element = {
+      id: elementId,
+      type: 'context-chart',
+      config: {
+        context: toolInput.context,
+        groupBy: activeGroupBy,
+        filterBy: filterBy,
+        valueAgg: toolInput.value_agg || 'avg',
+        timeAgg: toolInput.time_agg || 'average',
+      },
+    };
+
+    const result = sendToCanvas(element, spaceRoomKey);
+    if (result.success) {
+      setSentToCanvas(true);
+      setTimeout(() => setSentToCanvas(false), 2000);
+    }
+  }, [sendToCanvas, spaceRoomKey, toolInput, activeGroupBy, activeFilters, elementId]);
 
   // Netdata chart color palette
   const DEFAULT_COLORS = useMemo(() => [
@@ -952,7 +1008,20 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
   return (
     <div ref={containerRef} className={styles.chartContainer}>
       <div className={styles.chartHeader}>
-        <h3 className={styles.chartTitle}>{getChartTitle()}</h3>
+        <div className={styles.chartTitleRow}>
+          <h3 className={styles.chartTitle}>{getChartTitle()}</h3>
+          {/* Send to Canvas Button */}
+          {spaceRoomKey && (
+            <button
+              className={`${styles.sendToCanvasButton} ${alreadyInCanvas || sentToCanvas ? styles.sent : ''}`}
+              onClick={handleSendToCanvas}
+              disabled={alreadyInCanvas}
+              title={alreadyInCanvas ? 'Already in Canvas' : sentToCanvas ? 'Sent!' : 'Send to Canvas'}
+            >
+              {sentToCanvas ? 'Sent!' : alreadyInCanvas ? 'In Canvas' : '+ Canvas'}
+            </button>
+          )}
+        </div>
 
         {/* Filters & Grouping Panel */}
         {hasFilterOptions && (

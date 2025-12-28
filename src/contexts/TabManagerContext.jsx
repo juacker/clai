@@ -841,14 +841,14 @@ export const TabManagerProvider = ({ children }) => {
     const canvas = tab?.context?.canvas || {};
     const commandId = canvas.commandId || null;
 
-    // If no space/room key provided, return empty metrics (canvas exists but no context)
+    // If no space/room key provided, return empty elements (canvas exists but no context)
     if (!spaceRoomKey) {
-      return { metrics: [], commandId };
+      return { elements: [], commandId };
     }
 
-    // Get metrics for specific space/room
-    const metrics = canvas.bySpaceRoom?.[spaceRoomKey] || [];
-    return { metrics, commandId };
+    // Get elements for specific space/room
+    const elements = canvas.bySpaceRoom?.[spaceRoomKey] || [];
+    return { elements, commandId };
   }, [tabs]);
 
   /**
@@ -862,23 +862,24 @@ export const TabManagerProvider = ({ children }) => {
   }, [activeTabId, getCanvasState]);
 
   /**
-   * Add a metric to canvas in a tab (for a specific space/room)
+   * Add an element to canvas in a tab (for a specific space/room)
    * @param {string} tabId - Tab ID
-   * @param {string} metric - Metric context string to add
+   * @param {Object} element - Element config { id, type, config }
    * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
    */
-  const addCanvasMetric = useCallback((tabId, metric, spaceRoomKey) => {
+  const addCanvasElement = useCallback((tabId, element, spaceRoomKey) => {
     if (!spaceRoomKey) return; // Require space/room context
+    if (!element || !element.id) return; // Require valid element with id
 
     setTabs(prev =>
       prev.map(tab => {
         if (tab.id !== tabId) return tab;
 
         const bySpaceRoom = tab.context?.canvas?.bySpaceRoom || {};
-        const currentMetrics = bySpaceRoom[spaceRoomKey] || [];
+        const currentElements = bySpaceRoom[spaceRoomKey] || [];
 
-        // Don't add duplicates
-        if (currentMetrics.includes(metric)) return tab;
+        // Don't add duplicates (check by element id)
+        if (currentElements.some(el => el.id === element.id)) return tab;
 
         return {
           ...tab,
@@ -888,7 +889,7 @@ export const TabManagerProvider = ({ children }) => {
               ...tab.context?.canvas,
               bySpaceRoom: {
                 ...bySpaceRoom,
-                [spaceRoomKey]: [...currentMetrics, metric],
+                [spaceRoomKey]: [...currentElements, element],
               },
             },
           },
@@ -898,12 +899,12 @@ export const TabManagerProvider = ({ children }) => {
   }, []);
 
   /**
-   * Remove a metric from canvas in a tab (for a specific space/room)
+   * Remove an element from canvas in a tab (for a specific space/room)
    * @param {string} tabId - Tab ID
-   * @param {string} metric - Metric context string to remove
+   * @param {string} elementId - Element ID to remove
    * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
    */
-  const removeCanvasMetric = useCallback((tabId, metric, spaceRoomKey) => {
+  const removeCanvasElement = useCallback((tabId, elementId, spaceRoomKey) => {
     if (!spaceRoomKey) return;
 
     setTabs(prev =>
@@ -911,7 +912,7 @@ export const TabManagerProvider = ({ children }) => {
         if (tab.id !== tabId) return tab;
 
         const bySpaceRoom = tab.context?.canvas?.bySpaceRoom || {};
-        const currentMetrics = bySpaceRoom[spaceRoomKey] || [];
+        const currentElements = bySpaceRoom[spaceRoomKey] || [];
 
         return {
           ...tab,
@@ -921,7 +922,7 @@ export const TabManagerProvider = ({ children }) => {
               ...tab.context?.canvas,
               bySpaceRoom: {
                 ...bySpaceRoom,
-                [spaceRoomKey]: currentMetrics.filter(m => m !== metric),
+                [spaceRoomKey]: currentElements.filter(el => el.id !== elementId),
               },
             },
           },
@@ -998,17 +999,17 @@ export const TabManagerProvider = ({ children }) => {
   }, []);
 
   /**
-   * Check if a metric is already in canvas for a tab (for a specific space/room)
+   * Check if an element is already in canvas for a tab (for a specific space/room)
    * @param {string} tabId - Tab ID
-   * @param {string} metric - Metric context string
+   * @param {string} elementId - Element ID to check
    * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
-   * @returns {boolean} True if metric is in canvas
+   * @returns {boolean} True if element is in canvas
    */
-  const isMetricInCanvas = useCallback((tabId, metric, spaceRoomKey) => {
+  const isElementInCanvas = useCallback((tabId, elementId, spaceRoomKey) => {
     if (!spaceRoomKey) return false;
     const canvasState = getCanvasState(tabId, spaceRoomKey);
-    const metrics = canvasState.metrics || [];
-    return metrics.includes(metric);
+    const elements = canvasState.elements || [];
+    return elements.some(el => el.id === elementId);
   }, [getCanvasState]);
 
   /**
@@ -1424,11 +1425,11 @@ export const TabManagerProvider = ({ children }) => {
     // Canvas State Management (Inter-Command Messaging)
     getCanvasState,
     getActiveCanvasState,
-    addCanvasMetric,
-    removeCanvasMetric,
+    addCanvasElement,
+    removeCanvasElement,
     clearCanvasMetrics,
     setCanvasCommandId,
-    isMetricInCanvas,
+    isElementInCanvas,
 
     // Command Integration
     addCommandToActiveTile,
@@ -1466,11 +1467,11 @@ export const TabManagerProvider = ({ children }) => {
     getActiveTabContext,
     getCanvasState,
     getActiveCanvasState,
-    addCanvasMetric,
-    removeCanvasMetric,
+    addCanvasElement,
+    removeCanvasElement,
     clearCanvasMetrics,
     setCanvasCommandId,
-    isMetricInCanvas,
+    isElementInCanvas,
     addCommandToActiveTile,
     handleLayoutCommand,
     splitTile,

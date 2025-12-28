@@ -17,6 +17,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useTabContext } from '../../contexts/TabContext';
 import { useCommandMessaging } from '../../contexts/CommandMessagingContext';
 import { useDebounce } from '../../hooks/useDebounce';
+import { validateCanvasElement } from '../../utils/canvasElementValidator';
 import ContextChart from '../ChartsView/ContextChart';
 import styles from './Canvas.module.css';
 
@@ -235,7 +236,7 @@ const Canvas = ({ command }) => {
 
   // Get messaging context
   const {
-    getCanvasMetrics,
+    getCanvasElements,
     removeFromCanvas,
     clearCanvas,
     registerCanvas,
@@ -248,10 +249,12 @@ const Canvas = ({ command }) => {
     return `${selectedSpace.id}_${selectedRoom.id}`;
   }, [selectedSpace?.id, selectedRoom?.id]);
 
-  // Get canvas metrics for current space/room
-  const canvasMetrics = useMemo(() => {
-    return getCanvasMetrics(spaceRoomKey);
-  }, [getCanvasMetrics, spaceRoomKey]);
+  // Get canvas elements for current space/room (only valid ones)
+  const canvasElements = useMemo(() => {
+    const elements = getCanvasElements(spaceRoomKey);
+    // Filter out any invalid elements as a safety check
+    return elements.filter(element => validateCanvasElement(element).valid);
+  }, [getCanvasElements, spaceRoomKey]);
 
   // Selected time interval
   const [selectedInterval, setSelectedInterval] = useState(TIME_INTERVALS[3]); // Default 1h
@@ -306,7 +309,7 @@ const Canvas = ({ command }) => {
 
   // Auto-refresh effect
   useEffect(() => {
-    if (!autoRefreshEnabled || canvasMetrics.length === 0) {
+    if (!autoRefreshEnabled || canvasElements.length === 0) {
       return;
     }
 
@@ -316,12 +319,12 @@ const Canvas = ({ command }) => {
     }, intervalMs);
 
     return () => clearInterval(timerId);
-  }, [autoRefreshEnabled, selectedInterval, canvasMetrics.length]);
+  }, [autoRefreshEnabled, selectedInterval, canvasElements.length]);
 
-  // Handle remove metric
-  const handleRemoveMetric = useCallback((metric) => {
+  // Handle remove element
+  const handleRemoveElement = useCallback((elementId) => {
     if (!spaceRoomKey) return;
-    removeFromCanvas(metric, spaceRoomKey);
+    removeFromCanvas(elementId, spaceRoomKey);
   }, [removeFromCanvas, spaceRoomKey]);
 
   // Handle clear all
@@ -528,7 +531,7 @@ const Canvas = ({ command }) => {
   ]);
 
   // Empty state
-  if (canvasMetrics.length === 0) {
+  if (canvasElements.length === 0) {
     return (
       <div className={styles.canvasWrapper}>
         <div className={styles.headerBar}>
@@ -557,7 +560,7 @@ const Canvas = ({ command }) => {
       <div className={styles.headerBar}>
         <div className={styles.headerLeft}>
           <span className={styles.headerTitle}>Canvas</span>
-          <span className={styles.metricCount}>{canvasMetrics.length} metric{canvasMetrics.length !== 1 ? 's' : ''}</span>
+          <span className={styles.metricCount}>{canvasElements.length} element{canvasElements.length !== 1 ? 's' : ''}</span>
           <div className={styles.timeIntervalSelector}>
             {TIME_INTERVALS.map((interval) => (
               <button
@@ -680,25 +683,33 @@ const Canvas = ({ command }) => {
       {/* Charts Grid */}
       <div className={styles.canvasContainer}>
         <div className={styles.chartsGrid}>
-          {canvasMetrics.map((context) => (
-            <div key={`${instanceId.current}-chart-${context}`} className={styles.chartCard}>
-              <ContextChart
-                context={context}
-                groupBy={applyGlobally ? memoizedGlobalGroupBy : []}
-                filterBy={applyGlobally ? memoizedGlobalFilterBy : {}}
-                valueAgg="avg"
-                timeAgg="average"
-                after={timeRange.after}
-                before={timeRange.before}
-                intervalCount={timeRange.intervalCount}
-                space={selectedSpace}
-                room={selectedRoom}
-                onRemove={() => handleRemoveMetric(context)}
-                onSummaryUpdate={handleChartSummary}
-                showRefreshIndicator={false}
-              />
-            </div>
-          ))}
+          {canvasElements.map((element) => {
+            // Currently only supporting context-chart type
+            if (element.type === 'context-chart') {
+              const { context, groupBy, filterBy, valueAgg, timeAgg } = element.config;
+              return (
+                <div key={`${instanceId.current}-${element.id}`} className={styles.chartCard}>
+                  <ContextChart
+                    context={context}
+                    groupBy={applyGlobally ? memoizedGlobalGroupBy : (groupBy || [])}
+                    filterBy={applyGlobally ? memoizedGlobalFilterBy : (filterBy || {})}
+                    valueAgg={valueAgg || 'avg'}
+                    timeAgg={timeAgg || 'average'}
+                    after={timeRange.after}
+                    before={timeRange.before}
+                    intervalCount={timeRange.intervalCount}
+                    space={selectedSpace}
+                    room={selectedRoom}
+                    onRemove={() => handleRemoveElement(element.id)}
+                    onSummaryUpdate={handleChartSummary}
+                    showRefreshIndicator={false}
+                  />
+                </div>
+              );
+            }
+            // Unsupported element type
+            return null;
+          })}
         </div>
       </div>
 
