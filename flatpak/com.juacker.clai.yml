@@ -1,6 +1,6 @@
 app-id: com.juacker.clai
 runtime: org.gnome.Platform
-runtime-version: '46'
+runtime-version: '48'
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -25,7 +25,7 @@ modules:
   - name: clai
     buildsystem: simple
     build-commands:
-      - npm ci --legacy-peer-deps
+      - npm install --legacy-peer-deps --ignore-engines
       - npm run build
       - cargo build --release --manifest-path src-tauri/Cargo.toml
       - install -Dm755 src-tauri/target/release/clai ${FLATPAK_DEST}/bin/clai
