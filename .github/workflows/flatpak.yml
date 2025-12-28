@@ -11,21 +11,71 @@ permissions:
 jobs:
   build:
     name: Build Flatpak
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
-      options: --privileged
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build Flatpak
-        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          manifest-path: flatpak/com.juacker.clai.yml
-          bundle: clai.flatpak
-          cache-key: flatpak-builder-${{ github.sha }}
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev flatpak flatpak-builder
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Tauri binary
+        working-directory: src-tauri
+        run: cargo build --release
+
+      - name: Setup Flatpak
+        run: |
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub org.gnome.Platform//48 org.gnome.Sdk//48
+
+      - name: Create Flatpak
+        run: |
+          # Create app directory structure
+          mkdir -p flatpak-build/files/bin
+          mkdir -p flatpak-build/files/share/applications
+          mkdir -p flatpak-build/files/share/icons/hicolor/128x128/apps
+
+          # Copy binary and assets
+          cp src-tauri/target/release/clai flatpak-build/files/bin/
+          cp flatpak/com.juacker.clai.desktop flatpak-build/files/share/applications/
+          cp src-tauri/icons/128x128.png flatpak-build/files/share/icons/hicolor/128x128/apps/com.juacker.clai.png
+
+          # Create metadata
+          cat > flatpak-build/metadata << EOF
+          [Application]
+          name=com.juacker.clai
+          runtime=org.gnome.Platform/x86_64/48
+          sdk=org.gnome.Sdk/x86_64/48
+          command=clai
+
+          [Context]
+          shared=ipc;network;
+          sockets=fallback-x11;wayland;
+          devices=dri;
+          filesystems=home;
+          EOF
+
+          # Build flatpak bundle
+          flatpak build-export repo flatpak-build
+          flatpak build-bundle repo clai.flatpak com.juacker.clai
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
