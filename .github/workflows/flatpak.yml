@@ -38,9 +38,11 @@ jobs:
             };
 
       - name: Download deb package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          DEB_URL=$(echo '${{ steps.release.outputs.result }}' | jq -r '.deb_url')
-          wget -O clai.deb "$DEB_URL"
+          RELEASE_TAG=$(echo '${{ steps.release.outputs.result }}' | jq -r '.tag')
+          gh release download "$RELEASE_TAG" --pattern "*.deb" --output clai.deb
 
       - name: Extract binary from deb
         run: |
