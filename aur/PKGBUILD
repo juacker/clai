@@ -1,5 +1,5 @@
 # Maintainer: juacker <your-email@example.com>
-pkgname=clai-bin
+pkgname=clai
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="Command Line AI Interface for Netdata"
@@ -7,38 +7,46 @@ arch=('x86_64')
 url="https://github.com/juacker/clai"
 license=('MIT')
 depends=('webkit2gtk-4.1' 'gtk3' 'libappindicator-gtk3')
-provides=('clai')
-conflicts=('clai')
-source=("${pkgname}-${pkgver}.AppImage::https://github.com/juacker/clai/releases/download/v${pkgver}/clai_${pkgver}_amd64.AppImage")
-sha256sums=('SKIP')  # Update with actual checksum after first release
-options=(!strip)
+makedepends=('rust' 'cargo' 'nodejs' 'npm' 'base-devel')
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/juacker/clai/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('SKIP')
 
-prepare() {
-    chmod +x "${pkgname}-${pkgver}.AppImage"
-    "./${pkgname}-${pkgver}.AppImage" --appimage-extract
+build() {
+    cd "${pkgname}-${pkgver}"
+
+    # Build frontend
+    npm ci
+    npm run build
+
+    # Build Tauri backend
+    cd src-tauri
+    cargo build --release
 }
 
 package() {
-    # Install the application
-    install -d "${pkgdir}/opt/clai"
-    cp -r squashfs-root/* "${pkgdir}/opt/clai/"
+    cd "${pkgname}-${pkgver}"
 
-    # Create executable symlink
-    install -d "${pkgdir}/usr/bin"
-    ln -s /opt/clai/clai "${pkgdir}/usr/bin/clai"
+    # Install binary
+    install -Dm755 "src-tauri/target/release/clai" "${pkgdir}/usr/bin/clai"
 
     # Install desktop file
-    install -Dm644 squashfs-root/clai.desktop "${pkgdir}/usr/share/applications/clai.desktop"
-    sed -i 's|Exec=.*|Exec=/opt/clai/clai|' "${pkgdir}/usr/share/applications/clai.desktop"
+    install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/clai.desktop" << EOF
+[Desktop Entry]
+Name=CLAI
+Comment=Command Line AI Interface for Netdata
+Exec=clai
+Icon=clai
+Terminal=false
+Type=Application
+Categories=Development;Utility;
+Keywords=AI;Netdata;CLI;Chat;
+EOF
 
     # Install icons
-    for size in 32x32 128x128 256x256 512x512; do
-        if [ -f "squashfs-root/usr/share/icons/hicolor/${size}/apps/clai.png" ]; then
-            install -Dm644 "squashfs-root/usr/share/icons/hicolor/${size}/apps/clai.png" \
-                "${pkgdir}/usr/share/icons/hicolor/${size}/apps/clai.png"
-        fi
-    done
+    install -Dm644 "src-tauri/icons/32x32.png" "${pkgdir}/usr/share/icons/hicolor/32x32/apps/clai.png"
+    install -Dm644 "src-tauri/icons/128x128.png" "${pkgdir}/usr/share/icons/hicolor/128x128/apps/clai.png"
+    install -Dm644 "src-tauri/icons/icon.png" "${pkgdir}/usr/share/icons/hicolor/512x512/apps/clai.png"
 
     # Install license
-    install -Dm644 "${srcdir}/../LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE" 2>/dev/null || true
+    install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }

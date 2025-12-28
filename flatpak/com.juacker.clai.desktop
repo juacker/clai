@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=CLAI
+Comment=Command Line AI Interface for Netdata
+Exec=clai
+Icon=com.juacker.clai
+Terminal=false
+Type=Application
+Categories=Development;Utility;
+Keywords=AI;Netdata;CLI;Chat;
