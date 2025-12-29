@@ -18,9 +18,34 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# Tauri framework and plugins
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-os = "2"
 tauri-plugin-updater = "2"
+
+# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# HTTP client - like axios for Rust
+# Features: json (automatic JSON parsing), stream (for SSE), gzip (compression)
+reqwest = { version = "0.12", features = ["json", "stream", "gzip"] }
+
+# Async runtime - required by reqwest
+# The "full" feature enables all async utilities
+tokio = { version = "1", features = ["full"] }
+
+# Secure token storage using OS keychain
+# Linux: libsecret, macOS: Keychain, Windows: Credential Manager
+keyring = "3"
+
+# Ergonomic error handling with derive macro
+thiserror = "2"
+
+# Structured logging (better than println!)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Async stream utilities (for SSE parsing)
+futures = "0.3"

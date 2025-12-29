@@ -79,7 +79,8 @@ jobs:
             --socket=fallback-x11 \
             --socket=wayland \
             --device=dri \
-            --filesystem=home
+            --filesystem=home \
+            --talk-name=org.freedesktop.secrets
 
           # Export and bundle
           flatpak build-export repo flatpak-build
