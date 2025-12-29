@@ -313,12 +313,14 @@ impl NetdataApi {
     /// Deletes a conversation.
     ///
     /// Endpoint: `DELETE /api/v1/spaces/{space_id}/rooms/{room_id}/insights/conversations/{conversation_id}`
+    ///
+    /// Returns `Ok(())` on success (204 No Content).
     pub async fn delete_conversation(
         &self,
         space_id: &str,
         room_id: &str,
         conversation_id: &str,
-    ) -> ApiResult<serde_json::Value> {
+    ) -> ApiResult<()> {
         let response = self
             .client
             .delete(format!(
@@ -330,7 +332,15 @@ impl NetdataApi {
             .send()
             .await?;
 
-        self.handle_response(response).await
+        let status = response.status();
+
+        if status.is_success() {
+            // 204 No Content - nothing to parse
+            Ok(())
+        } else {
+            let netdata_error: Option<NetdataErrorResponse> = response.json().await.ok();
+            Err(ApiError::from_response(status, netdata_error))
+        }
     }
 
     /// Creates a title for a conversation based on message content.
@@ -707,33 +717,33 @@ pub struct NodeSummary {
     /// Machine GUID
     #[serde(rename = "mg")]
     pub machine_guid: String,
-    /// Statistics
-    #[serde(rename = "sts")]
-    pub stats: StatsSummary,
+    /// Statistics (optional - not always present)
+    #[serde(rename = "sts", default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<StatsSummary>,
 }
 
 /// Instance summary with statistics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstanceSummary {
     pub id: String,
-    #[serde(rename = "sts")]
-    pub stats: StatsSummary,
+    #[serde(rename = "sts", default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<StatsSummary>,
 }
 
 /// Dimension summary with statistics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DimensionSummary {
     pub id: String,
-    #[serde(rename = "sts")]
-    pub stats: StatsSummary,
+    #[serde(rename = "sts", default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<StatsSummary>,
 }
 
 /// Label summary with values and statistics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LabelSummary {
     pub id: String,
-    #[serde(rename = "sts")]
-    pub stats: StatsSummary,
+    #[serde(rename = "sts", default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<StatsSummary>,
     /// Label values
     #[serde(rename = "vl", default)]
     pub values: Vec<LabelValueSummary>,
@@ -743,8 +753,8 @@ pub struct LabelSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LabelValueSummary {
     pub id: String,
-    #[serde(rename = "sts")]
-    pub stats: StatsSummary,
+    #[serde(rename = "sts", default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<StatsSummary>,
 }
 
 /// Statistics summary for nodes, instances, dimensions, and labels.
@@ -900,14 +910,16 @@ pub struct ConversationMetadata {
 /// Token usage statistics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenUsage {
-    #[serde(default)]
-    pub input_tokens: i64,
-    #[serde(default)]
-    pub output_tokens: i64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_creation_input_tokens: Option<i64>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_read_input_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amount_microcredits: Option<i64>,
 }
 
 /// A message within a conversation.

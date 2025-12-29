@@ -60,10 +60,8 @@ const ContextPanel = () => {
     }
 
     try {
-      const token = localStorage.getItem('netdata_token');
-      if (!token) return;
-
-      const billingPlan = await getSpaceBillingPlan(token, selectedSpace.id);
+      // Token is handled by Rust backend
+      const billingPlan = await getSpaceBillingPlan(selectedSpace.id);
       const microcredits = billingPlan?.ai?.total_available_microcredits || 0;
       const credits = (microcredits / 1000000).toFixed(2);
       setAvailableCredits(credits);

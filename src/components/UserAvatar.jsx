@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { clearToken } from '../api/client';
 import styles from './UserAvatar.module.css';
 
 const UserAvatar = ({ avatarUrl, userName, size = 'medium', showMenu = false }) => {
@@ -16,11 +17,11 @@ const UserAvatar = ({ avatarUrl, userName, size = 'medium', showMenu = false }) 
     return name.substring(0, 2).toUpperCase();
   };
 
-  const handleLogout = () => {
-    // Clear all stored data from localStorage
-    localStorage.removeItem('netdata_token');
+  const handleLogout = async () => {
+    // Clear token from secure storage (OS keychain)
+    await clearToken();
+    // Clear other stored data from localStorage
     localStorage.removeItem('netdata_base_url');
-    // Clear any other stored data if needed
     localStorage.clear();
 
     // Redirect to login page

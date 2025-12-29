@@ -310,7 +310,7 @@ pub async fn api_delete_conversation(
     room_id: String,
     conversation_id: String,
     state: State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
+) -> Result<(), String> {
     let api = create_api(&state).await.map_err(|e| e.to_string())?;
 
     api.delete_conversation(&space_id, &room_id, &conversation_id)

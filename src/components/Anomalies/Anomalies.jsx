@@ -928,24 +928,18 @@ const Anomalies = ({ command }) => {
         setLoading(true);
         setError(null);
 
-        const token = localStorage.getItem('netdata_token');
-        if (!token) {
-          setError('Authentication token not found');
-          setLoading(false);
-          return;
-        }
-
         const now = Math.floor(Date.now() / 1000);
         const fifteenMinutesAgo = now - (15 * 60);
 
+        // Token is handled by Rust backend
         const [contextsResponse, anomalyResponse] = await Promise.all([
-          getContexts(token, selectedSpace.id, selectedRoom.id, {
+          getContexts(selectedSpace.id, selectedRoom.id, {
             window: {
               after: fifteenMinutesAgo,
               before: now,
             },
           }),
-          getData(token, selectedSpace.id, selectedRoom.id, {
+          getData(selectedSpace.id, selectedRoom.id, {
             scope: {
               contexts: ['anomaly_detection.context_anomaly_rate'],
               nodes: [],

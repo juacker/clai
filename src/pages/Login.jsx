@@ -1,20 +1,34 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { setToken, setBaseUrl } from '../api/client';
 import styles from './Login.module.css';
 
 const Login = () => {
-  const [token, setToken] = useState('');
-  const [baseUrl, setBaseUrl] = useState('https://app.netdata.cloud');
+  const [token, setTokenValue] = useState('');
+  const [baseUrl, setBaseUrlValue] = useState('https://app.netdata.cloud');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (token.trim() && baseUrl.trim()) {
-      // Store both token and base URL
-      localStorage.setItem('netdata_token', token);
-      localStorage.setItem('netdata_base_url', baseUrl.trim());
-      // Redirect to home page
-      navigate('/');
+      setIsLoading(true);
+      setError('');
+
+      try {
+        // Store token securely in OS keychain via Rust
+        await setToken(token);
+        // Store base URL in Rust backend
+        await setBaseUrl(baseUrl.trim());
+        // Also keep base URL in localStorage for initial load before Rust is ready
+        localStorage.setItem('netdata_base_url', baseUrl.trim());
+        // Redirect to home page
+        navigate('/');
+      } catch (err) {
+        setError(`Failed to save credentials: ${err.message}`);
+        setIsLoading(false);
+      }
     }
   };
 
@@ -25,6 +39,7 @@ const Login = () => {
         <p className={styles.description}>
           Please enter your Netdata Cloud API token to continue.
         </p>
+        {error && <p className={styles.error}>{error}</p>}
         <form onSubmit={handleSubmit} className={styles.loginForm}>
           <div className={styles.formGroup}>
             <label htmlFor="baseUrl">Base URL</label>
@@ -32,10 +47,11 @@ const Login = () => {
               id="baseUrl"
               type="text"
               value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
+              onChange={(e) => setBaseUrlValue(e.target.value)}
               placeholder="https://app.netdata.cloud"
               className={styles.input}
               required
+              disabled={isLoading}
             />
           </div>
           <div className={styles.formGroup}>
@@ -44,14 +60,15 @@ const Login = () => {
               id="token"
               type="password"
               value={token}
-              onChange={(e) => setToken(e.target.value)}
+              onChange={(e) => setTokenValue(e.target.value)}
               placeholder="Enter your API token"
               className={styles.input}
               required
+              disabled={isLoading}
             />
           </div>
-          <button type="submit" className={styles.submitButton}>
-            Login
+          <button type="submit" className={styles.submitButton} disabled={isLoading}>
+            {isLoading ? 'Logging in...' : 'Login'}
           </button>
         </form>
         <div className={styles.helpText}>
@@ -63,4 +80,3 @@ const Login = () => {
 };
 
 export default Login;
-

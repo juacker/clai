@@ -6,6 +6,7 @@ import {
   createConversation,
   createChatCompletion,
   createConversationTitle,
+  getBaseUrl,
 } from '../../api/client';
 import { openExternal } from '../../utils/openExternal';
 import MarkdownMessage from './MarkdownMessage';
@@ -63,11 +64,6 @@ const Chat = ({ space, room, message, onMessageProcessed, aiPermissions = { canR
   const lastProcessedMessageRef = useRef(null);
   // State cache to remember chat state for each space/room combination
   const stateCache = useRef({});
-
-  // Get token from localStorage
-  const getToken = () => {
-    return localStorage.getItem('netdata_token');
-  };
 
   // Generate cache key for current space/room
   const getCacheKey = (spaceId, roomId) => {
@@ -222,17 +218,12 @@ const Chat = ({ space, room, message, onMessageProcessed, aiPermissions = { canR
 
   // Load conversations list
   const loadConversations = async () => {
-    const token = getToken();
-    if (!token) {
-      setConversationsError('Authentication token not found');
-      return;
-    }
-
     setConversationsLoading(true);
     setConversationsError(null);
 
     try {
-      const data = await listConversations(token, space.id, room.id);
+      // Token is handled by Rust backend
+      const data = await listConversations(space.id, room.id);
       // API returns array directly, not an object with conversations property
       setConversations(Array.isArray(data) ? data : []);
     } catch (error) {
@@ -245,12 +236,6 @@ const Chat = ({ space, room, message, onMessageProcessed, aiPermissions = { canR
 
   // Load a specific conversation
   const loadConversation = async (conversationId) => {
-    const token = getToken();
-    if (!token) {
-      setConversationError('Authentication token not found');
-      return;
-    }
-
     // Switch to conversation mode immediately and clear old data
     setMode('conversation');
     setCurrentConversation(null);
@@ -259,7 +244,8 @@ const Chat = ({ space, room, message, onMessageProcessed, aiPermissions = { canR
     setStreamingMessages([]);
 
     try {
-      const data = await getConversation(token, space.id, room.id, conversationId);
+      // Token is handled by Rust backend
+      const data = await getConversation(space.id, room.id, conversationId);
 
       // Set conversation immediately to show it to the user without delay
       setCurrentConversation(data);
@@ -289,7 +275,6 @@ const Chat = ({ space, room, message, onMessageProcessed, aiPermissions = { canR
           if (messageContent && messageContent.trim() !== '') {
             // Run title generation in the background without blocking
             createConversationTitle(
-              token,
               space.id,
               room.id,
               conversationId,
@@ -344,18 +329,13 @@ const Chat = ({ space, room, message, onMessageProcessed, aiPermissions = { canR
       event.stopPropagation();
     }
 
-    const token = getToken();
-    if (!token) {
-      setConversationsError('Authentication token not found');
-      return;
-    }
-
     if (!window.confirm('Are you sure you want to delete this conversation?')) {
       return;
     }
 
     try {
-      await deleteConversation(token, space.id, room.id, conversationId);
+      // Token is handled by Rust backend
+      await deleteConversation(space.id, room.id, conversationId);
       // Reload conversations list
       await loadConversations();
     } catch (error) {
@@ -398,15 +378,6 @@ const Chat = ({ space, room, message, onMessageProcessed, aiPermissions = { canR
       return;
     }
 
-    const token = getToken();
-    if (!token) {
-      setProcessingError('Authentication token not found');
-      if (onMessageProcessed) {
-        onMessageProcessed();
-      }
-      return;
-    }
-
     setIsProcessingMessage(true);
     setProcessingError(null);
     setStreamingMessages([]);
@@ -417,9 +388,8 @@ const Chat = ({ space, room, message, onMessageProcessed, aiPermissions = { canR
 
       // If in list mode, create a new conversation
       if (mode === 'list') {
-        const newConversation = await createConversation(token, space.id, room.id, {
-          title: `Chat ${new Date().toLocaleString()}`,
-        });
+        // Token is handled by Rust backend
+        const newConversation = await createConversation(space.id, room.id);
         conversationId = newConversation.id;
 
         // Load the newly created conversation
@@ -434,9 +404,8 @@ const Chat = ({ space, room, message, onMessageProcessed, aiPermissions = { canR
           : undefined;
       }
 
-      // Create chat completion with SSE streaming
+      // Create chat completion with SSE streaming (token handled by Rust backend)
       await createChatCompletion(
-        token,
         space.id,
         room.id,
         conversationId,
@@ -1124,9 +1093,9 @@ const Chat = ({ space, room, message, onMessageProcessed, aiPermissions = { canR
 
   // Render no permissions state
   const renderNoPermissions = () => {
-    const handleUpgradeClick = () => {
+    const handleUpgradeClick = async () => {
       if (space?.slug) {
-        const baseUrl = localStorage.getItem('netdata_base_url') || 'https://app.netdata.cloud';
+        const baseUrl = await getBaseUrl();
         openExternal(`${baseUrl}/spaces/${space.slug}/settings/billing`);
       }
     };

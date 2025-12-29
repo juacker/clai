@@ -330,17 +330,13 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     setError(null);
 
     try {
-      const token = localStorage.getItem('netdata_token');
-      if (!token) {
-        throw new Error('Authentication token not found');
-      }
-
       if (!space?.id || !room?.id) {
         throw new Error('Space ID or Room ID not found. Please select a space and room.');
       }
 
       const params = buildGetDataParams(groupBy, filters);
-      const response = await getData(token, space.id, room.id, params);
+      // Token is handled by Rust backend
+      const response = await getData(space.id, room.id, params);
       const transformedData = transformResponseToChartData(response);
 
       setChartData(transformedData);

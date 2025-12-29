@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { getUserInfo } from '../api/client';
+import { hasToken, getUserInfo } from '../api/client';
 import TerminalEmulatorWrapper from '../components/TerminalEmulator/TerminalEmulatorWrapper';
 import DesktopChatPanel from '../components/Chat/DesktopChatPanel';
 import { SharedSpaceRoomDataProvider } from '../contexts/SharedSpaceRoomDataContext';
@@ -32,14 +32,16 @@ const MainLayout = () => {
   useEffect(() => {
     const fetchUserInfo = async () => {
       try {
-        const token = localStorage.getItem('netdata_token');
+        // Check if user is authenticated via secure token storage
+        const isAuthenticated = await hasToken();
 
-        if (!token) {
+        if (!isAuthenticated) {
           navigate('/login');
           return;
         }
 
-        const info = await getUserInfo(token);
+        // Token is handled by Rust backend, no need to pass it
+        const info = await getUserInfo();
         setUserInfo(info);
       } catch (err) {
         console.error('Error fetching user info:', err);

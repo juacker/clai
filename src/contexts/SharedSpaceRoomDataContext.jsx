@@ -13,7 +13,7 @@
  */
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { getSpaces, getRooms } from '../api/client';
+import { getSpaces, getRooms, hasToken } from '../api/client';
 
 /**
  * AI-related permissions constants
@@ -46,17 +46,18 @@ export function SharedSpaceRoomDataProvider({ children }) {
       setLoading(true);
       setError(null);
 
-      // Get token from localStorage
-      const token = localStorage.getItem('netdata_token');
+      // Check if user is authenticated
+      const isAuthenticated = await hasToken();
 
-      if (!token) {
+      if (!isAuthenticated) {
         console.warn('No token available, skipping spaces fetch');
         setSpaces([]);
         setLoading(false);
         return;
       }
 
-      const spacesData = await getSpaces(token);
+      // Token is handled by Rust backend
+      const spacesData = await getSpaces();
       setSpaces(spacesData || []);
     } catch (err) {
       console.error('Error fetching spaces:', err);
@@ -85,16 +86,16 @@ export function SharedSpaceRoomDataProvider({ children }) {
     }
 
     try {
-      // Get token from localStorage
-      const token = localStorage.getItem('netdata_token');
+      // Check if user is authenticated
+      const isAuthenticated = await hasToken();
 
-      if (!token) {
+      if (!isAuthenticated) {
         console.warn('No token available, skipping rooms fetch');
         return [];
       }
 
-      // Fetch rooms from API
-      const roomsData = await getRooms(token, spaceId);
+      // Fetch rooms from API (token handled by Rust backend)
+      const roomsData = await getRooms(spaceId);
       const rooms = roomsData || [];
 
       // Update cache

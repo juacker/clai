@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getSpaces, getRooms } from '../api/client';
+import { getSpaces, getRooms, hasToken } from '../api/client';
 
 const SpaceRoomContext = createContext(null);
 
@@ -24,13 +24,15 @@ export const SpaceRoomProvider = ({ children }) => {
     try {
       setLoading(true);
       setError(null);
-      const token = localStorage.getItem('netdata_token');
 
-      if (!token) {
+      // Check if user is authenticated
+      const isAuthenticated = await hasToken();
+      if (!isAuthenticated) {
         throw new Error('No authentication token found');
       }
 
-      const spacesData = await getSpaces(token);
+      // Token is handled by Rust backend
+      const spacesData = await getSpaces();
       setSpaces(spacesData);
 
       // Load saved selection from localStorage or select first space
@@ -59,14 +61,8 @@ export const SpaceRoomProvider = ({ children }) => {
   // Fetch rooms for a specific space
   const fetchRoomsForSpace = async (spaceId, savedRoomId = null) => {
     try {
-      const token = localStorage.getItem('netdata_token');
-
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
-
-      // Fetch rooms from the API
-      const roomsData = await getRooms(token, spaceId);
+      // Token is handled by Rust backend
+      const roomsData = await getRooms(spaceId);
 
       // The API returns an array of rooms
       const roomsList = Array.isArray(roomsData) ? roomsData : [];
