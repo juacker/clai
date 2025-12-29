@@ -86,6 +86,15 @@ pub fn run() {
             commands::api::api_get_spaces,
             commands::api::api_get_rooms,
             commands::api::api_get_billing_plan,
+            commands::api::api_get_data,
+            commands::api::api_get_contexts,
+            // Conversation commands
+            commands::api::api_create_conversation,
+            commands::api::api_get_conversation,
+            commands::api::api_list_conversations,
+            commands::api::api_delete_conversation,
+            commands::api::api_create_conversation_title,
+            commands::api::api_chat_completion,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

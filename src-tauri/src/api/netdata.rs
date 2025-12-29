@@ -17,10 +17,11 @@
 //! }
 //! ```
 
+use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::api::client::DEFAULT_TIMEOUT;
+use crate::api::client::{DEFAULT_TIMEOUT, STREAMING_TIMEOUT};
 use crate::api::error::{ApiError, ApiResult, NetdataErrorResponse};
 
 /// Netdata Cloud API client.
@@ -171,6 +172,277 @@ impl NetdataApi {
 
         self.handle_response(response).await
     }
+
+    /// Gets data with complex aggregation and filtering options.
+    ///
+    /// Endpoint: `POST /api/v3/spaces/{space_id}/rooms/{room_id}/data`
+    ///
+    /// This is used for fetching metrics data with flexible aggregation,
+    /// grouping, and time windowing options.
+    ///
+    /// # Arguments
+    ///
+    /// * `space_id` - The ID of the space
+    /// * `room_id` - The ID of the room
+    /// * `query` - The data query parameters
+    pub async fn get_data(
+        &self,
+        space_id: &str,
+        room_id: &str,
+        query: DataQuery,
+    ) -> ApiResult<DataResponse> {
+        let response = self
+            .client
+            .post(format!(
+                "{}/api/v3/spaces/{}/rooms/{}/data",
+                self.base_url, space_id, room_id
+            ))
+            .timeout(DEFAULT_TIMEOUT)
+            .header("Authorization", self.auth_header())
+            .json(&query)
+            .send()
+            .await?;
+
+        self.handle_response(response).await
+    }
+
+    /// Gets available contexts (metrics) for a space/room.
+    ///
+    /// Endpoint: `POST /api/v3/spaces/{space_id}/rooms/{room_id}/contexts`
+    ///
+    /// This is used to discover what metrics are available for querying.
+    ///
+    /// # Arguments
+    ///
+    /// * `space_id` - The ID of the space
+    /// * `room_id` - The ID of the room
+    /// * `query` - The contexts query parameters
+    pub async fn get_contexts(
+        &self,
+        space_id: &str,
+        room_id: &str,
+        query: ContextsQuery,
+    ) -> ApiResult<ContextsResponse> {
+        let response = self
+            .client
+            .post(format!(
+                "{}/api/v3/spaces/{}/rooms/{}/contexts",
+                self.base_url, space_id, room_id
+            ))
+            .timeout(DEFAULT_TIMEOUT)
+            .header("Authorization", self.auth_header())
+            .json(&query)
+            .send()
+            .await?;
+
+        self.handle_response(response).await
+    }
+
+    // =========================================================================
+    // Conversation API
+    // =========================================================================
+
+    /// Creates a new conversation.
+    ///
+    /// Endpoint: `POST /api/v1/spaces/{space_id}/rooms/{room_id}/insights/conversations`
+    pub async fn create_conversation(
+        &self,
+        space_id: &str,
+        room_id: &str,
+    ) -> ApiResult<Conversation> {
+        let response = self
+            .client
+            .post(format!(
+                "{}/api/v1/spaces/{}/rooms/{}/insights/conversations",
+                self.base_url, space_id, room_id
+            ))
+            .timeout(DEFAULT_TIMEOUT)
+            .header("Authorization", self.auth_header())
+            .json(&serde_json::json!({}))
+            .send()
+            .await?;
+
+        self.handle_response(response).await
+    }
+
+    /// Gets a specific conversation.
+    ///
+    /// Endpoint: `GET /api/v1/spaces/{space_id}/rooms/{room_id}/insights/conversations/{conversation_id}`
+    pub async fn get_conversation(
+        &self,
+        space_id: &str,
+        room_id: &str,
+        conversation_id: &str,
+    ) -> ApiResult<Conversation> {
+        let response = self
+            .client
+            .get(format!(
+                "{}/api/v1/spaces/{}/rooms/{}/insights/conversations/{}",
+                self.base_url, space_id, room_id, conversation_id
+            ))
+            .timeout(DEFAULT_TIMEOUT)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+
+        self.handle_response(response).await
+    }
+
+    /// Lists all conversations for a room.
+    ///
+    /// Endpoint: `GET /api/v1/spaces/{space_id}/rooms/{room_id}/insights/conversations`
+    pub async fn list_conversations(
+        &self,
+        space_id: &str,
+        room_id: &str,
+    ) -> ApiResult<Vec<Conversation>> {
+        let response = self
+            .client
+            .get(format!(
+                "{}/api/v1/spaces/{}/rooms/{}/insights/conversations",
+                self.base_url, space_id, room_id
+            ))
+            .timeout(DEFAULT_TIMEOUT)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+
+        self.handle_response(response).await
+    }
+
+    /// Deletes a conversation.
+    ///
+    /// Endpoint: `DELETE /api/v1/spaces/{space_id}/rooms/{room_id}/insights/conversations/{conversation_id}`
+    pub async fn delete_conversation(
+        &self,
+        space_id: &str,
+        room_id: &str,
+        conversation_id: &str,
+    ) -> ApiResult<serde_json::Value> {
+        let response = self
+            .client
+            .delete(format!(
+                "{}/api/v1/spaces/{}/rooms/{}/insights/conversations/{}",
+                self.base_url, space_id, room_id, conversation_id
+            ))
+            .timeout(DEFAULT_TIMEOUT)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+
+        self.handle_response(response).await
+    }
+
+    /// Creates a title for a conversation based on message content.
+    ///
+    /// Endpoint: `POST /api/v1/spaces/{space_id}/rooms/{room_id}/insights/conversations/{conversation_id}/title`
+    pub async fn create_conversation_title(
+        &self,
+        space_id: &str,
+        room_id: &str,
+        conversation_id: &str,
+        message_content: &str,
+    ) -> ApiResult<TitleResponse> {
+        let response = self
+            .client
+            .post(format!(
+                "{}/api/v1/spaces/{}/rooms/{}/insights/conversations/{}/title",
+                self.base_url, space_id, room_id, conversation_id
+            ))
+            .timeout(DEFAULT_TIMEOUT)
+            .header("Authorization", self.auth_header())
+            .json(&CreateTitleRequest {
+                message_content: message_content.to_string(),
+            })
+            .send()
+            .await?;
+
+        self.handle_response(response).await
+    }
+
+    /// Creates a chat completion with SSE streaming.
+    ///
+    /// Endpoint: `POST /api/v1/spaces/{space_id}/rooms/{room_id}/insights/conversations/{conversation_id}/completion`
+    ///
+    /// This method streams the response and calls the provided callback for each SSE chunk.
+    /// The callback receives parsed JSON data from each `data: ` line.
+    ///
+    /// # Arguments
+    ///
+    /// * `space_id` - The ID of the space
+    /// * `room_id` - The ID of the room
+    /// * `conversation_id` - The ID of the conversation
+    /// * `request` - The chat completion request
+    /// * `on_chunk` - Callback function called for each SSE chunk
+    ///
+    /// # Rust Learning: Async Closures
+    ///
+    /// We use `impl Fn` to accept any function or closure that can be called
+    /// multiple times. The callback is synchronous because Tauri's event
+    /// emission is synchronous.
+    pub async fn create_chat_completion<F>(
+        &self,
+        space_id: &str,
+        room_id: &str,
+        conversation_id: &str,
+        request: ChatCompletionRequest,
+        on_chunk: F,
+    ) -> ApiResult<()>
+    where
+        F: Fn(serde_json::Value),
+    {
+        let response = self
+            .client
+            .post(format!(
+                "{}/api/v1/spaces/{}/rooms/{}/insights/conversations/{}/completion",
+                self.base_url, space_id, room_id, conversation_id
+            ))
+            .timeout(STREAMING_TIMEOUT)
+            .header("Authorization", self.auth_header())
+            .json(&request)
+            .send()
+            .await?;
+
+        let status = response.status();
+
+        if !status.is_success() {
+            // Try to parse error response
+            let netdata_error: Option<NetdataErrorResponse> = response.json().await.ok();
+            return Err(ApiError::from_response(status, netdata_error));
+        }
+
+        // Stream the response body
+        let mut stream = response.bytes_stream();
+        let mut buffer = String::new();
+
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.map_err(ApiError::Network)?;
+            let text = String::from_utf8_lossy(&chunk);
+            buffer.push_str(&text);
+
+            // Process complete lines
+            while let Some(newline_pos) = buffer.find('\n') {
+                let line = buffer[..newline_pos].to_string();
+                buffer = buffer[newline_pos + 1..].to_string();
+
+                // Parse SSE data lines
+                if let Some(data) = line.strip_prefix("data: ") {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                        on_chunk(json);
+                    }
+                }
+            }
+        }
+
+        // Process any remaining data in buffer
+        if let Some(data) = buffer.strip_prefix("data: ") {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(data.trim()) {
+                on_chunk(json);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 // =============================================================================
@@ -216,6 +488,610 @@ pub struct BillingPlan {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiCredits {
     pub total_available_microcredits: Option<i64>,
+}
+
+// =============================================================================
+// Data Query Types
+// =============================================================================
+//
+// These types are used for the complex getData and getContexts endpoints.
+// They mirror the JavaScript client's parameter structure.
+
+/// Request body for the data query endpoint.
+///
+/// # Rust Learning: Optional Fields with `skip_serializing_if`
+///
+/// The `#[serde(skip_serializing_if = "Option::is_none")]` attribute
+/// tells serde to omit this field from JSON if it's `None`.
+/// This keeps the request body clean and matches the JS behavior.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataQuery {
+    /// Response format (default: "json2")
+    #[serde(default = "default_format")]
+    pub format: String,
+
+    /// Query options
+    #[serde(default = "default_data_options")]
+    pub options: Vec<String>,
+
+    /// Data scope definition
+    pub scope: DataScope,
+
+    /// Data selectors
+    #[serde(default)]
+    pub selectors: DataSelectors,
+
+    /// Aggregation configuration
+    pub aggregations: DataAggregations,
+
+    /// Time window
+    pub window: DataWindow,
+
+    /// Request timeout in milliseconds
+    #[serde(default = "default_timeout")]
+    pub timeout: u64,
+}
+
+fn default_format() -> String {
+    "json2".to_string()
+}
+
+fn default_data_options() -> Vec<String> {
+    vec![
+        "jsonwrap".to_string(),
+        "nonzero".to_string(),
+        "flip".to_string(),
+        "ms".to_string(),
+        "jw-anomaly-rates".to_string(),
+        "minify".to_string(),
+    ]
+}
+
+fn default_timeout() -> u64 {
+    10000
+}
+
+/// Scope definition for data queries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataScope {
+    /// Context patterns (e.g., ["system.cpu"])
+    pub contexts: Vec<String>,
+
+    /// Node IDs
+    pub nodes: Vec<String>,
+
+    /// Optional instance patterns
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instances: Option<Vec<String>>,
+
+    /// Optional dimension names
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dimensions: Option<Vec<String>>,
+
+    /// Optional label filters
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<Vec<String>>,
+}
+
+/// Selectors for data queries (defaults to "*" for all).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DataSelectors {
+    /// Context patterns to select
+    #[serde(default = "default_wildcard")]
+    pub contexts: Vec<String>,
+
+    /// Node IDs to select
+    #[serde(default = "default_wildcard")]
+    pub nodes: Vec<String>,
+
+    /// Instance patterns to select
+    #[serde(default = "default_wildcard")]
+    pub instances: Vec<String>,
+
+    /// Dimension names to select
+    #[serde(default = "default_wildcard")]
+    pub dimensions: Vec<String>,
+
+    /// Label filters to select
+    #[serde(default = "default_wildcard")]
+    pub labels: Vec<String>,
+
+    /// Alert filters (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alerts: Option<Vec<String>>,
+}
+
+fn default_wildcard() -> Vec<String> {
+    vec!["*".to_string()]
+}
+
+/// Aggregation configuration for data queries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataAggregations {
+    /// Metric aggregations
+    pub metrics: Vec<MetricAggregation>,
+
+    /// Time aggregation settings
+    pub time: TimeAggregation,
+}
+
+/// Individual metric aggregation configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetricAggregation {
+    /// Aggregation function (sum, avg, min, max, etc.)
+    pub aggregation: String,
+
+    /// Group by dimensions/nodes
+    #[serde(default)]
+    pub group_by: Vec<String>,
+
+    /// Group by label keys
+    #[serde(default)]
+    pub group_by_label: Vec<String>,
+}
+
+/// Time aggregation settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimeAggregation {
+    /// Time grouping method
+    pub time_group: String,
+
+    /// Resampling interval in seconds
+    pub time_resampling: i64,
+
+    /// Additional time group options
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_group_options: Option<String>,
+}
+
+/// Time window for data queries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataWindow {
+    /// Unix timestamp (seconds) for start time
+    pub after: i64,
+
+    /// Unix timestamp (seconds) for end time
+    pub before: i64,
+
+    /// Number of points to return
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points: Option<i64>,
+
+    /// Duration in seconds
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<i64>,
+
+    /// Data tier
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<i64>,
+
+    /// Baseline window configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<serde_json::Value>,
+}
+
+// =============================================================================
+// Data Response Types
+// =============================================================================
+//
+// These types represent the response from the getData API endpoint.
+// The API uses short field names (nd, mg, sts, etc.) for efficiency.
+
+/// Response from the data query endpoint (v3).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataResponse {
+    pub summary: DataSummary,
+    pub result: DataResult,
+    pub view: DataView,
+}
+
+/// Summary section of data response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataSummary {
+    #[serde(default)]
+    pub nodes: Vec<NodeSummary>,
+    #[serde(default)]
+    pub instances: Vec<InstanceSummary>,
+    #[serde(default)]
+    pub dimensions: Vec<DimensionSummary>,
+    #[serde(default)]
+    pub labels: Vec<LabelSummary>,
+}
+
+/// Node summary with statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeSummary {
+    /// Node ID (shortened field name in API)
+    #[serde(rename = "nd")]
+    pub node_id: String,
+    /// Machine GUID
+    #[serde(rename = "mg")]
+    pub machine_guid: String,
+    /// Statistics
+    #[serde(rename = "sts")]
+    pub stats: StatsSummary,
+}
+
+/// Instance summary with statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstanceSummary {
+    pub id: String,
+    #[serde(rename = "sts")]
+    pub stats: StatsSummary,
+}
+
+/// Dimension summary with statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DimensionSummary {
+    pub id: String,
+    #[serde(rename = "sts")]
+    pub stats: StatsSummary,
+}
+
+/// Label summary with values and statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LabelSummary {
+    pub id: String,
+    #[serde(rename = "sts")]
+    pub stats: StatsSummary,
+    /// Label values
+    #[serde(rename = "vl", default)]
+    pub values: Vec<LabelValueSummary>,
+}
+
+/// Label value summary with statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LabelValueSummary {
+    pub id: String,
+    #[serde(rename = "sts")]
+    pub stats: StatsSummary,
+}
+
+/// Statistics summary for nodes, instances, dimensions, and labels.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatsSummary {
+    /// Anomaly rate percentage
+    #[serde(rename = "arp", default)]
+    pub anomaly_rate: f64,
+    /// Contribution percentage
+    #[serde(rename = "con", default)]
+    pub contribution_percentage: f64,
+}
+
+/// Result section of data response containing the actual data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataResult {
+    /// Column labels
+    #[serde(default)]
+    pub labels: Vec<String>,
+    /// Point index mapping (column name -> index)
+    #[serde(default)]
+    pub point: std::collections::HashMap<String, i32>,
+    /// Data rows (each row is an array of mixed types: timestamps, values, etc.)
+    #[serde(default)]
+    pub data: Vec<Vec<serde_json::Value>>,
+}
+
+/// View configuration section of data response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataView {
+    /// Units for the data (can be various types)
+    pub units: serde_json::Value,
+}
+
+// =============================================================================
+// Contexts Query Types
+// =============================================================================
+
+/// Request body for the contexts query endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextsQuery {
+    /// Response format (default: "json2")
+    #[serde(default = "default_format")]
+    pub format: String,
+
+    /// Data scope definition
+    pub scope: ContextsScope,
+
+    /// Data selectors
+    pub selectors: ContextsSelectors,
+
+    /// Time window
+    pub window: ContextsWindow,
+
+    /// Request timeout in milliseconds
+    #[serde(default = "default_contexts_timeout")]
+    pub timeout: u64,
+}
+
+fn default_contexts_timeout() -> u64 {
+    20000
+}
+
+/// Scope definition for contexts queries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextsScope {
+    /// Context patterns
+    #[serde(default = "default_wildcard")]
+    pub contexts: Vec<String>,
+
+    /// Node IDs
+    #[serde(default)]
+    pub nodes: Vec<String>,
+}
+
+/// Selectors for contexts queries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextsSelectors {
+    /// Context patterns to select
+    #[serde(default = "default_wildcard")]
+    pub contexts: Vec<String>,
+
+    /// Node IDs to select
+    #[serde(default = "default_wildcard")]
+    pub nodes: Vec<String>,
+}
+
+/// Time window for contexts queries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextsWindow {
+    /// Unix timestamp (seconds) for start time
+    pub after: i64,
+
+    /// Unix timestamp (seconds) for end time
+    pub before: i64,
+}
+
+// =============================================================================
+// Contexts Response Types
+// =============================================================================
+
+/// Response from the contexts query endpoint (v3).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextsResponse {
+    /// Map of context name to context info
+    #[serde(default)]
+    pub contexts: std::collections::HashMap<String, ContextInfo>,
+}
+
+/// Information about a single context (metric).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextInfo {
+    /// Context family (grouping)
+    #[serde(default)]
+    pub family: String,
+    /// First data entry timestamp (Unix seconds)
+    #[serde(default)]
+    pub first_entry: i64,
+    /// Last data entry timestamp (Unix seconds)
+    #[serde(default)]
+    pub last_entry: i64,
+}
+
+// =============================================================================
+// Conversation Types
+// =============================================================================
+
+/// A conversation in Netdata Cloud insights.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Conversation {
+    pub id: String,
+    pub space_id: String,
+    pub room_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    pub quota_source: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub messages: Vec<ConversationMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ConversationMetadata>,
+    pub created_by: String,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+/// Metadata for a conversation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationMetadata {
+    pub usage: TokenUsage,
+}
+
+/// Token usage statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenUsage {
+    #[serde(default)]
+    pub input_tokens: i64,
+    #[serde(default)]
+    pub output_tokens: i64,
+    #[serde(default)]
+    pub cache_creation_input_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_read_input_tokens: Option<i64>,
+}
+
+/// A message within a conversation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationMessage {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_message_id: Option<String>,
+    pub role: String,
+    pub content: Vec<MessageContent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<MessageMetadata>,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+/// Metadata for a message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TokenUsage>,
+}
+
+/// Content block within a message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageContent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(rename = "type")]
+    pub content_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+/// Simple message with role and content.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub role: String,
+    pub content: String,
+}
+
+/// Request body for creating a conversation title.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTitleRequest {
+    pub message_content: String,
+}
+
+/// Response from creating a conversation title.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TitleResponse {
+    pub title: String,
+}
+
+/// Request body for chat completion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatCompletionRequest {
+    /// The user message
+    pub message: String,
+
+    /// Tools to use
+    #[serde(default = "default_tools")]
+    pub tools: Vec<ChatTool>,
+
+    /// Optional parent message ID for threading
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_message_id: Option<String>,
+}
+
+fn default_tools() -> Vec<ChatTool> {
+    vec![ChatTool {
+        name: "blocks".to_string(),
+        version: 0,
+    }]
+}
+
+/// A tool configuration for chat completion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatTool {
+    pub name: String,
+    pub version: i32,
+}
+
+// =============================================================================
+// SSE Streaming Types
+// =============================================================================
+
+/// Stream event types for SSE chunks.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamEventType {
+    MessageStart,
+    ContentBlockStart,
+    ContentBlockDelta,
+    ContentBlockStop,
+    MessageDelta,
+    MessageStop,
+    Error,
+    Ping,
+}
+
+/// A streaming chunk from chat completion SSE.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamChunk {
+    #[serde(rename = "type")]
+    pub event_type: StreamEventType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delta: Option<StreamDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_block: Option<StreamContentBlock>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<StreamMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TokenUsage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Delta types for streaming content.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamDeltaType {
+    TextDelta,
+    InputJsonDelta,
+}
+
+/// Incremental content changes in streaming.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamDelta {
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub delta_type: Option<StreamDeltaType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partial_json: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<String>,
+}
+
+/// Content block types in streaming.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamContentBlockType {
+    Text,
+    ToolUse,
+    ToolResult,
+}
+
+/// A content block in streaming response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamContentBlock {
+    #[serde(rename = "type")]
+    pub block_type: StreamContentBlockType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<serde_json::Value>,
+}
+
+/// Message metadata in streaming response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamMessage {
+    pub id: String,
+    pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TokenUsage>,
 }
 
 #[cfg(test)]
