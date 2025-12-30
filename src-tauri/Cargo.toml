@@ -49,3 +49,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Async stream utilities (for SSE parsing)
 futures = "0.3"
+
+# Async trait support (for worker handlers)
+async-trait = "0.1"
+
+# UUID generation (for tool invocations)
+uuid = { version = "1", features = ["v4"] }

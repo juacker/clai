@@ -21,6 +21,7 @@
 mod api;
 mod auth;
 mod commands;
+mod workers;
 
 use std::sync::Mutex;
 

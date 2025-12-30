@@ -482,6 +482,7 @@ dependencies = [
 name = "clai"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "futures",
  "keyring",
  "reqwest",
@@ -496,6 +497,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
