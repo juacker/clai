@@ -87,6 +87,10 @@ impl Scheduler {
     }
 
     /// Creates and registers a worker instance for a space/room.
+    ///
+    /// Returns `None` if:
+    /// - The worker definition doesn't exist
+    /// - An instance already exists for this worker/space/room combination
     pub fn create_instance(
         &mut self,
         worker_id: &str,
@@ -96,6 +100,11 @@ impl Scheduler {
         let definition = self.definitions.get(worker_id)?;
         let instance = WorkerInstance::new(definition, space_id, room_id);
         let instance_id = instance.instance_id.clone();
+
+        // Don't overwrite existing instances
+        if self.instances.contains_key(&instance_id) {
+            return Some(instance_id);
+        }
 
         self.instances.insert(instance_id.clone(), instance);
 

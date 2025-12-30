@@ -55,3 +55,10 @@ async-trait = "0.1"
 
 # UUID generation (for tool invocations)
 uuid = { version = "1", features = ["v4"] }
+
+# Platform-specific directories (config, data, cache)
+dirs = "5"
+
+[dev-dependencies]
+# Temporary directories for testing
+tempfile = "3"

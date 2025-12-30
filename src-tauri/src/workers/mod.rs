@@ -51,6 +51,7 @@
 //! ```
 
 pub mod executor;
+pub mod init;
 pub mod scheduler;
 pub mod types;
 

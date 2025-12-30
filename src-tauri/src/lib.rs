@@ -21,11 +21,14 @@
 mod api;
 mod auth;
 mod commands;
+mod config;
 mod workers;
 
 use std::sync::Mutex;
 
 use auth::TokenStorage;
+use config::ConfigManager;
+use workers::SharedScheduler;
 
 /// Shared application state accessible from all commands.
 ///
@@ -37,6 +40,10 @@ pub struct AppState {
     pub token_storage: TokenStorage,
     /// Current API base URL (protected by mutex for thread safety)
     pub base_url: Mutex<String>,
+    /// Configuration manager (auto-pilot settings, etc.)
+    pub config_manager: Mutex<ConfigManager>,
+    /// Worker scheduler (manages worker instances)
+    pub scheduler: SharedScheduler,
 }
 
 /// Default base URL for Netdata Cloud API.
@@ -58,10 +65,24 @@ pub fn run() {
          On Linux, ensure libsecret is installed.",
     );
 
+    // Initialize config manager (loads config from disk or creates default)
+    let config_manager = ConfigManager::new().expect(
+        "Failed to initialize configuration manager. \
+         Check that the config directory is accessible.",
+    );
+
+    // Initialize worker scheduler
+    let scheduler = workers::create_shared_scheduler();
+
+    // Register default worker definitions and restore instances from config
+    workers::init::initialize_scheduler(&scheduler, &config_manager);
+
     // Create the shared application state
     let state = AppState {
         token_storage,
         base_url: Mutex::new(DEFAULT_BASE_URL.to_string()),
+        config_manager: Mutex::new(config_manager),
+        scheduler,
     };
 
     // Build and run the Tauri application
@@ -96,6 +117,10 @@ pub fn run() {
             commands::api::api_delete_conversation,
             commands::api::api_create_conversation_title,
             commands::api::api_chat_completion,
+            // Auto-pilot commands
+            commands::autopilot::get_autopilot_status,
+            commands::autopilot::set_autopilot_enabled,
+            commands::autopilot::get_all_autopilot_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
