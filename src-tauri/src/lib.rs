@@ -22,6 +22,7 @@ mod api;
 mod auth;
 mod commands;
 mod config;
+mod providers;
 mod workers;
 
 use std::sync::Mutex;
@@ -121,6 +122,12 @@ pub fn run() {
             commands::autopilot::get_autopilot_status,
             commands::autopilot::set_autopilot_enabled,
             commands::autopilot::get_all_autopilot_enabled,
+            // Provider commands
+            commands::provider::get_ai_provider,
+            commands::provider::set_ai_provider,
+            commands::provider::clear_ai_provider,
+            commands::provider::get_available_ai_providers,
+            commands::provider::validate_ai_provider,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -11,7 +11,7 @@
 
 pub mod types;
 
-pub use types::{AutopilotStatus, ClaiConfig, SpaceAutopilot, SpaceConfig};
+pub use types::{AiProvider, AutopilotStatus, ClaiConfig, ProviderInfo, SpaceAutopilot, SpaceConfig};
 
 use std::fs;
 use std::io::Write;
@@ -201,6 +201,34 @@ impl ConfigManager {
     /// Gets all rooms with auto-pilot enabled for a space.
     pub fn get_enabled_rooms(&self, space_id: &str) -> Vec<String> {
         self.get_space_autopilot(space_id).enabled_rooms
+    }
+
+    // =========================================================================
+    // AI Provider Helpers
+    // =========================================================================
+
+    /// Gets the current AI provider.
+    pub fn get_ai_provider(&self) -> Option<AiProvider> {
+        self.config.lock().unwrap().ai_provider.clone()
+    }
+
+    /// Sets the AI provider and saves config.
+    pub fn set_ai_provider(&self, provider: AiProvider) -> Result<(), ConfigError> {
+        self.update(|config| {
+            config.ai_provider = Some(provider);
+        })
+    }
+
+    /// Clears the AI provider and saves config.
+    pub fn clear_ai_provider(&self) -> Result<(), ConfigError> {
+        self.update(|config| {
+            config.ai_provider = None;
+        })
+    }
+
+    /// Checks if an AI provider is configured.
+    pub fn has_ai_provider(&self) -> bool {
+        self.config.lock().unwrap().ai_provider.is_some()
     }
 }
 

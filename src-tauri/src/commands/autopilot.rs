@@ -7,7 +7,7 @@ use tauri::State;
 
 use crate::api::client::create_client;
 use crate::api::netdata::NetdataApi;
-use crate::config::AutopilotStatus;
+use crate::config::{AutopilotStatus, ProviderInfo};
 use crate::workers::init::{create_instances_for_room, remove_instances_for_room};
 use crate::AppState;
 
@@ -17,16 +17,23 @@ const ALL_NODES_ROOM_NAME: &str = "All nodes";
 /// Get the auto-pilot status for a space/room.
 ///
 /// This command:
-/// 1. Loads config to check enabled rooms
+/// 1. Loads config to check enabled rooms and provider
 /// 2. Fetches rooms to find "All Nodes" room
 /// 3. Checks billing API for credits
-/// 4. Returns computed status
+/// 4. Returns computed status including provider info
 #[tauri::command]
 pub async fn get_autopilot_status(
     space_id: String,
     room_id: String,
     state: State<'_, AppState>,
 ) -> Result<AutopilotStatus, String> {
+    // Get provider info first (before any async operations)
+    let provider_info = {
+        let config_manager = state.config_manager.lock().unwrap();
+        let provider = config_manager.get_ai_provider();
+        ProviderInfo::from_provider(provider.as_ref())
+    };
+
     // Get token for API calls
     let token = state
         .token_storage
@@ -59,12 +66,12 @@ pub async fn get_autopilot_status(
         .map(|c| c > 0)
         .unwrap_or(false);
 
-    // No credits? Return early
+    // No credits? Return early (but still include provider info)
     if !has_credits {
-        return Ok(AutopilotStatus::no_credits());
+        return Ok(AutopilotStatus::no_credits(provider_info));
     }
 
-    // Get config
+    // Get config for autopilot status
     let config_manager = state.config_manager.lock().unwrap();
     let space_config = config_manager.get_space_autopilot(&space_id);
 
@@ -80,19 +87,20 @@ pub async fn get_autopilot_status(
     // Determine status based on context
     if is_all_nodes_room {
         // In All Nodes room - can toggle directly
-        Ok(AutopilotStatus::available(all_nodes_enabled, has_credits))
+        Ok(AutopilotStatus::available(all_nodes_enabled, has_credits, provider_info))
     } else if all_nodes_enabled {
         // In other room, but All Nodes is enabled - inherited, can't toggle here
-        Ok(AutopilotStatus::via_all_nodes(has_credits))
+        Ok(AutopilotStatus::via_all_nodes(has_credits, provider_info))
     } else {
         // In other room, All Nodes is not enabled - can toggle for this room
-        Ok(AutopilotStatus::available(current_room_enabled, has_credits))
+        Ok(AutopilotStatus::available(current_room_enabled, has_credits, provider_info))
     }
 }
 
 /// Enable or disable auto-pilot for a room.
 ///
 /// Rules:
+/// - Provider must be configured to enable auto-pilot
 /// - If enabling All Nodes, it will cover the entire space
 /// - If All Nodes is enabled, cannot enable other rooms (must disable All Nodes first)
 /// - Disabling a room only affects that room
@@ -103,6 +111,14 @@ pub async fn set_autopilot_enabled(
     enabled: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // Check provider is configured if enabling
+    if enabled {
+        let config_manager = state.config_manager.lock().unwrap();
+        if !config_manager.has_ai_provider() {
+            return Err("Cannot enable auto-pilot: no AI provider configured. Please select a provider first.".to_string());
+        }
+    }
+
     // Get token for API calls
     let token = state
         .token_storage
