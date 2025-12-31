@@ -77,11 +77,11 @@
   display: none;
 }
 
-/* Accessibility - Focus within panel */
-.contextPanel:focus-within {
+/* Accessibility - Focus within panel - disabled as it's too intrusive */
+/* .contextPanel:focus-within {
   outline: 2px solid var(--color-secondary-alpha-30);
   outline-offset: -2px;
-}
+} */
 
 /* Fade edges for horizontal scroll */
 .contextPanel::before,

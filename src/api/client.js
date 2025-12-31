@@ -453,6 +453,85 @@ export const getAllAutopilotEnabled = async () => {
 };
 
 // ============================================================================
+// AI Provider Functions
+// ============================================================================
+
+/**
+ * Get the currently configured AI provider
+ * @returns {Promise<Object>} Provider info
+ * @property {Object|null} provider - The configured provider
+ * @property {string|null} name - Human-readable provider name
+ * @property {boolean} is_configured - Whether a provider is set
+ * @throws {Error} If the request fails
+ */
+export const getAiProvider = async () => {
+  try {
+    return await invoke('get_ai_provider');
+  } catch (error) {
+    handleApiError(error, 'Failed to get AI provider');
+  }
+};
+
+/**
+ * Set the AI provider
+ * @param {Object} provider - The provider config (e.g., { type: 'claude' })
+ * @returns {Promise<Object>} Validated provider info
+ * @throws {Error} If the provider is not available
+ */
+export const setAiProvider = async (provider) => {
+  try {
+    return await invoke('set_ai_provider', { provider });
+  } catch (error) {
+    throw new Error(`Failed to set AI provider: ${error}`);
+  }
+};
+
+/**
+ * Clear the AI provider configuration
+ * @returns {Promise<void>}
+ * @throws {Error} If the request fails
+ */
+export const clearAiProvider = async () => {
+  try {
+    await invoke('clear_ai_provider');
+  } catch (error) {
+    throw new Error(`Failed to clear AI provider: ${error}`);
+  }
+};
+
+/**
+ * Get all available AI providers on the system
+ * @returns {Promise<Array>} Array of provider info objects
+ * @property {Object} provider - The provider type
+ * @property {string} name - Human-readable name
+ * @property {string} command - CLI command
+ * @property {string|null} version - Version string if detected
+ * @property {boolean} available - Whether provider is working
+ * @property {string|null} error - Error message if not available
+ */
+export const getAvailableAiProviders = async () => {
+  try {
+    return await invoke('get_available_ai_providers');
+  } catch (error) {
+    handleApiError(error, 'Failed to get available AI providers');
+  }
+};
+
+/**
+ * Validate a specific AI provider
+ * @param {Object} provider - The provider config to validate
+ * @returns {Promise<Object>} Validated provider info
+ * @throws {Error} If the provider is not available
+ */
+export const validateAiProvider = async (provider) => {
+  try {
+    return await invoke('validate_ai_provider', { provider });
+  } catch (error) {
+    throw new Error(`Provider not available: ${error}`);
+  }
+};
+
+// ============================================================================
 // Legacy Compatibility
 // ============================================================================
 
