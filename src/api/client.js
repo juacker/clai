@@ -400,6 +400,59 @@ export const getContexts = async (spaceId, roomId, params) => {
 };
 
 // ============================================================================
+// Auto-pilot Functions
+// ============================================================================
+
+/**
+ * Get auto-pilot status for a space/room
+ * @param {string} spaceId - Space ID (UUID)
+ * @param {string} roomId - Room ID (UUID)
+ * @returns {Promise<Object>} Auto-pilot status
+ * @property {boolean} enabled - Is auto-pilot active for this room?
+ * @property {boolean} can_toggle - Can user change the toggle?
+ * @property {boolean} via_all_nodes - Is it enabled via All Nodes?
+ * @property {boolean} has_credits - Does space have AI credits?
+ * @property {string|null} message - Explanation if can't toggle
+ * @throws {Error} If the request fails
+ */
+export const getAutopilotStatus = async (spaceId, roomId) => {
+  try {
+    return await invoke('get_autopilot_status', { spaceId, roomId });
+  } catch (error) {
+    handleApiError(error, 'Failed to get auto-pilot status');
+  }
+};
+
+/**
+ * Enable or disable auto-pilot for a room
+ * @param {string} spaceId - Space ID (UUID)
+ * @param {string} roomId - Room ID (UUID)
+ * @param {boolean} enabled - Whether to enable or disable
+ * @returns {Promise<void>}
+ * @throws {Error} If the request fails (e.g., All Nodes is enabled, no credits)
+ */
+export const setAutopilotEnabled = async (spaceId, roomId, enabled) => {
+  try {
+    await invoke('set_autopilot_enabled', { spaceId, roomId, enabled });
+  } catch (error) {
+    throw new Error(`Failed to ${enabled ? 'enable' : 'disable'} auto-pilot: ${error}`);
+  }
+};
+
+/**
+ * Get all rooms with auto-pilot enabled (for debugging/status display)
+ * @returns {Promise<Object>} Map of space_id -> array of enabled room_ids
+ * @throws {Error} If the request fails
+ */
+export const getAllAutopilotEnabled = async () => {
+  try {
+    return await invoke('get_all_autopilot_enabled');
+  } catch (error) {
+    handleApiError(error, 'Failed to get all auto-pilot settings');
+  }
+};
+
+// ============================================================================
 // Legacy Compatibility
 // ============================================================================
 

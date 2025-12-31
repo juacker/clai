@@ -1,0 +1,161 @@
+/**
+ * AutoPilotBadge Component Styles
+ *
+ * Toggle badge for auto-pilot status with enabled/disabled states
+ */
+
+/* Base Badge Styles */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+  user-select: none;
+  animation: badgeEnter var(--transition-fast) ease;
+}
+
+/* Loading State */
+.loading {
+  background: var(--color-overlay-04);
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border-light);
+}
+
+/* Enabled State - Primary green theme */
+.enabled {
+  background: var(--color-primary-alpha-10);
+  color: var(--color-primary-dark);
+  border: 1px solid var(--color-primary-alpha-30);
+}
+
+.enabled .icon {
+  color: var(--color-primary);
+}
+
+.enabled .status {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* Disabled State - Neutral/muted theme */
+.disabled {
+  background: var(--color-overlay-04);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-light);
+}
+
+.disabled .icon {
+  color: var(--color-text-tertiary);
+}
+
+.disabled .status {
+  color: var(--color-text-tertiary);
+}
+
+/* Clickable Badge */
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--color-primary-alpha-40);
+  outline-offset: 2px;
+}
+
+/* Non-toggleable (via All Nodes or no credits) */
+.nonToggleable {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+/* Toggling State */
+.toggling {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Icon */
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 0;
+}
+
+.icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  transition: all var(--transition-fast);
+}
+
+/* Label */
+.label {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+/* Status text (ON/OFF) */
+.status {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Spinner Animation */
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Hover Effects (Desktop) */
+@media (hover: hover) {
+  .clickable:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .clickable.enabled:hover {
+    background: var(--color-primary-alpha-15);
+    border-color: var(--color-primary-alpha-40);
+  }
+
+  .clickable.disabled:hover {
+    background: var(--color-overlay-08);
+    border-color: var(--color-border-medium);
+  }
+}
+
+/* Accessibility - Focus Styles */
+.badge:focus-visible {
+  outline: 2px solid var(--color-primary-alpha-40);
+  outline-offset: 2px;
+}
+
+/* Animation for badge entrance */
+@keyframes badgeEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
