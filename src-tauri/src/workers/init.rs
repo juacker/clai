@@ -3,6 +3,7 @@
 //! This module handles initializing the scheduler with default worker
 //! definitions and restoring worker instances from saved configuration.
 
+use crate::auth::TokenStorage;
 use crate::config::ConfigManager;
 use crate::workers::{SharedScheduler, WorkerDefinition};
 
@@ -30,17 +31,27 @@ pub fn default_definitions() -> Vec<WorkerDefinition> {
 // Initialization
 // =============================================================================
 
-/// Initializes the scheduler with default definitions and restores instances.
+/// Initializes the scheduler with default definitions and optionally restores instances.
 ///
 /// This should be called once at app startup. It:
 /// 1. Registers all default worker definitions
-/// 2. Creates worker instances for rooms with auto-pilot enabled
-pub fn initialize_scheduler(scheduler: &SharedScheduler, config_manager: &ConfigManager) {
+/// 2. If user is logged in, restores worker instances for rooms with auto-pilot enabled
+pub fn initialize_scheduler(
+    scheduler: &SharedScheduler,
+    config_manager: &ConfigManager,
+    token_storage: &TokenStorage,
+) {
     let mut scheduler = scheduler.blocking_lock();
 
     // Register default worker definitions
     for definition in default_definitions() {
         scheduler.register_definition(definition);
+    }
+
+    // Only restore instances if user is logged in
+    let has_token = token_storage.get_token().map(|t| t.is_some()).unwrap_or(false);
+    if !has_token {
+        return;
     }
 
     // Restore worker instances from config
@@ -52,6 +63,40 @@ pub fn initialize_scheduler(scheduler: &SharedScheduler, config_manager: &Config
                 scheduler.create_instance(&definition.id, space_id.clone(), room_id.clone());
             }
         }
+    }
+}
+
+/// Restores worker instances from config.
+///
+/// Called after user logs in (if they weren't logged in at app startup).
+pub fn restore_instances_from_config(scheduler: &SharedScheduler, config_manager: &ConfigManager) {
+    let mut scheduler = scheduler.blocking_lock();
+
+    let config = config_manager.get();
+    for (space_id, space_config) in config.spaces {
+        for room_id in space_config.autopilot.enabled_rooms {
+            for definition in default_definitions() {
+                scheduler.create_instance(&definition.id, space_id.clone(), room_id.clone());
+            }
+        }
+    }
+}
+
+/// Clears all worker instances.
+///
+/// Called when user logs out.
+pub fn clear_all_instances(scheduler: &SharedScheduler) {
+    let mut scheduler = scheduler.blocking_lock();
+
+    // Collect all instance IDs
+    let instance_ids: Vec<String> = scheduler
+        .all_instances()
+        .map(|i| i.instance_id.clone())
+        .collect();
+
+    // Remove each instance
+    for instance_id in instance_ids {
+        scheduler.remove_instance(&instance_id);
     }
 }
 

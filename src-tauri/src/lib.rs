@@ -74,8 +74,8 @@ pub fn run() {
     // Initialize worker scheduler
     let scheduler = workers::create_shared_scheduler();
 
-    // Register default worker definitions and restore instances from config
-    workers::init::initialize_scheduler(&scheduler, &config_manager);
+    // Register default worker definitions and restore instances if logged in
+    workers::init::initialize_scheduler(&scheduler, &config_manager, &token_storage);
 
     // Create the shared application state
     let state = AppState {
