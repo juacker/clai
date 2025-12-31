@@ -141,52 +141,69 @@ pub async fn set_autopilot_enabled(
         }
     }
 
-    let config_manager = state.config_manager.lock().unwrap();
+    // Collect rooms to update scheduler (do config operations first, then async scheduler ops)
+    let rooms_to_remove: Vec<String>;
+    let room_to_add: Option<String>;
 
-    if enabled {
-        // Check if All Nodes is already enabled (and we're not in All Nodes)
-        if !is_all_nodes_room {
-            if let Some(ref all_nodes_id) = all_nodes_room_id {
-                if config_manager.is_autopilot_enabled(&space_id, all_nodes_id) {
-                    return Err(
-                        "Cannot enable auto-pilot: All Nodes is already enabled. Disable it first."
-                            .to_string(),
-                    );
+    {
+        // Scope for config_manager lock - must be dropped before async operations
+        let config_manager = state.config_manager.lock().unwrap();
+
+        if enabled {
+            // Check if All Nodes is already enabled (and we're not in All Nodes)
+            if !is_all_nodes_room {
+                if let Some(ref all_nodes_id) = all_nodes_room_id {
+                    if config_manager.is_autopilot_enabled(&space_id, all_nodes_id) {
+                        return Err(
+                            "Cannot enable auto-pilot: All Nodes is already enabled. Disable it first."
+                                .to_string(),
+                        );
+                    }
                 }
             }
-        }
 
-        // If enabling All Nodes, disable other rooms first and remove their worker instances
-        if is_all_nodes_room {
-            let enabled_rooms = config_manager.get_enabled_rooms(&space_id);
-            for other_room_id in enabled_rooms {
-                if Some(&other_room_id) != all_nodes_room_id.as_ref() {
-                    // Remove worker instances for this room
-                    remove_instances_for_room(&state.scheduler, &space_id, &other_room_id);
+            // If enabling All Nodes, disable other rooms first
+            if is_all_nodes_room {
+                let enabled_rooms = config_manager.get_enabled_rooms(&space_id);
+                rooms_to_remove = enabled_rooms
+                    .into_iter()
+                    .filter(|r| Some(r) != all_nodes_room_id.as_ref())
+                    .collect();
 
-                    // Disable in config
+                // Disable other rooms in config
+                for other_room_id in &rooms_to_remove {
                     config_manager
-                        .disable_autopilot(&space_id, &other_room_id)
+                        .disable_autopilot(&space_id, other_room_id)
                         .map_err(|e| format!("Failed to disable room {}: {}", other_room_id, e))?;
                 }
+            } else {
+                rooms_to_remove = vec![];
             }
+
+            // Enable in config
+            config_manager
+                .enable_autopilot(&space_id, &room_id)
+                .map_err(|e| format!("Failed to enable auto-pilot: {}", e))?;
+
+            room_to_add = Some(room_id.clone());
+        } else {
+            // Disable in config
+            config_manager
+                .disable_autopilot(&space_id, &room_id)
+                .map_err(|e| format!("Failed to disable auto-pilot: {}", e))?;
+
+            rooms_to_remove = vec![room_id.clone()];
+            room_to_add = None;
         }
+    } // config_manager lock dropped here
 
-        // Enable in config
-        config_manager
-            .enable_autopilot(&space_id, &room_id)
-            .map_err(|e| format!("Failed to enable auto-pilot: {}", e))?;
+    // Now do async scheduler operations (lock is released)
+    for other_room_id in rooms_to_remove {
+        remove_instances_for_room(&state.scheduler, &space_id, &other_room_id).await;
+    }
 
-        // Create worker instances for this room
-        create_instances_for_room(&state.scheduler, &space_id, &room_id);
-    } else {
-        // Disable in config
-        config_manager
-            .disable_autopilot(&space_id, &room_id)
-            .map_err(|e| format!("Failed to disable auto-pilot: {}", e))?;
-
-        // Remove worker instances for this room
-        remove_instances_for_room(&state.scheduler, &space_id, &room_id);
+    if let Some(room) = room_to_add {
+        create_instances_for_room(&state.scheduler, &space_id, &room).await;
     }
 
     Ok(())

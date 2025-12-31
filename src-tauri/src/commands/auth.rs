@@ -45,8 +45,12 @@ pub async fn set_token(token: String, state: State<'_, AppState>) -> Result<(), 
         .map_err(|e| format!("Failed to store token: {}", e))?;
 
     // Restore worker instances from config after login
-    let config_manager = state.config_manager.lock().unwrap();
-    restore_instances_from_config(&state.scheduler, &config_manager);
+    // Get the config (cloned) and drop the lock before the async call
+    let config = {
+        let config_manager = state.config_manager.lock().unwrap();
+        config_manager.get()
+    };
+    restore_instances_from_config(&state.scheduler, config).await;
 
     Ok(())
 }
@@ -80,7 +84,7 @@ pub async fn has_token(state: State<'_, AppState>) -> Result<bool, String> {
 #[tauri::command]
 pub async fn clear_token(state: State<'_, AppState>) -> Result<(), String> {
     // Clear all worker instances first
-    clear_all_instances(&state.scheduler);
+    clear_all_instances(&state.scheduler).await;
 
     state
         .token_storage

@@ -69,10 +69,13 @@ pub fn initialize_scheduler(
 /// Restores worker instances from config.
 ///
 /// Called after user logs in (if they weren't logged in at app startup).
-pub fn restore_instances_from_config(scheduler: &SharedScheduler, config_manager: &ConfigManager) {
-    let mut scheduler = scheduler.blocking_lock();
+/// Takes the config directly to avoid holding locks across await points.
+pub async fn restore_instances_from_config(
+    scheduler: &SharedScheduler,
+    config: crate::config::ClaiConfig,
+) {
+    let mut scheduler = scheduler.lock().await;
 
-    let config = config_manager.get();
     for (space_id, space_config) in config.spaces {
         for room_id in space_config.autopilot.enabled_rooms {
             for definition in default_definitions() {
@@ -85,8 +88,8 @@ pub fn restore_instances_from_config(scheduler: &SharedScheduler, config_manager
 /// Clears all worker instances.
 ///
 /// Called when user logs out.
-pub fn clear_all_instances(scheduler: &SharedScheduler) {
-    let mut scheduler = scheduler.blocking_lock();
+pub async fn clear_all_instances(scheduler: &SharedScheduler) {
+    let mut scheduler = scheduler.lock().await;
 
     // Collect all instance IDs
     let instance_ids: Vec<String> = scheduler
@@ -103,8 +106,8 @@ pub fn clear_all_instances(scheduler: &SharedScheduler) {
 /// Creates worker instances for a room.
 ///
 /// Called when auto-pilot is enabled for a room.
-pub fn create_instances_for_room(scheduler: &SharedScheduler, space_id: &str, room_id: &str) {
-    let mut scheduler = scheduler.blocking_lock();
+pub async fn create_instances_for_room(scheduler: &SharedScheduler, space_id: &str, room_id: &str) {
+    let mut scheduler = scheduler.lock().await;
 
     for definition in default_definitions() {
         scheduler.create_instance(&definition.id, space_id.to_string(), room_id.to_string());
@@ -114,8 +117,8 @@ pub fn create_instances_for_room(scheduler: &SharedScheduler, space_id: &str, ro
 /// Removes all worker instances for a room.
 ///
 /// Called when auto-pilot is disabled for a room.
-pub fn remove_instances_for_room(scheduler: &SharedScheduler, space_id: &str, room_id: &str) {
-    let mut scheduler = scheduler.blocking_lock();
+pub async fn remove_instances_for_room(scheduler: &SharedScheduler, space_id: &str, room_id: &str) {
+    let mut scheduler = scheduler.lock().await;
 
     // Collect instance IDs to remove
     let instances_to_remove: Vec<String> = scheduler
@@ -156,35 +159,35 @@ mod tests {
         assert_eq!(anomaly.interval_ms, 5 * 60 * 1000);
     }
 
-    #[test]
-    fn test_create_and_remove_instances_for_room() {
+    #[tokio::test]
+    async fn test_create_and_remove_instances_for_room() {
         let scheduler = create_shared_scheduler();
 
         // Register definitions first
         {
-            let mut s = scheduler.blocking_lock();
+            let mut s = scheduler.lock().await;
             for def in default_definitions() {
                 s.register_definition(def);
             }
         }
 
         // Create instances
-        create_instances_for_room(&scheduler, "space-1", "room-1");
+        create_instances_for_room(&scheduler, "space-1", "room-1").await;
 
         // Verify instances exist
         {
-            let s = scheduler.blocking_lock();
+            let s = scheduler.lock().await;
             assert!(s.instance_count() > 0);
             let instance = s.get_instance("anomaly-investigator:space-1:room-1");
             assert!(instance.is_some());
         }
 
         // Remove instances
-        remove_instances_for_room(&scheduler, "space-1", "room-1");
+        remove_instances_for_room(&scheduler, "space-1", "room-1").await;
 
         // Verify instances removed
         {
-            let s = scheduler.blocking_lock();
+            let s = scheduler.lock().await;
             assert_eq!(s.instance_count(), 0);
         }
     }
