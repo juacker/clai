@@ -1,11 +1,27 @@
 //! MCP tool definitions and implementations.
 //!
 //! This module contains all tools that can be exposed to AI workers via MCP.
-//! Currently implements:
 //!
-//! - `netdata_query` - Query Netdata Cloud AI for analysis
+//! # Tool Namespaces
+//!
+//! ## Rust-native (`netdata.*`)
+//! These tools execute directly in Rust:
+//! - `netdata.query` - Query Netdata Cloud AI for analysis
+//!
+//! ## JS-bridge (`canvas.*`, `tabs.*`)
+//! These tools are defined in Rust but execute via Tauri events to the frontend:
+//! - `canvas.addChart` - Add a metric chart to the canvas
+//! - `canvas.removeChart` - Remove a chart by ID
+//! - `canvas.getCharts` - List all charts
+//! - `canvas.clearCharts` - Remove all charts
+//! - `canvas.setTimeRange` - Set time range for charts
+//! - `tabs.addTile` - Add a tile to the current tab
+//! - `tabs.removeTile` - Remove a tile by ID
+//! - `tabs.getTileLayout` - Get current tile layout
 
+pub mod canvas;
 pub mod netdata;
+pub mod tabs;
 
 use std::sync::Arc;
 
@@ -13,7 +29,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::netdata::NetdataApi;
 
+pub use canvas::CanvasTools;
 pub use netdata::NetdataQueryTool;
+pub use tabs::TabsTools;
 
 // =============================================================================
 // Error Types
@@ -91,9 +109,6 @@ impl std::error::Error for ToolError {}
 pub struct NetdataTools {
     /// The netdata_query tool for AI-powered analysis.
     pub query: NetdataQueryTool,
-    // Future tools can be added here:
-    // pub alerts: NetdataAlertsTool,
-    // pub data: NetdataDataTool,
 }
 
 impl NetdataTools {
@@ -142,6 +157,94 @@ impl NetdataTools {
 }
 
 // =============================================================================
+// WorkerTools - Combined Tool Container
+// =============================================================================
+
+/// Container for all tools available to a worker.
+///
+/// This struct holds all tool instances bound to the worker's execution context.
+/// Tools are created when the worker starts and dropped when it finishes.
+///
+/// # Context Binding
+///
+/// All tools share the same worker context:
+/// - `worker_id` - The worker type (e.g., "anomaly_investigator")
+/// - `space_id` - The Netdata space
+/// - `room_id` - The Netdata room
+///
+/// # Lazy Tab Creation
+///
+/// Canvas and tabs tools don't require a tab upfront. When a UI tool is called,
+/// the frontend will find or create a tab owned by this worker. This means:
+/// - Workers that don't need UI don't create unnecessary tabs
+/// - Tabs are created on-demand when the worker first needs to display something
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let tools = WorkerTools::new(
+///     api,
+///     "anomaly_investigator".to_string(),
+///     "space-123".to_string(),
+///     "room-456".to_string(),
+/// );
+///
+/// // Query Netdata AI (no tab needed)
+/// let response = tools.execute("netdata.query", json!({"query": "Any anomalies?"})).await?;
+///
+/// // Add a chart (tab created lazily if needed)
+/// let response = tools.execute("canvas.addChart", json!({"context": "system.cpu"})).await?;
+/// ```
+pub struct WorkerTools {
+    /// Netdata tools (for Cloud AI queries).
+    pub netdata: NetdataTools,
+    /// Canvas tools (for chart manipulation, lazy tab creation).
+    pub canvas: CanvasTools,
+    /// Tabs tools (for tile layout manipulation, lazy tab creation).
+    pub tabs: TabsTools,
+}
+
+impl WorkerTools {
+    /// Create all tools bound to the worker's execution context.
+    ///
+    /// # Arguments
+    ///
+    /// * `api` - The Netdata API client
+    /// * `worker_id` - The worker type identifier
+    /// * `space_id` - The Netdata space
+    /// * `room_id` - The Netdata room
+    pub fn new(api: Arc<NetdataApi>, worker_id: String, space_id: String, room_id: String) -> Self {
+        Self {
+            netdata: NetdataTools::new(api, space_id.clone(), room_id.clone()),
+            canvas: CanvasTools::new(worker_id.clone(), space_id.clone(), room_id.clone()),
+            tabs: TabsTools::new(worker_id, space_id, room_id),
+        }
+    }
+
+    /// Get all tool definitions for MCP configuration.
+    ///
+    /// Returns definitions for all tools: netdata, canvas, and tabs.
+    pub fn all_tool_definitions() -> Vec<serde_json::Value> {
+        let mut definitions = Vec::new();
+        definitions.extend(NetdataTools::tool_definitions());
+        definitions.extend(canvas::tool_definitions());
+        definitions.extend(tabs::tool_definitions());
+        definitions
+    }
+
+    /// Execute a tool by its full name (namespace.method).
+    ///
+    /// Routes to the appropriate tool based on the namespace.
+    pub async fn execute(
+        &self,
+        name: &str,
+        params: serde_json::Value,
+    ) -> Result<String, ToolError> {
+        execute_tool(name, params, self).await
+    }
+}
+
+// =============================================================================
 // Tool Routing
 // =============================================================================
 
@@ -154,7 +257,7 @@ impl NetdataTools {
 ///
 /// * `name` - The tool name in `namespace.method` format (e.g., "netdata.query")
 /// * `params` - The tool parameters as JSON
-/// * `netdata_tools` - The bound Netdata tools container
+/// * `tools` - The bound worker tools container
 ///
 /// # Returns
 ///
@@ -164,11 +267,12 @@ impl NetdataTools {
 ///
 /// ```rust,ignore
 /// let response = execute_tool("netdata.query", json!({"query": "What anomalies?"}), &tools).await?;
+/// let response = execute_tool("canvas.addChart", json!({"context": "system.cpu"}), &tools).await?;
 /// ```
 pub async fn execute_tool(
     name: &str,
     params: serde_json::Value,
-    netdata_tools: &NetdataTools,
+    tools: &WorkerTools,
 ) -> Result<String, ToolError> {
     // Parse namespace.method format
     let (namespace, method) = name
@@ -176,11 +280,9 @@ pub async fn execute_tool(
         .ok_or_else(|| ToolError::InvalidToolName(name.to_string()))?;
 
     match namespace {
-        "netdata" => netdata_tools.execute(method, params).await,
-        // Future namespaces:
-        // "canvas" => canvas_tools.execute(method, params).await,
-        // "tabs" => tabs_tools.execute(method, params).await,
-        // "notifications" => notification_tools.execute(method, params).await,
+        "netdata" => tools.netdata.execute(method, params).await,
+        "canvas" => tools.canvas.execute(method, params).await,
+        "tabs" => tools.tabs.execute(method, params).await,
         _ => Err(ToolError::UnknownNamespace(namespace.to_string())),
     }
 }
