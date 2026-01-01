@@ -34,7 +34,8 @@
 //! # MCP Server
 //!
 //! The `server` module provides the MCP server implementation that exposes
-//! tools to AI CLIs via the stdio transport. Use `McpToolServer::with_bridge()`
+//! tools to AI CLIs via HTTP transport on localhost. Each worker execution
+//! starts its own server on a random port. Use `McpToolServer::with_bridge()`
 //! to create a server with JS bridge support for canvas/tabs tools.
 
 pub mod bridge;

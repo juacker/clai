@@ -8,9 +8,9 @@
 //! ```text
 //! AI CLI (claude/gemini/codex)
 //!     │
-//!     │ MCP Protocol (stdio)
+//!     │ HTTP (connects to CLAI)
 //!     ▼
-//! McpToolServer
+//! McpToolServer (HTTP on 127.0.0.1:PORT)
 //!     │
 //!     ├─→ netdata.query → NetdataTools (Rust-native, direct API call)
 //!     │
@@ -24,24 +24,34 @@
 //! ```rust,ignore
 //! use crate::mcp::server::McpToolServer;
 //!
-//! let server = McpToolServer::new(
+//! let server = McpToolServer::with_bridge(
 //!     api.clone(),
 //!     "anomaly_investigator".to_string(),
 //!     "space-123".to_string(),
 //!     "room-456".to_string(),
+//!     bridge,
 //! );
 //!
-//! // Start server with stdio transport
-//! server.serve_stdio().await?;
+//! // Start HTTP server and get the URL for AI CLI to connect
+//! let (url, shutdown) = server.serve_http().await?;
+//! // url = "http://127.0.0.1:PORT"
+//! // shutdown can be used to stop the server
 //! ```
 
 use std::sync::Arc;
 
+use axum::Router;
 use rmcp::{
     handler::server::{tool::ToolRouter, wrapper::Parameters},
     model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
-    tool, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
+    tool, tool_router,
+    transport::streamable_http_server::{
+        session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
+    },
+    ErrorData as McpError, ServerHandler,
 };
+use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 
 use crate::api::netdata::NetdataApi;
 
@@ -60,17 +70,17 @@ pub use super::tools::tabs::{RemoveTileParams, SplitTileParams};
 /// Errors that can occur when running the MCP server.
 #[derive(Debug, Clone)]
 pub enum McpServerError {
-    /// Transport initialization or communication error.
-    TransportError(String),
-    /// Service-level error (protocol, disconnection, etc.).
-    ServiceError(String),
+    /// Failed to bind to address.
+    BindError(String),
+    /// Server error during operation.
+    ServerError(String),
 }
 
 impl std::fmt::Display for McpServerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            McpServerError::TransportError(msg) => write!(f, "Transport error: {}", msg),
-            McpServerError::ServiceError(msg) => write!(f, "Service error: {}", msg),
+            McpServerError::BindError(msg) => write!(f, "Bind error: {}", msg),
+            McpServerError::ServerError(msg) => write!(f, "Server error: {}", msg),
         }
     }
 }
@@ -78,12 +88,50 @@ impl std::fmt::Display for McpServerError {
 impl std::error::Error for McpServerError {}
 
 // =============================================================================
+// Server Handle
+// =============================================================================
+
+/// Handle to a running MCP HTTP server.
+///
+/// Use this to get the server URL and shut down the server when done.
+pub struct McpServerHandle {
+    /// The URL where the server is listening (e.g., "http://127.0.0.1:12345")
+    pub url: String,
+    /// The port the server is listening on
+    pub port: u16,
+    /// Cancellation token to stop the server
+    shutdown: CancellationToken,
+}
+
+impl McpServerHandle {
+    /// Get the URL for AI CLIs to connect to.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// Get the port number.
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// Shut down the server.
+    pub fn shutdown(&self) {
+        self.shutdown.cancel();
+    }
+}
+
+// =============================================================================
 // MCP Tool Server
 // =============================================================================
 
-/// MCP server exposing tools to AI CLIs.
+/// MCP server exposing tools to AI CLIs via HTTP.
 ///
-/// This server wraps `WorkerTools` and exposes them via the MCP protocol.
+/// This server wraps `WorkerTools` and exposes them via the MCP protocol
+/// over HTTP. AI CLIs connect to this server using:
+/// - Claude Code: `claude mcp add --transport http <name> <url>`
+/// - Gemini CLI: `gemini mcp add --transport http <name> <url>`
+/// - Codex: Configure in `~/.codex/config.toml`
+///
 /// Context (worker_id, space_id, room_id) is bound at creation time,
 /// so the AI only needs to provide tool-specific parameters.
 ///
@@ -96,8 +144,7 @@ impl std::error::Error for McpServerError {}
 /// # Tool Filtering
 ///
 /// By default, all tools are available. Use `with_allowed_tools()` to restrict
-/// which tools the AI CLI can see and use. This filters both the `tools/list`
-/// response and blocks execution of non-allowed tools.
+/// which tools the AI CLI can see and use.
 #[derive(Clone)]
 pub struct McpToolServer {
     /// Netdata tools (Rust-native).
@@ -109,7 +156,6 @@ pub struct McpToolServer {
     /// Tool router for MCP protocol.
     tool_router: ToolRouter<Self>,
     /// Allowed tools filter. If None, all tools are allowed.
-    /// If Some, only tools with names in this list are available.
     allowed_tools: Option<Vec<String>>,
 }
 
@@ -127,13 +173,6 @@ impl McpToolServer {
     ///
     /// This constructor creates a server without a JS bridge, useful for testing.
     /// Canvas and tabs tools will return errors when executed.
-    ///
-    /// # Arguments
-    ///
-    /// * `api` - The Netdata API client
-    /// * `worker_id` - Worker type identifier (e.g., "anomaly_investigator")
-    /// * `space_id` - Netdata space ID
-    /// * `room_id` - Netdata room ID
     pub fn new(
         api: Arc<NetdataApi>,
         worker_id: String,
@@ -150,14 +189,6 @@ impl McpToolServer {
     }
 
     /// Create a new MCP tool server with JS bridge for actual execution.
-    ///
-    /// # Arguments
-    ///
-    /// * `api` - The Netdata API client
-    /// * `worker_id` - Worker type identifier (e.g., "anomaly_investigator")
-    /// * `space_id` - Netdata space ID
-    /// * `room_id` - Netdata room ID
-    /// * `bridge` - JS bridge for canvas/tabs tool execution
     pub fn with_bridge(
         api: Arc<NetdataApi>,
         worker_id: String,
@@ -181,20 +212,7 @@ impl McpToolServer {
 
     /// Set the allowed tools filter.
     ///
-    /// When set, only tools with names in this list will be:
-    /// - Returned in the `tools/list` response (AI CLI only sees these)
-    /// - Allowed to execute (calls to other tools will fail)
-    ///
-    /// # Arguments
-    ///
-    /// * `tools` - List of tool names to allow (e.g., `["netdata.query", "canvas.addChart"]`)
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let server = McpToolServer::new(api, worker_id, space_id, room_id)
-    ///     .with_allowed_tools(vec!["netdata.query".to_string()]);
-    /// ```
+    /// When set, only tools with names in this list will be available.
     pub fn with_allowed_tools(mut self, tools: Vec<String>) -> Self {
         self.allowed_tools = Some(tools);
         self
@@ -215,62 +233,91 @@ impl McpToolServer {
         self.netdata.room_id()
     }
 
-    /// Start the MCP server with stdio transport.
+    /// Start the MCP server with HTTP transport.
     ///
-    /// This method blocks until the AI CLI disconnects or an error occurs.
-    /// Use this when spawning an AI CLI subprocess - connect this server
-    /// to the subprocess's stdin/stdout.
+    /// This starts an HTTP server on `127.0.0.1` with a random available port.
+    /// AI CLIs can then connect to this server using the returned URL.
     ///
-    /// If `allowed_tools` was set via `with_allowed_tools()`, only those tools
-    /// will be available to the AI CLI.
+    /// # Returns
+    ///
+    /// Returns a handle containing:
+    /// - `url`: The URL for AI CLIs to connect (e.g., "http://127.0.0.1:12345")
+    /// - `shutdown()`: Method to stop the server
     ///
     /// # Example
     ///
     /// ```rust,ignore
-    /// let server = McpToolServer::new(api, worker_id, space_id, room_id);
+    /// let server = McpToolServer::with_bridge(api, worker_id, space_id, room_id, bridge);
+    /// let handle = server.serve_http().await?;
     ///
-    /// // This blocks until the AI CLI finishes
-    /// server.serve_stdio().await?;
+    /// println!("MCP server at: {}", handle.url());
+    ///
+    /// // Later, when done:
+    /// handle.shutdown();
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Transport initialization fails
-    /// - Protocol error during communication
-    /// - AI CLI disconnects unexpectedly
-    pub async fn serve_stdio(self) -> Result<(), McpServerError> {
-        use rmcp::handler::server::router::Router;
-        use rmcp::transport::stdio;
+    pub async fn serve_http(self) -> Result<McpServerHandle, McpServerError> {
+        // Bind to localhost with port 0 to get a random available port
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|e| McpServerError::BindError(e.to_string()))?;
 
-        // Get all tool routes from the router
-        let all_tools = (Self::tool_router)();
+        let addr = listener
+            .local_addr()
+            .map_err(|e| McpServerError::BindError(e.to_string()))?;
 
-        // Filter tools based on allowed_tools
-        let filtered_tools: Vec<_> = match &self.allowed_tools {
-            Some(allowed) => all_tools
-                .into_iter()
-                .filter(|route| allowed.contains(&route.name().to_string()))
-                .collect(),
-            None => all_tools.into_iter().collect(),
+        let port = addr.port();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        // Create cancellation token for shutdown
+        let shutdown_token = CancellationToken::new();
+        let server_token = shutdown_token.clone();
+
+        // Configure the HTTP server
+        let config = StreamableHttpServerConfig {
+            cancellation_token: server_token.clone(),
+            ..Default::default()
         };
 
-        // Build router with filtered tools
-        let router = Router::new(self).with_tools(filtered_tools);
+        // Create session manager
+        let session_manager = Arc::new(LocalSessionManager::default());
 
-        // Start serving with stdio transport
-        let service = router
-            .serve(stdio())
-            .await
-            .map_err(|e| McpServerError::TransportError(e.to_string()))?;
+        // Get filtered tools based on allowed_tools
+        let allowed_tools = self.allowed_tools.clone();
 
-        // Wait for the service to complete (AI CLI disconnects)
-        service
-            .waiting()
-            .await
-            .map_err(|e| McpServerError::ServiceError(e.to_string()))?;
+        // Create the service factory
+        let service = StreamableHttpService::new(
+            move || {
+                // Create a new server instance for each session
+                let mut server = self.clone();
+                // Apply tool filtering if set
+                if let Some(ref tools) = allowed_tools {
+                    server.allowed_tools = Some(tools.clone());
+                }
+                Ok(server)
+            },
+            session_manager,
+            config,
+        );
 
-        Ok(())
+        // Create axum router with the MCP service
+        let app = Router::new().fallback_service(service);
+
+        // Spawn the server
+        tokio::spawn(async move {
+            let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+                server_token.cancelled().await;
+            });
+
+            if let Err(e) = server.await {
+                tracing::error!("MCP HTTP server error: {}", e);
+            }
+        });
+
+        Ok(McpServerHandle {
+            url,
+            port,
+            shutdown: shutdown_token,
+        })
     }
 
     // -------------------------------------------------------------------------
@@ -590,5 +637,25 @@ mod tests {
         assert!(tool_names.contains(&"tabs.splitTile"));
         assert!(tool_names.contains(&"tabs.removeTile"));
         assert!(tool_names.contains(&"tabs.getTileLayout"));
+    }
+
+    #[tokio::test]
+    async fn test_serve_http_starts_server() {
+        let api = create_test_api();
+        let server = McpToolServer::new(
+            api,
+            "test_worker".to_string(),
+            "space-123".to_string(),
+            "room-456".to_string(),
+        );
+
+        let handle = server.serve_http().await.unwrap();
+
+        // Verify we got a valid URL
+        assert!(handle.url().starts_with("http://127.0.0.1:"));
+        assert!(handle.port() > 0);
+
+        // Shut down the server
+        handle.shutdown();
     }
 }

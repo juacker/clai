@@ -61,10 +61,19 @@ dirs = "5"
 
 # MCP (Model Context Protocol) server
 # For AI CLI tool integration (Claude Code, Gemini CLI, etc.)
-rmcp = { version = "0.12", features = ["server", "transport-io", "macros"] }
+# Features:
+# - server: Core server functionality
+# - transport-streamable-http-server: Full HTTP/SSE transport for AI CLI connections
+# - macros: #[tool] and #[tool_router] procedural macros
+rmcp = { version = "0.12", features = ["server", "transport-streamable-http-server", "macros"] }
 
 # JSON Schema generation for MCP tool definitions
 schemars = "1"
+
+# HTTP server for MCP (AI CLIs connect via HTTP)
+axum = "0.8"
+tower = "0.5"
+tokio-util = { version = "0.7", features = ["rt"] }
 
 [dev-dependencies]
 # Temporary directories for testing
