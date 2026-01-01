@@ -17,11 +17,11 @@
 //! Returns plain text responses. The worker AI (Claude, Gemini, Codex) can
 //! parse and understand text responses perfectly.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 
-use crate::api::ai::{AiService, AnalyzeParams};
+use crate::api::netdata::{ChatCompletionRequest, NetdataApi};
 
 use super::ToolError;
 
@@ -29,7 +29,7 @@ use super::ToolError;
 // Tool Definition
 // =============================================================================
 
-/// Returns the MCP-compatible tool definition for `netdata_query`.
+/// Returns the MCP-compatible tool definition for `netdata.query`.
 ///
 /// This definition is used when generating the MCP configuration for AI CLIs.
 /// The tool accepts a single `query` parameter and returns plain text.
@@ -61,33 +61,39 @@ pub fn tool_definition() -> serde_json::Value {
 ///
 /// # Context Binding
 ///
-/// The tool is created with space_id, room_id, and optionally conversation_id
-/// already bound. When the AI calls the tool, it only needs to provide the
-/// query - the context is already known.
+/// The tool is created with space_id and room_id already bound. When the AI
+/// calls the tool, it only needs to provide the query - the context is already
+/// known.
 ///
 /// # Conversation Continuity
 ///
-/// If a conversation_id is provided, queries will continue in that conversation,
-/// allowing the AI to maintain context across multiple queries. The tool can
-/// also update its conversation_id after queries to enable this continuity.
+/// The tool maintains a conversation across multiple queries within the same
+/// worker execution. The `conversation_id` is created on the first query and
+/// reused for subsequent queries. Before each query, the tool fetches the
+/// current conversation state to get the proper `parent_message_id` for
+/// threading (in case users also interact with the conversation via UI).
+///
+/// When the worker stops and the tool is dropped, the conversation state is
+/// lost. The next worker run creates a fresh conversation.
 ///
 /// # Example
 ///
 /// ```rust,ignore
 /// let tool = NetdataQueryTool::new(
-///     ai_service,
+///     api,
 ///     "space-123".to_string(),
 ///     "room-456".to_string(),
-///     None,  // New conversation
 /// );
 ///
-/// // Execute a query
-/// let response = tool.execute("What anomalies occurred in the last hour?").await?;
-/// println!("{}", response);  // Plain text analysis
+/// // First query - creates conversation
+/// let response = tool.execute("What anomalies occurred?").await?;
+///
+/// // Second query - continues conversation with context
+/// let response = tool.execute("Tell me more about the CPU anomaly").await?;
 /// ```
 pub struct NetdataQueryTool {
-    /// The AI service for chat completion.
-    ai_service: Arc<AiService>,
+    /// The Netdata API client.
+    api: Arc<NetdataApi>,
 
     /// Space ID - bound at creation time.
     space_id: String,
@@ -95,30 +101,36 @@ pub struct NetdataQueryTool {
     /// Room ID - bound at creation time.
     room_id: String,
 
-    /// Optional conversation ID for continuing conversations.
+    /// Conversation state (created on first query, updated after each query).
+    /// Uses Mutex for interior mutability since execute takes &self.
+    state: Mutex<ConversationState>,
+}
+
+/// Internal state for conversation continuity.
+#[derive(Default)]
+struct ConversationState {
+    /// Conversation ID - created on first query, reused for subsequent queries.
     conversation_id: Option<String>,
 }
 
 impl NetdataQueryTool {
     /// Create a new tool bound to a specific space/room context.
     ///
+    /// The tool starts with no conversation - one will be created on the first
+    /// query. Subsequent queries within the same worker execution will continue
+    /// the conversation with proper message threading.
+    ///
     /// # Arguments
     ///
-    /// * `ai_service` - The AI service for chat completion
+    /// * `api` - The Netdata API client
     /// * `space_id` - The space ID for context
     /// * `room_id` - The room ID for context
-    /// * `conversation_id` - Optional conversation ID for continuing conversations
-    pub fn new(
-        ai_service: Arc<AiService>,
-        space_id: String,
-        room_id: String,
-        conversation_id: Option<String>,
-    ) -> Self {
+    pub fn new(api: Arc<NetdataApi>, space_id: String, room_id: String) -> Self {
         Self {
-            ai_service,
+            api,
             space_id,
             room_id,
-            conversation_id,
+            state: Mutex::new(ConversationState::default()),
         }
     }
 
@@ -127,6 +139,15 @@ impl NetdataQueryTool {
     /// The query is sent to Netdata Cloud's AI, which has access to all
     /// monitoring data for the bound space/room. The AI analyzes the data
     /// and returns a human-readable response.
+    ///
+    /// # Conversation Threading
+    ///
+    /// - First call: Creates a new conversation
+    /// - Subsequent calls: Continues the conversation, using `parent_message_id`
+    ///   to maintain proper threading
+    ///
+    /// This allows follow-up questions like "Tell me more about that anomaly"
+    /// to work correctly.
     ///
     /// # Arguments
     ///
@@ -144,39 +165,79 @@ impl NetdataQueryTool {
     /// - "Are there any alerts I should be concerned about?"
     /// - "Explain the disk usage trend for the database cluster"
     pub async fn execute(&self, query: &str) -> Result<String, ToolError> {
-        let params = AnalyzeParams {
-            space_id: self.space_id.clone(),
-            room_id: self.room_id.clone(),
-            prompt: query.to_string(),
-            response_schema: None, // Plain text, no JSON schema
-            conversation_id: self.conversation_id.clone(),
-            parent_message_id: None,
+        // 1. Get current conversation_id from state
+        let conversation_id = {
+            let state = self.state.lock().unwrap();
+            state.conversation_id.clone()
         };
 
-        let result = self
-            .ai_service
-            .analyze(params)
+        // 2. Get or create conversation
+        let conversation_id = match conversation_id {
+            Some(id) => id,
+            None => {
+                let conv = self
+                    .api
+                    .create_conversation(&self.space_id, &self.room_id)
+                    .await
+                    .map_err(|e| ToolError::ApiError(e.to_string()))?;
+                conv.id
+            }
+        };
+
+        // 3. Fetch conversation to get the current last message ID
+        // This is needed because users can also interact with the conversation
+        // through the UI, so we can't rely on our cached last_message_id
+        let current_conversation = self
+            .api
+            .get_conversation(&self.space_id, &self.room_id, &conversation_id)
             .await
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+            .map_err(|e| ToolError::ApiError(e.to_string()))?;
 
-        // Return plain text response
-        Ok(result.raw_response)
-    }
+        let parent_message_id = current_conversation
+            .messages
+            .last()
+            .map(|m| m.id.clone());
 
-    /// Get the current conversation ID.
-    ///
-    /// Returns the conversation ID if one was set, either at creation
-    /// or via `set_conversation_id`.
-    pub fn conversation_id(&self) -> Option<&str> {
-        self.conversation_id.as_deref()
-    }
+        // 4. Send message via chat completion (SSE streaming, wait for completion)
+        // Prefix with [@clai] so the UI can distinguish worker queries from user messages
+        let request = ChatCompletionRequest {
+            message: format!("[@clai] {}", query),
+            tools: vec![], // Use default tools
+            parent_message_id,
+        };
 
-    /// Update the conversation ID for continuing conversations.
-    ///
-    /// Call this after a query to store the conversation ID from the
-    /// response, enabling conversation continuity across multiple queries.
-    pub fn set_conversation_id(&mut self, id: String) {
-        self.conversation_id = Some(id);
+        self.api
+            .create_chat_completion(
+                &self.space_id,
+                &self.room_id,
+                &conversation_id,
+                request,
+                |_chunk| {
+                    // We ignore SSE chunks - we'll fetch the complete response after
+                },
+            )
+            .await
+            .map_err(|e| ToolError::ApiError(e.to_string()))?;
+
+        // 5. Fetch conversation again to get the complete response
+        let conversation = self
+            .api
+            .get_conversation(&self.space_id, &self.room_id, &conversation_id)
+            .await
+            .map_err(|e| ToolError::ApiError(e.to_string()))?;
+
+        // 6. Extract response
+        let (response, _last_message_id) =
+            extract_response_and_message_id(&conversation.messages)
+                .ok_or_else(|| ToolError::ExecutionFailed("No response from AI".to_string()))?;
+
+        // 7. Update state (just conversation_id - we'll fetch fresh last_message_id each time)
+        {
+            let mut state = self.state.lock().unwrap();
+            state.conversation_id = Some(conversation_id);
+        }
+
+        Ok(response)
     }
 
     /// Get the bound space ID.
@@ -191,12 +252,120 @@ impl NetdataQueryTool {
 }
 
 // =============================================================================
+// Helper Functions
+// =============================================================================
+
+use crate::api::netdata::ConversationMessage;
+
+/// Extracts the formatted response and message ID from the last message.
+///
+/// Expects the last message to be an assistant response. Returns None if:
+/// - Messages are empty
+/// - Last message is not from assistant (something is off)
+///
+/// The formatted response includes all content blocks from the assistant message:
+/// - Tool calls made by the Netdata AI (tool_use blocks)
+/// - Results from those tool calls (tool_result blocks)
+/// - Text responses from the AI (text blocks)
+///
+/// The composite format gives the worker AI full context about what analysis
+/// was performed and what data was examined.
+fn extract_response_and_message_id(
+    messages: &[ConversationMessage],
+) -> Option<(String, String)> {
+    // Get the last message - it should be the assistant's response
+    let last_message = messages.last()?;
+
+    // Verify it's an assistant message
+    if last_message.role != "assistant" {
+        // Something is off - the last message should be the assistant's response
+        return None;
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+
+    for block in &last_message.content {
+        match block.content_type.as_str() {
+            "tool_use" => {
+                // Format tool call with name and input parameters
+                if let Some(name) = &block.name {
+                    let mut tool_section = format!("## Tool: {}\n", name);
+
+                    if let Some(input) = &block.input {
+                        // Pretty print JSON input
+                        let input_str = serde_json::to_string_pretty(input)
+                            .unwrap_or_else(|_| input.to_string());
+                        tool_section.push_str(&format!("Input:\n```json\n{}\n```\n", input_str));
+                    }
+
+                    parts.push(tool_section);
+                }
+            }
+            "tool_result" => {
+                // Format tool result
+                if let Some(text) = &block.text {
+                    parts.push(format!("Result:\n{}\n", text));
+                }
+            }
+            "text" => {
+                // Format AI response text
+                if let Some(text) = &block.text {
+                    if !text.trim().is_empty() {
+                        parts.push(format!("## Response\n{}\n", text));
+                    }
+                }
+            }
+            _ => {
+                // Unknown block type - include if it has text
+                if let Some(text) = &block.text {
+                    parts.push(format!("## {}\n{}\n", block.content_type, text));
+                }
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some((parts.join("\n"), last_message.id.clone()))
+    }
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::netdata::MessageContent;
+
+    fn make_message(id: &str, role: &str, content: Vec<MessageContent>) -> ConversationMessage {
+        ConversationMessage {
+            id: id.to_string(),
+            parent_message_id: None,
+            role: role.to_string(),
+            content,
+            metadata: None,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: None,
+        }
+    }
+
+    fn make_content(
+        content_type: &str,
+        text: Option<&str>,
+        name: Option<&str>,
+        input: Option<serde_json::Value>,
+    ) -> MessageContent {
+        MessageContent {
+            id: Some("block-1".to_string()),
+            content_type: content_type.to_string(),
+            text: text.map(|s| s.to_string()),
+            name: name.map(|s| s.to_string()),
+            input,
+        }
+    }
 
     #[test]
     fn test_tool_definition_schema() {
@@ -222,5 +391,148 @@ mod tests {
 
         assert_eq!(query_prop["type"], "string");
         assert!(query_prop["description"].as_str().is_some());
+    }
+
+    #[test]
+    fn test_extract_text_only_response() {
+        // Last message is assistant with text content
+        let messages = vec![make_message(
+            "msg-1",
+            "assistant",
+            vec![make_content("text", Some("Everything looks good!"), None, None)],
+        )];
+
+        let result = extract_response_and_message_id(&messages);
+        assert!(result.is_some());
+        let (text, msg_id) = result.unwrap();
+        assert!(text.contains("## Response"));
+        assert!(text.contains("Everything looks good!"));
+        assert_eq!(msg_id, "msg-1");
+    }
+
+    #[test]
+    fn test_extract_assistant_with_multiple_blocks() {
+        // Single assistant message with tool_use, tool_result, and text blocks
+        let messages = vec![make_message(
+            "msg-1",
+            "assistant",
+            vec![
+                make_content(
+                    "tool_use",
+                    None,
+                    Some("get_nodes"),
+                    Some(serde_json::json!({})),
+                ),
+                make_content("tool_result", Some("Node1, Node2, Node3"), None, None),
+                make_content("text", Some("Here are your nodes."), None, None),
+            ],
+        )];
+
+        let result = extract_response_and_message_id(&messages);
+        assert!(result.is_some());
+        let (text, msg_id) = result.unwrap();
+
+        // Should contain tool call
+        assert!(text.contains("## Tool: get_nodes"));
+        assert!(text.contains("Input:"));
+
+        // Should contain tool result
+        assert!(text.contains("Result:"));
+        assert!(text.contains("Node1, Node2, Node3"));
+
+        // Should contain final response
+        assert!(text.contains("## Response"));
+        assert!(text.contains("Here are your nodes."));
+
+        assert_eq!(msg_id, "msg-1");
+    }
+
+    #[test]
+    fn test_extract_tool_with_input_params() {
+        let messages = vec![make_message(
+            "msg-1",
+            "assistant",
+            vec![make_content(
+                "tool_use",
+                None,
+                Some("search_metrics"),
+                Some(serde_json::json!({"similar_to": "memory", "limit": 10})),
+            )],
+        )];
+
+        let result = extract_response_and_message_id(&messages);
+        assert!(result.is_some());
+        let (text, msg_id) = result.unwrap();
+
+        assert!(text.contains("## Tool: search_metrics"));
+        assert!(text.contains("similar_to"));
+        assert!(text.contains("memory"));
+        assert!(text.contains("limit"));
+        assert_eq!(msg_id, "msg-1");
+    }
+
+    #[test]
+    fn test_extract_fails_if_last_is_user() {
+        // Last message is user - should fail
+        let messages = vec![make_message(
+            "msg-1",
+            "user",
+            vec![make_content("text", Some("What's up?"), None, None)],
+        )];
+
+        let result = extract_response_and_message_id(&messages);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_empty_messages() {
+        let messages: Vec<ConversationMessage> = vec![];
+        let result = extract_response_and_message_id(&messages);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_skips_empty_text() {
+        let messages = vec![make_message(
+            "msg-1",
+            "assistant",
+            vec![
+                make_content("text", Some("   "), None, None), // Whitespace only
+                make_content("text", Some("Real response"), None, None),
+            ],
+        )];
+
+        let result = extract_response_and_message_id(&messages);
+        assert!(result.is_some());
+        let (text, msg_id) = result.unwrap();
+
+        // Should only have one "## Response" section (the non-empty one)
+        assert_eq!(text.matches("## Response").count(), 1);
+        assert!(text.contains("Real response"));
+        assert_eq!(msg_id, "msg-1");
+    }
+
+    #[test]
+    fn test_extract_returns_last_message_id() {
+        // Multiple messages, but we only care about the last one
+        let messages = vec![
+            make_message(
+                "msg-1",
+                "user",
+                vec![make_content("text", Some("Question"), None, None)],
+            ),
+            make_message(
+                "msg-2",
+                "assistant",
+                vec![make_content("text", Some("Final answer"), None, None)],
+            ),
+        ];
+
+        let result = extract_response_and_message_id(&messages);
+        assert!(result.is_some());
+        let (text, msg_id) = result.unwrap();
+
+        assert!(text.contains("Final answer"));
+        assert_eq!(msg_id, "msg-2");
     }
 }

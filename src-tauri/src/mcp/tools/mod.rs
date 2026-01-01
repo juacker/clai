@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::ai::AiService;
+use crate::api::netdata::NetdataApi;
 
 pub use netdata::NetdataQueryTool;
 
@@ -68,19 +68,25 @@ impl std::error::Error for ToolError {}
 /// creation time. This means the AI only needs to provide tool-specific
 /// parameters (like the query), not context information.
 ///
+/// Conversation state (conversation_id, message threading) is managed
+/// internally by each tool. When the worker stops and the tools are dropped,
+/// the conversation state is lost. The next worker run starts fresh.
+///
 /// # Example
 ///
 /// ```rust,ignore
 /// // Create tools bound to worker's context
 /// let tools = NetdataTools::new(
-///     ai_service,
+///     api,
 ///     "space-123".to_string(),
 ///     "room-456".to_string(),
-///     Some("conv-789".to_string()),
 /// );
 ///
-/// // Execute a query - context already bound
+/// // First query - creates conversation
 /// let response = tools.query.execute("What anomalies occurred?").await?;
+///
+/// // Second query - continues conversation with context
+/// let response = tools.query.execute("Tell me more about the CPU issue").await?;
 /// ```
 pub struct NetdataTools {
     /// The netdata_query tool for AI-powered analysis.
@@ -95,18 +101,12 @@ impl NetdataTools {
     ///
     /// # Arguments
     ///
-    /// * `ai_service` - The AI service for chat completion
+    /// * `api` - The Netdata API client
     /// * `space_id` - The space ID for context
     /// * `room_id` - The room ID for context
-    /// * `conversation_id` - Optional conversation ID for continuing conversations
-    pub fn new(
-        ai_service: Arc<AiService>,
-        space_id: String,
-        room_id: String,
-        conversation_id: Option<String>,
-    ) -> Self {
+    pub fn new(api: Arc<NetdataApi>, space_id: String, room_id: String) -> Self {
         Self {
-            query: NetdataQueryTool::new(ai_service, space_id, room_id, conversation_id),
+            query: NetdataQueryTool::new(api, space_id, room_id),
         }
     }
 
