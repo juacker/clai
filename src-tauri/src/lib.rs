@@ -5,6 +5,17 @@
 //! - Secure token storage via OS keychain
 //! - HTTP communication with Netdata Cloud API
 //! - Exposing functionality to the JavaScript frontend
+//! - AI Workers with MCP tool integration
+//!
+//! # AI Workers Architecture
+//!
+//! When auto-pilot is enabled, the app runs AI workers that:
+//! 1. Start an HTTP MCP server on localhost (127.0.0.1:PORT)
+//! 2. Spawn an AI CLI (Claude Code, Gemini CLI, or Codex) with the server URL
+//! 3. The AI CLI connects and uses tools (netdata.query, canvas.*, tabs.*)
+//! 4. When complete, the server shuts down
+//!
+//! See `workers::cli_runner` for the execution flow.
 //!
 //! # Rust Learning: Module System
 //!
@@ -25,6 +36,9 @@ mod config;
 mod mcp;
 mod providers;
 mod workers;
+
+// Re-export for worker execution and testing
+pub use mcp::server::McpToolServer;
 
 use std::sync::Mutex;
 

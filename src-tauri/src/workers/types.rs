@@ -13,6 +13,15 @@ use std::time::Instant;
 ///
 /// This is a template that describes what a worker does and how often it runs.
 /// Multiple `WorkerInstance`s can be created from a single `WorkerDefinition`.
+///
+/// # Fields
+///
+/// - `id`: Unique identifier (e.g., "anomaly-investigator")
+/// - `name`: Human-readable name for UI
+/// - `description`: Description of what this worker does
+/// - `interval_ms`: How often to run (in milliseconds)
+/// - `prompt`: System prompt for the AI (sent to AI CLI)
+/// - `required_tools`: Tool namespaces this worker needs (e.g., ["netdata", "canvas"])
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerDefinition {
     /// Unique identifier for this worker type (e.g., "anomaly-investigator").
@@ -28,7 +37,18 @@ pub struct WorkerDefinition {
     /// How often to run this worker (in milliseconds).
     pub interval_ms: u64,
 
-    /// List of tool namespaces this worker needs (e.g., ["canvas", "tabs"]).
+    /// System prompt for the AI.
+    ///
+    /// This is the main instruction set that tells the AI what to do.
+    /// It should describe the worker's purpose, available tools, and
+    /// expected behavior.
+    #[serde(default)]
+    pub prompt: String,
+
+    /// List of tool namespaces this worker needs (e.g., ["netdata", "canvas", "tabs"]).
+    ///
+    /// The executor will only expose tools from these namespaces to the AI.
+    /// Available namespaces: "netdata", "canvas", "tabs"
     #[serde(default)]
     pub required_tools: Vec<String>,
 }
@@ -41,6 +61,7 @@ impl WorkerDefinition {
             name: name.to_string(),
             description: String::new(),
             interval_ms,
+            prompt: String::new(),
             required_tools: vec![],
         }
     }
@@ -48,6 +69,12 @@ impl WorkerDefinition {
     /// Sets the description.
     pub fn with_description(mut self, description: &str) -> Self {
         self.description = description.to_string();
+        self
+    }
+
+    /// Sets the system prompt for the AI.
+    pub fn with_prompt(mut self, prompt: &str) -> Self {
+        self.prompt = prompt.to_string();
         self
     }
 

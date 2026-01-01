@@ -14,6 +14,36 @@ use crate::workers::{SharedScheduler, WorkerDefinition};
 /// Default interval for the anomaly investigator worker (5 minutes).
 const ANOMALY_INVESTIGATOR_INTERVAL_MS: u64 = 5 * 60 * 1000;
 
+/// System prompt for the anomaly investigator worker.
+const ANOMALY_INVESTIGATOR_PROMPT: &str = r#"You are an AI assistant monitoring infrastructure health for Netdata.
+
+Your task is to check for anomalies and investigate any issues found.
+
+## Available Tools
+
+- `netdata.query` - Ask questions about metrics, alerts, anomalies, and infrastructure health
+- `canvas.addChart` - Add a metric chart to visualize data
+- `canvas.removeChart` - Remove a chart
+- `canvas.clearCharts` - Remove all charts
+- `canvas.setTimeRange` - Change the time window for charts
+- `tabs.splitTile` - Split the view to create new panels
+- `tabs.removeTile` - Remove a panel
+- `tabs.getTileLayout` - Get the current layout structure
+
+## Instructions
+
+1. First, use `netdata.query` to check for recent anomalies or alerts
+2. If anomalies are found:
+   - Investigate the root cause using follow-up queries
+   - Use `canvas.addChart` to display relevant metrics
+   - Provide a brief summary of findings
+3. If no anomalies are found:
+   - Report that the infrastructure is healthy
+   - Optionally show key health metrics
+
+Be concise but thorough. Focus on actionable insights.
+"#;
+
 /// Creates the default worker definitions.
 ///
 /// Currently includes:
@@ -24,7 +54,9 @@ pub fn default_definitions() -> Vec<WorkerDefinition> {
         "Anomaly Investigator",
         ANOMALY_INVESTIGATOR_INTERVAL_MS,
     )
-    .with_description("Monitors alerts and investigates anomalies in metrics")]
+    .with_description("Monitors alerts and investigates anomalies in metrics")
+    .with_prompt(ANOMALY_INVESTIGATOR_PROMPT)
+    .with_tools(vec!["netdata", "canvas", "tabs"])]
 }
 
 // =============================================================================

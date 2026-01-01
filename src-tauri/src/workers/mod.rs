@@ -50,6 +50,7 @@
 //! }
 //! ```
 
+pub mod cli_runner;
 pub mod executor;
 pub mod init;
 pub mod scheduler;
@@ -61,3 +62,5 @@ pub use types::{WorkerDefinition, WorkerInstance, WorkerResult};
 pub use scheduler::{create_shared_scheduler, Scheduler, SchedulerState, SharedScheduler};
 
 pub use executor::{Executor, ToolInvocation, ToolResult, WorkerHandler, WorkerRunContext};
+
+pub use cli_runner::{run_ai_cli, CliRunResult, CliRunnerError, WorkerExecutionHandle};
