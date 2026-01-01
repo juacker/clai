@@ -51,6 +51,7 @@
 //! ```
 
 pub mod cli_runner;
+pub mod definitions;
 pub mod executor;
 pub mod init;
 pub mod scheduler;
@@ -64,3 +65,6 @@ pub use scheduler::{create_shared_scheduler, Scheduler, SchedulerState, SharedSc
 pub use executor::{Executor, ToolInvocation, ToolResult, WorkerHandler, WorkerRunContext};
 
 pub use cli_runner::{run_ai_cli, CliRunResult, CliRunnerError, WorkerExecutionHandle};
+
+// Re-export definitions registry functions
+pub use definitions::{all_definitions, get_definition};
