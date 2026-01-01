@@ -93,6 +93,9 @@ pub fn run() {
     // Register default worker definitions and restore instances if logged in
     workers::init::initialize_scheduler(&scheduler, &config_manager, &token_storage);
 
+    // Clone scheduler before moving into state (needed for runner)
+    let runner_scheduler = scheduler.clone();
+
     // Create the shared application state
     let state = AppState {
         token_storage,
@@ -110,6 +113,13 @@ pub fn run() {
         // Make our state available to all commands
         // Commands can access it via State<'_, AppState>
         .manage(state)
+        // Setup hook - runs after app is built, gives us AppHandle
+        .setup(move |app| {
+            // Start the worker runner background task
+            let app_handle = app.handle().clone();
+            workers::start_worker_runner(app_handle, runner_scheduler);
+            Ok(())
+        })
         // Register our custom commands
         // These become available to JS via invoke()
         .invoke_handler(tauri::generate_handler![

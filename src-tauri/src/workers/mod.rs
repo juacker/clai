@@ -54,17 +54,15 @@ pub mod cli_runner;
 pub mod definitions;
 pub mod executor;
 pub mod init;
+pub mod runner;
 pub mod scheduler;
 pub mod types;
 
 // Re-export main types for convenience
-pub use types::{WorkerDefinition, WorkerInstance, WorkerResult};
+pub use types::WorkerDefinition;
 
-pub use scheduler::{create_shared_scheduler, Scheduler, SchedulerState, SharedScheduler};
+// Scheduler exports (used by lib.rs and runner)
+pub use scheduler::{create_shared_scheduler, SchedulerState, SharedScheduler};
 
-pub use executor::{Executor, ToolInvocation, ToolResult, WorkerHandler, WorkerRunContext};
-
-pub use cli_runner::{run_ai_cli, CliRunResult, CliRunnerError, WorkerExecutionHandle};
-
-// Re-export definitions registry functions
-pub use definitions::{all_definitions, get_definition};
+// Runner export (used by lib.rs)
+pub use runner::start_worker_runner;

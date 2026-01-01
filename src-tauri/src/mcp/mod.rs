@@ -42,34 +42,6 @@ pub mod bridge;
 pub mod server;
 pub mod tools;
 
-// Re-export main types for convenience
-pub use bridge::{
-    complete_pending_request, pending_request_count, BridgeError, JsBridge, ToolRequest,
-    ToolResponse, EVENT_TOOL_REQUEST,
-};
-pub use server::{McpServerError, McpToolServer};
-pub use tools::{CanvasTools, NetdataTools, TabsTools, ToolError, WorkerTools};
+// Re-export types used by commands/bridge.rs
+pub use bridge::{complete_pending_request, ToolResponse};
 
-/// Get all available namespace names.
-pub fn get_available_namespaces() -> Vec<&'static str> {
-    vec!["netdata", "canvas", "tabs"]
-}
-
-// =============================================================================
-// Tests
-// =============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_available_namespaces() {
-        let namespaces = get_available_namespaces();
-
-        assert_eq!(namespaces.len(), 3);
-        assert!(namespaces.contains(&"netdata"));
-        assert!(namespaces.contains(&"canvas"));
-        assert!(namespaces.contains(&"tabs"));
-    }
-}
