@@ -22,6 +22,7 @@ mod api;
 mod auth;
 mod commands;
 mod config;
+mod mcp;
 mod providers;
 mod workers;
 
