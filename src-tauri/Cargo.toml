@@ -59,6 +59,13 @@ uuid = { version = "1", features = ["v4"] }
 # Platform-specific directories (config, data, cache)
 dirs = "5"
 
+# MCP (Model Context Protocol) server
+# For AI CLI tool integration (Claude Code, Gemini CLI, etc.)
+rmcp = { version = "0.12", features = ["server", "transport-io", "macros"] }
+
+# JSON Schema generation for MCP tool definitions
+schemars = "1"
+
 [dev-dependencies]
 # Temporary directories for testing
 tempfile = "3"

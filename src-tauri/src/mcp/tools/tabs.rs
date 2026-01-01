@@ -15,101 +15,36 @@
 //! events to the frontend which handles the actual UI manipulation.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 
 use super::ToolError;
-
-/// Returns all tabs tool definitions in MCP-compatible format.
-///
-/// These tools manipulate the tile layout in the UI. When called,
-/// they will be routed to the frontend via Tauri events.
-pub fn tool_definitions() -> Vec<Value> {
-    vec![
-        split_tile_definition(),
-        remove_tile_definition(),
-        get_tile_layout_definition(),
-    ]
-}
-
-/// Tool: tabs.splitTile
-///
-/// Splits an existing tile to create a new one.
-fn split_tile_definition() -> Value {
-    json!({
-        "name": "tabs.splitTile",
-        "description": "Split an existing tile to create a new tile. The parent tile will be divided either vertically (side by side) or horizontally (stacked).",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "parentTileId": {
-                    "type": "string",
-                    "description": "The ID of the tile to split. The new tile will be created alongside this tile."
-                },
-                "splitType": {
-                    "type": "string",
-                    "enum": ["vertical", "horizontal"],
-                    "description": "How to split the tile. 'vertical' creates tiles side by side, 'horizontal' creates tiles stacked."
-                }
-            },
-            "required": ["parentTileId", "splitType"]
-        }
-    })
-}
-
-/// Tool: tabs.removeTile
-///
-/// Removes a specific tile from the current tab by its ID.
-fn remove_tile_definition() -> Value {
-    json!({
-        "name": "tabs.removeTile",
-        "description": "Remove a tile from the current tab.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "tileId": {
-                    "type": "string",
-                    "description": "The unique ID of the tile to remove"
-                }
-            },
-            "required": ["tileId"]
-        }
-    })
-}
-
-/// Tool: tabs.getTileLayout
-///
-/// Returns the current tile layout structure for the tab.
-fn get_tile_layout_definition() -> Value {
-    json!({
-        "name": "tabs.getTileLayout",
-        "description": "Get the current tile layout structure. Returns information about all tiles and their arrangement.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
-    })
-}
+use crate::mcp::bridge::JsBridge;
 
 // =============================================================================
-// TabsTools Implementation
+// Tool Parameter Types (Single Source of Truth)
 // =============================================================================
 
 /// Parameters for splitting a tile.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Used by both the MCP server (for schema generation) and the bridge
+/// (for serialization).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SplitTileParams {
     /// The ID of the tile to split.
+    #[schemars(description = "The ID of the tile to split")]
     pub parent_tile_id: String,
-    /// How to split: "vertical" or "horizontal".
+
+    /// How to split: "vertical" (side by side) or "horizontal" (stacked).
+    #[schemars(description = "Split type: 'vertical' or 'horizontal'")]
     pub split_type: String,
 }
 
 /// Parameters for removing a tile from the tab.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoveTileParams {
     /// The unique ID of the tile to remove.
+    #[schemars(description = "The unique ID of the tile to remove")]
     pub tile_id: String,
 }
 
@@ -187,6 +122,13 @@ pub struct TileLayout {
 /// - worker_id: The type of worker (e.g., "anomaly_investigator")
 /// - space_id: The Netdata space
 /// - room_id: The Netdata room
+///
+/// # Bridge
+///
+/// The optional `JsBridge` enables actual tool execution. If not provided
+/// (e.g., in tests), tools will return an error indicating the bridge
+/// is not available.
+#[derive(Clone)]
 pub struct TabsTools {
     /// Worker ID - identifies the worker type.
     worker_id: String,
@@ -194,17 +136,38 @@ pub struct TabsTools {
     space_id: String,
     /// Room ID - the Netdata room this worker operates in.
     room_id: String,
+    /// JS bridge for tool execution (optional for testing).
+    bridge: Option<JsBridge>,
 }
 
 impl TabsTools {
-    /// Create tabs tools bound to a worker's context.
+    /// Create tabs tools bound to a worker's context (without bridge).
     ///
-    /// The tab will be created lazily when the first UI operation is performed.
+    /// This constructor creates tools without a JS bridge, useful for testing.
+    /// Tools will return an error when executed.
     pub fn new(worker_id: String, space_id: String, room_id: String) -> Self {
         Self {
             worker_id,
             space_id,
             room_id,
+            bridge: None,
+        }
+    }
+
+    /// Create tabs tools with a JS bridge for actual execution.
+    ///
+    /// The tab will be created lazily when the first UI operation is performed.
+    pub fn with_bridge(
+        worker_id: String,
+        space_id: String,
+        room_id: String,
+        bridge: JsBridge,
+    ) -> Self {
+        Self {
+            worker_id,
+            space_id,
+            room_id,
+            bridge: Some(bridge),
         }
     }
 
@@ -223,57 +186,63 @@ impl TabsTools {
         &self.room_id
     }
 
-    /// Execute a tabs tool method.
-    ///
-    /// Routes to the appropriate method based on the method name.
-    pub async fn execute(&self, method: &str, params: Value) -> Result<String, ToolError> {
-        match method {
-            "splitTile" => {
-                let p: SplitTileParams = serde_json::from_value(params)
-                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?;
-                let result = self.split_tile(p).await?;
-                serde_json::to_string(&result)
-                    .map_err(|e| ToolError::ExecutionFailed(e.to_string()))
-            }
-            "removeTile" => {
-                let p: RemoveTileParams = serde_json::from_value(params)
-                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?;
-                self.remove_tile(p).await?;
-                Ok("Tile removed".to_string())
-            }
-            "getTileLayout" => {
-                let layout = self.get_tile_layout().await?;
-                serde_json::to_string(&layout)
-                    .map_err(|e| ToolError::ExecutionFailed(e.to_string()))
-            }
-            _ => Err(ToolError::UnknownMethod(format!("tabs.{}", method))),
-        }
+    /// Get a reference to the bridge (if available).
+    fn bridge(&self) -> Result<&JsBridge, ToolError> {
+        self.bridge
+            .as_ref()
+            .ok_or_else(|| ToolError::ExecutionFailed("JS bridge not available".to_string()))
     }
 
     /// Split a tile to create a new one.
     ///
-    /// Emits a Tauri event to the frontend which splits the tile.
-    async fn split_tile(&self, params: SplitTileParams) -> Result<SplitTileResult, ToolError> {
-        // TODO: Implement via Tauri event to frontend
-        let _ = params;
-        Err(ToolError::ExecutionFailed(
-            "JS bridge not yet implemented (Phase 6)".to_string(),
-        ))
+    /// Calls the JS bridge to split the tile in the frontend.
+    pub async fn split_tile(&self, params: SplitTileParams) -> Result<SplitTileResult, ToolError> {
+        let bridge = self.bridge()?;
+        let result = bridge
+            .call_tool(
+                &self.worker_id,
+                &self.space_id,
+                &self.room_id,
+                "tabs.splitTile",
+                serde_json::to_value(&params).map_err(|e| ToolError::InvalidParams(e.to_string()))?,
+            )
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 
     /// Remove a tile from the tab.
-    async fn remove_tile(&self, params: RemoveTileParams) -> Result<(), ToolError> {
-        let _ = params;
-        Err(ToolError::ExecutionFailed(
-            "JS bridge not yet implemented (Phase 6)".to_string(),
-        ))
+    pub async fn remove_tile(&self, params: RemoveTileParams) -> Result<(), ToolError> {
+        let bridge = self.bridge()?;
+        bridge
+            .call_tool(
+                &self.worker_id,
+                &self.space_id,
+                &self.room_id,
+                "tabs.removeTile",
+                serde_json::to_value(&params).map_err(|e| ToolError::InvalidParams(e.to_string()))?,
+            )
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        Ok(())
     }
 
     /// Get the current tile layout.
-    async fn get_tile_layout(&self) -> Result<TileLayout, ToolError> {
-        Err(ToolError::ExecutionFailed(
-            "JS bridge not yet implemented (Phase 6)".to_string(),
-        ))
+    pub async fn get_tile_layout(&self) -> Result<TileLayout, ToolError> {
+        let bridge = self.bridge()?;
+        let result = bridge
+            .call_tool(
+                &self.worker_id,
+                &self.space_id,
+                &self.room_id,
+                "tabs.getTileLayout",
+                serde_json::json!({}),
+            )
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 }
 
@@ -284,60 +253,7 @@ impl TabsTools {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_tool_definitions_count() {
-        let tools = tool_definitions();
-        assert_eq!(tools.len(), 3);
-    }
-
-    #[test]
-    fn test_split_tile_definition() {
-        let def = split_tile_definition();
-        assert_eq!(def["name"], "tabs.splitTile");
-        assert!(def["inputSchema"]["properties"]["parentTileId"].is_object());
-        assert!(def["inputSchema"]["properties"]["splitType"].is_object());
-
-        let required = def["inputSchema"]["required"].as_array().unwrap();
-        assert!(required.contains(&json!("parentTileId")));
-        assert!(required.contains(&json!("splitType")));
-    }
-
-    #[test]
-    fn test_split_tile_split_type_enum() {
-        let def = split_tile_definition();
-        let split_enum = &def["inputSchema"]["properties"]["splitType"]["enum"];
-        let splits = split_enum.as_array().unwrap();
-        assert!(splits.contains(&json!("vertical")));
-        assert!(splits.contains(&json!("horizontal")));
-        assert_eq!(splits.len(), 2);
-    }
-
-    #[test]
-    fn test_remove_tile_definition() {
-        let def = remove_tile_definition();
-        assert_eq!(def["name"], "tabs.removeTile");
-        assert!(def["inputSchema"]["required"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("tileId")));
-    }
-
-    #[test]
-    fn test_get_tile_layout_definition() {
-        let def = get_tile_layout_definition();
-        assert_eq!(def["name"], "tabs.getTileLayout");
-        assert!(def["inputSchema"]["required"].as_array().unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_all_tools_have_required_fields() {
-        for tool in tool_definitions() {
-            assert!(tool["name"].is_string(), "Tool missing name");
-            assert!(tool["description"].is_string(), "Tool missing description");
-            assert!(tool["inputSchema"].is_object(), "Tool missing inputSchema");
-        }
-    }
+    use serde_json::json;
 
     #[test]
     fn test_tabs_tools_creation() {
@@ -375,15 +291,14 @@ mod tests {
         assert_eq!(params.split_type, "horizontal");
     }
 
-    #[tokio::test]
-    async fn test_execute_unknown_method() {
-        let tools = TabsTools::new(
-            "worker-1".to_string(),
-            "space-1".to_string(),
-            "room-1".to_string(),
-        );
-        let result = tools.execute("unknownMethod", json!({})).await;
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ToolError::UnknownMethod(_)));
+    #[test]
+    fn test_remove_tile_params() {
+        let json = json!({
+            "tileId": "tile-789"
+        });
+
+        let params: RemoveTileParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.tile_id, "tile-789");
     }
+
 }

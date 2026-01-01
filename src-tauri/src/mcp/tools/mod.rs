@@ -106,9 +106,14 @@ impl std::error::Error for ToolError {}
 /// // Second query - continues conversation with context
 /// let response = tools.query.execute("Tell me more about the CPU issue").await?;
 /// ```
+#[derive(Clone)]
 pub struct NetdataTools {
     /// The netdata_query tool for AI-powered analysis.
     pub query: NetdataQueryTool,
+    /// Space ID for context.
+    space_id: String,
+    /// Room ID for context.
+    room_id: String,
 }
 
 impl NetdataTools {
@@ -121,38 +126,20 @@ impl NetdataTools {
     /// * `room_id` - The room ID for context
     pub fn new(api: Arc<NetdataApi>, space_id: String, room_id: String) -> Self {
         Self {
-            query: NetdataQueryTool::new(api, space_id, room_id),
+            query: NetdataQueryTool::new(api, space_id.clone(), room_id.clone()),
+            space_id,
+            room_id,
         }
     }
 
-    /// Get MCP tool definitions for AI CLI configuration.
-    ///
-    /// Returns a list of tool definitions in MCP schema format that can be
-    /// included in the AI CLI's MCP configuration.
-    pub fn tool_definitions() -> Vec<serde_json::Value> {
-        vec![netdata::tool_definition()]
+    /// Get the space ID.
+    pub fn space_id(&self) -> &str {
+        &self.space_id
     }
 
-    /// Execute a method within the netdata namespace.
-    ///
-    /// # Arguments
-    ///
-    /// * `method` - The method name (e.g., "query")
-    /// * `params` - The method parameters as JSON
-    pub async fn execute(
-        &self,
-        method: &str,
-        params: serde_json::Value,
-    ) -> Result<String, ToolError> {
-        match method {
-            "query" => {
-                let query = params["query"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidParams("query parameter is required".into()))?;
-                self.query.execute(query).await
-            }
-            _ => Err(ToolError::UnknownMethod(format!("netdata.{}", method))),
-        }
+    /// Get the room ID.
+    pub fn room_id(&self) -> &str {
+        &self.room_id
     }
 }
 
@@ -220,71 +207,6 @@ impl WorkerTools {
             tabs: TabsTools::new(worker_id, space_id, room_id),
         }
     }
-
-    /// Get all tool definitions for MCP configuration.
-    ///
-    /// Returns definitions for all tools: netdata, canvas, and tabs.
-    pub fn all_tool_definitions() -> Vec<serde_json::Value> {
-        let mut definitions = Vec::new();
-        definitions.extend(NetdataTools::tool_definitions());
-        definitions.extend(canvas::tool_definitions());
-        definitions.extend(tabs::tool_definitions());
-        definitions
-    }
-
-    /// Execute a tool by its full name (namespace.method).
-    ///
-    /// Routes to the appropriate tool based on the namespace.
-    pub async fn execute(
-        &self,
-        name: &str,
-        params: serde_json::Value,
-    ) -> Result<String, ToolError> {
-        execute_tool(name, params, self).await
-    }
-}
-
-// =============================================================================
-// Tool Routing
-// =============================================================================
-
-/// Route MCP tool calls to bound implementations.
-///
-/// Tool names use dot notation: `namespace.method` (e.g., `netdata.query`).
-/// This allows for clean organization and routing of tools by namespace.
-///
-/// # Arguments
-///
-/// * `name` - The tool name in `namespace.method` format (e.g., "netdata.query")
-/// * `params` - The tool parameters as JSON
-/// * `tools` - The bound worker tools container
-///
-/// # Returns
-///
-/// Plain text response from the tool, or an error.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// let response = execute_tool("netdata.query", json!({"query": "What anomalies?"}), &tools).await?;
-/// let response = execute_tool("canvas.addChart", json!({"context": "system.cpu"}), &tools).await?;
-/// ```
-pub async fn execute_tool(
-    name: &str,
-    params: serde_json::Value,
-    tools: &WorkerTools,
-) -> Result<String, ToolError> {
-    // Parse namespace.method format
-    let (namespace, method) = name
-        .split_once('.')
-        .ok_or_else(|| ToolError::InvalidToolName(name.to_string()))?;
-
-    match namespace {
-        "netdata" => tools.netdata.execute(method, params).await,
-        "canvas" => tools.canvas.execute(method, params).await,
-        "tabs" => tools.tabs.execute(method, params).await,
-        _ => Err(ToolError::UnknownNamespace(namespace.to_string())),
-    }
 }
 
 // =============================================================================
@@ -294,13 +216,6 @@ pub async fn execute_tool(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_tool_definitions_contains_netdata_query() {
-        let definitions = NetdataTools::tool_definitions();
-        assert_eq!(definitions.len(), 1);
-        assert_eq!(definitions[0]["name"], "netdata.query");
-    }
 
     #[test]
     fn test_tool_error_display() {

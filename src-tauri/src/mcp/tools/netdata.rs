@@ -19,35 +19,28 @@
 
 use std::sync::{Arc, Mutex};
 
-use serde_json::json;
+use serde::Deserialize;
 
 use crate::api::netdata::{ChatCompletionRequest, NetdataApi};
 
 use super::ToolError;
 
 // =============================================================================
-// Tool Definition
+// Tool Parameter Types (Single Source of Truth)
 // =============================================================================
 
-/// Returns the MCP-compatible tool definition for `netdata.query`.
+/// Parameters for netdata.query tool.
 ///
-/// This definition is used when generating the MCP configuration for AI CLIs.
-/// The tool accepts a single `query` parameter and returns plain text.
-pub fn tool_definition() -> serde_json::Value {
-    json!({
-        "name": "netdata.query",
-        "description": "Query Netdata Cloud AI for analysis of metrics, alerts, anomalies, and infrastructure health. Returns a text response with the analysis. The AI has access to all monitoring data and can answer questions, investigate issues, and provide recommendations.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Natural language query about your infrastructure (e.g., 'What anomalies occurred in the last hour?', 'Why is CPU high on server X?', 'Show me disk usage trends')"
-                }
-            },
-            "required": ["query"]
-        }
-    })
+/// Used by both the MCP server (for schema generation) and internal execution.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct NetdataQueryParams {
+    /// Natural language query about your infrastructure.
+    /// Examples:
+    /// - "What anomalies occurred in the last hour?"
+    /// - "Why is CPU high on server web-01?"
+    /// - "Show me the top 5 nodes by memory usage"
+    #[schemars(description = "Natural language query about your infrastructure")]
+    pub query: String,
 }
 
 // =============================================================================
@@ -86,10 +79,10 @@ pub fn tool_definition() -> serde_json::Value {
 /// );
 ///
 /// // First query - creates conversation
-/// let response = tool.execute("What anomalies occurred?").await?;
+/// let response = tool.query("What anomalies occurred?").await?;
 ///
 /// // Second query - continues conversation with context
-/// let response = tool.execute("Tell me more about the CPU anomaly").await?;
+/// let response = tool.query("Tell me more about the CPU anomaly").await?;
 /// ```
 pub struct NetdataQueryTool {
     /// The Netdata API client.
@@ -107,10 +100,23 @@ pub struct NetdataQueryTool {
 }
 
 /// Internal state for conversation continuity.
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct ConversationState {
     /// Conversation ID - created on first query, reused for subsequent queries.
     conversation_id: Option<String>,
+}
+
+impl Clone for NetdataQueryTool {
+    fn clone(&self) -> Self {
+        // When cloning, we create a fresh conversation state.
+        // The cloned tool will start a new conversation.
+        Self {
+            api: self.api.clone(),
+            space_id: self.space_id.clone(),
+            room_id: self.room_id.clone(),
+            state: Mutex::new(self.state.lock().unwrap().clone()),
+        }
+    }
 }
 
 impl NetdataQueryTool {
@@ -151,7 +157,7 @@ impl NetdataQueryTool {
     ///
     /// # Arguments
     ///
-    /// * `query` - Natural language query about the infrastructure
+    /// * `params` - Query parameters containing the natural language query
     ///
     /// # Returns
     ///
@@ -164,7 +170,8 @@ impl NetdataQueryTool {
     /// - "Show me the top 5 nodes by memory usage"
     /// - "Are there any alerts I should be concerned about?"
     /// - "Explain the disk usage trend for the database cluster"
-    pub async fn execute(&self, query: &str) -> Result<String, ToolError> {
+    pub async fn query(&self, params: NetdataQueryParams) -> Result<String, ToolError> {
+        let query = &params.query;
         // 1. Get current conversation_id from state
         let conversation_id = {
             let state = self.state.lock().unwrap();
@@ -368,29 +375,13 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_definition_schema() {
-        let def = tool_definition();
+    fn test_netdata_query_params_deserialization() {
+        let json = serde_json::json!({
+            "query": "What anomalies are happening?"
+        });
 
-        // Check name uses dot notation
-        assert_eq!(def["name"], "netdata.query");
-
-        // Check description exists
-        assert!(def["description"].as_str().is_some());
-
-        // Check input schema
-        let schema = &def["inputSchema"];
-        assert_eq!(schema["type"], "object");
-        assert!(schema["properties"]["query"].is_object());
-        assert_eq!(schema["required"][0], "query");
-    }
-
-    #[test]
-    fn test_tool_definition_query_property() {
-        let def = tool_definition();
-        let query_prop = &def["inputSchema"]["properties"]["query"];
-
-        assert_eq!(query_prop["type"], "string");
-        assert!(query_prop["description"].as_str().is_some());
+        let params: NetdataQueryParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.query, "What anomalies are happening?");
     }
 
     #[test]

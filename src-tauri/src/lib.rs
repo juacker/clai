@@ -129,6 +129,8 @@ pub fn run() {
             commands::provider::clear_ai_provider,
             commands::provider::get_available_ai_providers,
             commands::provider::validate_ai_provider,
+            // Worker tool bridge commands
+            commands::bridge::worker_tool_result,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
