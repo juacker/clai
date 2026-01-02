@@ -1,6 +1,6 @@
 //! Netdata query tool implementation.
 //!
-//! This tool allows AI workers to query Netdata Cloud's AI for analysis
+//! This tool allows AI agents to query Netdata Cloud's AI for analysis
 //! of metrics, alerts, anomalies, and infrastructure health.
 //!
 //! # Design
@@ -14,7 +14,7 @@
 //!
 //! # Response Format
 //!
-//! Returns plain text responses. The worker AI (Claude, Gemini, Codex) can
+//! Returns plain text responses. The agent AI (Claude, Gemini, Codex) can
 //! parse and understand text responses perfectly.
 
 use std::sync::{Arc, Mutex};
@@ -62,13 +62,13 @@ pub struct NetdataQueryParams {
 /// # Conversation Continuity
 ///
 /// The tool maintains a conversation across multiple queries within the same
-/// worker execution. The `conversation_id` is created on the first query and
+/// agent execution. The `conversation_id` is created on the first query and
 /// reused for subsequent queries. Before each query, the tool fetches the
 /// current conversation state to get the proper `parent_message_id` for
 /// threading (in case users also interact with the conversation via UI).
 ///
-/// When the worker stops and the tool is dropped, the conversation state is
-/// lost. The next worker run creates a fresh conversation.
+/// When the agent stops and the tool is dropped, the conversation state is
+/// lost. The next agent run creates a fresh conversation.
 ///
 /// # Example
 ///
@@ -126,7 +126,7 @@ impl NetdataQueryTool {
     /// Create a new tool bound to a specific space/room context.
     ///
     /// The tool starts with no conversation - one will be created on the first
-    /// query. Subsequent queries within the same worker execution will continue
+    /// query. Subsequent queries within the same agent execution will continue
     /// the conversation with proper message threading.
     ///
     /// # Arguments
@@ -206,7 +206,7 @@ impl NetdataQueryTool {
         let parent_message_id = current_conversation.messages.last().map(|m| m.id.clone());
 
         // 4. Send message via chat completion (SSE streaming, wait for completion)
-        // Prefix with [@clai] so the UI can distinguish worker queries from user messages
+        // Prefix with [@clai] so the UI can distinguish agent queries from user messages
         // Include "blocks" tool to enable rich visualizations in the stored conversation
         let request = ChatCompletionRequest {
             message: format!("[@clai] {}", query),
@@ -268,7 +268,7 @@ use crate::api::netdata::ConversationMessage;
 /// - Results from those tool calls (tool_result blocks)
 /// - Text responses from the AI (text blocks)
 ///
-/// The composite format gives the worker AI full context about what analysis
+/// The composite format gives the agent AI full context about what analysis
 /// was performed and what data was examined.
 #[allow(dead_code)] // Called via MCP protocol
 fn extract_response_and_message_id(messages: &[ConversationMessage]) -> Option<(String, String)> {

@@ -1,4 +1,4 @@
-//! JS Tool Bridge for AI worker tools.
+//! JS Tool Bridge for AI agent tools.
 //!
 //! This module provides the bridge between Rust MCP tools and JavaScript
 //! frontend components. Tools like `canvas.*` and `tabs.*` are defined in
@@ -9,15 +9,15 @@
 //! ```text
 //! Rust (async)                        JS (React)
 //!      │                                   │
-//!      │  emit("worker:tool:request", {    │
-//!      │    requestId, workerId,           │
+//!      │  emit("agent:tool:request", {     │
+//!      │    requestId, agentId,            │
 //!      │    spaceId, roomId,               │
 //!      │    tool, params                   │
 //!      ├──────────────────────────────────►│
-//!      │                                   │  getOrCreateWorkerTab()
+//!      │                                   │  getOrCreateAgentTab()
 //!      │  (async wait via oneshot)         │  execute tool
 //!      │                                   │
-//!      │  invoke("worker_tool_result", {   │
+//!      │  invoke("agent_tool_result", {    │
 //!      │    requestId, result              │
 //!      │◄──────────────────────────────────┤
 //!      │                                   │
@@ -44,7 +44,7 @@
 //! # Global Pending Requests
 //!
 //! Pending requests are stored in a global registry so that the Tauri command
-//! `worker_tool_result` can complete them. This allows multiple `JsBridge`
+//! `agent_tool_result` can complete them. This allows multiple `JsBridge`
 //! instances to share the same pending request storage.
 
 use std::collections::HashMap;
@@ -66,8 +66,8 @@ use tokio::time::timeout;
 pub struct ToolRequest {
     /// Unique request ID for correlating responses.
     pub request_id: String,
-    /// Worker type identifier (e.g., "anomaly_investigator").
-    pub worker_id: String,
+    /// Agent type identifier (e.g., "anomaly_investigator").
+    pub agent_id: String,
     /// Netdata space ID.
     pub space_id: String,
     /// Netdata room ID.
@@ -128,7 +128,7 @@ impl std::error::Error for BridgeError {}
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Event name for tool requests.
-pub const EVENT_TOOL_REQUEST: &str = "worker:tool:request";
+pub const EVENT_TOOL_REQUEST: &str = "agent:tool:request";
 
 /// Internal state for pending requests.
 type PendingMap = HashMap<String, oneshot::Sender<ToolResponse>>;
@@ -146,7 +146,7 @@ fn pending_requests() -> &'static Mutex<PendingMap> {
 
 /// Complete a pending tool request from the Tauri command.
 ///
-/// This function is called by the `worker_tool_result` Tauri command
+/// This function is called by the `agent_tool_result` Tauri command
 /// when JavaScript sends back a response.
 ///
 /// # Arguments
@@ -218,15 +218,15 @@ impl JsBridge {
         }
     }
 
-    /// Setup a worker's tab and canvas before the CLI starts.
+    /// Setup an agent's tab and canvas before the CLI starts.
     ///
-    /// This creates the worker's tab with a canvas command upfront, avoiding
+    /// This creates the agent's tab with a canvas command upfront, avoiding
     /// race conditions when multiple tool calls come in rapid succession.
     ///
     /// # Arguments
     ///
-    /// * `worker_id` - Worker type identifier (e.g., "anomaly-investigator")
-    /// * `worker_name` - Human-readable worker name for the tab title
+    /// * `agent_id` - Agent type identifier (e.g., "anomaly-investigator")
+    /// * `agent_name` - Human-readable agent name for the tab title
     /// * `space_id` - Netdata space ID
     /// * `room_id` - Netdata room ID
     ///
@@ -237,21 +237,21 @@ impl JsBridge {
     /// # Errors
     ///
     /// Same as `call_tool`.
-    pub async fn setup_worker_tab(
+    pub async fn setup_agent_tab(
         &self,
-        worker_id: &str,
-        worker_name: &str,
+        agent_id: &str,
+        agent_name: &str,
         space_id: &str,
         room_id: &str,
     ) -> Result<String, BridgeError> {
         let result = self
             .call_tool(
-                worker_id,
+                agent_id,
                 space_id,
                 room_id,
-                "worker.setup",
+                "agent.setup",
                 serde_json::json!({
-                    "workerName": worker_name,
+                    "agentName": agent_name,
                 }),
             )
             .await?;
@@ -270,12 +270,12 @@ impl JsBridge {
     /// 1. Generates a unique request ID
     /// 2. Creates a oneshot channel for the response
     /// 3. Stores the sender in the global registry
-    /// 4. Emits a `worker:tool:request` event to the frontend
+    /// 4. Emits a `agent:tool:request` event to the frontend
     /// 5. Waits for the response (with timeout)
     ///
     /// # Arguments
     ///
-    /// * `worker_id` - Worker type identifier
+    /// * `agent_id` - Agent type identifier
     /// * `space_id` - Netdata space ID
     /// * `room_id` - Netdata room ID
     /// * `tool` - Tool name (e.g., "canvas.addChart")
@@ -293,7 +293,7 @@ impl JsBridge {
     /// - `BridgeError::ToolFailed` - Tool execution failed in JS
     pub async fn call_tool(
         &self,
-        worker_id: &str,
+        agent_id: &str,
         space_id: &str,
         room_id: &str,
         tool: &str,
@@ -314,7 +314,7 @@ impl JsBridge {
         // Build request
         let request = ToolRequest {
             request_id: request_id.clone(),
-            worker_id: worker_id.to_string(),
+            agent_id: agent_id.to_string(),
             space_id: space_id.to_string(),
             room_id: room_id.to_string(),
             tool: tool.to_string(),
@@ -368,7 +368,7 @@ mod tests {
     fn test_tool_request_serialization() {
         let request = ToolRequest {
             request_id: "req-123".to_string(),
-            worker_id: "anomaly_investigator".to_string(),
+            agent_id: "anomaly_investigator".to_string(),
             space_id: "space-456".to_string(),
             room_id: "room-789".to_string(),
             tool: "canvas.addChart".to_string(),
@@ -378,7 +378,7 @@ mod tests {
         let json = serde_json::to_value(&request).unwrap();
 
         assert_eq!(json["requestId"], "req-123");
-        assert_eq!(json["workerId"], "anomaly_investigator");
+        assert_eq!(json["agentId"], "anomaly_investigator");
         assert_eq!(json["spaceId"], "space-456");
         assert_eq!(json["roomId"], "room-789");
         assert_eq!(json["tool"], "canvas.addChart");

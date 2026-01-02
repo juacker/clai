@@ -12,8 +12,8 @@
 pub mod types;
 
 pub use types::{
-    AgentDefinition, AiProvider, AutopilotStatus, ClaiConfig, ProviderInfo, SpaceAutopilot,
-    SpaceConfig, SpaceRoomPair, DEFAULT_AGENT_ID,
+    AgentConfig, AiProvider, AutopilotStatus, ClaiConfig, ProviderInfo, SpaceAutopilot,
+    SpaceConfig, SpaceRoomPair,
 };
 
 use std::fs;
@@ -67,7 +67,7 @@ impl ConfigManager {
 
         // Create default agent if no agents exist
         let needs_save = if config.agents.is_empty() {
-            config.agents.push(AgentDefinition::default_agent());
+            config.agents.push(AgentConfig::default_agent());
             true
         } else {
             false
@@ -247,12 +247,12 @@ impl ConfigManager {
     // =========================================================================
 
     /// Gets all agents.
-    pub fn get_agents(&self) -> Vec<AgentDefinition> {
+    pub fn get_agents(&self) -> Vec<AgentConfig> {
         self.config.lock().unwrap().agents.clone()
     }
 
     /// Gets an agent by ID.
-    pub fn get_agent(&self, id: &str) -> Option<AgentDefinition> {
+    pub fn get_agent(&self, id: &str) -> Option<AgentConfig> {
         self.config
             .lock()
             .unwrap()
@@ -263,7 +263,7 @@ impl ConfigManager {
     }
 
     /// Adds a new agent and saves config.
-    pub fn add_agent(&self, agent: AgentDefinition) -> Result<(), ConfigError> {
+    pub fn add_agent(&self, agent: AgentConfig) -> Result<(), ConfigError> {
         self.update(|config| {
             config.agents.push(agent);
         })
@@ -274,7 +274,7 @@ impl ConfigManager {
     /// Returns an error if the agent doesn't exist.
     pub fn update_agent<F>(&self, id: &str, updater: F) -> Result<(), ConfigError>
     where
-        F: FnOnce(&mut AgentDefinition),
+        F: FnOnce(&mut AgentConfig),
     {
         self.update(|config| {
             if let Some(agent) = config.agents.iter_mut().find(|a| a.id == id) {
@@ -330,7 +330,7 @@ impl ConfigManager {
     }
 
     /// Gets all agents enabled for a specific space/room.
-    pub fn get_agents_for_room(&self, space_id: &str, room_id: &str) -> Vec<AgentDefinition> {
+    pub fn get_agents_for_room(&self, space_id: &str, room_id: &str) -> Vec<AgentConfig> {
         self.config
             .lock()
             .unwrap()

@@ -1,6 +1,6 @@
-//! Tabs/Tile tools for AI workers.
+//! Tabs/Tile tools for AI agents.
 //!
-//! These tools allow AI workers to manage the tile layout within their tab.
+//! These tools allow AI agents to manage the tile layout within their tab.
 //! They are defined in Rust but execute via JS bridge (Tauri events to the frontend).
 //!
 //! # Available Tools
@@ -104,25 +104,25 @@ pub struct TileLayout {
     pub root: TileNode,
 }
 
-/// Tabs tools with worker context bound at creation time.
+/// Tabs tools with agent context bound at creation time.
 ///
 /// These tools manipulate the tile layout. They execute via Tauri
 /// events to the frontend, which handles the actual UI operations.
 ///
 /// # Context Binding
 ///
-/// The tool is created with worker context (worker_id, space_id, room_id).
+/// The tool is created with agent context (agent_id, space_id, room_id).
 /// When a tabs tool is called, the frontend will:
-/// 1. Find or create a tab owned by this worker
+/// 1. Find or create a tab owned by this agent
 /// 2. Execute the operation on that tab's layout
 ///
-/// This allows lazy tab creation - workers only get a tab when they
+/// This allows lazy tab creation - agents only get a tab when they
 /// actually need to display something.
 ///
 /// # Tab Ownership
 ///
-/// Each worker can own at most one tab. The tab is identified by:
-/// - worker_id: The type of worker (e.g., "anomaly_investigator")
+/// Each agent can own at most one tab. The tab is identified by:
+/// - agent_id: The type of agent (e.g., "anomaly_investigator")
 /// - space_id: The Netdata space
 /// - room_id: The Netdata room
 ///
@@ -134,11 +134,11 @@ pub struct TileLayout {
 #[derive(Clone)]
 #[allow(dead_code)] // Fields and methods used via MCP
 pub struct TabsTools {
-    /// Worker ID - identifies the worker type.
-    worker_id: String,
-    /// Space ID - the Netdata space this worker operates in.
+    /// Agent ID - identifies the agent type.
+    agent_id: String,
+    /// Space ID - the Netdata space this agent operates in.
     space_id: String,
-    /// Room ID - the Netdata room this worker operates in.
+    /// Room ID - the Netdata room this agent operates in.
     room_id: String,
     /// JS bridge for tool execution (optional for testing).
     bridge: Option<JsBridge>,
@@ -146,13 +146,13 @@ pub struct TabsTools {
 
 #[allow(dead_code)] // Methods called via MCP protocol
 impl TabsTools {
-    /// Create tabs tools bound to a worker's context (without bridge).
+    /// Create tabs tools bound to an agent's context (without bridge).
     ///
     /// This constructor creates tools without a JS bridge, useful for testing.
     /// Tools will return an error when executed.
-    pub fn new(worker_id: String, space_id: String, room_id: String) -> Self {
+    pub fn new(agent_id: String, space_id: String, room_id: String) -> Self {
         Self {
-            worker_id,
+            agent_id,
             space_id,
             room_id,
             bridge: None,
@@ -163,13 +163,13 @@ impl TabsTools {
     ///
     /// The tab will be created lazily when the first UI operation is performed.
     pub fn with_bridge(
-        worker_id: String,
+        agent_id: String,
         space_id: String,
         room_id: String,
         bridge: JsBridge,
     ) -> Self {
         Self {
-            worker_id,
+            agent_id,
             space_id,
             room_id,
             bridge: Some(bridge),
@@ -190,7 +190,7 @@ impl TabsTools {
         let bridge = self.bridge()?;
         let result = bridge
             .call_tool(
-                &self.worker_id,
+                &self.agent_id,
                 &self.space_id,
                 &self.room_id,
                 "tabs.splitTile",
@@ -208,7 +208,7 @@ impl TabsTools {
         let bridge = self.bridge()?;
         bridge
             .call_tool(
-                &self.worker_id,
+                &self.agent_id,
                 &self.space_id,
                 &self.room_id,
                 "tabs.removeTile",
@@ -225,7 +225,7 @@ impl TabsTools {
         let bridge = self.bridge()?;
         let result = bridge
             .call_tool(
-                &self.worker_id,
+                &self.agent_id,
                 &self.space_id,
                 &self.room_id,
                 "tabs.getTileLayout",

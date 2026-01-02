@@ -1,14 +1,14 @@
 /**
- * useWorkerBridge Hook
+ * useAgentBridge Hook
  *
- * This hook initializes the worker bridge and registers tool handlers
+ * This hook initializes the agent bridge and registers tool handlers
  * that interact with the TabManager and Canvas.
  *
  * Usage:
  * ```jsx
  * // In App.jsx or a top-level component
  * function App() {
- *   useWorkerBridge();
+ *   useAgentBridge();
  *   return <...>;
  * }
  * ```
@@ -18,13 +18,13 @@ import { useEffect, useRef } from 'react';
 import { useTabManager } from '../contexts/TabManagerContext';
 import { useCommand } from '../contexts/CommandContext';
 import {
-  initWorkerBridge,
-  cleanupWorkerBridge,
+  initAgentBridge,
+  cleanupAgentBridge,
   registerToolHandler,
   unregisterToolHandler,
-  setWorkerTab,
-  getWorkerTab,
-  clearWorkerTab,
+  setAgentTab,
+  getAgentTab,
+  clearAgentTab,
 } from './bridge';
 
 /**
@@ -38,9 +38,9 @@ const generateChartId = () => `chart_${Date.now()}_${Math.random().toString(36).
 const generateTileId = () => `tile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 /**
- * Hook to initialize and connect the worker bridge to TabManager
+ * Hook to initialize and connect the agent bridge to TabManager
  */
-export const useWorkerBridge = () => {
+export const useAgentBridge = () => {
   const tabManager = useTabManager();
   const { executeCommand } = useCommand();
   const initializedRef = useRef(false);
@@ -68,19 +68,19 @@ export const useWorkerBridge = () => {
   executeCommandRef.current = executeCommand;
 
   /**
-   * Setup a worker's tab with canvas command.
+   * Setup an agent's tab with canvas command.
    * Called BEFORE CLI starts to avoid race conditions.
    * Does NOT switch to the new tab - avoids interrupting user activity.
    *
-   * @param {string} workerId - Worker identifier
-   * @param {string} workerName - Human-readable worker name
+   * @param {string} agentId - Agent identifier
+   * @param {string} agentName - Human-readable agent name
    * @param {string} spaceId - Netdata space ID
    * @param {string} roomId - Netdata room ID
    * @returns {{ tabId: string }} The created/existing tab ID
    */
-  const setupWorkerTab = (workerId, workerName, spaceId, roomId) => {
-    // Check if we already have a tab for this worker in the Map
-    let tabId = getWorkerTab(workerId, spaceId, roomId);
+  const setupAgentTab = (agentId, agentName, spaceId, roomId) => {
+    // Check if we already have a tab for this agent in the Map
+    let tabId = getAgentTab(agentId, spaceId, roomId);
 
     if (tabId) {
       // Verify the tab still exists
@@ -90,39 +90,39 @@ export const useWorkerBridge = () => {
         return { tabId };
       }
       // Tab was removed, clear the mapping
-      clearWorkerTab(workerId, spaceId, roomId);
+      clearAgentTab(agentId, spaceId, roomId);
     }
 
-    // Also check for existing worker tab by context (handles app reload where Map is lost)
-    const existingWorkerTab = tabManagerRef.current.tabs.find(
-      t => t.context?.worker?.workerId === workerId &&
+    // Also check for existing agent tab by context (handles app reload where Map is lost)
+    const existingAgentTab = tabManagerRef.current.tabs.find(
+      t => t.context?.agent?.agentId === agentId &&
            t.context?.spaceRoom?.selectedSpaceId === spaceId &&
            t.context?.spaceRoom?.selectedRoomId === roomId
     );
 
-    if (existingWorkerTab) {
+    if (existingAgentTab) {
       // Found existing tab, restore the mapping
-      setWorkerTab(workerId, spaceId, roomId, existingWorkerTab.id);
-      return { tabId: existingWorkerTab.id };
+      setAgentTab(agentId, spaceId, roomId, existingAgentTab.id);
+      return { tabId: existingAgentTab.id };
     }
 
-    // Create a new tab for this worker with bot icon 🤖
+    // Create a new tab for this agent with bot icon
     // TODO: Redesign to avoid switching to the new tab (don't interrupt user)
     // Current limitation: createTab always switches, and executeCommand assigns
     // to the active tab. Need TabManagerContext changes to support creating
     // a tab with a command without switching.
-    const title = `🤖 ${workerName}`;
+    const title = `🤖 ${agentName}`;
     const newTab = tabManagerRef.current.createTab(title);
 
-    // Update the tab's context with the worker's space/room
+    // Update the tab's context with the agent's space/room
     tabManagerRef.current.updateTabContext(newTab.id, {
       spaceRoom: {
         selectedSpaceId: spaceId,
         selectedRoomId: roomId,
       },
-      worker: {
-        workerId,
-        workerName,
+      agent: {
+        agentId,
+        agentName,
       },
     });
 
@@ -130,22 +130,22 @@ export const useWorkerBridge = () => {
     executeCommandRef.current('canvas');
 
     // Store the mapping
-    setWorkerTab(workerId, spaceId, roomId, newTab.id);
+    setAgentTab(agentId, spaceId, roomId, newTab.id);
 
     return { tabId: newTab.id };
   };
 
   /**
-   * Get a worker's tab (if exists).
+   * Get an agent's tab (if exists).
    * Used by tool handlers after setup.
    *
-   * @param {string} workerId - Worker identifier
+   * @param {string} agentId - Agent identifier
    * @param {string} spaceId - Netdata space ID
    * @param {string} roomId - Netdata room ID
    * @returns {string|null} Tab ID or null
    */
-  const getWorkerTabId = (workerId, spaceId, roomId) => {
-    const tabId = getWorkerTab(workerId, spaceId, roomId);
+  const getAgentTabId = (agentId, spaceId, roomId) => {
+    const tabId = getAgentTab(agentId, spaceId, roomId);
     if (tabId) {
       // Verify tab still exists
       const existingTab = tabManagerRef.current.tabs.find(t => t.id === tabId);
@@ -153,7 +153,7 @@ export const useWorkerBridge = () => {
         return tabId;
       }
       // Tab was removed, clear stale mapping
-      clearWorkerTab(workerId, spaceId, roomId);
+      clearAgentTab(agentId, spaceId, roomId);
     }
     return null;
   };
@@ -166,27 +166,27 @@ export const useWorkerBridge = () => {
     initializedRef.current = true;
 
     // Initialize the bridge
-    initWorkerBridge();
+    initAgentBridge();
 
-    // Register worker setup handler (called BEFORE CLI starts)
-    registerToolHandler('worker.setup', async (request) => {
-      const { workerId, spaceId, roomId, params } = request;
-      const { workerName } = params;
+    // Register agent setup handler (called BEFORE CLI starts)
+    registerToolHandler('agent.setup', async (request) => {
+      const { agentId, spaceId, roomId, params } = request;
+      const { agentName } = params;
 
-      // Setup the worker's tab
-      const result = setupWorkerTab(workerId, workerName, spaceId, roomId);
+      // Setup the agent's tab
+      const result = setupAgentTab(agentId, agentName, spaceId, roomId);
 
-      console.log(`[WorkerBridge] Worker tab setup complete: ${result.tabId}`);
+      console.log(`[AgentBridge] Agent tab setup complete: ${result.tabId}`);
       return result;
     });
 
     // Register canvas tool handlers
     registerToolHandler('canvas.addChart', async (request) => {
-      const { workerId, spaceId, roomId, params } = request;
-      const tabId = getWorkerTabId(workerId, spaceId, roomId);
+      const { agentId, spaceId, roomId, params } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
 
       if (!tabId) {
-        throw new Error('No tab found for this worker. Call worker.setup first.');
+        throw new Error('No tab found for this agent. Call agent.setup first.');
       }
 
       const chartId = generateChartId();
@@ -207,11 +207,11 @@ export const useWorkerBridge = () => {
     });
 
     registerToolHandler('canvas.removeChart', async (request) => {
-      const { workerId, spaceId, roomId, params } = request;
-      const tabId = getWorkerTabId(workerId, spaceId, roomId);
+      const { agentId, spaceId, roomId, params } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
 
       if (!tabId) {
-        throw new Error('No tab found for this worker');
+        throw new Error('No tab found for this agent');
       }
 
       const spaceRoomKey = `${spaceId}_${roomId}`;
@@ -221,8 +221,8 @@ export const useWorkerBridge = () => {
     });
 
     registerToolHandler('canvas.getCharts', async (request) => {
-      const { workerId, spaceId, roomId } = request;
-      const tabId = getWorkerTabId(workerId, spaceId, roomId);
+      const { agentId, spaceId, roomId } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
 
       if (!tabId) {
         return { charts: [] };
@@ -244,8 +244,8 @@ export const useWorkerBridge = () => {
     });
 
     registerToolHandler('canvas.clearCharts', async (request) => {
-      const { workerId, spaceId, roomId } = request;
-      const tabId = getWorkerTabId(workerId, spaceId, roomId);
+      const { agentId, spaceId, roomId } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
 
       if (!tabId) {
         return { success: true };
@@ -258,11 +258,11 @@ export const useWorkerBridge = () => {
     });
 
     registerToolHandler('canvas.setTimeRange', async (request) => {
-      const { workerId, spaceId, roomId, params } = request;
-      const tabId = getWorkerTabId(workerId, spaceId, roomId);
+      const { agentId, spaceId, roomId, params } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
 
       if (!tabId) {
-        throw new Error('No tab found for this worker');
+        throw new Error('No tab found for this agent');
       }
 
       // Update tab context with time range
@@ -279,11 +279,11 @@ export const useWorkerBridge = () => {
 
     // Register tabs tool handlers
     registerToolHandler('tabs.splitTile', async (request) => {
-      const { workerId, spaceId, roomId, params } = request;
-      const tabId = getWorkerTabId(workerId, spaceId, roomId);
+      const { agentId, spaceId, roomId, params } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
 
       if (!tabId) {
-        throw new Error('No tab found for this worker. Call worker.setup first.');
+        throw new Error('No tab found for this agent. Call agent.setup first.');
       }
 
       // Get the parent tile ID - use the root tile if not specified
@@ -311,11 +311,11 @@ export const useWorkerBridge = () => {
     });
 
     registerToolHandler('tabs.removeTile', async (request) => {
-      const { workerId, spaceId, roomId, params } = request;
-      const tabId = getWorkerTabId(workerId, spaceId, roomId);
+      const { agentId, spaceId, roomId, params } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
 
       if (!tabId) {
-        throw new Error('No tab found for this worker');
+        throw new Error('No tab found for this agent');
       }
 
       const result = tabManagerRef.current.closeTile(params.tileId);
@@ -328,8 +328,8 @@ export const useWorkerBridge = () => {
     });
 
     registerToolHandler('tabs.getTileLayout', async (request) => {
-      const { workerId, spaceId, roomId } = request;
-      const tabId = getWorkerTabId(workerId, spaceId, roomId);
+      const { agentId, spaceId, roomId } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
 
       if (!tabId) {
         // Return a simple layout if no tab exists
@@ -376,7 +376,7 @@ export const useWorkerBridge = () => {
       initializedRef.current = false;
 
       // Unregister all handlers
-      unregisterToolHandler('worker.setup');
+      unregisterToolHandler('agent.setup');
       unregisterToolHandler('canvas.addChart');
       unregisterToolHandler('canvas.removeChart');
       unregisterToolHandler('canvas.getCharts');
@@ -386,7 +386,7 @@ export const useWorkerBridge = () => {
       unregisterToolHandler('tabs.removeTile');
       unregisterToolHandler('tabs.getTileLayout');
 
-      // Note: We don't call cleanupWorkerBridge here because
+      // Note: We don't call cleanupAgentBridge here because
       // other components might still be using it. It should be
       // cleaned up at app shutdown.
     };
@@ -395,4 +395,4 @@ export const useWorkerBridge = () => {
   // Return nothing - this hook is for side effects only
 };
 
-export default useWorkerBridge;
+export default useAgentBridge;

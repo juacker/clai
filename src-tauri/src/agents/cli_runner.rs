@@ -1,4 +1,4 @@
-//! AI CLI runner for worker execution.
+//! AI CLI runner for agent execution.
 //!
 //! This module handles spawning AI CLIs (Claude Code, Gemini CLI, Codex) with
 //! MCP configuration pointing to our HTTP server.
@@ -94,10 +94,10 @@ pub struct CliRunResult {
     pub stderr: String,
 }
 
-/// Runs an AI CLI with the worker's tools available via MCP.
+/// Runs an AI CLI with the agent's tools available via MCP.
 ///
 /// This function:
-/// 1. Starts an HTTP MCP server with tools bound to the worker's context
+/// 1. Starts an HTTP MCP server with tools bound to the agent's context
 /// 2. Spawns the AI CLI with MCP config pointing to the server
 /// 3. Waits for the CLI to complete (with timeout)
 /// 4. Shuts down the server
@@ -107,7 +107,7 @@ pub struct CliRunResult {
 /// * `provider` - Which AI CLI to use (Claude, Gemini, Codex)
 /// * `prompt` - The system prompt/task for the AI
 /// * `api` - Netdata API client for Rust-native tools
-/// * `worker_id` - Worker identifier
+/// * `agent_id` - Agent identifier
 /// * `space_id` - Space context
 /// * `room_id` - Room context
 /// * `bridge` - JS bridge for UI tools (optional)
@@ -132,26 +132,26 @@ pub async fn run_ai_cli(
     provider: &AiProvider,
     prompt: &str,
     api: Arc<NetdataApi>,
-    worker_id: &str,
+    agent_id: &str,
     space_id: &str,
     room_id: &str,
     bridge: Option<JsBridge>,
     timeout_secs: u64,
 ) -> Result<CliRunResult, CliRunnerError> {
-    tracing::debug!(worker_id = %worker_id, "Creating MCP server for worker");
+    tracing::debug!(agent_id = %agent_id, "Creating MCP server for agent");
 
     // 1. Create MCP server with bound context
     let server = match bridge {
         Some(b) => McpToolServer::with_bridge(
             api,
-            worker_id.to_string(),
+            agent_id.to_string(),
             space_id.to_string(),
             room_id.to_string(),
             b,
         ),
         None => McpToolServer::new(
             api,
-            worker_id.to_string(),
+            agent_id.to_string(),
             space_id.to_string(),
             room_id.to_string(),
         ),

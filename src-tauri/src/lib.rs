@@ -5,17 +5,17 @@
 //! - Secure token storage via OS keychain
 //! - HTTP communication with Netdata Cloud API
 //! - Exposing functionality to the JavaScript frontend
-//! - AI Workers with MCP tool integration
+//! - AI Agents with MCP tool integration
 //!
-//! # AI Workers Architecture
+//! # AI Agents Architecture
 //!
-//! When auto-pilot is enabled, the app runs AI workers that:
+//! When auto-pilot is enabled, the app runs AI agents that:
 //! 1. Start an HTTP MCP server on localhost (127.0.0.1:PORT)
 //! 2. Spawn an AI CLI (Claude Code, Gemini CLI, or Codex) with the server URL
 //! 3. The AI CLI connects and uses tools (netdata.query, canvas.*, tabs.*)
 //! 4. When complete, the server shuts down
 //!
-//! See `workers::cli_runner` for the execution flow.
+//! See `agents::cli_runner` for the execution flow.
 //!
 //! # Rust Learning: Module System
 //!
@@ -36,16 +36,15 @@ mod commands;
 mod config;
 mod mcp;
 mod providers;
-mod workers;
 
-// Re-export for worker execution and testing
+// Re-export for agent execution and testing
 pub use mcp::server::McpToolServer;
 
 use std::sync::Mutex;
 
+use agents::SharedScheduler;
 use auth::TokenStorage;
 use config::ConfigManager;
-use workers::SharedScheduler;
 
 /// Shared application state accessible from all commands.
 ///
@@ -59,7 +58,7 @@ pub struct AppState {
     pub base_url: Mutex<String>,
     /// Configuration manager (auto-pilot settings, etc.)
     pub config_manager: Mutex<ConfigManager>,
-    /// Worker scheduler (manages worker instances)
+    /// Agent scheduler (manages agent instances)
     pub scheduler: SharedScheduler,
 }
 
@@ -100,11 +99,11 @@ pub fn run() {
          Check that the config directory is accessible.",
     );
 
-    // Initialize worker scheduler
-    let scheduler = workers::create_shared_scheduler();
+    // Initialize agent scheduler
+    let scheduler = agents::create_shared_scheduler();
 
-    // Register default worker definitions and restore instances if logged in
-    workers::init::initialize_scheduler(&scheduler, &config_manager, &token_storage);
+    // Register default agent definitions and restore instances if logged in
+    agents::init::initialize_scheduler(&scheduler, &config_manager, &token_storage);
 
     // Clone scheduler before moving into state (needed for runner)
     let runner_scheduler = scheduler.clone();
@@ -128,9 +127,9 @@ pub fn run() {
         .manage(state)
         // Setup hook - runs after app is built, gives us AppHandle
         .setup(move |app| {
-            // Start the worker runner background task
+            // Start the agent runner background task
             let app_handle = app.handle().clone();
-            workers::start_worker_runner(app_handle, runner_scheduler);
+            agents::start_agent_runner(app_handle, runner_scheduler);
             Ok(())
         })
         // Register our custom commands
@@ -156,18 +155,28 @@ pub fn run() {
             commands::api::api_delete_conversation,
             commands::api::api_create_conversation_title,
             commands::api::api_chat_completion,
-            // Auto-pilot commands
+            // Auto-pilot commands (legacy - may be replaced by agent commands)
             commands::autopilot::get_autopilot_status,
             commands::autopilot::set_autopilot_enabled,
             commands::autopilot::get_all_autopilot_enabled,
+            // Agent commands
+            commands::agents::get_agents,
+            commands::agents::get_agent,
+            commands::agents::create_agent,
+            commands::agents::update_agent,
+            commands::agents::delete_agent,
+            commands::agents::enable_agent_for_room,
+            commands::agents::disable_agent_for_room,
+            commands::agents::get_agents_for_room,
+            commands::agents::toggle_agents_for_room,
             // Provider commands
             commands::provider::get_ai_provider,
             commands::provider::set_ai_provider,
             commands::provider::clear_ai_provider,
             commands::provider::get_available_ai_providers,
             commands::provider::validate_ai_provider,
-            // Worker tool bridge commands
-            commands::bridge::worker_tool_result,
+            // Agent tool bridge commands
+            commands::bridge::agent_tool_result,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

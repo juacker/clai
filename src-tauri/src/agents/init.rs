@@ -1,24 +1,24 @@
-//! Worker initialization.
+//! Agent initialization.
 //!
-//! This module handles initializing the scheduler with worker definitions
-//! and managing worker instances based on configuration.
+//! This module handles initializing the scheduler with agent definitions
+//! and managing agent instances based on configuration.
 //!
-//! Worker definitions are located in `workers/definitions/`. See that module
-//! for how to add new workers.
+//! Agent definitions are located in `agents/definitions/`. See that module
+//! for how to add new agents.
 
+use crate::agents::{definitions, AgentDefinition, SharedScheduler};
 use crate::auth::TokenStorage;
 use crate::config::ConfigManager;
-use crate::workers::{definitions, SharedScheduler, WorkerDefinition};
 
 // =============================================================================
-// Worker Definitions (delegated to definitions module)
+// Agent Definitions (delegated to definitions module)
 // =============================================================================
 
-/// Returns all available worker definitions.
+/// Returns all available agent definitions.
 ///
 /// Delegates to `definitions::all_definitions()` which aggregates
-/// definitions from all worker modules.
-pub fn default_definitions() -> Vec<WorkerDefinition> {
+/// definitions from all agent modules.
+pub fn default_definitions() -> Vec<AgentDefinition> {
     definitions::all_definitions()
 }
 
@@ -29,8 +29,8 @@ pub fn default_definitions() -> Vec<WorkerDefinition> {
 /// Initializes the scheduler with default definitions and optionally restores instances.
 ///
 /// This should be called once at app startup. It:
-/// 1. Registers all default worker definitions
-/// 2. If user is logged in, restores worker instances for rooms with auto-pilot enabled
+/// 1. Registers all default agent definitions
+/// 2. If user is logged in, restores agent instances for rooms with auto-pilot enabled
 pub fn initialize_scheduler(
     scheduler: &SharedScheduler,
     config_manager: &ConfigManager,
@@ -38,7 +38,7 @@ pub fn initialize_scheduler(
 ) {
     let mut scheduler = scheduler.blocking_lock();
 
-    // Register default worker definitions
+    // Register default agent definitions
     for definition in default_definitions() {
         scheduler.register_definition(definition);
     }
@@ -52,11 +52,11 @@ pub fn initialize_scheduler(
         return;
     }
 
-    // Restore worker instances from config
+    // Restore agent instances from config
     let config = config_manager.get();
     for (space_id, space_config) in config.spaces {
         for room_id in space_config.autopilot.enabled_rooms {
-            // Create an instance for each default worker
+            // Create an instance for each default agent
             for definition in default_definitions() {
                 scheduler.create_instance(&definition.id, space_id.clone(), room_id.clone());
             }
@@ -64,7 +64,7 @@ pub fn initialize_scheduler(
     }
 }
 
-/// Restores worker instances from config.
+/// Restores agent instances from config.
 ///
 /// Called after user logs in (if they weren't logged in at app startup).
 /// Takes the config directly to avoid holding locks across await points.
@@ -83,7 +83,7 @@ pub async fn restore_instances_from_config(
     }
 }
 
-/// Clears all worker instances.
+/// Clears all agent instances.
 ///
 /// Called when user logs out.
 pub async fn clear_all_instances(scheduler: &SharedScheduler) {
@@ -101,18 +101,18 @@ pub async fn clear_all_instances(scheduler: &SharedScheduler) {
     }
 }
 
-/// Creates worker instances for a room.
+/// Creates agent instances for a room.
 ///
 /// Called when auto-pilot is enabled for a room.
 pub async fn create_instances_for_room(scheduler: &SharedScheduler, space_id: &str, room_id: &str) {
     let mut scheduler = scheduler.lock().await;
 
     for definition in default_definitions() {
-        scheduler.create_instance(&definition.id, space_id.to_string(), room_id.to_string());
+        scheduler.create_instance(&definition.id, space_id, room_id);
     }
 }
 
-/// Removes all worker instances for a room.
+/// Removes all agent instances for a room.
 ///
 /// Called when auto-pilot is disabled for a room.
 pub async fn remove_instances_for_room(scheduler: &SharedScheduler, space_id: &str, room_id: &str) {
@@ -138,7 +138,7 @@ pub async fn remove_instances_for_room(scheduler: &SharedScheduler, space_id: &s
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workers::create_shared_scheduler;
+    use crate::agents::create_shared_scheduler;
 
     #[test]
     fn test_default_definitions() {

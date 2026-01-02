@@ -1,14 +1,14 @@
 //! Auto-pilot Tauri commands.
 //!
 //! These commands manage the auto-pilot feature, allowing users to enable
-//! or disable AI workers for specific spaces/rooms.
+//! or disable AI agents for specific spaces/rooms.
 
 use tauri::State;
 
+use crate::agents::init::{create_instances_for_room, remove_instances_for_room};
 use crate::api::client::create_client;
 use crate::api::netdata::NetdataApi;
 use crate::config::{AutopilotStatus, ProviderInfo};
-use crate::workers::init::{create_instances_for_room, remove_instances_for_room};
 use crate::AppState;
 
 /// Name of the "All Nodes" room in Netdata Cloud.

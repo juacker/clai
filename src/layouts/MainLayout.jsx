@@ -8,15 +8,15 @@ import { CommandProvider } from '../contexts/CommandContext';
 import { TabManagerProvider } from '../contexts/TabManagerContext';
 import { CommandMessagingProvider } from '../contexts/CommandMessagingContext';
 import { ChatManagerProvider } from '../contexts/ChatManagerContext';
-import { useWorkerBridge } from '../workers';
+import { useAgentBridge } from '../agents';
 import styles from './MainLayout.module.css';
 
 /**
- * Component that initializes the worker bridge.
+ * Component that initializes the agent bridge.
  * Must be inside TabManagerProvider to access the context.
  */
-const WorkerBridgeInitializer = ({ children }) => {
-  useWorkerBridge();
+const AgentBridgeInitializer = ({ children }) => {
+  useAgentBridge();
   return children;
 };
 
@@ -78,7 +78,7 @@ const MainLayout = () => {
     <CommandProvider>
       <SharedSpaceRoomDataProvider>
         <TabManagerProvider>
-          <WorkerBridgeInitializer>
+          <AgentBridgeInitializer>
           <CommandMessagingProvider>
             <ChatManagerProvider>
             <div className={styles.mainLayout}>
@@ -101,7 +101,7 @@ const MainLayout = () => {
             </div>
           </ChatManagerProvider>
           </CommandMessagingProvider>
-          </WorkerBridgeInitializer>
+          </AgentBridgeInitializer>
         </TabManagerProvider>
       </SharedSpaceRoomDataProvider>
     </CommandProvider>

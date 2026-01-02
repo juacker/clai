@@ -1,6 +1,6 @@
-//! MCP (Model Context Protocol) module for AI worker tools.
+//! MCP (Model Context Protocol) module for AI agent tools.
 //!
-//! This module provides the tools that AI workers can use to interact with
+//! This module provides the tools that AI agents can use to interact with
 //! Netdata Cloud and the UI. Tools are exposed via MCP to AI CLIs.
 //!
 //! # Tool Types
@@ -11,7 +11,7 @@
 //! # Architecture
 //!
 //! ```text
-//! Worker AI (claude/gemini/codex)
+//! Agent AI (claude/gemini/codex)
 //!     ↓
 //! MCP: tool_name({ params })
 //!     ↓
@@ -34,7 +34,7 @@
 //! # MCP Server
 //!
 //! The `server` module provides the MCP server implementation that exposes
-//! tools to AI CLIs via HTTP transport on localhost. Each worker execution
+//! tools to AI CLIs via HTTP transport on localhost. Each agent execution
 //! starts its own server on a random port. Use `McpToolServer::with_bridge()`
 //! to create a server with JS bridge support for canvas/tabs tools.
 

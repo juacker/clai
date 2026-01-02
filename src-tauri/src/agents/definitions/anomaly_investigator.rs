@@ -1,6 +1,6 @@
-//! Anomaly Investigator Worker
+//! Anomaly Investigator Agent
 //!
-//! This worker monitors infrastructure health by checking for anomalies and
+//! This agent monitors infrastructure health by checking for anomalies and
 //! investigating any issues found. It runs periodically and uses Netdata Cloud's
 //! AI to analyze metrics, alerts, and anomalies.
 //!
@@ -12,20 +12,20 @@
 //! - Organizes findings in tabs using `tabs.*` tools
 //! - Searches the web for documentation and solutions
 //!
-//! # Adding a New Worker
+//! # Adding a New Agent
 //!
-//! To add a new worker, create a new file in this directory with:
-//! 1. A `definition()` function that returns `WorkerDefinition`
+//! To add a new agent, create a new file in this directory with:
+//! 1. A `definition()` function that returns `AgentDefinition`
 //! 2. Add the module to `definitions/mod.rs`
 //! 3. Include it in `all_definitions()`
 
-use crate::workers::WorkerDefinition;
+use crate::agents::AgentDefinition;
 
 // =============================================================================
 // Configuration
 // =============================================================================
 
-/// Worker ID - used for instance identification and MCP server naming.
+/// Agent ID - used for instance identification and MCP server naming.
 pub const ID: &str = "anomaly-investigator";
 
 /// Human-readable name shown in UI.
@@ -34,21 +34,21 @@ pub const NAME: &str = "Anomaly Investigator";
 /// Description shown in UI.
 pub const DESCRIPTION: &str = "Monitors alerts and investigates anomalies in metrics";
 
-/// How often this worker runs (5 minutes).
+/// How often this agent runs (5 minutes).
 pub const INTERVAL_MS: u64 = 5 * 60 * 1000;
 
-/// Tool namespaces this worker needs access to.
+/// Tool namespaces this agent needs access to.
 pub const REQUIRED_TOOLS: &[&str] = &["netdata", "canvas", "tabs"];
 
 // =============================================================================
 // System Prompt
 // =============================================================================
 
-/// System prompt that defines the worker's behavior.
+/// System prompt that defines the agent's behavior.
 ///
-/// This prompt is sent to the AI CLI (Claude/Gemini/Codex) when the worker runs.
+/// This prompt is sent to the AI CLI (Claude/Gemini/Codex) when the agent runs.
 /// It should be clear about:
-/// - What the worker's goal is
+/// - What the agent's goal is
 /// - What tools are available
 /// - How to approach the task
 /// - What output is expected
@@ -109,12 +109,12 @@ Your task is to check for anomalies and investigate any issues found.
 // Definition Factory
 // =============================================================================
 
-/// Creates the worker definition.
+/// Creates the agent definition.
 ///
-/// This is the single source of truth for this worker's configuration.
-/// Called by the registry to get all available worker definitions.
-pub fn definition() -> WorkerDefinition {
-    WorkerDefinition::new(ID, NAME, INTERVAL_MS)
+/// This is the single source of truth for this agent's configuration.
+/// Called by the registry to get all available agent definitions.
+pub fn definition() -> AgentDefinition {
+    AgentDefinition::new(ID, NAME, INTERVAL_MS)
         .with_description(DESCRIPTION)
         .with_prompt(PROMPT)
         .with_tools(REQUIRED_TOOLS.to_vec())

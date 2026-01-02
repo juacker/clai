@@ -1,7 +1,7 @@
 /**
- * Worker Tool Bridge
+ * Agent Tool Bridge
  *
- * This module handles tool requests from Rust AI workers and routes them
+ * This module handles tool requests from Rust AI agents and routes them
  * to the appropriate frontend components. It listens for Tauri events
  * and sends results back to Rust.
  *
@@ -10,15 +10,15 @@
  * ```
  * Rust (MCP Server)                    JS (React)
  *      |                                   |
- *      |  emit("worker:tool:request", {    |
- *      |    requestId, workerId,           |
+ *      |  emit("agent:tool:request", {     |
+ *      |    requestId, agentId,            |
  *      |    spaceId, roomId,               |
  *      |    tool, params                   |
  *      |------------------------------------>
- *      |                                   |  getOrCreateWorkerTab()
+ *      |                                   |  getOrCreateAgentTab()
  *      |  (async wait)                     |  execute tool
  *      |                                   |
- *      |  invoke("worker_tool_result", {   |
+ *      |  invoke("agent_tool_result", {    |
  *      |    requestId, success, result     |
  *      |<------------------------------------
  *      |                                   |
@@ -33,23 +33,23 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
 // Event name for tool requests (must match Rust EVENT_TOOL_REQUEST)
-const EVENT_TOOL_REQUEST = 'worker:tool:request';
+const EVENT_TOOL_REQUEST = 'agent:tool:request';
 
 // Track registered tool handlers
 const toolHandlers = new Map();
 
-// Track worker tab mappings (workerId_spaceId_roomId -> tabId)
-const workerTabs = new Map();
+// Track agent tab mappings (agentId_spaceId_roomId -> tabId)
+const agentTabs = new Map();
 
 /**
- * Generate a unique ID for a worker in a specific space/room
- * @param {string} workerId - Worker type identifier
+ * Generate a unique ID for an agent in a specific space/room
+ * @param {string} agentId - Agent type identifier
  * @param {string} spaceId - Netdata space ID
  * @param {string} roomId - Netdata room ID
- * @returns {string} Unique key for this worker instance
+ * @returns {string} Unique key for this agent instance
  */
-const getWorkerKey = (workerId, spaceId, roomId) => {
-  return `${workerId}_${spaceId}_${roomId}`;
+const getAgentKey = (agentId, spaceId, roomId) => {
+  return `${agentId}_${spaceId}_${roomId}`;
 };
 
 /**
@@ -63,7 +63,7 @@ const getWorkerKey = (workerId, spaceId, roomId) => {
  *
  * @example
  * registerToolHandler('canvas.addChart', async (request) => {
- *   const { params, workerId, spaceId, roomId } = request;
+ *   const { params, agentId, spaceId, roomId } = request;
  *   // ... execute operation
  *   return { chartId: 'chart-001' };
  * });
@@ -89,42 +89,42 @@ export const getRegisteredTools = () => {
 };
 
 /**
- * Set the tab ID for a worker
- * Used for lazy tab creation - workers get a tab when they first need UI
+ * Set the tab ID for an agent
+ * Used for lazy tab creation - agents get a tab when they first need UI
  *
- * @param {string} workerId - Worker type identifier
+ * @param {string} agentId - Agent type identifier
  * @param {string} spaceId - Netdata space ID
  * @param {string} roomId - Netdata room ID
- * @param {string} tabId - Tab ID to associate with this worker
+ * @param {string} tabId - Tab ID to associate with this agent
  */
-export const setWorkerTab = (workerId, spaceId, roomId, tabId) => {
-  const key = getWorkerKey(workerId, spaceId, roomId);
-  workerTabs.set(key, tabId);
+export const setAgentTab = (agentId, spaceId, roomId, tabId) => {
+  const key = getAgentKey(agentId, spaceId, roomId);
+  agentTabs.set(key, tabId);
 };
 
 /**
- * Get the tab ID for a worker (if exists)
+ * Get the tab ID for an agent (if exists)
  *
- * @param {string} workerId - Worker type identifier
+ * @param {string} agentId - Agent type identifier
  * @param {string} spaceId - Netdata space ID
  * @param {string} roomId - Netdata room ID
  * @returns {string|null} Tab ID or null if not found
  */
-export const getWorkerTab = (workerId, spaceId, roomId) => {
-  const key = getWorkerKey(workerId, spaceId, roomId);
-  return workerTabs.get(key) || null;
+export const getAgentTab = (agentId, spaceId, roomId) => {
+  const key = getAgentKey(agentId, spaceId, roomId);
+  return agentTabs.get(key) || null;
 };
 
 /**
- * Clear the tab mapping for a worker
+ * Clear the tab mapping for an agent
  *
- * @param {string} workerId - Worker type identifier
+ * @param {string} agentId - Agent type identifier
  * @param {string} spaceId - Netdata space ID
  * @param {string} roomId - Netdata room ID
  */
-export const clearWorkerTab = (workerId, spaceId, roomId) => {
-  const key = getWorkerKey(workerId, spaceId, roomId);
-  workerTabs.delete(key);
+export const clearAgentTab = (agentId, spaceId, roomId) => {
+  const key = getAgentKey(agentId, spaceId, roomId);
+  agentTabs.delete(key);
 };
 
 /**
@@ -144,9 +144,9 @@ const sendResponse = async (requestId, success, result = null, error = null) => 
       error: success ? null : error,
     };
 
-    await invoke('worker_tool_result', { response });
+    await invoke('agent_tool_result', { response });
   } catch (err) {
-    console.error('[WorkerBridge] Failed to send response:', err);
+    console.error('[AgentBridge] Failed to send response:', err);
   }
 };
 
@@ -155,16 +155,16 @@ const sendResponse = async (requestId, success, result = null, error = null) => 
  *
  * @param {Object} request - Tool request object
  * @param {string} request.requestId - Unique request ID
- * @param {string} request.workerId - Worker type identifier
+ * @param {string} request.agentId - Agent type identifier
  * @param {string} request.spaceId - Netdata space ID
  * @param {string} request.roomId - Netdata room ID
  * @param {string} request.tool - Tool name (e.g., "canvas.addChart")
  * @param {Object} request.params - Tool parameters
  */
 const handleToolRequest = async (request) => {
-  const { requestId, workerId, spaceId, roomId, tool, params } = request;
+  const { requestId, agentId, spaceId, roomId, tool, params } = request;
 
-  console.log(`[WorkerBridge] Tool request: ${tool}`, { workerId, spaceId, roomId, params });
+  console.log(`[AgentBridge] Tool request: ${tool}`, { agentId, spaceId, roomId, params });
 
   try {
     // Find the handler for this tool
@@ -174,15 +174,15 @@ const handleToolRequest = async (request) => {
       throw new Error(`No handler registered for tool: ${tool}`);
     }
 
-    // Execute the handler
-    const result = await handler(request);
+    // Execute the handler (pass agentId as part of request for handlers)
+    const result = await handler({ ...request, agentId });
 
     // Send success response
     await sendResponse(requestId, true, result);
 
-    console.log(`[WorkerBridge] Tool success: ${tool}`, result);
+    console.log(`[AgentBridge] Tool success: ${tool}`, result);
   } catch (err) {
-    console.error(`[WorkerBridge] Tool error: ${tool}`, err);
+    console.error(`[AgentBridge] Tool error: ${tool}`, err);
 
     // Send error response
     await sendResponse(requestId, false, null, err.message || 'Unknown error');
@@ -196,17 +196,17 @@ let unlistenFn = null;
 let isInitializing = false;
 
 /**
- * Initialize the worker bridge
+ * Initialize the agent bridge
  *
  * Starts listening for tool requests from Rust. Call this once when the
  * app initializes (e.g., in App.jsx or a top-level provider).
  *
  * @returns {Promise<void>}
  */
-export const initWorkerBridge = async () => {
+export const initAgentBridge = async () => {
   // Avoid double initialization (synchronous check to prevent race condition)
   if (unlistenFn || isInitializing) {
-    console.warn('[WorkerBridge] Already initialized or initializing');
+    console.warn('[AgentBridge] Already initialized or initializing');
     return;
   }
 
@@ -219,23 +219,23 @@ export const initWorkerBridge = async () => {
       handleToolRequest(event.payload);
     });
 
-    console.log('[WorkerBridge] Initialized, listening for tool requests');
+    console.log('[AgentBridge] Initialized, listening for tool requests');
   } catch (err) {
-    console.error('[WorkerBridge] Failed to initialize:', err);
+    console.error('[AgentBridge] Failed to initialize:', err);
     isInitializing = false; // Reset on failure
   }
 };
 
 /**
- * Cleanup the worker bridge
+ * Cleanup the agent bridge
  *
  * Stops listening for events. Call this when the app is unmounting.
  */
-export const cleanupWorkerBridge = () => {
+export const cleanupAgentBridge = () => {
   if (unlistenFn) {
     unlistenFn();
     unlistenFn = null;
-    console.log('[WorkerBridge] Cleaned up');
+    console.log('[AgentBridge] Cleaned up');
   }
 
   // Reset initialization flag
@@ -243,16 +243,16 @@ export const cleanupWorkerBridge = () => {
 
   // Clear all state
   toolHandlers.clear();
-  workerTabs.clear();
+  agentTabs.clear();
 };
 
 export default {
-  initWorkerBridge,
-  cleanupWorkerBridge,
+  initAgentBridge,
+  cleanupAgentBridge,
   registerToolHandler,
   unregisterToolHandler,
   getRegisteredTools,
-  setWorkerTab,
-  getWorkerTab,
-  clearWorkerTab,
+  setAgentTab,
+  getAgentTab,
+  clearAgentTab,
 };

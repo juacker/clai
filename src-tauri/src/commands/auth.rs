@@ -18,7 +18,7 @@
 
 use tauri::State;
 
-use crate::workers::init::{clear_all_instances, restore_instances_from_config};
+use crate::agents::init::{clear_all_instances, restore_instances_from_config};
 use crate::AppState;
 
 /// Stores the API token securely in the OS keychain.
@@ -44,7 +44,7 @@ pub async fn set_token(token: String, state: State<'_, AppState>) -> Result<(), 
         .set_token(&token)
         .map_err(|e| format!("Failed to store token: {}", e))?;
 
-    // Restore worker instances from config after login
+    // Restore agent instances from config after login
     // Get the config (cloned) and drop the lock before the async call
     let config = {
         let config_manager = state.config_manager.lock().unwrap();
@@ -80,10 +80,10 @@ pub async fn has_token(state: State<'_, AppState>) -> Result<bool, String> {
 /// Clears the stored token (logout).
 ///
 /// This is idempotent - calling it when no token exists is not an error.
-/// Also clears all worker instances since they require authentication.
+/// Also clears all agent instances since they require authentication.
 #[tauri::command]
 pub async fn clear_token(state: State<'_, AppState>) -> Result<(), String> {
-    // Clear all worker instances first
+    // Clear all agent instances first
     clear_all_instances(&state.scheduler).await;
 
     state

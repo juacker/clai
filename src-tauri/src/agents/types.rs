@@ -1,51 +1,51 @@
-//! Worker type definitions.
+//! Agent type definitions.
 //!
-//! Simplified worker types for the initial implementation.
+//! These are the runtime types used by the scheduler and executor.
 
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
 // =============================================================================
-// Worker Definition
+// Agent Definition
 // =============================================================================
 
-/// Definition of a worker type.
+/// Runtime definition of an agent.
 ///
-/// This is a template that describes what a worker does and how often it runs.
-/// Multiple `WorkerInstance`s can be created from a single `WorkerDefinition`.
+/// This is the processed/compiled version of an AgentConfig from the config file.
+/// It includes the generated prompt and is used by the scheduler and executor.
 ///
 /// # Fields
 ///
-/// - `id`: Unique identifier (e.g., "anomaly-investigator")
+/// - `id`: Unique identifier (UUID from config)
 /// - `name`: Human-readable name for UI
-/// - `description`: Description of what this worker does
+/// - `description`: Description of what this agent does
 /// - `interval_ms`: How often to run (in milliseconds)
-/// - `prompt`: System prompt for the AI (sent to AI CLI)
-/// - `required_tools`: Tool namespaces this worker needs (e.g., ["netdata", "canvas"])
+/// - `prompt`: System prompt for the AI (generated from description)
+/// - `required_tools`: Tool namespaces this agent needs (e.g., ["netdata", "canvas"])
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkerDefinition {
-    /// Unique identifier for this worker type (e.g., "anomaly-investigator").
+pub struct AgentDefinition {
+    /// Unique identifier for this agent type.
     pub id: String,
 
     /// Human-readable name.
     pub name: String,
 
-    /// Description of what this worker does.
+    /// Description of what this agent does.
     #[serde(default)]
     pub description: String,
 
-    /// How often to run this worker (in milliseconds).
+    /// How often to run this agent (in milliseconds).
     pub interval_ms: u64,
 
     /// System prompt for the AI.
     ///
     /// This is the main instruction set that tells the AI what to do.
-    /// It should describe the worker's purpose, available tools, and
+    /// It should describe the agent's purpose, available tools, and
     /// expected behavior.
     #[serde(default)]
     pub prompt: String,
 
-    /// List of tool namespaces this worker needs (e.g., ["netdata", "canvas", "tabs"]).
+    /// List of tool namespaces this agent needs (e.g., ["netdata", "canvas", "tabs"]).
     ///
     /// The executor will only expose tools from these namespaces to the AI.
     /// Available namespaces: "netdata", "canvas", "tabs"
@@ -53,8 +53,8 @@ pub struct WorkerDefinition {
     pub required_tools: Vec<String>,
 }
 
-impl WorkerDefinition {
-    /// Creates a new worker definition.
+impl AgentDefinition {
+    /// Creates a new agent definition.
     pub fn new(id: &str, name: &str, interval_ms: u64) -> Self {
         Self {
             id: id.to_string(),
@@ -86,29 +86,29 @@ impl WorkerDefinition {
 }
 
 // =============================================================================
-// Worker Instance
+// Agent Instance
 // =============================================================================
 
-/// A running instance of a worker for a specific space/room.
+/// A running instance of an agent for a specific space/room.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkerInstance {
-    /// Reference to the worker definition ID.
-    pub worker_id: String,
+pub struct AgentInstance {
+    /// Reference to the agent definition ID.
+    pub agent_id: String,
 
-    /// Unique instance ID (e.g., "anomaly-investigator:space123:room456").
+    /// Unique instance ID (e.g., "agent-uuid:space123:room456").
     pub instance_id: String,
 
-    /// Space this worker is monitoring.
+    /// Space this agent is monitoring.
     pub space_id: String,
 
-    /// Room this worker is monitoring.
+    /// Room this agent is monitoring.
     pub room_id: String,
 
-    /// Tab ID where this worker's output is displayed.
+    /// Tab ID where this agent's output is displayed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tab_id: Option<String>,
 
-    /// Whether the worker is currently running.
+    /// Whether the agent is currently running.
     #[serde(default)]
     pub is_running: bool,
 
@@ -120,7 +120,7 @@ pub struct WorkerInstance {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_conversation_id: Option<String>,
 
-    /// When this worker should run next (not serialized).
+    /// When this agent should run next (not serialized).
     #[serde(skip)]
     pub next_run_at: Option<Instant>,
 }
@@ -129,13 +129,13 @@ fn default_true() -> bool {
     true
 }
 
-impl WorkerInstance {
-    /// Creates a new worker instance.
-    pub fn new(definition: &WorkerDefinition, space_id: String, room_id: String) -> Self {
+impl AgentInstance {
+    /// Creates a new agent instance.
+    pub fn new(definition: &AgentDefinition, space_id: String, room_id: String) -> Self {
         let instance_id = format!("{}:{}:{}", definition.id, space_id, room_id);
 
         Self {
-            worker_id: definition.id.clone(),
+            agent_id: definition.id.clone(),
             instance_id,
             space_id,
             room_id,
@@ -147,13 +147,13 @@ impl WorkerInstance {
         }
     }
 
-    /// Sets the tab ID for this worker instance.
+    /// Sets the tab ID for this agent instance.
     pub fn with_tab_id(mut self, tab_id: String) -> Self {
         self.tab_id = Some(tab_id);
         self
     }
 
-    /// Returns true if this worker is ready to run.
+    /// Returns true if this agent is ready to run.
     pub fn is_ready(&self, now: Instant) -> bool {
         self.enabled && !self.is_running && self.next_run_at.map(|t| t <= now).unwrap_or(true)
     }
@@ -188,24 +188,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_worker_definition_creation() {
-        let def = WorkerDefinition::new("test-worker", "Test Worker", 60_000)
-            .with_description("A test worker")
+    fn test_agent_definition_creation() {
+        let def = AgentDefinition::new("test-agent", "Test Agent", 60_000)
+            .with_description("A test agent")
             .with_tools(vec!["canvas", "tabs"]);
 
-        assert_eq!(def.id, "test-worker");
-        assert_eq!(def.name, "Test Worker");
+        assert_eq!(def.id, "test-agent");
+        assert_eq!(def.name, "Test Agent");
         assert_eq!(def.interval_ms, 60_000);
         assert_eq!(def.required_tools, vec!["canvas", "tabs"]);
     }
 
     #[test]
-    fn test_worker_instance_creation() {
-        let def = WorkerDefinition::new("test-worker", "Test Worker", 60_000);
-        let instance = WorkerInstance::new(&def, "space1".to_string(), "room1".to_string());
+    fn test_agent_instance_creation() {
+        let def = AgentDefinition::new("test-agent", "Test Agent", 60_000);
+        let instance = AgentInstance::new(&def, "space1".to_string(), "room1".to_string());
 
-        assert_eq!(instance.worker_id, "test-worker");
-        assert_eq!(instance.instance_id, "test-worker:space1:room1");
+        assert_eq!(instance.agent_id, "test-agent");
+        assert_eq!(instance.instance_id, "test-agent:space1:room1");
         assert_eq!(instance.space_id, "space1");
         assert_eq!(instance.room_id, "room1");
         assert!(!instance.is_running);
@@ -213,9 +213,9 @@ mod tests {
     }
 
     #[test]
-    fn test_worker_instance_is_ready() {
-        let def = WorkerDefinition::new("test-worker", "Test Worker", 60_000);
-        let mut instance = WorkerInstance::new(&def, "space1".to_string(), "room1".to_string());
+    fn test_agent_instance_is_ready() {
+        let def = AgentDefinition::new("test-agent", "Test Agent", 60_000);
+        let mut instance = AgentInstance::new(&def, "space1".to_string(), "room1".to_string());
         let now = Instant::now();
 
         // Initially ready (no next_run_at set)

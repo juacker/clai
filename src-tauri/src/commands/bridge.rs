@@ -5,7 +5,7 @@
 
 use crate::mcp::{complete_pending_request, ToolResponse};
 
-/// Complete a pending worker tool request.
+/// Complete a pending agent tool request.
 ///
 /// This command is called by JavaScript after executing a tool operation
 /// (canvas.*, tabs.*). It completes the async request that Rust is waiting on.
@@ -24,7 +24,7 @@ use crate::mcp::{complete_pending_request, ToolResponse};
 /// import { invoke } from '@tauri-apps/api/core';
 ///
 /// // After executing a tool successfully
-/// await invoke('worker_tool_result', {
+/// await invoke('agent_tool_result', {
 ///     response: {
 ///         requestId: 'abc-123',
 ///         success: true,
@@ -33,7 +33,7 @@ use crate::mcp::{complete_pending_request, ToolResponse};
 /// });
 ///
 /// // After a tool execution error
-/// await invoke('worker_tool_result', {
+/// await invoke('agent_tool_result', {
 ///     response: {
 ///         requestId: 'abc-123',
 ///         success: false,
@@ -42,6 +42,6 @@ use crate::mcp::{complete_pending_request, ToolResponse};
 /// });
 /// ```
 #[tauri::command]
-pub fn worker_tool_result(response: ToolResponse) -> Result<(), String> {
+pub fn agent_tool_result(response: ToolResponse) -> Result<(), String> {
     complete_pending_request(response)
 }

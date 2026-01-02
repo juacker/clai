@@ -1,6 +1,6 @@
 //! MCP tool definitions and implementations.
 //!
-//! This module contains all tools that can be exposed to AI workers via MCP.
+//! This module contains all tools that can be exposed to AI agents via MCP.
 //!
 //! # Tool Namespaces
 //!
@@ -85,20 +85,20 @@ impl std::error::Error for ToolError {}
 // NetdataTools Container
 // =============================================================================
 
-/// Container for all Netdata tools, created per worker execution.
+/// Container for all Netdata tools, created per agent execution.
 ///
 /// Tools are bound to a specific execution context (space_id, room_id) at
 /// creation time. This means the AI only needs to provide tool-specific
 /// parameters (like the query), not context information.
 ///
 /// Conversation state (conversation_id, message threading) is managed
-/// internally by each tool. When the worker stops and the tools are dropped,
-/// the conversation state is lost. The next worker run starts fresh.
+/// internally by each tool. When the agent stops and the tools are dropped,
+/// the conversation state is lost. The next agent run starts fresh.
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// // Create tools bound to worker's context
+/// // Create tools bound to agent's context
 /// let tools = NetdataTools::new(
 ///     api,
 ///     "space-123".to_string(),

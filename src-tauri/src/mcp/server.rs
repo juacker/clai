@@ -1,4 +1,4 @@
-//! MCP Server implementation for AI worker tools.
+//! MCP Server implementation for AI agent tools.
 //!
 //! This module implements an MCP (Model Context Protocol) server that exposes
 //! tools to AI CLIs like Claude Code, Gemini CLI, and Codex.
@@ -19,7 +19,7 @@
 //!
 //! # Usage
 //!
-//! The server is created per-worker with context already bound:
+//! The server is created per-agent with context already bound:
 //!
 //! ```rust,ignore
 //! use crate::mcp::server::McpToolServer;
@@ -220,13 +220,13 @@ async fn log_requests(request: Request<Body>, next: Next) -> Response {
 
 /// MCP server exposing tools to AI CLIs via HTTP.
 ///
-/// This server wraps `WorkerTools` and exposes them via the MCP protocol
+/// This server wraps `AgentTools` and exposes them via the MCP protocol
 /// over HTTP. AI CLIs connect to this server using:
 /// - Claude Code: `claude mcp add --transport http <name> <url>`
 /// - Gemini CLI: `gemini mcp add --transport http <name> <url>`
 /// - Codex: Configure in `~/.codex/config.toml`
 ///
-/// Context (worker_id, space_id, room_id) is bound at creation time,
+/// Context (agent_id, space_id, room_id) is bound at creation time,
 /// so the AI only needs to provide tool-specific parameters.
 ///
 /// # Tool Categories
@@ -266,11 +266,11 @@ impl McpToolServer {
     ///
     /// This constructor creates a server without a JS bridge, useful for testing.
     /// Canvas and tabs tools will return errors when executed.
-    pub fn new(api: Arc<NetdataApi>, worker_id: String, space_id: String, room_id: String) -> Self {
+    pub fn new(api: Arc<NetdataApi>, agent_id: String, space_id: String, room_id: String) -> Self {
         Self {
             netdata: NetdataTools::new(api, space_id.clone(), room_id.clone()),
-            canvas: CanvasTools::new(worker_id.clone(), space_id.clone(), room_id.clone()),
-            tabs: TabsTools::new(worker_id, space_id, room_id),
+            canvas: CanvasTools::new(agent_id.clone(), space_id.clone(), room_id.clone()),
+            tabs: TabsTools::new(agent_id, space_id, room_id),
             allowed_tools: None,
         }
     }
@@ -278,7 +278,7 @@ impl McpToolServer {
     /// Create a new MCP tool server with JS bridge for actual execution.
     pub fn with_bridge(
         api: Arc<NetdataApi>,
-        worker_id: String,
+        agent_id: String,
         space_id: String,
         room_id: String,
         bridge: JsBridge,
@@ -286,12 +286,12 @@ impl McpToolServer {
         Self {
             netdata: NetdataTools::new(api, space_id.clone(), room_id.clone()),
             canvas: CanvasTools::with_bridge(
-                worker_id.clone(),
+                agent_id.clone(),
                 space_id.clone(),
                 room_id.clone(),
                 bridge.clone(),
             ),
-            tabs: TabsTools::with_bridge(worker_id, space_id, room_id, bridge),
+            tabs: TabsTools::with_bridge(agent_id, space_id, room_id, bridge),
             allowed_tools: None,
         }
     }
@@ -304,9 +304,9 @@ impl McpToolServer {
         self
     }
 
-    /// Get the worker ID.
-    pub fn worker_id(&self) -> &str {
-        self.canvas.worker_id()
+    /// Get the agent ID.
+    pub fn agent_id(&self) -> &str {
+        self.canvas.agent_id()
     }
 
     /// Get the space ID.
@@ -333,7 +333,7 @@ impl McpToolServer {
     /// # Example
     ///
     /// ```rust,ignore
-    /// let server = McpToolServer::with_bridge(api, worker_id, space_id, room_id, bridge);
+    /// let server = McpToolServer::with_bridge(api, agent_id, space_id, room_id, bridge);
     /// let handle = server.serve_http().await?;
     ///
     /// println!("MCP server at: {}", handle.url());
@@ -631,7 +631,7 @@ impl ServerHandler for McpToolServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "Netdata AI Worker tools. Use netdata.query for data analysis, \
+                "Netdata AI Agent tools. Use netdata.query for data analysis, \
                  canvas.* for chart visualization, and tabs.* for layout management."
                     .into(),
             ),
@@ -697,12 +697,12 @@ mod tests {
         let api = create_test_api();
         let server = McpToolServer::new(
             api,
-            "test_worker".to_string(),
+            "test_agent".to_string(),
             "space-123".to_string(),
             "room-456".to_string(),
         );
 
-        assert_eq!(server.worker_id(), "test_worker");
+        assert_eq!(server.agent_id(), "test_agent");
         assert_eq!(server.space_id(), "space-123");
         assert_eq!(server.room_id(), "room-456");
     }
@@ -712,7 +712,7 @@ mod tests {
         let api = create_test_api();
         let server = McpToolServer::new(
             api,
-            "test_worker".to_string(),
+            "test_agent".to_string(),
             "space-123".to_string(),
             "room-456".to_string(),
         );
@@ -763,7 +763,7 @@ mod tests {
         let api = create_test_api();
         let server = McpToolServer::new(
             api,
-            "test_worker".to_string(),
+            "test_agent".to_string(),
             "space-123".to_string(),
             "room-456".to_string(),
         )
@@ -801,7 +801,7 @@ mod tests {
         let api = create_test_api();
         let server = McpToolServer::new(
             api,
-            "test_worker".to_string(),
+            "test_agent".to_string(),
             "space-123".to_string(),
             "room-456".to_string(),
         );

@@ -10,10 +10,10 @@ use std::collections::HashMap;
 // AI Provider
 // =============================================================================
 
-/// Supported AI providers for workers.
+/// Supported AI providers for agents.
 ///
 /// Each provider corresponds to a CLI tool that supports MCP.
-/// The provider is a global setting - all workers use the same provider.
+/// The provider is a global setting - all agents use the same provider.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum AiProvider {
@@ -60,7 +60,7 @@ impl AiProvider {
 }
 
 // =============================================================================
-// Agent Definition
+// Agent Config
 // =============================================================================
 
 /// Fixed ID for the default agent.
@@ -71,10 +71,13 @@ pub const DEFAULT_AGENT_ID: &str = "00000000-0000-0000-0000-000000000001";
 
 /// User-defined autonomous agent stored in configuration.
 ///
+/// This is the persisted config format. For the runtime definition used by
+/// the scheduler and executor, see `crate::agents::AgentDefinition`.
+///
 /// Agents monitor infrastructure and perform automated analysis.
 /// Each agent can be enabled for specific space/room combinations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentDefinition {
+pub struct AgentConfig {
     /// Unique identifier (UUID).
     ///
     /// Auto-generated for user-created agents.
@@ -107,7 +110,7 @@ pub struct AgentDefinition {
     pub updated_at: String,
 }
 
-impl AgentDefinition {
+impl AgentConfig {
     /// Creates the default agent with fixed ID.
     ///
     /// This agent is created automatically if no agents exist in the config.
@@ -166,12 +169,8 @@ impl AgentDefinition {
     ///
     /// Currently all agents use the same tools. This may be extended
     /// in the future to support custom tool configurations.
-    pub fn required_tools(&self) -> Vec<String> {
-        vec![
-            "netdata".to_string(),
-            "canvas".to_string(),
-            "tabs".to_string(),
-        ]
+    pub fn required_tools(&self) -> Vec<&'static str> {
+        vec!["netdata", "canvas", "tabs"]
     }
 
     /// Generates the system prompt from the description using the template.
@@ -257,7 +256,7 @@ pub struct ClaiConfig {
     /// Agents are global and can be enabled for specific space/room combinations.
     /// If empty on first load, a default agent will be created.
     #[serde(default)]
-    pub agents: Vec<AgentDefinition>,
+    pub agents: Vec<AgentConfig>,
 
     /// Per-space configuration (key is space UUID).
     ///
@@ -531,12 +530,12 @@ mod tests {
     }
 
     // =========================================================================
-    // Agent Definition Tests
+    // Agent Config Tests
     // =========================================================================
 
     #[test]
     fn test_default_agent_has_fixed_id() {
-        let agent = AgentDefinition::default_agent();
+        let agent = AgentConfig::default_agent();
         assert_eq!(agent.id, DEFAULT_AGENT_ID);
         assert!(agent.is_default());
         assert_eq!(agent.name, "Infrastructure Health Monitor");
@@ -546,16 +545,8 @@ mod tests {
 
     #[test]
     fn test_new_agent_has_unique_id() {
-        let agent1 = AgentDefinition::new(
-            "Agent 1".to_string(),
-            "Description 1".to_string(),
-            10,
-        );
-        let agent2 = AgentDefinition::new(
-            "Agent 2".to_string(),
-            "Description 2".to_string(),
-            15,
-        );
+        let agent1 = AgentConfig::new("Agent 1".to_string(), "Description 1".to_string(), 10);
+        let agent2 = AgentConfig::new("Agent 2".to_string(), "Description 2".to_string(), 15);
 
         assert_ne!(agent1.id, agent2.id);
         assert!(!agent1.is_default());
@@ -566,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_agent_enable_disable_rooms() {
-        let mut agent = AgentDefinition::default_agent();
+        let mut agent = AgentConfig::default_agent();
 
         // Initially no rooms enabled
         assert!(!agent.is_enabled_for("space-1", "room-1"));
@@ -593,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_agent_disable_for_space() {
-        let mut agent = AgentDefinition::default_agent();
+        let mut agent = AgentConfig::default_agent();
 
         // Enable rooms in two spaces
         agent.enable_for("space-1", "room-1");
@@ -613,18 +604,18 @@ mod tests {
 
     #[test]
     fn test_agent_required_tools() {
-        let agent = AgentDefinition::default_agent();
+        let agent = AgentConfig::default_agent();
         let tools = agent.required_tools();
 
-        assert!(tools.contains(&"netdata".to_string()));
-        assert!(tools.contains(&"canvas".to_string()));
-        assert!(tools.contains(&"tabs".to_string()));
+        assert!(tools.contains(&"netdata"));
+        assert!(tools.contains(&"canvas"));
+        assert!(tools.contains(&"tabs"));
         assert_eq!(tools.len(), 3);
     }
 
     #[test]
     fn test_agent_serialization() {
-        let mut agent = AgentDefinition::default_agent();
+        let mut agent = AgentConfig::default_agent();
         agent.enable_for("space-abc", "room-xyz");
 
         let json = serde_json::to_string_pretty(&agent).unwrap();
@@ -636,7 +627,7 @@ mod tests {
         assert!(json.contains("room-xyz"));
 
         // Should deserialize back
-        let parsed: AgentDefinition = serde_json::from_str(&json).unwrap();
+        let parsed: AgentConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, agent.id);
         assert_eq!(parsed.name, agent.name);
         assert!(parsed.is_enabled_for("space-abc", "room-xyz"));
@@ -645,9 +636,9 @@ mod tests {
     #[test]
     fn test_config_with_agents_serialization() {
         let mut config = ClaiConfig::default();
-        config.agents.push(AgentDefinition::default_agent());
+        config.agents.push(AgentConfig::default_agent());
 
-        let mut custom_agent = AgentDefinition::new(
+        let mut custom_agent = AgentConfig::new(
             "Custom Monitor".to_string(),
             "Monitor custom things".to_string(),
             30,
