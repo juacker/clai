@@ -294,6 +294,10 @@ export const useWorkerBridge = () => {
 
     // Cleanup on unmount
     return () => {
+      // Reset the ref so handlers can be re-registered on next mount
+      // (important for React StrictMode which mounts/unmounts/remounts)
+      initializedRef.current = false;
+
       // Unregister all handlers
       unregisterToolHandler('canvas.addChart');
       unregisterToolHandler('canvas.removeChart');
