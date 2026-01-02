@@ -72,20 +72,20 @@ const WORKER_TIMEOUT_SECS: u64 = 5 * 60; // 5 minutes
 ///
 /// A handle to the spawned task (can be used to abort if needed).
 pub fn start_worker_runner(app_handle: AppHandle, scheduler: SharedScheduler) {
-    tracing::info!(
-        "Starting worker runner (check interval: {}s)",
-        CHECK_INTERVAL_SECS
-    );
+    println!("[WorkerRunner] Starting worker runner (check interval: {}s)", CHECK_INTERVAL_SECS);
 
     // Use Tauri's async runtime to spawn the background task
     tauri::async_runtime::spawn(async move {
+        println!("[WorkerRunner] Background task started");
         loop {
             // Sleep first to avoid running immediately on startup
             tokio::time::sleep(Duration::from_secs(CHECK_INTERVAL_SECS)).await;
 
+            println!("[WorkerRunner] Checking for ready workers...");
+
             // Check for and run workers
             if let Err(e) = run_next_worker(&app_handle, &scheduler).await {
-                tracing::error!("Worker runner error: {}", e);
+                println!("[WorkerRunner] Error: {}", e);
             }
         }
     });
@@ -115,7 +115,7 @@ async fn run_next_worker(
     let token = match token {
         Some(t) => t,
         None => {
-            // Not logged in, nothing to do
+            println!("[WorkerRunner] No token, skipping");
             return Ok(());
         }
     };
@@ -129,7 +129,7 @@ async fn run_next_worker(
     let provider = match provider {
         Some(p) => p,
         None => {
-            // No provider configured, nothing to do
+            println!("[WorkerRunner] No AI provider configured, skipping");
             return Ok(());
         }
     };
@@ -138,8 +138,20 @@ async fn run_next_worker(
     let instance_id = {
         let mut sched = scheduler.lock().await;
 
+        // Log scheduler state
+        let instance_count = sched.instance_count();
+        let state = sched.state();
+        let running_worker = sched.running_instance();
+        println!(
+            "[WorkerRunner] Scheduler: {} instances, scheduler_state={:?}, running_worker={:?}",
+            instance_count,
+            state,
+            running_worker
+        );
+
         // Check if scheduler is paused
-        if matches!(sched.state(), SchedulerState::Paused { .. }) {
+        if matches!(state, SchedulerState::Paused { .. }) {
+            println!("[WorkerRunner] Scheduler is paused");
             return Ok(());
         }
 
@@ -149,12 +161,12 @@ async fn run_next_worker(
     let instance_id = match instance_id {
         Some(id) => id,
         None => {
-            // No workers ready
+            println!("[WorkerRunner] No workers ready");
             return Ok(());
         }
     };
 
-    tracing::info!("Running worker: {}", instance_id);
+    println!("[WorkerRunner] Running worker: {}", instance_id);
 
     // Get the instance details
     let (worker_id, space_id, room_id) = {
@@ -170,9 +182,13 @@ async fn run_next_worker(
         )
     };
 
+    println!("[WorkerRunner] Got instance: worker={}, space={}, room={}", worker_id, space_id, room_id);
+
     // Get the worker definition
     let definition = definitions::get_definition(&worker_id)
         .ok_or_else(|| RunnerError::DefinitionNotFound(worker_id.clone()))?;
+
+    println!("[WorkerRunner] Got definition: {}", definition.name);
 
     // Get base URL
     let base_url = {
@@ -180,12 +196,16 @@ async fn run_next_worker(
         url.clone()
     };
 
+    println!("[WorkerRunner] Base URL: {}", base_url);
+
     // Create API client
     let client = Client::new();
     let api = std::sync::Arc::new(NetdataApi::new(client, base_url, token));
 
     // Create JS bridge for UI tools
     let bridge = JsBridge::new(app_handle.clone());
+
+    println!("[WorkerRunner] Starting CLI with provider: {:?}", provider);
 
     // Run the worker
     let result = cli_runner::run_ai_cli(
@@ -200,27 +220,29 @@ async fn run_next_worker(
     )
     .await;
 
+    println!("[WorkerRunner] CLI finished");
+
     // Mark worker complete
     let success = match &result {
         Ok(run_result) => {
             if run_result.success {
-                tracing::info!("Worker {} completed successfully", instance_id);
+                println!("[WorkerRunner] Worker {} completed successfully", instance_id);
                 true
             } else {
-                tracing::warn!(
-                    "Worker {} failed with exit code {:?}",
+                println!(
+                    "[WorkerRunner] Worker {} failed with exit code {:?}",
                     instance_id,
                     run_result.exit_code
                 );
                 // Log stderr for debugging
                 if !run_result.stderr.is_empty() {
-                    tracing::debug!("Worker stderr: {}", run_result.stderr);
+                    println!("[WorkerRunner] stderr: {}", run_result.stderr);
                 }
                 false
             }
         }
         Err(e) => {
-            tracing::error!("Worker {} error: {}", instance_id, e);
+            println!("[WorkerRunner] Worker {} error: {}", instance_id, e);
             false
         }
     };
@@ -229,6 +251,17 @@ async fn run_next_worker(
     {
         let mut sched = scheduler.lock().await;
         sched.complete_worker(&instance_id, success);
+
+        // Log next run time
+        if let Some(instance) = sched.get_instance(&instance_id) {
+            let seconds_until_next = instance.seconds_until_next_run();
+            println!(
+                "[WorkerRunner] Next run for {} in {} seconds (~{} minutes)",
+                instance_id,
+                seconds_until_next,
+                seconds_until_next / 60
+            );
+        }
     }
 
     Ok(())

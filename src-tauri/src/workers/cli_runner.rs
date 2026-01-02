@@ -87,6 +87,8 @@ pub struct CliRunResult {
     pub success: bool,
     /// Exit code from the CLI (if available).
     pub exit_code: Option<i32>,
+    /// Output from stdout (Claude's response in --print mode).
+    pub stdout: String,
     /// Output from stderr.
     pub stderr: String,
 }
@@ -134,6 +136,8 @@ pub async fn run_ai_cli(
     bridge: Option<JsBridge>,
     timeout_secs: u64,
 ) -> Result<CliRunResult, CliRunnerError> {
+    println!("[CliRunner] Creating MCP server for worker {}", worker_id);
+
     // 1. Create MCP server with bound context
     let server = match bridge {
         Some(b) => McpToolServer::with_bridge(
@@ -151,22 +155,22 @@ pub async fn run_ai_cli(
         ),
     };
 
+    println!("[CliRunner] Starting HTTP server...");
+
     // 2. Start HTTP server
     let handle = server.serve_http().await?;
     let server_url = handle.url().to_string();
 
-    tracing::info!(
-        "Started MCP server for worker {} at {}",
-        worker_id,
-        server_url
-    );
+    println!("[CliRunner] MCP server started at {}", server_url);
 
     // 3. Spawn AI CLI with MCP config
+    println!("[CliRunner] Spawning CLI...");
     let result = spawn_and_wait_cli(provider, prompt, &server_url, timeout_secs).await;
+    println!("[CliRunner] CLI finished with result: {:?}", result.is_ok());
 
     // 4. Shutdown server (always, even on error)
     handle.shutdown();
-    tracing::info!("Shut down MCP server for worker {}", worker_id);
+    println!("[CliRunner] MCP server shut down");
 
     result
 }
@@ -178,19 +182,32 @@ async fn spawn_and_wait_cli(
     mcp_server_url: &str,
     timeout_secs: u64,
 ) -> Result<CliRunResult, CliRunnerError> {
-    let mut command = build_cli_command(provider, prompt, mcp_server_url);
+    let mut command = build_cli_command(provider, mcp_server_url);
 
-    // Configure stdio
+    println!("[CliRunner] Command: {:?}", command);
+
+    // Configure stdio - use piped stdin to pass the prompt
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
-    command.stdin(Stdio::null());
+    command.stdin(Stdio::piped());
 
     // Spawn the process
-    let child = command
+    println!("[CliRunner] Spawning process...");
+    let mut child = command
         .spawn()
         .map_err(|e| CliRunnerError::SpawnError(format!("{}: {}", provider.command(), e)))?;
 
-    tracing::info!("Spawned {} CLI process", provider.display_name());
+    // Write prompt to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        use tokio::io::AsyncWriteExt;
+        if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
+            return Err(CliRunnerError::SpawnError(format!("Failed to write prompt to stdin: {}", e)));
+        }
+        // Close stdin to signal end of input
+        drop(stdin);
+    }
+
+    println!("[CliRunner] Process spawned, waiting (timeout: {}s)...", timeout_secs);
 
     // Wait with timeout using select
     let timeout = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs));
@@ -204,13 +221,27 @@ async fn spawn_and_wait_cli(
         result = output_future => {
             match result {
                 Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                     let success = output.status.success();
                     let exit_code = output.status.code();
 
+                    // Log Claude's response (stdout in --print mode)
+                    if !stdout.is_empty() {
+                        println!("[CliRunner] Claude stdout ({} chars):", stdout.len());
+                        // Print first 500 chars to avoid flooding logs
+                        let preview: String = stdout.chars().take(500).collect();
+                        println!("{}", preview);
+                        if stdout.len() > 500 {
+                            println!("... (truncated)");
+                        }
+                    } else {
+                        println!("[CliRunner] Claude stdout: (empty)");
+                    }
+
                     if !success {
-                        tracing::warn!(
-                            "{} CLI exited with code {:?}: {}",
+                        println!(
+                            "[CliRunner] {} CLI exited with code {:?}: {}",
                             provider.display_name(),
                             exit_code,
                             stderr.lines().take(5).collect::<Vec<_>>().join("\n")
@@ -220,6 +251,7 @@ async fn spawn_and_wait_cli(
                     Ok(CliRunResult {
                         success,
                         exit_code,
+                        stdout,
                         stderr,
                     })
                 }
@@ -230,8 +262,8 @@ async fn spawn_and_wait_cli(
             // Timeout - the process will be dropped and cleaned up
             // Note: wait_with_output consumed the child, but select! ensures
             // the future is cancelled, which should clean up the process
-            tracing::warn!(
-                "{} CLI timed out after {} seconds",
+            println!(
+                "[CliRunner] {} CLI timed out after {} seconds",
                 provider.display_name(),
                 timeout_secs
             );
@@ -241,7 +273,10 @@ async fn spawn_and_wait_cli(
 }
 
 /// Builds the command for the AI CLI with MCP configuration.
-fn build_cli_command(provider: &AiProvider, prompt: &str, mcp_server_url: &str) -> Command {
+///
+/// Note: The prompt is passed via stdin, not as a command argument.
+/// This handles long multi-line prompts more reliably.
+fn build_cli_command(provider: &AiProvider, mcp_server_url: &str) -> Command {
     // Handle Flatpak sandboxing
     let in_flatpak = is_flatpak();
 
@@ -256,15 +291,14 @@ fn build_cli_command(provider: &AiProvider, prompt: &str, mcp_server_url: &str) 
 
     // Configure based on provider
     match provider {
-        AiProvider::Claude => configure_claude_command(&mut cmd, prompt, mcp_server_url),
-        AiProvider::Gemini => configure_gemini_command(&mut cmd, prompt, mcp_server_url),
-        AiProvider::Codex => configure_codex_command(&mut cmd, prompt, mcp_server_url),
+        AiProvider::Claude => configure_claude_command(&mut cmd, mcp_server_url),
+        AiProvider::Gemini => configure_gemini_command(&mut cmd, mcp_server_url),
+        AiProvider::Codex => configure_codex_command(&mut cmd, mcp_server_url),
         AiProvider::Custom { args, .. } => {
-            // For custom providers, just add the args and prompt
+            // For custom providers, just add the args (prompt via stdin)
             for arg in args {
                 cmd.arg(arg);
             }
-            cmd.arg(prompt);
         }
     }
 
@@ -275,31 +309,36 @@ fn build_cli_command(provider: &AiProvider, prompt: &str, mcp_server_url: &str) 
 ///
 /// Claude Code supports:
 /// - `--print` to disable interactive mode (non-interactive/headless)
-/// - `--mcp-server <name>=<url>` for inline server config
+/// - `--mcp-config <path>` to specify MCP config file
 /// - `--allowedTools` to auto-approve tools without prompting
-/// - `--dangerously-skip-permissions` to skip ALL permission prompts (YOLO mode)
-/// - Prompt is passed as the final argument
+/// - Prompt is passed via stdin (piped)
 ///
-/// See: https://code.claude.com/docs/en/headless
-fn configure_claude_command(cmd: &mut Command, prompt: &str, mcp_server_url: &str) {
+/// For MCP servers, we pass the config via JSON file or inline JSON.
+/// See: https://code.claude.com/docs/en/mcp
+fn configure_claude_command(cmd: &mut Command, mcp_server_url: &str) {
     // Non-interactive mode (required for headless operation)
+    // Prompt will be provided via stdin
     cmd.arg("--print");
 
-    // Add MCP server
-    // Format: --mcp-server netdata=http://127.0.0.1:PORT
-    cmd.arg("--mcp-server");
-    cmd.arg(format!("netdata={}", mcp_server_url));
+    // Add MCP server config via JSON
+    // Format: {"mcpServers": {"netdata": {"type": "http", "url": "<url>"}}}
+    let mcp_config = serde_json::json!({
+        "mcpServers": {
+            "netdata": {
+                "type": "http",
+                "url": mcp_server_url
+            }
+        }
+    });
+    cmd.arg("--mcp-config");
+    cmd.arg(mcp_config.to_string());
 
     // Auto-approve tools without prompting:
     // - mcp__netdata__* : All tools from our MCP server (netdata.query, canvas.*, tabs.*)
     // - WebSearch: Search the web for documentation, solutions, etc.
     // - WebFetch: Fetch content from specific URLs
-    // See: https://github.com/anthropics/claude-code/issues/2928
     cmd.arg("--allowedTools");
     cmd.arg("mcp__netdata__*,WebSearch,WebFetch");
-
-    // Add the prompt
-    cmd.arg(prompt);
 }
 
 /// Configure command for Gemini CLI.
@@ -309,11 +348,11 @@ fn configure_claude_command(cmd: &mut Command, prompt: &str, mcp_server_url: &st
 /// - `-y` or `--yolo` to auto-approve all tools
 /// - `--allowed-mcp-server-names` to whitelist MCP servers
 /// - Built-in `google_web_search` tool (auto-enabled)
-/// - Prompt as argument (or with -p flag)
+/// - Prompt via stdin or as argument
 ///
 /// See: https://geminicli.com/docs/cli/headless/
 /// Web search: https://geminicli.com/docs/tools/web-search/
-fn configure_gemini_command(cmd: &mut Command, prompt: &str, mcp_server_url: &str) {
+fn configure_gemini_command(cmd: &mut Command, mcp_server_url: &str) {
     // Add MCP server
     cmd.arg("--mcp-server");
     cmd.arg(format!("netdata={}", mcp_server_url));
@@ -326,8 +365,7 @@ fn configure_gemini_command(cmd: &mut Command, prompt: &str, mcp_server_url: &st
     cmd.arg("--allowed-mcp-server-names");
     cmd.arg("netdata");
 
-    // Add the prompt
-    cmd.arg(prompt);
+    // Prompt will be provided via stdin
 }
 
 /// Configure command for Codex CLI.
@@ -337,10 +375,10 @@ fn configure_gemini_command(cmd: &mut Command, prompt: &str, mcp_server_url: &st
 /// - `--ask-for-approval never` or `-a never` to disable approval prompts
 /// - `--search` to enable web search tool
 /// - `--full-auto` to run commands without prompts
-/// - Prompt as argument
+/// - Prompt via stdin or as argument
 ///
 /// See: https://developers.openai.com/codex/cli/reference/
-fn configure_codex_command(cmd: &mut Command, prompt: &str, mcp_server_url: &str) {
+fn configure_codex_command(cmd: &mut Command, mcp_server_url: &str) {
     // Set MCP servers via environment variable
     // Format: JSON object { "netdata": { "url": "http://...", "transport": "http" } }
     let mcp_config = serde_json::json!({
@@ -360,8 +398,7 @@ fn configure_codex_command(cmd: &mut Command, prompt: &str, mcp_server_url: &str
     // See: https://github.com/openai/codex/issues/3139
     cmd.arg("--search");
 
-    // Add the prompt
-    cmd.arg(prompt);
+    // Prompt will be provided via stdin
 }
 
 // =============================================================================
@@ -389,18 +426,19 @@ mod tests {
         let result = CliRunResult {
             success: true,
             exit_code: Some(0),
+            stdout: "Claude's response".to_string(),
             stderr: "".to_string(),
         };
 
         assert!(result.success);
         assert_eq!(result.exit_code, Some(0));
+        assert!(!result.stdout.is_empty());
     }
 
     #[test]
     fn test_build_command_claude() {
         let cmd = build_cli_command(
             &AiProvider::Claude,
-            "test prompt",
             "http://127.0.0.1:12345",
         );
 
@@ -413,7 +451,6 @@ mod tests {
     fn test_build_command_gemini() {
         let cmd = build_cli_command(
             &AiProvider::Gemini,
-            "test prompt",
             "http://127.0.0.1:12345",
         );
 
@@ -424,7 +461,6 @@ mod tests {
     fn test_build_command_codex() {
         let cmd = build_cli_command(
             &AiProvider::Codex,
-            "test prompt",
             "http://127.0.0.1:12345",
         );
 
@@ -438,7 +474,7 @@ mod tests {
             args: vec!["--mode".to_string(), "agent".to_string()],
         };
 
-        let cmd = build_cli_command(&provider, "test prompt", "http://127.0.0.1:12345");
+        let cmd = build_cli_command(&provider, "http://127.0.0.1:12345");
 
         assert!(format!("{:?}", cmd).contains("my-ai") || format!("{:?}", cmd).contains("flatpak"));
     }

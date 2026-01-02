@@ -164,6 +164,21 @@ impl WorkerInstance {
     pub fn schedule_next(&mut self, interval_ms: u64) {
         self.next_run_at = Some(Instant::now() + std::time::Duration::from_millis(interval_ms));
     }
+
+    /// Returns seconds until the next scheduled run (0 if ready now or no schedule).
+    pub fn seconds_until_next_run(&self) -> u64 {
+        match self.next_run_at {
+            Some(next) => {
+                let now = Instant::now();
+                if next > now {
+                    next.duration_since(now).as_secs()
+                } else {
+                    0
+                }
+            }
+            None => 0,
+        }
+    }
 }
 
 // =============================================================================
