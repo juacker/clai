@@ -1,4 +1,4 @@
-.PHONY: help dev build release-retry release-patch release-minor release-major tag-delete
+.PHONY: help dev build lint check test ci release-retry release-patch release-minor release-major tag-delete
 
 # Get current version from package.json
 VERSION := $(shell node -p "require('./package.json').version")
@@ -13,6 +13,19 @@ dev: ## Start development server
 
 build: ## Build the application
 	npm run tauri:build
+
+# CI/Linting targets
+
+lint: ## Run clippy with warnings as errors (same as CI)
+	cd src-tauri && cargo clippy -- -D warnings
+
+check: ## Run cargo check (fast compilation check)
+	cd src-tauri && cargo check
+
+test: ## Run cargo tests
+	cd src-tauri && cargo test
+
+ci: lint test ## Run all CI checks locally (lint + test)
 
 # Release management
 
