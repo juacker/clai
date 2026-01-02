@@ -665,6 +665,9 @@ impl McpToolServer {
 // ServerHandler Implementation
 // =============================================================================
 
+// Note: list_tools and call_tool use `impl Future` return type to match the trait signature.
+// The trait requires this pattern; using `async fn` directly is not compatible with the trait.
+#[allow(clippy::manual_async_fn)]
 impl ServerHandler for McpToolServer {
     /// Return server information and capabilities.
     fn get_info(&self) -> ServerInfo {

@@ -60,7 +60,7 @@ pub fn set_ai_provider(
     state: State<'_, AppState>,
 ) -> Result<AvailableProvider, String> {
     // First validate the provider is available
-    let info = validate_provider(&provider).map_err(|e| e)?;
+    let info = validate_provider(&provider)?;
 
     // Then save to config
     let config_manager = state

@@ -82,6 +82,7 @@ impl From<McpServerError> for CliRunnerError {
 
 /// Result of a CLI execution.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // stdout may be used for logging/debugging in the future
 pub struct CliRunResult {
     /// Whether the execution was successful.
     pub success: bool,
@@ -126,6 +127,7 @@ pub struct CliRunResult {
 ///     300, // 5 minutes
 /// ).await?;
 /// ```
+#[allow(clippy::too_many_arguments)]
 pub async fn run_ai_cli(
     provider: &AiProvider,
     prompt: &str,
