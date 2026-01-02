@@ -1,10 +1,18 @@
-# CLAI - Netdata AI Desktop
+<p align="center">
+  <img src="public/icon.png" alt="CLAI" width="128" height="128">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![GitHub release](https://img.shields.io/github/v/release/juacker/clai)](https://github.com/juacker/clai/releases)
-[![CI](https://github.com/juacker/clai/actions/workflows/ci.yml/badge.svg)](https://github.com/juacker/clai/actions/workflows/ci.yml)
+<h1 align="center">CLAI - Netdata AI Desktop</h1>
 
-A desktop app for Netdata Cloud with AI-powered monitoring insights and autonomous workers.
+<p align="center">
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT"></a>
+  <a href="https://github.com/juacker/clai/releases"><img src="https://img.shields.io/github/v/release/juacker/clai" alt="GitHub release"></a>
+  <a href="https://github.com/juacker/clai/actions/workflows/ci.yml"><img src="https://github.com/juacker/clai/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
+
+<p align="center">
+  A desktop app for Netdata Cloud with AI-powered monitoring insights and autonomous workers.
+</p>
 
 ## Features
 
