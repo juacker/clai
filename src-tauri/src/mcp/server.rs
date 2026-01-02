@@ -41,13 +41,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use axum::{
-    body::Body,
-    http::Request,
-    middleware::Next,
-    response::Response,
-    Router,
-};
+use axum::{body::Body, http::Request, middleware::Next, response::Response, Router};
 use rmcp::{
     handler::server::{tool::ToolCallContext, wrapper::Parameters},
     model::{
@@ -272,12 +266,7 @@ impl McpToolServer {
     ///
     /// This constructor creates a server without a JS bridge, useful for testing.
     /// Canvas and tabs tools will return errors when executed.
-    pub fn new(
-        api: Arc<NetdataApi>,
-        worker_id: String,
-        space_id: String,
-        room_id: String,
-    ) -> Self {
+    pub fn new(api: Arc<NetdataApi>, worker_id: String, space_id: String, room_id: String) -> Self {
         Self {
             netdata: NetdataTools::new(api, space_id.clone(), room_id.clone()),
             canvas: CanvasTools::new(worker_id.clone(), space_id.clone(), room_id.clone()),
@@ -441,15 +430,10 @@ impl McpToolServer {
     ) -> Result<CallToolResult, McpError> {
         tracing::debug!(query = %params.0.query, "netdata.query called");
 
-        let result = self
-            .netdata
-            .query
-            .query(params.0)
-            .await
-            .map_err(|e| {
-                tracing::warn!(error = %e, "netdata.query error");
-                McpError::internal_error(e.to_string(), None)
-            })?;
+        let result = self.netdata.query.query(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "netdata.query error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
 
         tracing::debug!(result_len = result.len(), "netdata.query result");
         Ok(CallToolResult::success(vec![Content::text(result)]))
@@ -470,14 +454,10 @@ impl McpToolServer {
     ) -> Result<CallToolResult, McpError> {
         tracing::debug!(context = %params.0.context, "canvas.addChart called");
 
-        let result = self
-            .canvas
-            .add_chart(params.0)
-            .await
-            .map_err(|e| {
-                tracing::warn!(error = %e, "canvas.addChart error");
-                McpError::internal_error(e.to_string(), None)
-            })?;
+        let result = self.canvas.add_chart(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.addChart error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
 
         tracing::debug!(result = ?result, "canvas.addChart success");
         Ok(CallToolResult::success(vec![Content::text(
@@ -496,16 +476,15 @@ impl McpToolServer {
     ) -> Result<CallToolResult, McpError> {
         tracing::debug!(chart_id = %params.0.chart_id, "canvas.removeChart called");
 
-        self.canvas
-            .remove_chart(params.0)
-            .await
-            .map_err(|e| {
-                tracing::warn!(error = %e, "canvas.removeChart error");
-                McpError::internal_error(e.to_string(), None)
-            })?;
+        self.canvas.remove_chart(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.removeChart error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
 
         tracing::debug!("canvas.removeChart success");
-        Ok(CallToolResult::success(vec![Content::text("Chart removed")]))
+        Ok(CallToolResult::success(vec![Content::text(
+            "Chart removed",
+        )]))
     }
 
     /// Get a list of all charts currently displayed on the canvas.
@@ -516,14 +495,10 @@ impl McpToolServer {
     async fn canvas_get_charts(&self) -> Result<CallToolResult, McpError> {
         tracing::debug!("canvas.getCharts called");
 
-        let result = self
-            .canvas
-            .get_charts()
-            .await
-            .map_err(|e| {
-                tracing::warn!(error = %e, "canvas.getCharts error");
-                McpError::internal_error(e.to_string(), None)
-            })?;
+        let result = self.canvas.get_charts().await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.getCharts error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
 
         tracing::debug!(chart_count = result.len(), "canvas.getCharts success");
         Ok(CallToolResult::success(vec![Content::text(
@@ -539,13 +514,10 @@ impl McpToolServer {
     async fn canvas_clear_charts(&self) -> Result<CallToolResult, McpError> {
         tracing::debug!("canvas.clearCharts called");
 
-        self.canvas
-            .clear_charts()
-            .await
-            .map_err(|e| {
-                tracing::warn!(error = %e, "canvas.clearCharts error");
-                McpError::internal_error(e.to_string(), None)
-            })?;
+        self.canvas.clear_charts().await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.clearCharts error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
 
         tracing::debug!("canvas.clearCharts success");
         Ok(CallToolResult::success(vec![Content::text(
@@ -565,13 +537,10 @@ impl McpToolServer {
         tracing::debug!(range = %params.0.range, "canvas.setTimeRange called");
 
         let range = params.0.range.clone();
-        self.canvas
-            .set_time_range(params.0)
-            .await
-            .map_err(|e| {
-                tracing::warn!(error = %e, "canvas.setTimeRange error");
-                McpError::internal_error(e.to_string(), None)
-            })?;
+        self.canvas.set_time_range(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.setTimeRange error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
 
         tracing::debug!(range = %range, "canvas.setTimeRange success");
         Ok(CallToolResult::success(vec![Content::text(format!(
@@ -599,14 +568,10 @@ impl McpToolServer {
             "tabs.splitTile called"
         );
 
-        let result = self
-            .tabs
-            .split_tile(params.0)
-            .await
-            .map_err(|e| {
-                tracing::warn!(error = %e, "tabs.splitTile error");
-                McpError::internal_error(e.to_string(), None)
-            })?;
+        let result = self.tabs.split_tile(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "tabs.splitTile error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
 
         tracing::debug!(result = ?result, "tabs.splitTile success");
         Ok(CallToolResult::success(vec![Content::text(
@@ -625,13 +590,10 @@ impl McpToolServer {
     ) -> Result<CallToolResult, McpError> {
         tracing::debug!(tile_id = %params.0.tile_id, "tabs.removeTile called");
 
-        self.tabs
-            .remove_tile(params.0)
-            .await
-            .map_err(|e| {
-                tracing::warn!(error = %e, "tabs.removeTile error");
-                McpError::internal_error(e.to_string(), None)
-            })?;
+        self.tabs.remove_tile(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "tabs.removeTile error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
 
         tracing::debug!("tabs.removeTile success");
         Ok(CallToolResult::success(vec![Content::text("Tile removed")]))
@@ -645,14 +607,10 @@ impl McpToolServer {
     async fn tabs_get_tile_layout(&self) -> Result<CallToolResult, McpError> {
         tracing::debug!("tabs.getTileLayout called");
 
-        let result = self
-            .tabs
-            .get_tile_layout()
-            .await
-            .map_err(|e| {
-                tracing::warn!(error = %e, "tabs.getTileLayout error");
-                McpError::internal_error(e.to_string(), None)
-            })?;
+        let result = self.tabs.get_tile_layout().await.map_err(|e| {
+            tracing::warn!(error = %e, "tabs.getTileLayout error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
 
         tracing::debug!(layout = ?result, "tabs.getTileLayout success");
         Ok(CallToolResult::success(vec![Content::text(
@@ -711,9 +669,7 @@ impl ServerHandler for McpToolServer {
             tracing::debug!(tool_name = %request.name, "call_tool");
 
             let tool_context = ToolCallContext::new(self, request, context);
-            Self::tool_router()
-                .call(tool_context)
-                .await
+            Self::tool_router().call(tool_context).await
         }
     }
 }

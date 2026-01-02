@@ -1,4 +1,4 @@
-.PHONY: help dev build lint check test ci release-retry release-patch release-minor release-major tag-delete
+.PHONY: help dev build fmt fmt-check lint check test ci release-retry release-patch release-minor release-major tag-delete
 
 # Get current version from package.json
 VERSION := $(shell node -p "require('./package.json').version")
@@ -16,6 +16,12 @@ build: ## Build the application
 
 # CI/Linting targets
 
+fmt: ## Format code with cargo fmt
+	cd src-tauri && cargo fmt
+
+fmt-check: ## Check code formatting (same as CI)
+	cd src-tauri && cargo fmt -- --check
+
 lint: ## Run clippy with warnings as errors (same as CI)
 	cd src-tauri && cargo clippy -- -D warnings
 
@@ -25,7 +31,7 @@ check: ## Run cargo check (fast compilation check)
 test: ## Run cargo tests
 	cd src-tauri && cargo test
 
-ci: lint test ## Run all CI checks locally (lint + test)
+ci: fmt-check lint test ## Run all CI checks locally (fmt + lint + test)
 
 # Release management
 

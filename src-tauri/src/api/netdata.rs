@@ -85,10 +85,7 @@ impl NetdataApi {
                 .map_err(|e| ApiError::ParseError(e.to_string()))
         } else {
             // Try to parse the error response body to extract Netdata error details
-            let netdata_error: Option<NetdataErrorResponse> = response
-                .json()
-                .await
-                .ok(); // If parsing fails, we'll use defaults
+            let netdata_error: Option<NetdataErrorResponse> = response.json().await.ok(); // If parsing fails, we'll use defaults
 
             Err(ApiError::from_response(status, netdata_error))
         }
@@ -1016,7 +1013,10 @@ mod tests {
         let user: UserInfo = serde_json::from_str(json).unwrap();
         assert_eq!(user.id, "user123");
         assert_eq!(user.email, "test@example.com");
-        assert_eq!(user.avatar_url, Some("https://example.com/avatar.png".to_string()));
+        assert_eq!(
+            user.avatar_url,
+            Some("https://example.com/avatar.png".to_string())
+        );
     }
 
     #[test]
@@ -1030,6 +1030,9 @@ mod tests {
 
         let space: Space = serde_json::from_str(json).unwrap();
         assert_eq!(space.id, "space123");
-        assert_eq!(space.permissions, Some(vec!["read".to_string(), "write".to_string()]));
+        assert_eq!(
+            space.permissions,
+            Some(vec!["read".to_string(), "write".to_string()])
+        );
     }
 }

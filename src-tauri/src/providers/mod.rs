@@ -136,7 +136,11 @@ pub fn check_provider(provider: &AiProvider) -> AvailableProvider {
     if !command_exists(cmd) {
         return AvailableProvider::unavailable(
             provider.clone(),
-            format!("Command '{}' not found. Please install {}.", cmd, provider.display_name()),
+            format!(
+                "Command '{}' not found. Please install {}.",
+                cmd,
+                provider.display_name()
+            ),
         );
     }
 
@@ -153,29 +157,25 @@ pub fn check_provider(provider: &AiProvider) -> AvailableProvider {
 pub fn get_available_providers() -> Vec<AvailableProvider> {
     use std::thread;
 
-    let known_providers = vec![
-        AiProvider::Claude,
-        AiProvider::Gemini,
-        AiProvider::Codex,
-    ];
+    let known_providers = vec![AiProvider::Claude, AiProvider::Gemini, AiProvider::Codex];
 
     // Check providers in parallel using threads
     let handles: Vec<_> = known_providers
         .into_iter()
-        .map(|provider| {
-            thread::spawn(move || check_provider(&provider))
-        })
+        .map(|provider| thread::spawn(move || check_provider(&provider)))
         .collect();
 
     // Collect results
     handles
         .into_iter()
-        .map(|h| h.join().unwrap_or_else(|_| {
-            AvailableProvider::unavailable(
-                AiProvider::Claude, // fallback
-                "Failed to check provider".to_string(),
-            )
-        }))
+        .map(|h| {
+            h.join().unwrap_or_else(|_| {
+                AvailableProvider::unavailable(
+                    AiProvider::Claude, // fallback
+                    "Failed to check provider".to_string(),
+                )
+            })
+        })
         .collect()
 }
 
@@ -185,7 +185,9 @@ pub fn validate_provider(provider: &AiProvider) -> Result<AvailableProvider, Str
     if info.available {
         Ok(info)
     } else {
-        Err(info.error.unwrap_or_else(|| "Provider not available".to_string()))
+        Err(info
+            .error
+            .unwrap_or_else(|| "Provider not available".to_string()))
     }
 }
 
@@ -213,10 +215,7 @@ mod tests {
         assert_eq!(available.name, "Claude Code");
         assert_eq!(available.version, Some("1.0.0".to_string()));
 
-        let unavailable = AvailableProvider::unavailable(
-            provider,
-            "Not found".to_string(),
-        );
+        let unavailable = AvailableProvider::unavailable(provider, "Not found".to_string());
         assert!(!unavailable.available);
         assert_eq!(unavailable.error, Some("Not found".to_string()));
     }

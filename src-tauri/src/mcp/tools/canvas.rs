@@ -186,7 +186,8 @@ impl CanvasTools {
                 &self.space_id,
                 &self.room_id,
                 "canvas.addChart",
-                serde_json::to_value(&params).map_err(|e| ToolError::InvalidParams(e.to_string()))?,
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -203,7 +204,8 @@ impl CanvasTools {
                 &self.space_id,
                 &self.room_id,
                 "canvas.removeChart",
-                serde_json::to_value(&params).map_err(|e| ToolError::InvalidParams(e.to_string()))?,
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -252,7 +254,8 @@ impl CanvasTools {
                 &self.space_id,
                 &self.room_id,
                 "canvas.setTimeRange",
-                serde_json::to_value(&params).map_err(|e| ToolError::InvalidParams(e.to_string()))?,
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -324,5 +327,4 @@ mod tests {
         let params: SetTimeRangeParams = serde_json::from_value(json).unwrap();
         assert_eq!(params.range, "1h");
     }
-
 }

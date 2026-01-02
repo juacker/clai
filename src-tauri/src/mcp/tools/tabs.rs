@@ -194,7 +194,8 @@ impl TabsTools {
                 &self.space_id,
                 &self.room_id,
                 "tabs.splitTile",
-                serde_json::to_value(&params).map_err(|e| ToolError::InvalidParams(e.to_string()))?,
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -211,7 +212,8 @@ impl TabsTools {
                 &self.space_id,
                 &self.room_id,
                 "tabs.removeTile",
-                serde_json::to_value(&params).map_err(|e| ToolError::InvalidParams(e.to_string()))?,
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -288,5 +290,4 @@ mod tests {
         let params: RemoveTileParams = serde_json::from_value(json).unwrap();
         assert_eq!(params.tile_id, "tile-789");
     }
-
 }

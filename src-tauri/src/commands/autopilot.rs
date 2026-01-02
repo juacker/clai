@@ -87,13 +87,21 @@ pub async fn get_autopilot_status(
     // Determine status based on context
     if is_all_nodes_room {
         // In All Nodes room - can toggle directly
-        Ok(AutopilotStatus::available(all_nodes_enabled, has_credits, provider_info))
+        Ok(AutopilotStatus::available(
+            all_nodes_enabled,
+            has_credits,
+            provider_info,
+        ))
     } else if all_nodes_enabled {
         // In other room, but All Nodes is enabled - inherited, can't toggle here
         Ok(AutopilotStatus::via_all_nodes(has_credits, provider_info))
     } else {
         // In other room, All Nodes is not enabled - can toggle for this room
-        Ok(AutopilotStatus::available(current_room_enabled, has_credits, provider_info))
+        Ok(AutopilotStatus::available(
+            current_room_enabled,
+            has_credits,
+            provider_info,
+        ))
     }
 }
 

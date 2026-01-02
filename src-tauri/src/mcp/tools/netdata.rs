@@ -203,10 +203,7 @@ impl NetdataQueryTool {
             .await
             .map_err(|e| ToolError::ApiError(e.to_string()))?;
 
-        let parent_message_id = current_conversation
-            .messages
-            .last()
-            .map(|m| m.id.clone());
+        let parent_message_id = current_conversation.messages.last().map(|m| m.id.clone());
 
         // 4. Send message via chat completion (SSE streaming, wait for completion)
         // Prefix with [@clai] so the UI can distinguish worker queries from user messages
@@ -241,9 +238,8 @@ impl NetdataQueryTool {
             .map_err(|e| ToolError::ApiError(e.to_string()))?;
 
         // 6. Extract response
-        let (response, _last_message_id) =
-            extract_response_and_message_id(&conversation.messages)
-                .ok_or_else(|| ToolError::ExecutionFailed("No response from AI".to_string()))?;
+        let (response, _last_message_id) = extract_response_and_message_id(&conversation.messages)
+            .ok_or_else(|| ToolError::ExecutionFailed("No response from AI".to_string()))?;
 
         // 7. Update state (just conversation_id - we'll fetch fresh last_message_id each time)
         {
@@ -253,7 +249,6 @@ impl NetdataQueryTool {
 
         Ok(response)
     }
-
 }
 
 // =============================================================================
@@ -276,9 +271,7 @@ use crate::api::netdata::ConversationMessage;
 /// The composite format gives the worker AI full context about what analysis
 /// was performed and what data was examined.
 #[allow(dead_code)] // Called via MCP protocol
-fn extract_response_and_message_id(
-    messages: &[ConversationMessage],
-) -> Option<(String, String)> {
+fn extract_response_and_message_id(messages: &[ConversationMessage]) -> Option<(String, String)> {
     // Get the last message - it should be the assistant's response
     let last_message = messages.last()?;
 
@@ -389,7 +382,12 @@ mod tests {
         let messages = vec![make_message(
             "msg-1",
             "assistant",
-            vec![make_content("text", Some("Everything looks good!"), None, None)],
+            vec![make_content(
+                "text",
+                Some("Everything looks good!"),
+                None,
+                None,
+            )],
         )];
 
         let result = extract_response_and_message_id(&messages);

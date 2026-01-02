@@ -344,7 +344,9 @@ impl JsBridge {
                     Ok(response.result.unwrap_or(serde_json::Value::Null))
                 } else {
                     Err(BridgeError::ToolFailed(
-                        response.error.unwrap_or_else(|| "Unknown error".to_string()),
+                        response
+                            .error
+                            .unwrap_or_else(|| "Unknown error".to_string()),
                     ))
                 }
             }
@@ -418,10 +420,7 @@ mod tests {
 
     #[test]
     fn test_bridge_error_display() {
-        assert_eq!(
-            BridgeError::Timeout.to_string(),
-            "Tool request timed out"
-        );
+        assert_eq!(BridgeError::Timeout.to_string(), "Tool request timed out");
         assert_eq!(
             BridgeError::ChannelClosed.to_string(),
             "Response channel closed"

@@ -155,9 +155,7 @@ impl WorkerInstance {
 
     /// Returns true if this worker is ready to run.
     pub fn is_ready(&self, now: Instant) -> bool {
-        self.enabled
-            && !self.is_running
-            && self.next_run_at.map(|t| t <= now).unwrap_or(true)
+        self.enabled && !self.is_running && self.next_run_at.map(|t| t <= now).unwrap_or(true)
     }
 
     /// Schedules the next run based on the interval.

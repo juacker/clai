@@ -330,7 +330,10 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["errorCode"], "unauthorized");
         assert_eq!(parsed["errorMsgKey"], "ErrUnauthorized");
-        assert_eq!(parsed["errorMessage"], "Authentication failed - please login again");
+        assert_eq!(
+            parsed["errorMessage"],
+            "Authentication failed - please login again"
+        );
     }
 
     #[test]

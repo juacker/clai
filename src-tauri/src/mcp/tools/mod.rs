@@ -64,7 +64,11 @@ impl std::fmt::Display for ToolError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ToolError::InvalidToolName(name) => {
-                write!(f, "Invalid tool name '{}': expected 'namespace.method'", name)
+                write!(
+                    f,
+                    "Invalid tool name '{}': expected 'namespace.method'",
+                    name
+                )
             }
             ToolError::UnknownNamespace(ns) => write!(f, "Unknown namespace: {}", ns),
             ToolError::UnknownMethod(method) => write!(f, "Unknown method: {}", method),

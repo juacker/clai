@@ -11,7 +11,9 @@
 
 pub mod types;
 
-pub use types::{AiProvider, AutopilotStatus, ClaiConfig, ProviderInfo, SpaceAutopilot, SpaceConfig};
+pub use types::{
+    AiProvider, AutopilotStatus, ClaiConfig, ProviderInfo, SpaceAutopilot, SpaceConfig,
+};
 
 use std::fs;
 use std::io::Write;
@@ -80,9 +82,7 @@ impl ConfigManager {
             source: e,
         })?;
 
-        serde_json::from_str(&contents).map_err(|e| ConfigError::Parse {
-            source: e,
-        })
+        serde_json::from_str(&contents).map_err(|e| ConfigError::Parse { source: e })
     }
 
     /// Saves the current config to disk.
@@ -95,9 +95,8 @@ impl ConfigManager {
 
     /// Saves config to file with atomic write.
     fn save_to_file(&self, config: &ClaiConfig) -> Result<(), ConfigError> {
-        let json = serde_json::to_string_pretty(config).map_err(|e| ConfigError::Serialize {
-            source: e,
-        })?;
+        let json = serde_json::to_string_pretty(config)
+            .map_err(|e| ConfigError::Serialize { source: e })?;
 
         // Write to temp file first
         let temp_path = self.config_path.with_extension("json.tmp");
@@ -107,10 +106,11 @@ impl ConfigManager {
             source: e,
         })?;
 
-        file.write_all(json.as_bytes()).map_err(|e| ConfigError::Io {
-            operation: "write temp config file".to_string(),
-            source: e,
-        })?;
+        file.write_all(json.as_bytes())
+            .map_err(|e| ConfigError::Io {
+                operation: "write temp config file".to_string(),
+                source: e,
+            })?;
 
         file.sync_all().map_err(|e| ConfigError::Io {
             operation: "sync temp config file".to_string(),
@@ -152,11 +152,7 @@ impl ConfigManager {
     /// Gets config for a space.
     pub fn get_space_config(&self, space_id: &str) -> SpaceConfig {
         let config = self.config.lock().unwrap();
-        config
-            .spaces
-            .get(space_id)
-            .cloned()
-            .unwrap_or_default()
+        config.spaces.get(space_id).cloned().unwrap_or_default()
     }
 
     // =========================================================================
@@ -176,10 +172,7 @@ impl ConfigManager {
     /// Enables auto-pilot for a room and saves config.
     pub fn enable_autopilot(&self, space_id: &str, room_id: &str) -> Result<(), ConfigError> {
         self.update(|config| {
-            let space_config = config
-                .spaces
-                .entry(space_id.to_string())
-                .or_default();
+            let space_config = config.spaces.entry(space_id.to_string()).or_default();
             space_config.autopilot.enable_room(room_id);
         })
     }
@@ -321,7 +314,12 @@ mod tests {
 
         // Load from file
         let loaded = ConfigManager::load_from_file(&manager.config_path).unwrap();
-        assert!(loaded.spaces.get("space-1").unwrap().autopilot.is_room_enabled("room-1"));
+        assert!(loaded
+            .spaces
+            .get("space-1")
+            .unwrap()
+            .autopilot
+            .is_room_enabled("room-1"));
     }
 
     #[test]

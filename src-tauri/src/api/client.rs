@@ -75,10 +75,7 @@ pub fn create_client() -> Client {
     );
 
     // Set Accept header to prefer JSON responses
-    default_headers.insert(
-        header::ACCEPT,
-        HeaderValue::from_static("application/json"),
-    );
+    default_headers.insert(header::ACCEPT, HeaderValue::from_static("application/json"));
 
     Client::builder()
         // No default timeout - set per-request based on endpoint type

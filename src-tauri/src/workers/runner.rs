@@ -109,11 +109,7 @@ async fn run_next_worker(
     let state = app_handle.state::<AppState>();
 
     // Check if we have a token (user is logged in)
-    let token = state
-        .token_storage
-        .get_token()
-        .ok()
-        .flatten();
+    let token = state.token_storage.get_token().ok().flatten();
 
     let token = match token {
         Some(t) => t,

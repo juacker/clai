@@ -94,7 +94,6 @@ pub struct SpaceConfig {
     /// Auto-pilot settings for this space.
     #[serde(default)]
     pub autopilot: SpaceAutopilot,
-
     // Future space-specific settings can be added here:
     // pub notifications: SpaceNotificationSettings,
     // pub default_room: Option<String>,
@@ -253,7 +252,6 @@ impl AutopilotStatus {
             message: Some("Requires AI credits".to_string()),
         }
     }
-
 }
 
 // =============================================================================
@@ -290,7 +288,9 @@ mod tests {
         let mut space_config = SpaceConfig::default();
         space_config.autopilot.enable_room("room-abc-123");
 
-        config.spaces.insert("space-xyz-456".to_string(), space_config);
+        config
+            .spaces
+            .insert("space-xyz-456".to_string(), space_config);
 
         let json = serde_json::to_string_pretty(&config).unwrap();
         assert!(json.contains("space-xyz-456"));
@@ -298,7 +298,12 @@ mod tests {
 
         let parsed: ClaiConfig = serde_json::from_str(&json).unwrap();
         assert!(parsed.spaces.contains_key("space-xyz-456"));
-        assert!(parsed.spaces.get("space-xyz-456").unwrap().autopilot.is_room_enabled("room-abc-123"));
+        assert!(parsed
+            .spaces
+            .get("space-xyz-456")
+            .unwrap()
+            .autopilot
+            .is_room_enabled("room-abc-123"));
     }
 
     #[test]

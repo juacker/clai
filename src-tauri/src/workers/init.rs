@@ -44,7 +44,10 @@ pub fn initialize_scheduler(
     }
 
     // Only restore instances if user is logged in
-    let has_token = token_storage.get_token().map(|t| t.is_some()).unwrap_or(false);
+    let has_token = token_storage
+        .get_token()
+        .map(|t| t.is_some())
+        .unwrap_or(false);
     if !has_token {
         return;
     }
@@ -144,9 +147,7 @@ mod tests {
         assert!(!definitions.is_empty());
 
         // Verify anomaly investigator exists
-        let anomaly = definitions
-            .iter()
-            .find(|d| d.id == "anomaly-investigator");
+        let anomaly = definitions.iter().find(|d| d.id == "anomaly-investigator");
         assert!(anomaly.is_some());
 
         let anomaly = anomaly.unwrap();

@@ -203,7 +203,10 @@ async fn spawn_and_wait_cli(
     if let Some(mut stdin) = child.stdin.take() {
         use tokio::io::AsyncWriteExt;
         if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
-            return Err(CliRunnerError::SpawnError(format!("Failed to write prompt to stdin: {}", e)));
+            return Err(CliRunnerError::SpawnError(format!(
+                "Failed to write prompt to stdin: {}",
+                e
+            )));
         }
         // Close stdin to signal end of input
         drop(stdin);
@@ -442,32 +445,27 @@ mod tests {
 
     #[test]
     fn test_build_command_claude() {
-        let cmd = build_cli_command(
-            &AiProvider::Claude,
-            "http://127.0.0.1:12345",
-        );
+        let cmd = build_cli_command(&AiProvider::Claude, "http://127.0.0.1:12345");
 
         // Just verify it builds without panicking
         // We can't easily inspect Command internals
-        assert!(format!("{:?}", cmd).contains("claude") || format!("{:?}", cmd).contains("flatpak"));
+        assert!(
+            format!("{:?}", cmd).contains("claude") || format!("{:?}", cmd).contains("flatpak")
+        );
     }
 
     #[test]
     fn test_build_command_gemini() {
-        let cmd = build_cli_command(
-            &AiProvider::Gemini,
-            "http://127.0.0.1:12345",
-        );
+        let cmd = build_cli_command(&AiProvider::Gemini, "http://127.0.0.1:12345");
 
-        assert!(format!("{:?}", cmd).contains("gemini") || format!("{:?}", cmd).contains("flatpak"));
+        assert!(
+            format!("{:?}", cmd).contains("gemini") || format!("{:?}", cmd).contains("flatpak")
+        );
     }
 
     #[test]
     fn test_build_command_codex() {
-        let cmd = build_cli_command(
-            &AiProvider::Codex,
-            "http://127.0.0.1:12345",
-        );
+        let cmd = build_cli_command(&AiProvider::Codex, "http://127.0.0.1:12345");
 
         assert!(format!("{:?}", cmd).contains("codex") || format!("{:?}", cmd).contains("flatpak"));
     }

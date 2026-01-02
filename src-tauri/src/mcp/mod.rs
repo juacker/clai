@@ -44,4 +44,3 @@ pub mod tools;
 
 // Re-export types used by commands/bridge.rs
 pub use bridge::{complete_pending_request, ToolResponse};
-
