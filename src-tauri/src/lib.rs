@@ -74,6 +74,18 @@ const DEFAULT_BASE_URL: &str = "https://app.netdata.cloud";
 /// This is how Rust handles platform-specific code.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize tracing (structured logging)
+    // In development, this outputs to stderr with colors
+    // RUST_LOG env var can control log levels (e.g., RUST_LOG=debug)
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::INFO.into()),
+        )
+        .init();
+
+    tracing::info!("CLAI starting up...");
+
     // Initialize token storage (uses OS keychain)
     // If this fails, the app cannot function, so we panic.
     let token_storage = TokenStorage::new().expect(

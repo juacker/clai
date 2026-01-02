@@ -218,6 +218,52 @@ impl JsBridge {
         }
     }
 
+    /// Setup a worker's tab and canvas before the CLI starts.
+    ///
+    /// This creates the worker's tab with a canvas command upfront, avoiding
+    /// race conditions when multiple tool calls come in rapid succession.
+    ///
+    /// # Arguments
+    ///
+    /// * `worker_id` - Worker type identifier (e.g., "anomaly-investigator")
+    /// * `worker_name` - Human-readable worker name for the tab title
+    /// * `space_id` - Netdata space ID
+    /// * `room_id` - Netdata room ID
+    ///
+    /// # Returns
+    ///
+    /// The tab ID that was created or found.
+    ///
+    /// # Errors
+    ///
+    /// Same as `call_tool`.
+    pub async fn setup_worker_tab(
+        &self,
+        worker_id: &str,
+        worker_name: &str,
+        space_id: &str,
+        room_id: &str,
+    ) -> Result<String, BridgeError> {
+        let result = self
+            .call_tool(
+                worker_id,
+                space_id,
+                room_id,
+                "worker.setup",
+                serde_json::json!({
+                    "workerName": worker_name,
+                }),
+            )
+            .await?;
+
+        // Extract tab ID from result
+        result
+            .get("tabId")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| BridgeError::ToolFailed("Missing tabId in response".to_string()))
+    }
+
     /// Call a JS tool and wait for the response.
     ///
     /// This method:

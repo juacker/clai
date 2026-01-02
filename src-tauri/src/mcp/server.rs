@@ -143,8 +143,12 @@ async fn log_requests(request: Request<Body>, next: Next) -> Response {
     let uri = request.uri().clone();
     let headers = request.headers().clone();
 
-    println!("[MCP Server] {} {}", method, uri);
-    println!("[MCP Server]   Content-Type: {:?}", headers.get("content-type"));
+    tracing::debug!(
+        method = %method,
+        uri = %uri,
+        content_type = ?headers.get("content-type"),
+        "MCP HTTP request"
+    );
 
     // Track if this is a tools/list request
     let mut is_tools_list = false;
@@ -160,16 +164,16 @@ async fn log_requests(request: Request<Body>, next: Next) -> Response {
                     // Try to parse as JSON to extract method
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(body_str) {
                         if let Some(method_name) = json.get("method").and_then(|m| m.as_str()) {
-                            println!("[MCP Server]   MCP method: {}", method_name);
+                            tracing::debug!(mcp_method = %method_name, "MCP method");
                             is_tools_list = method_name == "tools/list";
                         }
                         if let Some(id) = json.get("id") {
-                            println!("[MCP Server]   Request ID: {}", id);
+                            tracing::trace!(request_id = %id, "MCP request ID");
                         }
                     }
                     // Log truncated body for debugging
                     let preview: String = body_str.chars().take(200).collect();
-                    println!("[MCP Server]   Body: {}", preview);
+                    tracing::trace!(body = %preview, "Request body");
                 }
 
                 // Reconstruct the request
@@ -179,28 +183,30 @@ async fn log_requests(request: Request<Body>, next: Next) -> Response {
                 // For tools/list, also log the response body
                 if is_tools_list {
                     let (resp_parts, resp_body) = response.into_parts();
-                    println!("[MCP Server]   Response status: {}", resp_parts.status);
+                    tracing::debug!(status = %resp_parts.status, "MCP response status");
                     match to_bytes(resp_body, 50000).await {
                         Ok(resp_bytes) => {
                             if let Ok(resp_str) = std::str::from_utf8(&resp_bytes) {
-                                println!("[MCP Server]   tools/list RESPONSE ({} bytes):", resp_bytes.len());
-                                // Print full response for debugging
-                                println!("{}", resp_str);
+                                tracing::trace!(
+                                    response_len = resp_bytes.len(),
+                                    response = %resp_str,
+                                    "tools/list response"
+                                );
                             }
                             return Response::from_parts(resp_parts, Body::from(resp_bytes));
                         }
                         Err(e) => {
-                            println!("[MCP Server]   Failed to read response body: {}", e);
+                            tracing::warn!(error = %e, "Failed to read response body");
                             return Response::from_parts(resp_parts, Body::empty());
                         }
                     }
                 }
 
-                println!("[MCP Server]   Response status: {}", response.status());
+                tracing::debug!(status = %response.status(), "MCP response status");
                 return response;
             }
             Err(e) => {
-                println!("[MCP Server]   Failed to read body: {}", e);
+                tracing::warn!(error = %e, "Failed to read request body");
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body(Body::empty())
@@ -210,7 +216,7 @@ async fn log_requests(request: Request<Body>, next: Next) -> Response {
     }
 
     let response = next.run(request).await;
-    println!("[MCP Server]   Response status: {}", response.status());
+    tracing::debug!(status = %response.status(), "MCP response status");
     response
 }
 
@@ -349,10 +355,8 @@ impl McpToolServer {
     pub async fn serve_http(self) -> Result<McpServerHandle, McpServerError> {
         // Log available tools
         let tools: Vec<_> = Self::tool_router().into_iter().collect();
-        println!("[MCP Server] Available tools ({}):", tools.len());
-        for tool in &tools {
-            println!("[MCP Server]   - {}", tool.name());
-        }
+        let tool_names: Vec<_> = tools.iter().map(|t| t.name()).collect();
+        tracing::debug!(tools = ?tool_names, count = tools.len(), "MCP server tools");
         // Bind to localhost with port 0 to get a random available port
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -403,15 +407,15 @@ impl McpToolServer {
 
         // Spawn the server
         tokio::spawn(async move {
-            println!("[MCP Server] HTTP server listening on port {}", port);
+            tracing::info!(port, "MCP HTTP server listening");
             let server = axum::serve(listener, app).with_graceful_shutdown(async move {
                 server_token.cancelled().await;
             });
 
             if let Err(e) = server.await {
-                println!("[MCP Server] HTTP server error: {}", e);
+                tracing::error!(error = %e, "MCP HTTP server error");
             }
-            println!("[MCP Server] HTTP server stopped");
+            tracing::debug!("MCP HTTP server stopped");
         });
 
         Ok(McpServerHandle {
@@ -435,8 +439,7 @@ impl McpToolServer {
         &self,
         params: Parameters<NetdataQueryParams>,
     ) -> Result<CallToolResult, McpError> {
-        println!("[MCP] Tool called: netdata.query");
-        println!("[MCP]   query: {}", params.0.query);
+        tracing::debug!(query = %params.0.query, "netdata.query called");
 
         let result = self
             .netdata
@@ -444,11 +447,11 @@ impl McpToolServer {
             .query(params.0)
             .await
             .map_err(|e| {
-                println!("[MCP]   error: {}", e);
+                tracing::warn!(error = %e, "netdata.query error");
                 McpError::internal_error(e.to_string(), None)
             })?;
 
-        println!("[MCP]   result length: {} chars", result.len());
+        tracing::debug!(result_len = result.len(), "netdata.query result");
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -465,19 +468,18 @@ impl McpToolServer {
         &self,
         params: Parameters<AddChartParams>,
     ) -> Result<CallToolResult, McpError> {
-        println!("[MCP] Tool called: canvas.addChart");
-        println!("[MCP]   context: {}", params.0.context);
+        tracing::debug!(context = %params.0.context, "canvas.addChart called");
 
         let result = self
             .canvas
             .add_chart(params.0)
             .await
             .map_err(|e| {
-                println!("[MCP]   error: {}", e);
+                tracing::warn!(error = %e, "canvas.addChart error");
                 McpError::internal_error(e.to_string(), None)
             })?;
 
-        println!("[MCP]   chart added: {:?}", result);
+        tracing::debug!(result = ?result, "canvas.addChart success");
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string(&result).unwrap_or_default(),
         )]))
@@ -492,18 +494,17 @@ impl McpToolServer {
         &self,
         params: Parameters<RemoveChartParams>,
     ) -> Result<CallToolResult, McpError> {
-        println!("[MCP] Tool called: canvas.removeChart");
-        println!("[MCP]   chartId: {}", params.0.chart_id);
+        tracing::debug!(chart_id = %params.0.chart_id, "canvas.removeChart called");
 
         self.canvas
             .remove_chart(params.0)
             .await
             .map_err(|e| {
-                println!("[MCP]   error: {}", e);
+                tracing::warn!(error = %e, "canvas.removeChart error");
                 McpError::internal_error(e.to_string(), None)
             })?;
 
-        println!("[MCP]   chart removed");
+        tracing::debug!("canvas.removeChart success");
         Ok(CallToolResult::success(vec![Content::text("Chart removed")]))
     }
 
@@ -513,18 +514,18 @@ impl McpToolServer {
         description = "Get a list of all charts currently displayed on the canvas."
     )]
     async fn canvas_get_charts(&self) -> Result<CallToolResult, McpError> {
-        println!("[MCP] Tool called: canvas.getCharts");
+        tracing::debug!("canvas.getCharts called");
 
         let result = self
             .canvas
             .get_charts()
             .await
             .map_err(|e| {
-                println!("[MCP]   error: {}", e);
+                tracing::warn!(error = %e, "canvas.getCharts error");
                 McpError::internal_error(e.to_string(), None)
             })?;
 
-        println!("[MCP]   returned {} charts", result.len());
+        tracing::debug!(chart_count = result.len(), "canvas.getCharts success");
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string(&result).unwrap_or_default(),
         )]))
@@ -536,17 +537,17 @@ impl McpToolServer {
         description = "Remove all charts from the canvas. Use to start fresh."
     )]
     async fn canvas_clear_charts(&self) -> Result<CallToolResult, McpError> {
-        println!("[MCP] Tool called: canvas.clearCharts");
+        tracing::debug!("canvas.clearCharts called");
 
         self.canvas
             .clear_charts()
             .await
             .map_err(|e| {
-                println!("[MCP]   error: {}", e);
+                tracing::warn!(error = %e, "canvas.clearCharts error");
                 McpError::internal_error(e.to_string(), None)
             })?;
 
-        println!("[MCP]   all charts cleared");
+        tracing::debug!("canvas.clearCharts success");
         Ok(CallToolResult::success(vec![Content::text(
             "All charts cleared",
         )]))
@@ -561,19 +562,18 @@ impl McpToolServer {
         &self,
         params: Parameters<SetTimeRangeParams>,
     ) -> Result<CallToolResult, McpError> {
-        println!("[MCP] Tool called: canvas.setTimeRange");
-        println!("[MCP]   range: {}", params.0.range);
+        tracing::debug!(range = %params.0.range, "canvas.setTimeRange called");
 
         let range = params.0.range.clone();
         self.canvas
             .set_time_range(params.0)
             .await
             .map_err(|e| {
-                println!("[MCP]   error: {}", e);
+                tracing::warn!(error = %e, "canvas.setTimeRange error");
                 McpError::internal_error(e.to_string(), None)
             })?;
 
-        println!("[MCP]   time range set to {}", range);
+        tracing::debug!(range = %range, "canvas.setTimeRange success");
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Time range set to {}",
             range
@@ -593,19 +593,22 @@ impl McpToolServer {
         &self,
         params: Parameters<SplitTileParams>,
     ) -> Result<CallToolResult, McpError> {
-        println!("[MCP] Tool called: tabs.splitTile");
-        println!("[MCP]   parentTileId: {}, splitType: {}", params.0.parent_tile_id, params.0.split_type);
+        tracing::debug!(
+            parent_tile_id = %params.0.parent_tile_id,
+            split_type = %params.0.split_type,
+            "tabs.splitTile called"
+        );
 
         let result = self
             .tabs
             .split_tile(params.0)
             .await
             .map_err(|e| {
-                println!("[MCP]   error: {}", e);
+                tracing::warn!(error = %e, "tabs.splitTile error");
                 McpError::internal_error(e.to_string(), None)
             })?;
 
-        println!("[MCP]   tile split: {:?}", result);
+        tracing::debug!(result = ?result, "tabs.splitTile success");
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string(&result).unwrap_or_default(),
         )]))
@@ -620,18 +623,17 @@ impl McpToolServer {
         &self,
         params: Parameters<RemoveTileParams>,
     ) -> Result<CallToolResult, McpError> {
-        println!("[MCP] Tool called: tabs.removeTile");
-        println!("[MCP]   tileId: {}", params.0.tile_id);
+        tracing::debug!(tile_id = %params.0.tile_id, "tabs.removeTile called");
 
         self.tabs
             .remove_tile(params.0)
             .await
             .map_err(|e| {
-                println!("[MCP]   error: {}", e);
+                tracing::warn!(error = %e, "tabs.removeTile error");
                 McpError::internal_error(e.to_string(), None)
             })?;
 
-        println!("[MCP]   tile removed");
+        tracing::debug!("tabs.removeTile success");
         Ok(CallToolResult::success(vec![Content::text("Tile removed")]))
     }
 
@@ -641,18 +643,18 @@ impl McpToolServer {
         description = "Get the current tile layout tree. Returns tile IDs and their arrangement."
     )]
     async fn tabs_get_tile_layout(&self) -> Result<CallToolResult, McpError> {
-        println!("[MCP] Tool called: tabs.getTileLayout");
+        tracing::debug!("tabs.getTileLayout called");
 
         let result = self
             .tabs
             .get_tile_layout()
             .await
             .map_err(|e| {
-                println!("[MCP]   error: {}", e);
+                tracing::warn!(error = %e, "tabs.getTileLayout error");
                 McpError::internal_error(e.to_string(), None)
             })?;
 
-        println!("[MCP]   returned layout: {:?}", result);
+        tracing::debug!(layout = ?result, "tabs.getTileLayout success");
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string(&result).unwrap_or_default(),
         )]))
@@ -686,10 +688,8 @@ impl ServerHandler for McpToolServer {
         async move {
             let tools = Self::tool_router().list_all();
 
-            println!("[MCP Server] list_tools returning {} tools", tools.len());
-            for tool in &tools {
-                println!("[MCP Server]   - {}", tool.name);
-            }
+            let tool_names: Vec<_> = tools.iter().map(|t| &t.name).collect();
+            tracing::debug!(tools = ?tool_names, count = tools.len(), "list_tools response");
 
             Ok(ListToolsResult {
                 tools,
@@ -705,7 +705,7 @@ impl ServerHandler for McpToolServer {
         context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> impl Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
         async move {
-            println!("[MCP Server] call_tool: {}", request.name);
+            tracing::debug!(tool_name = %request.name, "call_tool");
 
             let tool_context = ToolCallContext::new(self, request, context);
             Self::tool_router()

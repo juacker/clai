@@ -192,6 +192,9 @@ const handleToolRequest = async (request) => {
 // Event listener cleanup function
 let unlistenFn = null;
 
+// Synchronous flag to prevent async race condition during initialization
+let isInitializing = false;
+
 /**
  * Initialize the worker bridge
  *
@@ -201,11 +204,14 @@ let unlistenFn = null;
  * @returns {Promise<void>}
  */
 export const initWorkerBridge = async () => {
-  // Avoid double initialization
-  if (unlistenFn) {
-    console.warn('[WorkerBridge] Already initialized');
+  // Avoid double initialization (synchronous check to prevent race condition)
+  if (unlistenFn || isInitializing) {
+    console.warn('[WorkerBridge] Already initialized or initializing');
     return;
   }
+
+  // Set flag synchronously before any async operations
+  isInitializing = true;
 
   try {
     // Listen for tool requests from Rust
@@ -216,6 +222,7 @@ export const initWorkerBridge = async () => {
     console.log('[WorkerBridge] Initialized, listening for tool requests');
   } catch (err) {
     console.error('[WorkerBridge] Failed to initialize:', err);
+    isInitializing = false; // Reset on failure
   }
 };
 
@@ -230,6 +237,9 @@ export const cleanupWorkerBridge = () => {
     unlistenFn = null;
     console.log('[WorkerBridge] Cleaned up');
   }
+
+  // Reset initialization flag
+  isInitializing = false;
 
   // Clear all state
   toolHandlers.clear();

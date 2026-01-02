@@ -16,6 +16,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useTabManager } from '../contexts/TabManagerContext';
+import { useCommand } from '../contexts/CommandContext';
 import {
   initWorkerBridge,
   cleanupWorkerBridge,
@@ -23,6 +24,7 @@ import {
   unregisterToolHandler,
   setWorkerTab,
   getWorkerTab,
+  clearWorkerTab,
 } from './bridge';
 
 /**
@@ -40,6 +42,7 @@ const generateTileId = () => `tile_${Date.now()}_${Math.random().toString(36).su
  */
 export const useWorkerBridge = () => {
   const tabManager = useTabManager();
+  const { executeCommand } = useCommand();
   const initializedRef = useRef(false);
 
   // Get TabManager functions we need
@@ -60,28 +63,55 @@ export const useWorkerBridge = () => {
   const tabManagerRef = useRef(tabManager);
   tabManagerRef.current = tabManager;
 
+  // Store executeCommand ref for handlers
+  const executeCommandRef = useRef(executeCommand);
+  executeCommandRef.current = executeCommand;
+
   /**
-   * Get or create a tab for a worker
+   * Setup a worker's tab with canvas command.
+   * Called BEFORE CLI starts to avoid race conditions.
+   * Does NOT switch to the new tab - avoids interrupting user activity.
    *
-   * Workers are identified by (workerId, spaceId, roomId).
-   * Each worker gets at most one tab.
+   * @param {string} workerId - Worker identifier
+   * @param {string} workerName - Human-readable worker name
+   * @param {string} spaceId - Netdata space ID
+   * @param {string} roomId - Netdata room ID
+   * @returns {{ tabId: string }} The created/existing tab ID
    */
-  const getOrCreateWorkerTab = (workerId, spaceId, roomId) => {
-    // Check if we already have a tab for this worker
+  const setupWorkerTab = (workerId, workerName, spaceId, roomId) => {
+    // Check if we already have a tab for this worker in the Map
     let tabId = getWorkerTab(workerId, spaceId, roomId);
 
     if (tabId) {
       // Verify the tab still exists
       const existingTab = tabManagerRef.current.tabs.find(t => t.id === tabId);
       if (existingTab) {
-        return { tabId, isNew: false };
+        // Tab already exists, no need to create
+        return { tabId };
       }
       // Tab was removed, clear the mapping
-      tabId = null;
+      clearWorkerTab(workerId, spaceId, roomId);
     }
 
-    // Create a new tab for this worker
-    const title = `${workerId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`;
+    // Also check for existing worker tab by context (handles app reload where Map is lost)
+    const existingWorkerTab = tabManagerRef.current.tabs.find(
+      t => t.context?.worker?.workerId === workerId &&
+           t.context?.spaceRoom?.selectedSpaceId === spaceId &&
+           t.context?.spaceRoom?.selectedRoomId === roomId
+    );
+
+    if (existingWorkerTab) {
+      // Found existing tab, restore the mapping
+      setWorkerTab(workerId, spaceId, roomId, existingWorkerTab.id);
+      return { tabId: existingWorkerTab.id };
+    }
+
+    // Create a new tab for this worker with bot icon 🤖
+    // TODO: Redesign to avoid switching to the new tab (don't interrupt user)
+    // Current limitation: createTab always switches, and executeCommand assigns
+    // to the active tab. Need TabManagerContext changes to support creating
+    // a tab with a command without switching.
+    const title = `🤖 ${workerName}`;
     const newTab = tabManagerRef.current.createTab(title);
 
     // Update the tab's context with the worker's space/room
@@ -92,13 +122,40 @@ export const useWorkerBridge = () => {
       },
       worker: {
         workerId,
+        workerName,
       },
     });
+
+    // Execute canvas command - assigned to the new tab's root tile
+    executeCommandRef.current('canvas');
 
     // Store the mapping
     setWorkerTab(workerId, spaceId, roomId, newTab.id);
 
-    return { tabId: newTab.id, isNew: true };
+    return { tabId: newTab.id };
+  };
+
+  /**
+   * Get a worker's tab (if exists).
+   * Used by tool handlers after setup.
+   *
+   * @param {string} workerId - Worker identifier
+   * @param {string} spaceId - Netdata space ID
+   * @param {string} roomId - Netdata room ID
+   * @returns {string|null} Tab ID or null
+   */
+  const getWorkerTabId = (workerId, spaceId, roomId) => {
+    const tabId = getWorkerTab(workerId, spaceId, roomId);
+    if (tabId) {
+      // Verify tab still exists
+      const existingTab = tabManagerRef.current.tabs.find(t => t.id === tabId);
+      if (existingTab) {
+        return tabId;
+      }
+      // Tab was removed, clear stale mapping
+      clearWorkerTab(workerId, spaceId, roomId);
+    }
+    return null;
   };
 
   useEffect(() => {
@@ -111,18 +168,34 @@ export const useWorkerBridge = () => {
     // Initialize the bridge
     initWorkerBridge();
 
+    // Register worker setup handler (called BEFORE CLI starts)
+    registerToolHandler('worker.setup', async (request) => {
+      const { workerId, spaceId, roomId, params } = request;
+      const { workerName } = params;
+
+      // Setup the worker's tab
+      const result = setupWorkerTab(workerId, workerName, spaceId, roomId);
+
+      console.log(`[WorkerBridge] Worker tab setup complete: ${result.tabId}`);
+      return result;
+    });
+
     // Register canvas tool handlers
     registerToolHandler('canvas.addChart', async (request) => {
       const { workerId, spaceId, roomId, params } = request;
-      const { tabId } = getOrCreateWorkerTab(workerId, spaceId, roomId);
+      const tabId = getWorkerTabId(workerId, spaceId, roomId);
+
+      if (!tabId) {
+        throw new Error('No tab found for this worker. Call worker.setup first.');
+      }
 
       const chartId = generateChartId();
       const spaceRoomKey = `${spaceId}_${roomId}`;
 
-      // Add chart to canvas
+      // Add chart to canvas (type: 'context-chart' matches Canvas component expectation)
       tabManagerRef.current.addCanvasElement(tabId, {
         id: chartId,
-        type: 'chart',
+        type: 'context-chart',
         config: {
           context: params.context,
           groupBy: params.groupBy || null,
@@ -135,7 +208,7 @@ export const useWorkerBridge = () => {
 
     registerToolHandler('canvas.removeChart', async (request) => {
       const { workerId, spaceId, roomId, params } = request;
-      const tabId = getWorkerTab(workerId, spaceId, roomId);
+      const tabId = getWorkerTabId(workerId, spaceId, roomId);
 
       if (!tabId) {
         throw new Error('No tab found for this worker');
@@ -149,7 +222,7 @@ export const useWorkerBridge = () => {
 
     registerToolHandler('canvas.getCharts', async (request) => {
       const { workerId, spaceId, roomId } = request;
-      const tabId = getWorkerTab(workerId, spaceId, roomId);
+      const tabId = getWorkerTabId(workerId, spaceId, roomId);
 
       if (!tabId) {
         return { charts: [] };
@@ -161,7 +234,7 @@ export const useWorkerBridge = () => {
 
       // Map elements to chart info
       const charts = elements
-        .filter(el => el.type === 'chart')
+        .filter(el => el.type === 'context-chart')
         .map(el => ({
           chartId: el.id,
           context: el.config?.context,
@@ -172,7 +245,7 @@ export const useWorkerBridge = () => {
 
     registerToolHandler('canvas.clearCharts', async (request) => {
       const { workerId, spaceId, roomId } = request;
-      const tabId = getWorkerTab(workerId, spaceId, roomId);
+      const tabId = getWorkerTabId(workerId, spaceId, roomId);
 
       if (!tabId) {
         return { success: true };
@@ -186,7 +259,7 @@ export const useWorkerBridge = () => {
 
     registerToolHandler('canvas.setTimeRange', async (request) => {
       const { workerId, spaceId, roomId, params } = request;
-      const tabId = getWorkerTab(workerId, spaceId, roomId);
+      const tabId = getWorkerTabId(workerId, spaceId, roomId);
 
       if (!tabId) {
         throw new Error('No tab found for this worker');
@@ -207,12 +280,16 @@ export const useWorkerBridge = () => {
     // Register tabs tool handlers
     registerToolHandler('tabs.splitTile', async (request) => {
       const { workerId, spaceId, roomId, params } = request;
-      const { tabId, isNew } = getOrCreateWorkerTab(workerId, spaceId, roomId);
+      const tabId = getWorkerTabId(workerId, spaceId, roomId);
 
-      // Get the parent tile ID - if it's a new tab, use the root tile
+      if (!tabId) {
+        throw new Error('No tab found for this worker. Call worker.setup first.');
+      }
+
+      // Get the parent tile ID - use the root tile if not specified
       let parentTileId = params.parentTileId;
 
-      if (isNew || !parentTileId) {
+      if (!parentTileId) {
         // Get the root tile of the tab
         const tab = tabManagerRef.current.tabs.find(t => t.id === tabId);
         if (tab) {
@@ -235,7 +312,7 @@ export const useWorkerBridge = () => {
 
     registerToolHandler('tabs.removeTile', async (request) => {
       const { workerId, spaceId, roomId, params } = request;
-      const tabId = getWorkerTab(workerId, spaceId, roomId);
+      const tabId = getWorkerTabId(workerId, spaceId, roomId);
 
       if (!tabId) {
         throw new Error('No tab found for this worker');
@@ -252,7 +329,7 @@ export const useWorkerBridge = () => {
 
     registerToolHandler('tabs.getTileLayout', async (request) => {
       const { workerId, spaceId, roomId } = request;
-      const tabId = getWorkerTab(workerId, spaceId, roomId);
+      const tabId = getWorkerTabId(workerId, spaceId, roomId);
 
       if (!tabId) {
         // Return a simple layout if no tab exists
@@ -299,6 +376,7 @@ export const useWorkerBridge = () => {
       initializedRef.current = false;
 
       // Unregister all handlers
+      unregisterToolHandler('worker.setup');
       unregisterToolHandler('canvas.addChart');
       unregisterToolHandler('canvas.removeChart');
       unregisterToolHandler('canvas.getCharts');

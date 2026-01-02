@@ -136,7 +136,7 @@ pub async fn run_ai_cli(
     bridge: Option<JsBridge>,
     timeout_secs: u64,
 ) -> Result<CliRunResult, CliRunnerError> {
-    println!("[CliRunner] Creating MCP server for worker {}", worker_id);
+    tracing::debug!(worker_id = %worker_id, "Creating MCP server for worker");
 
     // 1. Create MCP server with bound context
     let server = match bridge {
@@ -155,22 +155,22 @@ pub async fn run_ai_cli(
         ),
     };
 
-    println!("[CliRunner] Starting HTTP server...");
+    tracing::debug!("Starting HTTP server...");
 
     // 2. Start HTTP server
     let handle = server.serve_http().await?;
     let server_url = handle.url().to_string();
 
-    println!("[CliRunner] MCP server started at {}", server_url);
+    tracing::info!(server_url = %server_url, "MCP server started");
 
     // 3. Spawn AI CLI with MCP config
-    println!("[CliRunner] Spawning CLI...");
+    tracing::debug!("Spawning CLI...");
     let result = spawn_and_wait_cli(provider, prompt, &server_url, timeout_secs).await;
-    println!("[CliRunner] CLI finished with result: {:?}", result.is_ok());
+    tracing::debug!(success = result.is_ok(), "CLI finished");
 
     // 4. Shutdown server (always, even on error)
     handle.shutdown();
-    println!("[CliRunner] MCP server shut down");
+    tracing::debug!("MCP server shut down");
 
     result
 }
@@ -184,7 +184,7 @@ async fn spawn_and_wait_cli(
 ) -> Result<CliRunResult, CliRunnerError> {
     let mut command = build_cli_command(provider, mcp_server_url);
 
-    println!("[CliRunner] Command: {:?}", command);
+    tracing::debug!(command = ?command, "Built CLI command");
 
     // Configure stdio - use piped stdin to pass the prompt
     command.stdout(Stdio::piped());
@@ -192,7 +192,7 @@ async fn spawn_and_wait_cli(
     command.stdin(Stdio::piped());
 
     // Spawn the process
-    println!("[CliRunner] Spawning process...");
+    tracing::debug!("Spawning process...");
     let mut child = command
         .spawn()
         .map_err(|e| CliRunnerError::SpawnError(format!("{}: {}", provider.command(), e)))?;
@@ -207,7 +207,7 @@ async fn spawn_and_wait_cli(
         drop(stdin);
     }
 
-    println!("[CliRunner] Process spawned, waiting (timeout: {}s)...", timeout_secs);
+    tracing::debug!(timeout_secs, "Process spawned, waiting...");
 
     // Wait with timeout using select
     let timeout = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs));
@@ -228,23 +228,26 @@ async fn spawn_and_wait_cli(
 
                     // Log Claude's response (stdout in --print mode)
                     if !stdout.is_empty() {
-                        println!("[CliRunner] Claude stdout ({} chars):", stdout.len());
                         // Print first 500 chars to avoid flooding logs
                         let preview: String = stdout.chars().take(500).collect();
-                        println!("{}", preview);
-                        if stdout.len() > 500 {
-                            println!("... (truncated)");
-                        }
+                        let truncated = stdout.len() > 500;
+                        tracing::debug!(
+                            stdout_len = stdout.len(),
+                            truncated,
+                            preview = %preview,
+                            "CLI stdout"
+                        );
                     } else {
-                        println!("[CliRunner] Claude stdout: (empty)");
+                        tracing::debug!("CLI stdout: (empty)");
                     }
 
                     if !success {
-                        println!(
-                            "[CliRunner] {} CLI exited with code {:?}: {}",
-                            provider.display_name(),
-                            exit_code,
-                            stderr.lines().take(5).collect::<Vec<_>>().join("\n")
+                        let stderr_preview: String = stderr.lines().take(5).collect::<Vec<_>>().join("\n");
+                        tracing::warn!(
+                            provider = %provider.display_name(),
+                            exit_code = ?exit_code,
+                            stderr = %stderr_preview,
+                            "CLI exited with error"
                         );
                     }
 
@@ -262,10 +265,10 @@ async fn spawn_and_wait_cli(
             // Timeout - the process will be dropped and cleaned up
             // Note: wait_with_output consumed the child, but select! ensures
             // the future is cancelled, which should clean up the process
-            println!(
-                "[CliRunner] {} CLI timed out after {} seconds",
-                provider.display_name(),
-                timeout_secs
+            tracing::warn!(
+                provider = %provider.display_name(),
+                timeout_secs,
+                "CLI timed out"
             );
             Err(CliRunnerError::Timeout)
         }
