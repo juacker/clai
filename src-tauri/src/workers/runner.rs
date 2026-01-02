@@ -71,16 +71,14 @@ const WORKER_TIMEOUT_SECS: u64 = 5 * 60; // 5 minutes
 /// # Returns
 ///
 /// A handle to the spawned task (can be used to abort if needed).
-pub fn start_worker_runner(
-    app_handle: AppHandle,
-    scheduler: SharedScheduler,
-) -> tokio::task::JoinHandle<()> {
+pub fn start_worker_runner(app_handle: AppHandle, scheduler: SharedScheduler) {
     tracing::info!(
         "Starting worker runner (check interval: {}s)",
         CHECK_INTERVAL_SECS
     );
 
-    tokio::spawn(async move {
+    // Use Tauri's async runtime to spawn the background task
+    tauri::async_runtime::spawn(async move {
         loop {
             // Sleep first to avoid running immediately on startup
             tokio::time::sleep(Duration::from_secs(CHECK_INTERVAL_SECS)).await;
@@ -90,7 +88,7 @@ pub fn start_worker_runner(
                 tracing::error!("Worker runner error: {}", e);
             }
         }
-    })
+    });
 }
 
 /// Checks for and runs the next ready worker.
