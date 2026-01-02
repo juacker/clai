@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
 
-use crate::api::netdata::{ChatCompletionRequest, NetdataApi};
+use crate::api::netdata::{ChatCompletionRequest, ChatTool, NetdataApi};
 
 use super::ToolError;
 
@@ -210,9 +210,13 @@ impl NetdataQueryTool {
 
         // 4. Send message via chat completion (SSE streaming, wait for completion)
         // Prefix with [@clai] so the UI can distinguish worker queries from user messages
+        // Include "blocks" tool to enable rich visualizations in the stored conversation
         let request = ChatCompletionRequest {
             message: format!("[@clai] {}", query),
-            tools: vec![], // Use default tools
+            tools: vec![ChatTool {
+                name: "blocks".to_string(),
+                version: 0,
+            }],
             parent_message_id,
         };
 
