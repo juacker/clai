@@ -60,6 +60,181 @@ impl AiProvider {
 }
 
 // =============================================================================
+// Agent Definition
+// =============================================================================
+
+/// Fixed ID for the default agent.
+///
+/// Using a predictable ID ensures consistency across config recovery scenarios.
+/// The default agent is created automatically if no agents exist.
+pub const DEFAULT_AGENT_ID: &str = "00000000-0000-0000-0000-000000000001";
+
+/// User-defined autonomous agent stored in configuration.
+///
+/// Agents monitor infrastructure and perform automated analysis.
+/// Each agent can be enabled for specific space/room combinations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentDefinition {
+    /// Unique identifier (UUID).
+    ///
+    /// Auto-generated for user-created agents.
+    /// Default agent uses fixed ID: `DEFAULT_AGENT_ID`.
+    pub id: String,
+
+    /// Display name (user-provided).
+    pub name: String,
+
+    /// Description of what the agent does (user-provided).
+    ///
+    /// Supports full Markdown formatting for rich context.
+    /// Users can include detailed instructions, exceptions, and domain knowledge.
+    /// Example: "Monitor CPU but ignore spikes on db-server-01 during backup window (2-4am UTC)"
+    ///
+    /// This description is used to generate the system prompt via template.
+    pub description: String,
+
+    /// How often the agent runs (in minutes).
+    pub interval_minutes: u32,
+
+    /// Space/room pairs where this agent is enabled.
+    #[serde(default)]
+    pub enabled_rooms: Vec<SpaceRoomPair>,
+
+    /// When the agent was created (ISO 8601).
+    pub created_at: String,
+
+    /// When the agent was last modified (ISO 8601).
+    pub updated_at: String,
+}
+
+impl AgentDefinition {
+    /// Creates the default agent with fixed ID.
+    ///
+    /// This agent is created automatically if no agents exist in the config.
+    /// It is not enabled for any rooms by default.
+    pub fn default_agent() -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+        Self {
+            id: DEFAULT_AGENT_ID.to_string(),
+            name: "Infrastructure Health Monitor".to_string(),
+            description: r#"Monitor infrastructure health by checking for anomalies and investigating root causes.
+
+## What to Monitor
+- CPU, memory, disk, and network metrics
+- Active alerts and their severity
+- Anomaly patterns and trends
+
+## Investigation Process
+1. Query for current anomalies and alerts
+2. Investigate root causes of any issues found
+3. Analyze related metrics for context
+4. Visualize findings with relevant charts
+
+## Reporting
+- Provide actionable insights
+- Highlight critical issues first
+- Suggest next steps when appropriate
+- Keep status updates concise when healthy"#
+                .to_string(),
+            interval_minutes: 5,
+            enabled_rooms: vec![],
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+
+    /// Creates a new agent with a generated UUID.
+    pub fn new(name: String, description: String, interval_minutes: u32) -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            description,
+            interval_minutes,
+            enabled_rooms: vec![],
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+
+    /// Checks if this is the default agent.
+    pub fn is_default(&self) -> bool {
+        self.id == DEFAULT_AGENT_ID
+    }
+
+    /// Returns the static list of required tools for all agents.
+    ///
+    /// Currently all agents use the same tools. This may be extended
+    /// in the future to support custom tool configurations.
+    pub fn required_tools(&self) -> Vec<String> {
+        vec![
+            "netdata".to_string(),
+            "canvas".to_string(),
+            "tabs".to_string(),
+        ]
+    }
+
+    /// Generates the system prompt from the description using the template.
+    pub fn generate_prompt(&self) -> String {
+        crate::agents::template::generate_prompt(&self.description)
+    }
+
+    /// Checks if this agent is enabled for a specific space/room.
+    pub fn is_enabled_for(&self, space_id: &str, room_id: &str) -> bool {
+        self.enabled_rooms
+            .iter()
+            .any(|r| r.space_id == space_id && r.room_id == room_id)
+    }
+
+    /// Enables this agent for a space/room.
+    ///
+    /// Returns true if the room was added (wasn't already enabled).
+    pub fn enable_for(&mut self, space_id: &str, room_id: &str) -> bool {
+        if !self.is_enabled_for(space_id, room_id) {
+            self.enabled_rooms.push(SpaceRoomPair {
+                space_id: space_id.to_string(),
+                room_id: room_id.to_string(),
+            });
+            self.updated_at = chrono::Utc::now().to_rfc3339();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Disables this agent for a space/room.
+    ///
+    /// Returns true if the room was removed (was enabled).
+    pub fn disable_for(&mut self, space_id: &str, room_id: &str) -> bool {
+        let initial_len = self.enabled_rooms.len();
+        self.enabled_rooms
+            .retain(|r| !(r.space_id == space_id && r.room_id == room_id));
+        if self.enabled_rooms.len() != initial_len {
+            self.updated_at = chrono::Utc::now().to_rfc3339();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Disables this agent for all rooms in a space.
+    pub fn disable_for_space(&mut self, space_id: &str) {
+        let initial_len = self.enabled_rooms.len();
+        self.enabled_rooms.retain(|r| r.space_id != space_id);
+        if self.enabled_rooms.len() != initial_len {
+            self.updated_at = chrono::Utc::now().to_rfc3339();
+        }
+    }
+}
+
+/// Identifies a specific room within a space.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SpaceRoomPair {
+    pub space_id: String,
+    pub room_id: String,
+}
+
+// =============================================================================
 // Main Config
 // =============================================================================
 
@@ -69,15 +244,24 @@ impl AiProvider {
 /// All settings should be added here as the application grows.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ClaiConfig {
-    /// Global AI provider for all workers.
+    /// Global AI provider for all agents.
     ///
-    /// This must be set before enabling auto-pilot.
+    /// This must be set before enabling agents.
     /// The user selects their preferred provider (Claude, Gemini, Codex)
-    /// and all workers will use it.
+    /// and all agents will use it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_provider: Option<AiProvider>,
 
+    /// User-defined autonomous agents.
+    ///
+    /// Agents are global and can be enabled for specific space/room combinations.
+    /// If empty on first load, a default agent will be created.
+    #[serde(default)]
+    pub agents: Vec<AgentDefinition>,
+
     /// Per-space configuration (key is space UUID).
+    ///
+    /// Kept for future space-specific settings.
     #[serde(default)]
     pub spaces: HashMap<String, SpaceConfig>,
 }
@@ -344,5 +528,162 @@ mod tests {
         let info = ProviderInfo::from_provider(None);
         assert!(!info.configured);
         assert!(info.name.is_none());
+    }
+
+    // =========================================================================
+    // Agent Definition Tests
+    // =========================================================================
+
+    #[test]
+    fn test_default_agent_has_fixed_id() {
+        let agent = AgentDefinition::default_agent();
+        assert_eq!(agent.id, DEFAULT_AGENT_ID);
+        assert!(agent.is_default());
+        assert_eq!(agent.name, "Infrastructure Health Monitor");
+        assert_eq!(agent.interval_minutes, 5);
+        assert!(agent.enabled_rooms.is_empty());
+    }
+
+    #[test]
+    fn test_new_agent_has_unique_id() {
+        let agent1 = AgentDefinition::new(
+            "Agent 1".to_string(),
+            "Description 1".to_string(),
+            10,
+        );
+        let agent2 = AgentDefinition::new(
+            "Agent 2".to_string(),
+            "Description 2".to_string(),
+            15,
+        );
+
+        assert_ne!(agent1.id, agent2.id);
+        assert!(!agent1.is_default());
+        assert!(!agent2.is_default());
+        assert_eq!(agent1.name, "Agent 1");
+        assert_eq!(agent2.interval_minutes, 15);
+    }
+
+    #[test]
+    fn test_agent_enable_disable_rooms() {
+        let mut agent = AgentDefinition::default_agent();
+
+        // Initially no rooms enabled
+        assert!(!agent.is_enabled_for("space-1", "room-1"));
+
+        // Enable a room
+        assert!(agent.enable_for("space-1", "room-1"));
+        assert!(agent.is_enabled_for("space-1", "room-1"));
+
+        // Enabling same room again returns false
+        assert!(!agent.enable_for("space-1", "room-1"));
+
+        // Enable another room
+        agent.enable_for("space-1", "room-2");
+        assert!(agent.is_enabled_for("space-1", "room-2"));
+
+        // Disable first room
+        assert!(agent.disable_for("space-1", "room-1"));
+        assert!(!agent.is_enabled_for("space-1", "room-1"));
+        assert!(agent.is_enabled_for("space-1", "room-2"));
+
+        // Disabling non-existent room returns false
+        assert!(!agent.disable_for("space-1", "room-1"));
+    }
+
+    #[test]
+    fn test_agent_disable_for_space() {
+        let mut agent = AgentDefinition::default_agent();
+
+        // Enable rooms in two spaces
+        agent.enable_for("space-1", "room-1");
+        agent.enable_for("space-1", "room-2");
+        agent.enable_for("space-2", "room-3");
+
+        assert_eq!(agent.enabled_rooms.len(), 3);
+
+        // Disable all rooms in space-1
+        agent.disable_for_space("space-1");
+
+        assert_eq!(agent.enabled_rooms.len(), 1);
+        assert!(!agent.is_enabled_for("space-1", "room-1"));
+        assert!(!agent.is_enabled_for("space-1", "room-2"));
+        assert!(agent.is_enabled_for("space-2", "room-3"));
+    }
+
+    #[test]
+    fn test_agent_required_tools() {
+        let agent = AgentDefinition::default_agent();
+        let tools = agent.required_tools();
+
+        assert!(tools.contains(&"netdata".to_string()));
+        assert!(tools.contains(&"canvas".to_string()));
+        assert!(tools.contains(&"tabs".to_string()));
+        assert_eq!(tools.len(), 3);
+    }
+
+    #[test]
+    fn test_agent_serialization() {
+        let mut agent = AgentDefinition::default_agent();
+        agent.enable_for("space-abc", "room-xyz");
+
+        let json = serde_json::to_string_pretty(&agent).unwrap();
+
+        // Should contain all fields
+        assert!(json.contains(&agent.id));
+        assert!(json.contains("Infrastructure Health Monitor"));
+        assert!(json.contains("space-abc"));
+        assert!(json.contains("room-xyz"));
+
+        // Should deserialize back
+        let parsed: AgentDefinition = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, agent.id);
+        assert_eq!(parsed.name, agent.name);
+        assert!(parsed.is_enabled_for("space-abc", "room-xyz"));
+    }
+
+    #[test]
+    fn test_config_with_agents_serialization() {
+        let mut config = ClaiConfig::default();
+        config.agents.push(AgentDefinition::default_agent());
+
+        let mut custom_agent = AgentDefinition::new(
+            "Custom Monitor".to_string(),
+            "Monitor custom things".to_string(),
+            30,
+        );
+        custom_agent.enable_for("space-1", "room-1");
+        config.agents.push(custom_agent);
+
+        let json = serde_json::to_string_pretty(&config).unwrap();
+
+        // Should contain both agents
+        assert!(json.contains("Infrastructure Health Monitor"));
+        assert!(json.contains("Custom Monitor"));
+
+        // Should deserialize back
+        let parsed: ClaiConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.agents.len(), 2);
+        assert!(parsed.agents[0].is_default());
+        assert!(!parsed.agents[1].is_default());
+    }
+
+    #[test]
+    fn test_space_room_pair_equality() {
+        let pair1 = SpaceRoomPair {
+            space_id: "space-1".to_string(),
+            room_id: "room-1".to_string(),
+        };
+        let pair2 = SpaceRoomPair {
+            space_id: "space-1".to_string(),
+            room_id: "room-1".to_string(),
+        };
+        let pair3 = SpaceRoomPair {
+            space_id: "space-1".to_string(),
+            room_id: "room-2".to_string(),
+        };
+
+        assert_eq!(pair1, pair2);
+        assert_ne!(pair1, pair3);
     }
 }

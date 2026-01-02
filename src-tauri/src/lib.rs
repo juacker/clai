@@ -29,6 +29,7 @@
 //! ```
 
 // Declare our modules
+mod agents;
 mod api;
 mod auth;
 mod commands;

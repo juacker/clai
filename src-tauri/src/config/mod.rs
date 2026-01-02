@@ -12,7 +12,8 @@
 pub mod types;
 
 pub use types::{
-    AiProvider, AutopilotStatus, ClaiConfig, ProviderInfo, SpaceAutopilot, SpaceConfig,
+    AgentDefinition, AiProvider, AutopilotStatus, ClaiConfig, ProviderInfo, SpaceAutopilot,
+    SpaceConfig, SpaceRoomPair, DEFAULT_AGENT_ID,
 };
 
 use std::fs;
@@ -44,6 +45,8 @@ pub struct ConfigManager {
 
 impl ConfigManager {
     /// Creates a new ConfigManager, loading existing config or creating default.
+    ///
+    /// If no agents exist in the config, creates the default agent.
     pub fn new() -> Result<Self, ConfigError> {
         let config_path = Self::get_config_path()?;
 
@@ -56,16 +59,31 @@ impl ConfigManager {
         }
 
         // Load existing config or create default
-        let config = if config_path.exists() {
+        let mut config = if config_path.exists() {
             Self::load_from_file(&config_path)?
         } else {
             ClaiConfig::default()
         };
 
-        Ok(Self {
+        // Create default agent if no agents exist
+        let needs_save = if config.agents.is_empty() {
+            config.agents.push(AgentDefinition::default_agent());
+            true
+        } else {
+            false
+        };
+
+        let manager = Self {
             config: Mutex::new(config),
             config_path,
-        })
+        };
+
+        // Save if we added the default agent
+        if needs_save {
+            manager.save()?;
+        }
+
+        Ok(manager)
     }
 
     /// Gets the platform-specific config file path.
@@ -222,6 +240,126 @@ impl ConfigManager {
     /// Checks if an AI provider is configured.
     pub fn has_ai_provider(&self) -> bool {
         self.config.lock().unwrap().ai_provider.is_some()
+    }
+
+    // =========================================================================
+    // Agent Helpers
+    // =========================================================================
+
+    /// Gets all agents.
+    pub fn get_agents(&self) -> Vec<AgentDefinition> {
+        self.config.lock().unwrap().agents.clone()
+    }
+
+    /// Gets an agent by ID.
+    pub fn get_agent(&self, id: &str) -> Option<AgentDefinition> {
+        self.config
+            .lock()
+            .unwrap()
+            .agents
+            .iter()
+            .find(|a| a.id == id)
+            .cloned()
+    }
+
+    /// Adds a new agent and saves config.
+    pub fn add_agent(&self, agent: AgentDefinition) -> Result<(), ConfigError> {
+        self.update(|config| {
+            config.agents.push(agent);
+        })
+    }
+
+    /// Updates an existing agent and saves config.
+    ///
+    /// Returns an error if the agent doesn't exist.
+    pub fn update_agent<F>(&self, id: &str, updater: F) -> Result<(), ConfigError>
+    where
+        F: FnOnce(&mut AgentDefinition),
+    {
+        self.update(|config| {
+            if let Some(agent) = config.agents.iter_mut().find(|a| a.id == id) {
+                updater(agent);
+                agent.updated_at = chrono::Utc::now().to_rfc3339();
+            }
+        })
+    }
+
+    /// Removes an agent by ID and saves config.
+    ///
+    /// Returns true if the agent was removed.
+    pub fn remove_agent(&self, id: &str) -> Result<bool, ConfigError> {
+        let mut removed = false;
+        self.update(|config| {
+            let initial_len = config.agents.len();
+            config.agents.retain(|a| a.id != id);
+            removed = config.agents.len() != initial_len;
+        })?;
+        Ok(removed)
+    }
+
+    /// Enables an agent for a specific space/room and saves config.
+    pub fn enable_agent_for_room(
+        &self,
+        agent_id: &str,
+        space_id: &str,
+        room_id: &str,
+    ) -> Result<bool, ConfigError> {
+        let mut enabled = false;
+        self.update(|config| {
+            if let Some(agent) = config.agents.iter_mut().find(|a| a.id == agent_id) {
+                enabled = agent.enable_for(space_id, room_id);
+            }
+        })?;
+        Ok(enabled)
+    }
+
+    /// Disables an agent for a specific space/room and saves config.
+    pub fn disable_agent_for_room(
+        &self,
+        agent_id: &str,
+        space_id: &str,
+        room_id: &str,
+    ) -> Result<bool, ConfigError> {
+        let mut disabled = false;
+        self.update(|config| {
+            if let Some(agent) = config.agents.iter_mut().find(|a| a.id == agent_id) {
+                disabled = agent.disable_for(space_id, room_id);
+            }
+        })?;
+        Ok(disabled)
+    }
+
+    /// Gets all agents enabled for a specific space/room.
+    pub fn get_agents_for_room(&self, space_id: &str, room_id: &str) -> Vec<AgentDefinition> {
+        self.config
+            .lock()
+            .unwrap()
+            .agents
+            .iter()
+            .filter(|a| a.is_enabled_for(space_id, room_id))
+            .cloned()
+            .collect()
+    }
+
+    /// Checks if any agents are enabled for a specific space/room.
+    pub fn has_agents_enabled(&self, space_id: &str, room_id: &str) -> bool {
+        self.config
+            .lock()
+            .unwrap()
+            .agents
+            .iter()
+            .any(|a| a.is_enabled_for(space_id, room_id))
+    }
+
+    /// Counts agents enabled for a specific space/room.
+    pub fn count_agents_enabled(&self, space_id: &str, room_id: &str) -> usize {
+        self.config
+            .lock()
+            .unwrap()
+            .agents
+            .iter()
+            .filter(|a| a.is_enabled_for(space_id, room_id))
+            .count()
     }
 }
 

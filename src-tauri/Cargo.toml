@@ -53,8 +53,11 @@ futures = "0.3"
 # Async trait support (for worker handlers)
 async-trait = "0.1"
 
-# UUID generation (for tool invocations)
+# UUID generation (for tool invocations and agent IDs)
 uuid = { version = "1", features = ["v4"] }
+
+# Date/time handling (for agent timestamps)
+chrono = { version = "0.4", features = ["serde"] }
 
 # Platform-specific directories (config, data, cache)
 dirs = "5"
