@@ -3,34 +3,41 @@
 //! This module handles initializing the scheduler with agent definitions
 //! and managing agent instances based on configuration.
 //!
-//! Agent definitions are located in `agents/definitions/`. See that module
-//! for how to add new agents.
+//! Agent definitions are now loaded from `ConfigManager` (user-configurable agents).
+//! The old `definitions/` module is deprecated and will be removed.
 
-use crate::agents::{definitions, AgentDefinition, SharedScheduler};
+use crate::agents::{AgentDefinition, SharedScheduler};
 use crate::auth::TokenStorage;
-use crate::config::ConfigManager;
+use crate::config::{AgentConfig, ConfigManager};
 
 // =============================================================================
-// Agent Definitions (delegated to definitions module)
+// Helpers
 // =============================================================================
 
-/// Returns all available agent definitions.
+/// Converts an `AgentConfig` (persisted) to `AgentDefinition` (runtime).
 ///
-/// Delegates to `definitions::all_definitions()` which aggregates
-/// definitions from all agent modules.
-pub fn default_definitions() -> Vec<AgentDefinition> {
-    definitions::all_definitions()
+/// The definition is used by the scheduler for instance creation.
+/// The prompt is generated from the description using the template system.
+fn agent_config_to_definition(config: &AgentConfig) -> AgentDefinition {
+    AgentDefinition::new(
+        &config.id,
+        &config.name,
+        (config.interval_minutes as u64) * 60 * 1000, // Convert minutes to ms
+    )
+    .with_description(&config.description)
+    .with_prompt(&config.generate_prompt())
+    .with_tools(config.required_tools())
 }
 
 // =============================================================================
 // Initialization
 // =============================================================================
 
-/// Initializes the scheduler with default definitions and optionally restores instances.
+/// Initializes the scheduler with agent definitions and optionally restores instances.
 ///
 /// This should be called once at app startup. It:
-/// 1. Registers all default agent definitions
-/// 2. If user is logged in, restores agent instances for rooms with auto-pilot enabled
+/// 1. Registers all user-configured agents as definitions
+/// 2. If user is logged in, restores agent instances for enabled rooms
 pub fn initialize_scheduler(
     scheduler: &SharedScheduler,
     config_manager: &ConfigManager,
@@ -38,8 +45,10 @@ pub fn initialize_scheduler(
 ) {
     let mut scheduler = scheduler.blocking_lock();
 
-    // Register default agent definitions
-    for definition in default_definitions() {
+    // Get config and register agent definitions
+    let config = config_manager.get();
+    for agent_config in &config.agents {
+        let definition = agent_config_to_definition(agent_config);
         scheduler.register_definition(definition);
     }
 
@@ -52,14 +61,10 @@ pub fn initialize_scheduler(
         return;
     }
 
-    // Restore agent instances from config
-    let config = config_manager.get();
-    for (space_id, space_config) in config.spaces {
-        for room_id in space_config.autopilot.enabled_rooms {
-            // Create an instance for each default agent
-            for definition in default_definitions() {
-                scheduler.create_instance(&definition.id, space_id.clone(), room_id.clone());
-            }
+    // Restore agent instances from agent enabled_rooms
+    for agent_config in &config.agents {
+        for room in &agent_config.enabled_rooms {
+            scheduler.create_instance(&agent_config.id, &room.space_id, &room.room_id);
         }
     }
 }
@@ -68,17 +73,21 @@ pub fn initialize_scheduler(
 ///
 /// Called after user logs in (if they weren't logged in at app startup).
 /// Takes the config directly to avoid holding locks across await points.
+///
+/// This registers all agent definitions and creates instances for enabled rooms.
 pub async fn restore_instances_from_config(
     scheduler: &SharedScheduler,
     config: crate::config::ClaiConfig,
 ) {
     let mut scheduler = scheduler.lock().await;
 
-    for (space_id, space_config) in config.spaces {
-        for room_id in space_config.autopilot.enabled_rooms {
-            for definition in default_definitions() {
-                scheduler.create_instance(&definition.id, space_id.clone(), room_id.clone());
-            }
+    // Register definitions and create instances for each agent's enabled rooms
+    for agent_config in &config.agents {
+        let definition = agent_config_to_definition(agent_config);
+        scheduler.register_definition(definition);
+
+        for room in &agent_config.enabled_rooms {
+            scheduler.create_instance(&agent_config.id, &room.space_id, &room.room_id);
         }
     }
 }
@@ -101,14 +110,40 @@ pub async fn clear_all_instances(scheduler: &SharedScheduler) {
     }
 }
 
-/// Creates agent instances for a room.
+/// Creates a scheduler instance for a specific agent in a room.
 ///
-/// Called when auto-pilot is enabled for a room.
-pub async fn create_instances_for_room(scheduler: &SharedScheduler, space_id: &str, room_id: &str) {
+/// Called when an agent is enabled for a room.
+/// Note: The agent definition must already be registered with the scheduler.
+#[allow(dead_code)] // May be used in future for single-agent operations
+pub async fn create_instance_for_agent(
+    scheduler: &SharedScheduler,
+    agent_id: &str,
+    space_id: &str,
+    room_id: &str,
+) {
+    let mut scheduler = scheduler.lock().await;
+    scheduler.create_instance(agent_id, space_id, room_id);
+}
+
+/// Creates scheduler instances for ALL agents in a room.
+///
+/// Used by the legacy autopilot system when enabling a room.
+/// For new code, prefer using `create_instance_for_agent` for specific agents.
+pub async fn create_instances_for_room(
+    scheduler: &SharedScheduler,
+    config: &crate::config::ClaiConfig,
+    space_id: &str,
+    room_id: &str,
+) {
     let mut scheduler = scheduler.lock().await;
 
-    for definition in default_definitions() {
-        scheduler.create_instance(&definition.id, space_id, room_id);
+    for agent_config in &config.agents {
+        // Register definition if not already registered
+        let definition = agent_config_to_definition(agent_config);
+        scheduler.register_definition(definition);
+
+        // Create instance
+        scheduler.create_instance(&agent_config.id, space_id, room_id);
     }
 }
 
@@ -139,49 +174,91 @@ pub async fn remove_instances_for_room(scheduler: &SharedScheduler, space_id: &s
 mod tests {
     use super::*;
     use crate::agents::create_shared_scheduler;
+    use crate::config::types::DEFAULT_AGENT_ID;
+
+    fn create_test_agent_config() -> AgentConfig {
+        AgentConfig::new("Test Agent".to_string(), "Test description".to_string(), 5)
+    }
 
     #[test]
-    fn test_default_definitions() {
-        let definitions = default_definitions();
+    fn test_agent_config_to_definition() {
+        let agent = create_test_agent_config();
+        let definition = agent_config_to_definition(&agent);
 
-        assert!(!definitions.is_empty());
+        assert_eq!(definition.id, agent.id);
+        assert_eq!(definition.name, "Test Agent");
+        assert_eq!(definition.interval_ms, 5 * 60 * 1000); // 5 minutes in ms
+        assert!(!definition.prompt.is_empty());
+        assert_eq!(definition.required_tools, vec!["netdata", "canvas", "tabs"]);
+    }
 
-        // Verify anomaly investigator exists
-        let anomaly = definitions.iter().find(|d| d.id == "anomaly-investigator");
-        assert!(anomaly.is_some());
+    #[test]
+    fn test_default_agent_to_definition() {
+        let agent = AgentConfig::default_agent();
+        let definition = agent_config_to_definition(&agent);
 
-        let anomaly = anomaly.unwrap();
-        assert_eq!(anomaly.name, "Anomaly Investigator");
-        assert_eq!(anomaly.interval_ms, 5 * 60 * 1000);
+        assert_eq!(definition.id, DEFAULT_AGENT_ID);
+        assert_eq!(definition.name, "Infrastructure Health Monitor");
+        assert_eq!(definition.interval_ms, 5 * 60 * 1000);
     }
 
     #[tokio::test]
-    async fn test_create_and_remove_instances_for_room() {
+    async fn test_create_and_remove_instance_for_agent() {
         let scheduler = create_shared_scheduler();
 
-        // Register definitions first
+        // Register definition first
+        let agent = create_test_agent_config();
         {
             let mut s = scheduler.lock().await;
-            for def in default_definitions() {
-                s.register_definition(def);
-            }
+            s.register_definition(agent_config_to_definition(&agent));
         }
 
-        // Create instances
-        create_instances_for_room(&scheduler, "space-1", "room-1").await;
+        // Create instance for agent
+        create_instance_for_agent(&scheduler, &agent.id, "space-1", "room-1").await;
+
+        // Verify instance exists
+        {
+            let s = scheduler.lock().await;
+            assert_eq!(s.instance_count(), 1);
+            let instance_id = format!("{}:space-1:room-1", agent.id);
+            let instance = s.get_instance(&instance_id);
+            assert!(instance.is_some());
+        }
+
+        // Remove instances for room
+        remove_instances_for_room(&scheduler, "space-1", "room-1").await;
+
+        // Verify instances removed
+        {
+            let s = scheduler.lock().await;
+            assert_eq!(s.instance_count(), 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_clear_all_instances() {
+        let scheduler = create_shared_scheduler();
+
+        // Register and create multiple instances
+        let agent = create_test_agent_config();
+        {
+            let mut s = scheduler.lock().await;
+            s.register_definition(agent_config_to_definition(&agent));
+        }
+
+        create_instance_for_agent(&scheduler, &agent.id, "space-1", "room-1").await;
+        create_instance_for_agent(&scheduler, &agent.id, "space-2", "room-2").await;
 
         // Verify instances exist
         {
             let s = scheduler.lock().await;
-            assert!(s.instance_count() > 0);
-            let instance = s.get_instance("anomaly-investigator:space-1:room-1");
-            assert!(instance.is_some());
+            assert_eq!(s.instance_count(), 2);
         }
 
-        // Remove instances
-        remove_instances_for_room(&scheduler, "space-1", "room-1").await;
+        // Clear all
+        clear_all_instances(&scheduler).await;
 
-        // Verify instances removed
+        // Verify all removed
         {
             let s = scheduler.lock().await;
             assert_eq!(s.instance_count(), 0);

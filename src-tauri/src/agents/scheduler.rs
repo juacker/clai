@@ -173,15 +173,16 @@ impl Scheduler {
     }
 
     /// Marks an agent as completed and schedules its next run.
-    pub fn complete_agent(&mut self, instance_id: &str, success: bool) {
+    ///
+    /// # Arguments
+    ///
+    /// * `instance_id` - The instance to mark complete
+    /// * `success` - Whether the run was successful
+    /// * `interval_ms` - The interval in milliseconds until the next run
+    pub fn complete_agent(&mut self, instance_id: &str, success: bool, interval_ms: u64) {
         if let Some(instance) = self.instances.get_mut(instance_id) {
             instance.is_running = false;
-
-            // Get interval from definition
-            if let Some(definition) = self.definitions.get(&instance.agent_id) {
-                // Schedule next run
-                instance.schedule_next(definition.interval_ms);
-            }
+            instance.schedule_next(interval_ms);
 
             if !success {
                 // Could track consecutive failures here if needed
@@ -349,7 +350,7 @@ mod tests {
         assert!(next.is_none());
 
         // After completion, should be scheduled for later (not immediately ready)
-        scheduler.complete_agent("test-agent:space1:room1", true);
+        scheduler.complete_agent("test-agent:space1:room1", true, 60_000);
         let next = scheduler.next_ready();
         assert!(next.is_none()); // Scheduled for 60 seconds later
     }
@@ -371,7 +372,7 @@ mod tests {
         assert!(second.is_none());
 
         // Complete first
-        scheduler.complete_agent(&first.unwrap(), true);
+        scheduler.complete_agent(&first.unwrap(), true, 60_000);
 
         // Now second should work (but it's scheduled for later)
         // Both instances were scheduled, so they'll run based on next_run_at

@@ -39,7 +39,7 @@ use std::time::Duration;
 use reqwest::Client;
 use tauri::{AppHandle, Manager};
 
-use crate::agents::{cli_runner, definitions, SchedulerState, SharedScheduler};
+use crate::agents::{cli_runner, SchedulerState, SharedScheduler};
 use crate::api::netdata::NetdataApi;
 use crate::mcp::bridge::JsBridge;
 use crate::AppState;
@@ -188,11 +188,33 @@ async fn run_next_agent(
         "Got agent instance"
     );
 
-    // Get the agent definition
-    let definition = definitions::get_definition(&agent_id)
-        .ok_or_else(|| RunnerError::DefinitionNotFound(agent_id.clone()))?;
+    // Get the agent config from ConfigManager
+    let agent_config = {
+        let config = state.config_manager.lock().unwrap();
+        config
+            .get_agent(&agent_id)
+            .ok_or_else(|| RunnerError::AgentNotFound(agent_id.clone()))?
+    };
 
-    tracing::debug!(definition_name = %definition.name, "Got agent definition");
+    // Check if agent is still enabled for this space/room
+    if !agent_config.is_enabled_for(&space_id, &room_id) {
+        tracing::info!(
+            agent_id = %agent_id,
+            space_id = %space_id,
+            room_id = %room_id,
+            "Agent is no longer enabled for this room, removing instance"
+        );
+
+        // Remove the instance from scheduler
+        {
+            let mut sched = scheduler.lock().await;
+            sched.remove_instance(&instance_id);
+        }
+
+        return Ok(());
+    }
+
+    tracing::debug!(agent_name = %agent_config.name, "Got agent config");
 
     // Get base URL
     let base_url = {
@@ -212,20 +234,23 @@ async fn run_next_agent(
     // Setup agent tab BEFORE starting CLI (avoids race conditions)
     tracing::debug!("Setting up agent tab...");
     let tab_id = bridge
-        .setup_agent_tab(&definition.id, &definition.name, &space_id, &room_id)
+        .setup_agent_tab(&agent_config.id, &agent_config.name, &space_id, &room_id)
         .await
         .map_err(|e| RunnerError::TabSetupFailed(e.to_string()))?;
 
     tracing::debug!(tab_id = %tab_id, "Agent tab ready");
+
+    // Generate prompt from agent description
+    let prompt = agent_config.generate_prompt();
 
     tracing::info!(provider = ?provider, "Starting CLI");
 
     // Run the agent
     let result = cli_runner::run_ai_cli(
         &provider,
-        &definition.prompt,
+        &prompt,
         api,
-        &definition.id,
+        &agent_config.id,
         &space_id,
         &room_id,
         Some(bridge),
@@ -260,10 +285,11 @@ async fn run_next_agent(
         }
     };
 
-    // Update scheduler
+    // Update scheduler with interval from config
+    let interval_ms = (agent_config.interval_minutes as u64) * 60 * 1000;
     {
         let mut sched = scheduler.lock().await;
-        sched.complete_agent(&instance_id, success);
+        sched.complete_agent(&instance_id, success, interval_ms);
 
         // Log next run time
         if let Some(instance) = sched.get_instance(&instance_id) {
@@ -289,8 +315,8 @@ async fn run_next_agent(
 pub enum RunnerError {
     /// Agent instance not found.
     InstanceNotFound(String),
-    /// Agent definition not found.
-    DefinitionNotFound(String),
+    /// Agent config not found in ConfigManager.
+    AgentNotFound(String),
     /// Failed to setup agent tab.
     TabSetupFailed(String),
 }
@@ -299,7 +325,7 @@ impl std::fmt::Display for RunnerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RunnerError::InstanceNotFound(id) => write!(f, "Agent instance not found: {}", id),
-            RunnerError::DefinitionNotFound(id) => write!(f, "Agent definition not found: {}", id),
+            RunnerError::AgentNotFound(id) => write!(f, "Agent config not found: {}", id),
             RunnerError::TabSetupFailed(msg) => write!(f, "Failed to setup agent tab: {}", msg),
         }
     }
@@ -320,8 +346,8 @@ mod tests {
         let err = RunnerError::InstanceNotFound("test-id".to_string());
         assert!(err.to_string().contains("test-id"));
 
-        let err = RunnerError::DefinitionNotFound("test-def".to_string());
-        assert!(err.to_string().contains("test-def"));
+        let err = RunnerError::AgentNotFound("test-agent".to_string());
+        assert!(err.to_string().contains("test-agent"));
     }
 
     #[test]

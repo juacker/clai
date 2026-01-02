@@ -168,6 +168,7 @@ pub async fn set_autopilot_enabled(
     // Collect rooms to update scheduler (do config operations first, then async scheduler ops)
     let rooms_to_remove: Vec<String>;
     let room_to_add: Option<String>;
+    let config_for_scheduler: crate::config::ClaiConfig;
 
     {
         // Scope for config_manager lock - must be dropped before async operations
@@ -219,6 +220,9 @@ pub async fn set_autopilot_enabled(
             rooms_to_remove = vec![room_id.clone()];
             room_to_add = None;
         }
+
+        // Clone config for scheduler operations (before dropping lock)
+        config_for_scheduler = config_manager.get();
     } // config_manager lock dropped here
 
     // Now do async scheduler operations (lock is released)
@@ -227,7 +231,7 @@ pub async fn set_autopilot_enabled(
     }
 
     if let Some(room) = room_to_add {
-        create_instances_for_room(&state.scheduler, &space_id, &room).await;
+        create_instances_for_room(&state.scheduler, &config_for_scheduler, &space_id, &room).await;
     }
 
     Ok(())

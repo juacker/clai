@@ -25,13 +25,13 @@
 //! # Components
 //!
 //! - **types** - Core type definitions (AgentDefinition, AgentInstance)
-//! - **definitions** - Agent definitions (prompts, intervals, tools)
+//! - **template** - Prompt template generation from agent descriptions
 //! - **scheduler** - Manages when agents should run (one at a time)
 //! - **cli_runner** - Spawns AI CLIs with MCP server
 //! - **runner** - Background loop that checks scheduler and runs agents
+//! - **init** - Scheduler initialization and instance management
 
 pub mod cli_runner;
-pub mod definitions;
 pub mod init;
 pub mod runner;
 pub mod scheduler;
