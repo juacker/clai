@@ -254,19 +254,6 @@ impl AutopilotStatus {
         }
     }
 
-    /// Creates a status for when no provider is configured.
-    pub fn no_provider() -> Self {
-        Self {
-            enabled: false,
-            can_toggle: false,
-            via_all_nodes: false,
-            has_credits: false,
-            provider_configured: false,
-            provider_name: None,
-            provider: None,
-            message: Some("Select AI provider".to_string()),
-        }
-    }
 }
 
 // =============================================================================
@@ -341,11 +328,6 @@ mod tests {
         assert!(!no_credits.can_toggle);
         assert!(!no_credits.has_credits);
         assert!(no_credits.provider_configured);
-
-        let no_provider = AutopilotStatus::no_provider();
-        assert!(!no_provider.enabled);
-        assert!(!no_provider.can_toggle);
-        assert!(!no_provider.provider_configured);
     }
 
     #[test]

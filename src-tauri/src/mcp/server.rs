@@ -42,7 +42,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use rmcp::{
-    handler::server::{tool::ToolRouter, wrapper::Parameters},
+    handler::server::wrapper::Parameters,
     model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
     tool, tool_router,
     transport::streamable_http_server::{
@@ -146,6 +146,7 @@ impl McpServerHandle {
 /// By default, all tools are available. Use `with_allowed_tools()` to restrict
 /// which tools the AI CLI can see and use.
 #[derive(Clone)]
+#[allow(dead_code)] // Fields used via MCP #[tool] methods
 pub struct McpToolServer {
     /// Netdata tools (Rust-native).
     netdata: NetdataTools,
@@ -153,8 +154,6 @@ pub struct McpToolServer {
     canvas: CanvasTools,
     /// Tabs tools (JS-bridge).
     tabs: TabsTools,
-    /// Tool router for MCP protocol.
-    tool_router: ToolRouter<Self>,
     /// Allowed tools filter. If None, all tools are allowed.
     allowed_tools: Option<Vec<String>>,
 }
@@ -183,7 +182,6 @@ impl McpToolServer {
             netdata: NetdataTools::new(api, space_id.clone(), room_id.clone()),
             canvas: CanvasTools::new(worker_id.clone(), space_id.clone(), room_id.clone()),
             tabs: TabsTools::new(worker_id, space_id, room_id),
-            tool_router: Self::tool_router(),
             allowed_tools: None,
         }
     }
@@ -205,7 +203,6 @@ impl McpToolServer {
                 bridge.clone(),
             ),
             tabs: TabsTools::with_bridge(worker_id, space_id, room_id, bridge),
-            tool_router: Self::tool_router(),
             allowed_tools: None,
         }
     }

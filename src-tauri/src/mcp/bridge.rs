@@ -170,11 +170,6 @@ pub fn complete_pending_request(response: ToolResponse) -> Result<(), String> {
     }
 }
 
-/// Get the count of pending requests (for debugging).
-pub fn pending_request_count() -> usize {
-    pending_requests().lock().unwrap().len()
-}
-
 // =============================================================================
 // JsBridge
 // =============================================================================

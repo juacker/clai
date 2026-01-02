@@ -33,6 +33,7 @@ use super::ToolError;
 ///
 /// Used by both the MCP server (for schema generation) and internal execution.
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+#[allow(dead_code)] // Fields used via MCP deserialization
 pub struct NetdataQueryParams {
     /// Natural language query about your infrastructure.
     /// Examples:
@@ -101,6 +102,7 @@ pub struct NetdataQueryTool {
 
 /// Internal state for conversation continuity.
 #[derive(Default, Clone)]
+#[allow(dead_code)] // Used for conversation tracking
 struct ConversationState {
     /// Conversation ID - created on first query, reused for subsequent queries.
     conversation_id: Option<String>,
@@ -119,6 +121,7 @@ impl Clone for NetdataQueryTool {
     }
 }
 
+#[allow(dead_code)] // Methods called via MCP protocol
 impl NetdataQueryTool {
     /// Create a new tool bound to a specific space/room context.
     ///
@@ -247,15 +250,6 @@ impl NetdataQueryTool {
         Ok(response)
     }
 
-    /// Get the bound space ID.
-    pub fn space_id(&self) -> &str {
-        &self.space_id
-    }
-
-    /// Get the bound room ID.
-    pub fn room_id(&self) -> &str {
-        &self.room_id
-    }
 }
 
 // =============================================================================
@@ -277,6 +271,7 @@ use crate::api::netdata::ConversationMessage;
 ///
 /// The composite format gives the worker AI full context about what analysis
 /// was performed and what data was examined.
+#[allow(dead_code)] // Called via MCP protocol
 fn extract_response_and_message_id(
     messages: &[ConversationMessage],
 ) -> Option<(String, String)> {

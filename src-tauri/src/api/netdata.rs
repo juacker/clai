@@ -959,13 +959,6 @@ pub struct MessageContent {
     pub name: Option<String>,
 }
 
-/// Simple message with role and content.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    pub role: String,
-    pub content: String,
-}
-
 /// Request body for creating a conversation title.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateTitleRequest {
@@ -1005,105 +998,6 @@ fn default_tools() -> Vec<ChatTool> {
 pub struct ChatTool {
     pub name: String,
     pub version: i32,
-}
-
-// =============================================================================
-// SSE Streaming Types
-// =============================================================================
-
-/// Stream event types for SSE chunks.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum StreamEventType {
-    MessageStart,
-    ContentBlockStart,
-    ContentBlockDelta,
-    ContentBlockStop,
-    MessageDelta,
-    MessageStop,
-    Error,
-    Ping,
-}
-
-/// A streaming chunk from chat completion SSE.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamChunk {
-    #[serde(rename = "type")]
-    pub event_type: StreamEventType,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub index: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub delta: Option<StreamDelta>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_block: Option<StreamContentBlock>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<StreamMessage>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<TokenUsage>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-/// Delta types for streaming content.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum StreamDeltaType {
-    TextDelta,
-    InputJsonDelta,
-}
-
-/// Incremental content changes in streaming.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamDelta {
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub delta_type: Option<StreamDeltaType>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thinking: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signature: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub partial_json: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stop_reason: Option<String>,
-}
-
-/// Content block types in streaming.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum StreamContentBlockType {
-    Text,
-    ToolUse,
-    ToolResult,
-}
-
-/// A content block in streaming response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamContentBlock {
-    #[serde(rename = "type")]
-    pub block_type: StreamContentBlockType,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub input: Option<serde_json::Value>,
-}
-
-/// Message metadata in streaming response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamMessage {
-    pub id: String,
-    pub role: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stop_reason: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<TokenUsage>,
 }
 
 #[cfg(test)]

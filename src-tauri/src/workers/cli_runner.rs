@@ -37,7 +37,7 @@ use tokio::process::Command;
 use crate::api::netdata::NetdataApi;
 use crate::config::AiProvider;
 use crate::mcp::bridge::JsBridge;
-use crate::mcp::server::{McpServerError, McpServerHandle, McpToolServer};
+use crate::mcp::server::{McpServerError, McpToolServer};
 use crate::providers::is_flatpak;
 
 // =============================================================================
@@ -87,8 +87,6 @@ pub struct CliRunResult {
     pub success: bool,
     /// Exit code from the CLI (if available).
     pub exit_code: Option<i32>,
-    /// Output from stdout.
-    pub stdout: String,
     /// Output from stderr.
     pub stderr: String,
 }
@@ -206,7 +204,6 @@ async fn spawn_and_wait_cli(
         result = output_future => {
             match result {
                 Ok(output) => {
-                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                     let success = output.status.success();
                     let exit_code = output.status.code();
@@ -223,7 +220,6 @@ async fn spawn_and_wait_cli(
                     Ok(CliRunResult {
                         success,
                         exit_code,
-                        stdout,
                         stderr,
                     })
                 }
@@ -369,57 +365,6 @@ fn configure_codex_command(cmd: &mut Command, prompt: &str, mcp_server_url: &str
 }
 
 // =============================================================================
-// Handle Management
-// =============================================================================
-
-/// Handle to a running worker execution.
-///
-/// Use this to track and cancel worker executions.
-pub struct WorkerExecutionHandle {
-    /// The MCP server handle (for shutdown)
-    server_handle: McpServerHandle,
-    /// Worker ID
-    pub worker_id: String,
-    /// Space ID
-    pub space_id: String,
-    /// Room ID
-    pub room_id: String,
-}
-
-impl WorkerExecutionHandle {
-    /// Creates a new execution handle.
-    pub fn new(
-        server_handle: McpServerHandle,
-        worker_id: String,
-        space_id: String,
-        room_id: String,
-    ) -> Self {
-        Self {
-            server_handle,
-            worker_id,
-            space_id,
-            room_id,
-        }
-    }
-
-    /// Get the MCP server URL.
-    pub fn server_url(&self) -> &str {
-        self.server_handle.url()
-    }
-
-    /// Get the MCP server port.
-    pub fn server_port(&self) -> u16 {
-        self.server_handle.port()
-    }
-
-    /// Cancel the execution by shutting down the server.
-    pub fn cancel(&self) {
-        tracing::info!("Cancelling worker execution for {}", self.worker_id);
-        self.server_handle.shutdown();
-    }
-}
-
-// =============================================================================
 // Tests
 // =============================================================================
 
@@ -444,7 +389,6 @@ mod tests {
         let result = CliRunResult {
             success: true,
             exit_code: Some(0),
-            stdout: "done".to_string(),
             stderr: "".to_string(),
         };
 
@@ -497,12 +441,5 @@ mod tests {
         let cmd = build_cli_command(&provider, "test prompt", "http://127.0.0.1:12345");
 
         assert!(format!("{:?}", cmd).contains("my-ai") || format!("{:?}", cmd).contains("flatpak"));
-    }
-
-    #[test]
-    fn test_worker_execution_handle() {
-        // Create a mock server handle for testing
-        // Note: In real usage, this comes from McpToolServer::serve_http()
-        // For unit tests, we can't easily create a real handle
     }
 }

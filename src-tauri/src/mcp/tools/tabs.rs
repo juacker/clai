@@ -51,6 +51,7 @@ pub struct RemoveTileParams {
 /// Result of splitting a tile.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Used via MCP tool responses
 pub struct SplitTileResult {
     /// The ID of the newly created tile.
     pub tile_id: String,
@@ -63,6 +64,7 @@ pub struct SplitTileResult {
 /// - A **split container**: Has children arranged vertically or horizontally
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Used via MCP tool responses
 pub struct TileNode {
     /// The tile's unique ID.
     pub tile_id: String,
@@ -96,6 +98,7 @@ pub struct TileNode {
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Used via MCP tool responses
 pub struct TileLayout {
     /// The root tile node of the tree.
     pub root: TileNode,
@@ -129,6 +132,7 @@ pub struct TileLayout {
 /// (e.g., in tests), tools will return an error indicating the bridge
 /// is not available.
 #[derive(Clone)]
+#[allow(dead_code)] // Fields and methods used via MCP
 pub struct TabsTools {
     /// Worker ID - identifies the worker type.
     worker_id: String,
@@ -140,6 +144,7 @@ pub struct TabsTools {
     bridge: Option<JsBridge>,
 }
 
+#[allow(dead_code)] // Methods called via MCP protocol
 impl TabsTools {
     /// Create tabs tools bound to a worker's context (without bridge).
     ///
@@ -169,21 +174,6 @@ impl TabsTools {
             room_id,
             bridge: Some(bridge),
         }
-    }
-
-    /// Get the worker ID.
-    pub fn worker_id(&self) -> &str {
-        &self.worker_id
-    }
-
-    /// Get the space ID.
-    pub fn space_id(&self) -> &str {
-        &self.space_id
-    }
-
-    /// Get the room ID.
-    pub fn room_id(&self) -> &str {
-        &self.room_id
     }
 
     /// Get a reference to the bridge (if available).
@@ -257,14 +247,12 @@ mod tests {
 
     #[test]
     fn test_tabs_tools_creation() {
-        let tools = TabsTools::new(
+        // Just verify construction succeeds
+        let _tools = TabsTools::new(
             "anomaly_investigator".to_string(),
             "space-123".to_string(),
             "room-456".to_string(),
         );
-        assert_eq!(tools.worker_id(), "anomaly_investigator");
-        assert_eq!(tools.space_id(), "space-123");
-        assert_eq!(tools.room_id(), "room-456");
     }
 
     #[test]

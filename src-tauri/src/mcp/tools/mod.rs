@@ -39,6 +39,7 @@ pub use tabs::TabsTools;
 
 /// Errors that can occur during tool execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)] // Used by tool implementations called via MCP
 pub enum ToolError {
     /// Invalid tool name format (expected namespace.method).
     InvalidToolName(String),
@@ -107,6 +108,7 @@ impl std::error::Error for ToolError {}
 /// let response = tools.query.execute("Tell me more about the CPU issue").await?;
 /// ```
 #[derive(Clone)]
+#[allow(dead_code)] // Fields used via MCP tool methods
 pub struct NetdataTools {
     /// The netdata_query tool for AI-powered analysis.
     pub query: NetdataQueryTool,
@@ -133,79 +135,13 @@ impl NetdataTools {
     }
 
     /// Get the space ID.
-    pub fn space_id(&self) -> &str {
+    pub(crate) fn space_id(&self) -> &str {
         &self.space_id
     }
 
     /// Get the room ID.
-    pub fn room_id(&self) -> &str {
+    pub(crate) fn room_id(&self) -> &str {
         &self.room_id
-    }
-}
-
-// =============================================================================
-// WorkerTools - Combined Tool Container
-// =============================================================================
-
-/// Container for all tools available to a worker.
-///
-/// This struct holds all tool instances bound to the worker's execution context.
-/// Tools are created when the worker starts and dropped when it finishes.
-///
-/// # Context Binding
-///
-/// All tools share the same worker context:
-/// - `worker_id` - The worker type (e.g., "anomaly_investigator")
-/// - `space_id` - The Netdata space
-/// - `room_id` - The Netdata room
-///
-/// # Lazy Tab Creation
-///
-/// Canvas and tabs tools don't require a tab upfront. When a UI tool is called,
-/// the frontend will find or create a tab owned by this worker. This means:
-/// - Workers that don't need UI don't create unnecessary tabs
-/// - Tabs are created on-demand when the worker first needs to display something
-///
-/// # Example
-///
-/// ```rust,ignore
-/// let tools = WorkerTools::new(
-///     api,
-///     "anomaly_investigator".to_string(),
-///     "space-123".to_string(),
-///     "room-456".to_string(),
-/// );
-///
-/// // Query Netdata AI (no tab needed)
-/// let response = tools.execute("netdata.query", json!({"query": "Any anomalies?"})).await?;
-///
-/// // Add a chart (tab created lazily if needed)
-/// let response = tools.execute("canvas.addChart", json!({"context": "system.cpu"})).await?;
-/// ```
-pub struct WorkerTools {
-    /// Netdata tools (for Cloud AI queries).
-    pub netdata: NetdataTools,
-    /// Canvas tools (for chart manipulation, lazy tab creation).
-    pub canvas: CanvasTools,
-    /// Tabs tools (for tile layout manipulation, lazy tab creation).
-    pub tabs: TabsTools,
-}
-
-impl WorkerTools {
-    /// Create all tools bound to the worker's execution context.
-    ///
-    /// # Arguments
-    ///
-    /// * `api` - The Netdata API client
-    /// * `worker_id` - The worker type identifier
-    /// * `space_id` - The Netdata space
-    /// * `room_id` - The Netdata room
-    pub fn new(api: Arc<NetdataApi>, worker_id: String, space_id: String, room_id: String) -> Self {
-        Self {
-            netdata: NetdataTools::new(api, space_id.clone(), room_id.clone()),
-            canvas: CanvasTools::new(worker_id.clone(), space_id.clone(), room_id.clone()),
-            tabs: TabsTools::new(worker_id, space_id, room_id),
-        }
     }
 }
 

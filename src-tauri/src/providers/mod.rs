@@ -179,14 +179,6 @@ pub fn get_available_providers() -> Vec<AvailableProvider> {
         .collect()
 }
 
-/// Gets only the providers that are available.
-pub fn get_working_providers() -> Vec<AvailableProvider> {
-    get_available_providers()
-        .into_iter()
-        .filter(|p| p.available)
-        .collect()
-}
-
 /// Validates that a specific provider is available.
 pub fn validate_provider(provider: &AiProvider) -> Result<AvailableProvider, String> {
     let info = check_provider(provider);

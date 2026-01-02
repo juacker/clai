@@ -167,76 +167,6 @@ impl WorkerInstance {
 }
 
 // =============================================================================
-// Worker Result
-// =============================================================================
-
-/// Result of a worker execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkerResult {
-    /// Whether the execution was successful.
-    pub success: bool,
-
-    /// Status message.
-    pub message: String,
-
-    /// Conversation ID used (if any).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub conversation_id: Option<String>,
-
-    /// Number of actions taken.
-    #[serde(default)]
-    pub actions_count: usize,
-}
-
-impl WorkerResult {
-    /// Creates a successful result.
-    pub fn success(message: impl Into<String>) -> Self {
-        Self {
-            success: true,
-            message: message.into(),
-            conversation_id: None,
-            actions_count: 0,
-        }
-    }
-
-    /// Creates a successful result with actions.
-    pub fn success_with_actions(message: impl Into<String>, actions_count: usize) -> Self {
-        Self {
-            success: true,
-            message: message.into(),
-            conversation_id: None,
-            actions_count,
-        }
-    }
-
-    /// Creates an idle result (nothing to do).
-    pub fn idle(message: impl Into<String>) -> Self {
-        Self {
-            success: true,
-            message: message.into(),
-            conversation_id: None,
-            actions_count: 0,
-        }
-    }
-
-    /// Creates a failure result.
-    pub fn failure(message: impl Into<String>) -> Self {
-        Self {
-            success: false,
-            message: message.into(),
-            conversation_id: None,
-            actions_count: 0,
-        }
-    }
-
-    /// Sets the conversation ID.
-    pub fn with_conversation(mut self, conversation_id: String) -> Self {
-        self.conversation_id = Some(conversation_id);
-        self
-    }
-}
-
-// =============================================================================
 // Tests
 // =============================================================================
 
@@ -295,25 +225,5 @@ mod tests {
         // Ready when scheduled time has passed
         instance.next_run_at = Some(now - std::time::Duration::from_secs(1));
         assert!(instance.is_ready(now));
-    }
-
-    #[test]
-    fn test_worker_result() {
-        let success = WorkerResult::success("Done");
-        assert!(success.success);
-        assert_eq!(success.message, "Done");
-
-        let with_actions = WorkerResult::success_with_actions("Found issues", 3);
-        assert!(with_actions.success);
-        assert_eq!(with_actions.actions_count, 3);
-
-        let idle = WorkerResult::idle("Nothing to do");
-        assert!(idle.success);
-
-        let failure = WorkerResult::failure("Error occurred");
-        assert!(!failure.success);
-
-        let with_conv = WorkerResult::success("Done").with_conversation("conv123".to_string());
-        assert_eq!(with_conv.conversation_id, Some("conv123".to_string()));
     }
 }

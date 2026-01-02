@@ -57,14 +57,6 @@ pub fn get_definition(id: &str) -> Option<WorkerDefinition> {
     all_definitions().into_iter().find(|d| d.id == id)
 }
 
-/// Returns all worker IDs.
-pub fn all_ids() -> Vec<&'static str> {
-    vec![
-        anomaly_investigator::ID,
-        // Add new worker IDs here
-    ]
-}
-
 // =============================================================================
 // Tests
 // =============================================================================
@@ -100,12 +92,5 @@ mod tests {
     fn test_get_definition_not_found() {
         let def = get_definition("nonexistent-worker");
         assert!(def.is_none());
-    }
-
-    #[test]
-    fn test_all_ids_matches_definitions() {
-        let ids = all_ids();
-        let definitions = all_definitions();
-        assert_eq!(ids.len(), definitions.len());
     }
 }
