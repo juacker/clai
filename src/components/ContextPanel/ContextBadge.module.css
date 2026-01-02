@@ -58,26 +58,26 @@
 
 /* Badge Types */
 
-/* Space Badge - Secondary blue theme */
+/* Space Badge - Primary indigo theme */
 .badgeSpace {
-  background: var(--color-secondary-alpha-08);
-  color: var(--color-secondary);
-  border-color: var(--color-secondary-alpha-15);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(99, 102, 241, 0.12) 100%);
+  color: var(--color-primary);
+  border-color: rgba(99, 102, 241, 0.2);
 }
 
 .badgeSpace .icon {
-  color: var(--color-secondary);
+  color: var(--color-primary);
 }
 
-/* Room Badge - Info blue theme */
+/* Room Badge - Indigo theme (lighter) */
 .badgeRoom {
-  background: var(--color-info-alpha-06);
-  color: var(--color-info-dark);
-  border-color: var(--color-info-border);
+  background: rgba(99, 102, 241, 0.06);
+  color: var(--color-primary-dark);
+  border-color: rgba(99, 102, 241, 0.15);
 }
 
 .badgeRoom .icon {
-  color: var(--color-info);
+  color: var(--color-primary);
 }
 
 /* Custom Badge - Neutral theme */
@@ -91,15 +91,15 @@
   color: var(--color-text-tertiary);
 }
 
-/* Credits Badge - Success green theme (default) */
+/* Credits Badge - Accent green theme (default) */
 .badgeCredits {
-  background: var(--color-success-alpha-06);
-  color: var(--color-success-dark);
-  border-color: var(--color-success-alpha-20);
+  background: linear-gradient(135deg, rgba(0, 171, 148, 0.06) 0%, rgba(0, 171, 148, 0.10) 100%);
+  color: var(--color-accent-dark);
+  border-color: rgba(0, 171, 148, 0.2);
 }
 
 .badgeCredits .icon {
-  color: var(--color-success);
+  color: var(--color-accent);
 }
 
 /* Credits Badge - Warning variant (low credits) */
@@ -132,13 +132,14 @@
   }
 
   .badgeSpace:hover {
-    background: var(--color-secondary-alpha-15);
-    border-color: var(--color-secondary-alpha-30);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(99, 102, 241, 0.18) 100%);
+    border-color: rgba(99, 102, 241, 0.35);
+    box-shadow: var(--shadow-sm), 0 0 12px rgba(99, 102, 241, 0.15);
   }
 
   .badgeRoom:hover {
-    background: var(--color-info-alpha-10);
-    border-color: var(--color-info);
+    background: rgba(99, 102, 241, 0.10);
+    border-color: rgba(99, 102, 241, 0.25);
   }
 
   .badgeCustom:hover {
@@ -147,8 +148,8 @@
   }
 
   .badgeCredits:hover {
-    background: var(--color-success-alpha-10);
-    border-color: var(--color-success);
+    background: linear-gradient(135deg, rgba(0, 171, 148, 0.10) 0%, rgba(0, 171, 148, 0.15) 100%);
+    border-color: rgba(0, 171, 148, 0.35);
   }
 
   .badgeCreditsWarning:hover {
@@ -164,7 +165,7 @@
 
 /* Accessibility - Focus Styles */
 .badge:focus-visible {
-  outline: 2px solid var(--color-secondary-alpha-40);
+  outline: 2px solid var(--color-primary-alpha-40);
   outline-offset: 2px;
 }
 

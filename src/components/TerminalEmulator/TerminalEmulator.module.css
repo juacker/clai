@@ -1,8 +1,7 @@
 /* Terminal Emulator - Cross-Platform Component */
-/* Modern, light theme matching the app's design philosophy */
+/* Premium Indigo theme with gradient accents */
 
 .terminal {
-
   position: relative;
   width: 100%;
   background: transparent;
@@ -12,7 +11,7 @@
   flex: 1;
 }
 
-/* Desktop: Fixed positioning at bottom */
+/* Desktop: Fixed positioning at bottom with gradient accent */
 @media (min-width: 769px) and (pointer: fine) {
   .terminal {
     position: fixed;
@@ -20,11 +19,23 @@
     left: 0;
     right: 0;
     z-index: 100;
-    /* Unified visual treatment - solid, not glass */
     background: var(--color-bg-primary);
     border-top: 1px solid var(--color-border-light);
     max-height: 50vh;
     flex: none;
+  }
+
+  /* Gradient accent line at top */
+  .terminal::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--gradient-mixed);
+    opacity: 0.5;
+    z-index: 1;
   }
 }
 
@@ -103,10 +114,13 @@
   opacity: 1;
 }
 
-/* Terminal Prompt Symbol - Subtle indicator */
+/* Terminal Prompt Symbol - Gradient text */
 .terminalPrompt {
-  color: var(--color-primary-alpha-70);
-  font-weight: 500;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 600;
   font-size: 14px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   user-select: none;
@@ -136,9 +150,9 @@
 }
 
 .terminalInputWrapper:focus-within {
-  background: var(--color-bg-primary);
-  border-color: var(--color-border-focus);
-  box-shadow: var(--shadow-focus);
+  background: var(--color-bg-elevated);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-ring-primary);
 }
 
 /* Terminal Input - Simplified, no hidden cursor trick */
@@ -252,35 +266,35 @@
   color: var(--color-text-secondary);
 }
 
-/* Message type colors - Light theme */
+/* Message type colors - Indigo theme */
 .outputMessageInfo {
-  background: var(--color-info-alpha-06);
-  border-left-color: var(--color-info);
+  background: rgba(99, 102, 241, 0.06);
+  border-left-color: var(--color-primary);
 }
 
 .outputMessageInfo .outputMessageText {
-  color: var(--color-info-dark);
+  color: var(--color-primary-dark);
 }
 
 .outputMessageInfo::before {
   content: 'ℹ';
-  color: var(--color-primary-alpha-70);
+  color: var(--color-primary);
   margin-right: 8px;
   font-weight: 600;
 }
 
 .outputMessageSuccess {
-  background: var(--color-success-alpha-06);
-  border-left-color: var(--color-success);
+  background: rgba(0, 171, 148, 0.06);
+  border-left-color: var(--color-accent);
 }
 
 .outputMessageSuccess .outputMessageText {
-  color: var(--color-success-dark);
+  color: var(--color-accent-dark);
 }
 
 .outputMessageSuccess::before {
   content: '✓';
-  color: rgba(16, 185, 129, 0.7);
+  color: var(--color-accent);
   margin-right: 8px;
   font-weight: 600;
 }

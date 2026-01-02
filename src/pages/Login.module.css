@@ -3,17 +3,45 @@
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background-color: var(--color-bg-secondary);
+  background: var(--color-bg-secondary);
+  position: relative;
+}
+
+/* Mesh gradient background */
+.loginPage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--gradient-mesh);
+  pointer-events: none;
 }
 
 .loginCard {
-  background: var(--color-bg-primary);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
   padding: 3rem;
-  border-radius: 12px;
-  box-shadow: var(--shadow-lg);
+  border-radius: 16px;
+  box-shadow: var(--shadow-xl);
   max-width: 450px;
   width: 100%;
-  border: 1px solid var(--color-border-light);
+  position: relative;
+  animation: scaleIn var(--transition-slow) ease;
+}
+
+/* Gradient border effect */
+.loginCard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--gradient-primary);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.3;
+  pointer-events: none;
 }
 
 .loginCard h1 {
@@ -53,38 +81,52 @@
   border: 1px solid var(--color-border-medium);
   border-radius: 8px;
   font-size: 1rem;
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-elevated);
   color: var(--color-text-primary);
   transition: all 0.3s ease;
 }
 
 .input:focus {
   outline: none;
-  border-color: var(--color-border-focus);
-  box-shadow: 0 0 0 3px var(--color-primary-alpha-10);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-ring-primary);
 }
 
 .submitButton {
   padding: 0.875rem;
-  background-color: var(--color-primary);
+  background: var(--gradient-primary);
   color: white;
   border: none;
   border-radius: 8px;
   font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-primary);
+  position: relative;
+}
+
+.submitButton::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--gradient-primary-hover);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  z-index: -1;
+}
+
+.submitButton:hover::before {
+  opacity: 1;
 }
 
 .submitButton:hover {
-  background-color: var(--color-primary-light);
-  box-shadow: var(--shadow-primary);
-  transform: translateY(-1px);
+  box-shadow: var(--shadow-primary-glow);
+  transform: translateY(-2px);
 }
 
 .submitButton:active {
-  background-color: var(--color-primary-dark);
   transform: translateY(0);
 }
 
@@ -100,4 +142,3 @@
   font-size: 0.875rem;
   margin: 0;
 }
-

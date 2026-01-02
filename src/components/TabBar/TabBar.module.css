@@ -1,19 +1,33 @@
 /**
  * TabBar Component Styles
  *
- * Clean, professional tab interface
+ * Premium glass tab interface with gradient accents
  */
 
 .tabBar {
   width: 100%;
-  background: var(--color-bg-glass);
-  border-bottom: 1px solid var(--color-border-light);
-  backdrop-filter: blur(12px);
+  background: var(--glass-bg);
+  border-bottom: 1px solid var(--glass-border-tinted);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
   position: sticky;
   top: 0;
   z-index: 100;
   overflow: hidden;
   transition: all var(--transition-fast);
+}
+
+/* Subtle top accent line */
+.tabBar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--gradient-primary);
+  opacity: 0.3;
+  z-index: 2;
 }
 
 /* Transparent tab bar when only one tab exists */
@@ -67,24 +81,37 @@
 }
 
 .tab:hover {
-  background: var(--color-overlay-06);
+  background: rgba(99, 102, 241, 0.06);
   color: var(--color-text-primary);
 }
 
 .tab:focus {
-  outline: 2px solid var(--color-secondary-alpha-30);
+  outline: 2px solid var(--color-primary-alpha-30);
   outline-offset: 2px;
 }
 
-/* Active Tab */
+/* Active Tab - with gradient underline */
 .tabActive {
-  background: var(--color-secondary-alpha-08);
-  color: var(--color-secondary);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(99, 102, 241, 0.12) 100%);
+  color: var(--color-primary);
   font-weight: 500;
+  position: relative;
+}
+
+.tabActive::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--gradient-primary);
+  border-radius: 1px 1px 0 0;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
 }
 
 .tabActive:hover {
-  background: var(--color-secondary-alpha-15);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(99, 102, 241, 0.18) 100%);
 }
 
 /* Tab Title */
@@ -131,13 +158,13 @@
 }
 
 .tabActive .tabCloseButton {
-  color: var(--color-secondary-alpha-70);
+  color: var(--color-primary-alpha-70);
   opacity: 1;
 }
 
 .tabActive .tabCloseButton:hover {
-  background: var(--color-secondary-alpha-15);
-  color: var(--color-secondary);
+  background: var(--color-primary-alpha-15);
+  color: var(--color-primary);
 }
 
 /* New Tab Button */
@@ -159,45 +186,40 @@
 }
 
 .newTabButton:hover {
-  background: var(--color-overlay-06);
-  color: var(--color-text-primary);
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--color-primary);
 }
 
 .newTabButton:active {
-  background: var(--color-overlay-10);
+  background: rgba(99, 102, 241, 0.12);
   transform: scale(0.95);
 }
 
 .newTabButton:focus {
-  outline: 2px solid var(--color-secondary-alpha-30);
+  outline: 2px solid var(--color-primary-alpha-30);
   outline-offset: 2px;
 }
 
-/* Fade edges for horizontal scroll */
-.tabBar::before,
+/* Fade edge for horizontal scroll (right side only since ::before is accent) */
 .tabBar::after {
   content: '';
   position: absolute;
   top: 0;
   bottom: 0;
+  right: 0;
   width: 20px;
   pointer-events: none;
   z-index: 1;
   transition: opacity var(--transition-fast);
+  background: linear-gradient(to left, var(--glass-bg-strong), transparent);
 }
 
-.tabBar::before {
-  left: 0;
-  background: linear-gradient(to right, var(--color-bg-glass-strong), transparent);
-}
-
-.tabBar::after {
-  right: 0;
-  background: linear-gradient(to left, var(--color-bg-glass-strong), transparent);
-}
-
-/* Hide fade edges when transparent */
-.tabBar:has(.tabList > .tab:only-of-type)::before,
+/* Hide fade edge when transparent */
 .tabBar:has(.tabList > .tab:only-of-type)::after {
+  opacity: 0;
+}
+
+/* Hide accent line when transparent */
+.tabBar:has(.tabList > .tab:only-of-type)::before {
   opacity: 0;
 }

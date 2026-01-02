@@ -7,10 +7,16 @@
 }
 
 .netdataSpinner {
-  color: var(--netdata-green, #00AB44);
+  color: var(--color-primary, #6366F1);
   animation: netdataSpinContinuous 0.6s linear infinite;
   will-change: transform;
-  filter: drop-shadow(0 0 8px rgba(0, 171, 68, 0.6));
+  filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.5));
+}
+
+/* Accent variant (green) for success states */
+.netdataSpinnerAccent {
+  color: var(--color-accent, #00AB94);
+  filter: drop-shadow(0 0 8px rgba(0, 171, 148, 0.5));
 }
 
 @keyframes netdataSpinContinuous {

@@ -2,7 +2,7 @@
  * Chat Component CSS Module
  * AI Assistant for monitoring and troubleshooting
  *
- * Design: Competent, reliable assistant - helpful for production issues
+ * Design: Premium Indigo Intelligence - sophisticated and trustworthy
  */
 
 .chatContainer {
@@ -38,14 +38,29 @@
   flex-direction: column;
   gap: 8px;
   padding: 16px 20px;
-  background: var(--color-bg-secondary);
-  border-bottom: 1px solid var(--color-border-light);
+  background: var(--glass-bg-tinted);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border-bottom: 1px solid var(--glass-border-tinted);
+  position: relative;
+}
+
+/* Gradient accent line at top */
+.chatHeader::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gradient-primary);
+  opacity: 0.7;
 }
 
 @media (min-width: 769px) and (pointer: fine) {
   .chatHeader {
-    background: var(--color-bg-secondary);
-    border-bottom: 1px solid var(--color-border-light);
+    background: var(--glass-bg-tinted);
+    border-bottom: 1px solid var(--glass-border-tinted);
     padding: 18px 24px;
   }
 }
@@ -345,10 +360,10 @@
 }
 
 .conversationItem:hover {
-  background: var(--color-bg-secondary);
-  border-color: var(--color-primary-alpha-30);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-sm);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.02) 0%, rgba(99, 102, 241, 0.05) 100%);
+  border-color: rgba(99, 102, 241, 0.25);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .conversationItem:active {
@@ -473,7 +488,7 @@
 .newConversationButton {
   width: 100%;
   padding: 12px 18px;
-  background: var(--color-primary);
+  background: var(--gradient-primary);
   color: var(--color-text-on-primary);
   border: none;
   border-radius: var(--radius-md);
@@ -485,13 +500,27 @@
   justify-content: center;
   gap: 8px;
   transition: all var(--transition-fast);
-  box-shadow: var(--shadow-button);
+  box-shadow: var(--shadow-primary);
+  position: relative;
+  overflow: hidden;
+}
+
+.newConversationButton::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--gradient-primary-hover);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.newConversationButton:hover:not(:disabled)::before {
+  opacity: 1;
 }
 
 .newConversationButton:hover:not(:disabled) {
-  background: var(--color-primary-light);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-primary-glow);
 }
 
 .newConversationButton:active:not(:disabled) {
@@ -501,6 +530,12 @@
 .newConversationButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.newConversationButton .buttonIcon,
+.newConversationButton .buttonText {
+  position: relative;
+  z-index: 1;
 }
 
 .buttonIcon {
@@ -584,8 +619,8 @@
 
 .sendButton {
   padding: 12px 18px;
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
+  background: var(--gradient-accent);
+  color: var(--color-text-on-accent);
   border: none;
   border-radius: var(--radius-md);
   font-size: 18px;
@@ -594,13 +629,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-button);
+  box-shadow: var(--shadow-accent);
 }
 
 .sendButton:hover:not(:disabled) {
-  background: var(--color-primary-light);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-accent-glow);
 }
 
 .sendButton:active:not(:disabled) {
@@ -642,15 +676,15 @@
 
 .chatInput:focus {
   background: var(--color-bg-elevated);
-  border-color: var(--color-secondary);
-  box-shadow: var(--shadow-input-focus);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-ring-primary);
 }
 
 @media (min-width: 769px) and (pointer: fine) {
   .chatInput:focus {
     background: var(--color-bg-elevated);
-    border-color: var(--color-secondary);
-    box-shadow: var(--shadow-input-focus);
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-ring-primary);
   }
 }
 
@@ -681,49 +715,55 @@
   align-items: flex-end;
 }
 
-/* AI Assistant Messages - Left border accent */
+/* AI Assistant Messages - Indigo accent with subtle gradient */
 .messageBubble {
   max-width: 100%;
   width: auto;
   padding: 14px 18px;
   border-radius: var(--radius-lg);
-  background-color: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-light);
-  border-left: 3px solid var(--color-secondary);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.04) 0%, rgba(99, 102, 241, 0.08) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.12);
+  border-left: 3px solid var(--color-primary);
   display: flex;
   flex-direction: column;
   gap: 6px;
   animation: messageSlideIn var(--transition-base) ease-out;
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+}
+
+.messageBubble:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 @media (min-width: 769px) and (pointer: fine) {
   .messageBubble {
     max-width: 100%;
     width: auto;
-    background-color: var(--color-bg-elevated);
-    border: 1px solid var(--color-border-light);
-    border-left: 3px solid var(--color-secondary);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.04) 0%, rgba(99, 102, 241, 0.08) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.12);
+    border-left: 3px solid var(--color-primary);
     padding: 16px 20px;
   }
 }
 
-/* User Messages - Distinct styling */
+/* User Messages - Accent green styling */
 .messageBubbleOwn {
   max-width: 80%;
   width: auto;
-  background-color: var(--color-primary-alpha-08);
-  border: 1px solid var(--color-primary-alpha-20);
-  border-left: 3px solid var(--color-primary);
+  background: linear-gradient(135deg, rgba(0, 171, 148, 0.06) 0%, rgba(0, 171, 148, 0.10) 100%);
+  border: 1px solid rgba(0, 171, 148, 0.15);
+  border-left: 3px solid var(--color-accent);
 }
 
 @media (min-width: 769px) and (pointer: fine) {
   .messageBubbleOwn {
     max-width: 75%;
     width: auto;
-    background-color: var(--color-primary-alpha-08);
-    border: 1px solid var(--color-primary-alpha-20);
-    border-left: 3px solid var(--color-primary);
+    background: linear-gradient(135deg, rgba(0, 171, 148, 0.06) 0%, rgba(0, 171, 148, 0.10) 100%);
+    border: 1px solid rgba(0, 171, 148, 0.15);
+    border-left: 3px solid var(--color-accent);
   }
 }
 
