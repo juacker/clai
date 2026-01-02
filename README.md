@@ -1,174 +1,60 @@
-# CLAI - Command Line AI Interface
+# CLAI - Netdata AI Desktop
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![GitHub release](https://img.shields.io/github/v/release/juacker/clai)](https://github.com/juacker/clai/releases)
 [![CI](https://github.com/juacker/clai/actions/workflows/ci.yml/badge.svg)](https://github.com/juacker/clai/actions/workflows/ci.yml)
 
-A cross-platform desktop application that integrates Netdata Cloud monitoring with AI-powered insights through a terminal-like interface.
+A desktop app for Netdata Cloud with AI-powered monitoring insights and autonomous workers.
 
 ## Features
 
-- **Terminal Emulator Interface** - Command-line style input with history navigation and auto-focus
-- **AI Chat Integration** - Real-time streaming conversations with Netdata's AI service
-- **Vim-inspired Tab & Tile System** - Split views horizontally or vertically, manage multiple tabs
-- **Data Visualization** - Interactive charts including time series, bar charts, and bubble charts
-- **Conversation Management** - Persistent chat history with auto-generated titles
-- **Context Switching** - Seamlessly switch between Netdata spaces and rooms
+- **AI Chat** - Query your infrastructure using natural language. Ask about anomalies, alerts, performance, and get instant analysis.
+
+- **AI Workers (Auto-pilot)** - Autonomous AI agents that continuously monitor your infrastructure. Workers use Claude Code, Gemini CLI, or Codex to analyze metrics, detect issues, and visualize findings on a canvas - all without manual intervention.
+
+- **Interactive Canvas** - Workers display charts and visualizations automatically. Review what the AI found, add charts to your dashboard, and explore the data.
+
+- **Terminal Interface** - Vim-inspired command system with tabs, split tiles, and keyboard shortcuts. Type `/help` to see all commands.
 
 ## Installation
-
-### Download
 
 Download the latest release for your platform from the [Releases page](https://github.com/juacker/clai/releases):
 
 | Platform | Download |
 |----------|----------|
-| Windows | `.msi` or `.exe` installer |
-| macOS (Apple Silicon) | `.dmg` |
-| macOS (Intel) | `.dmg` |
-| Linux (Debian/Ubuntu) | `.deb` |
-| Linux (Fedora/RHEL) | `.rpm` |
-| Linux (Universal) | `.flatpak` |
+| Windows | `.msi` or `.exe` |
+| macOS | `.dmg` |
+| Linux | `.deb`, `.rpm`, or `.flatpak` |
 
-### Flatpak Installation
+## Getting Started
 
-```bash
-# Install from file
-flatpak install clai.flatpak
+1. **Login** - Enter your Netdata Cloud API token
+2. **Select Context** - Choose a space and room to monitor
+3. **Chat** - Type questions directly to chat with the AI
+4. **Enable Auto-pilot** - Configure an AI provider (Claude Code, Gemini CLI, or Codex) and enable auto-pilot to let AI workers monitor for you
 
-# Run
-flatpak run com.juacker.clai
-```
+## AI Workers Setup
 
-### Build from Source
+To use AI Workers, you need one of these CLI tools installed:
 
-#### Prerequisites
+- **[Claude Code](https://claude.ai/code)** - `claude` CLI (recommended)
+- **[Gemini CLI](https://github.com/google-gemini/gemini-cli)** - `gemini` CLI
+- **[Codex](https://github.com/openai/codex)** - `codex` CLI
 
-- Node.js (v20+)
-- Rust (for Tauri)
-- Platform-specific build tools (see [Tauri prerequisites](https://tauri.app/start/prerequisites/))
+Configure your provider in the app settings, then enable auto-pilot. Workers will periodically analyze your infrastructure and report findings.
 
-#### Setup
+## Development
 
 ```bash
-# Clone the repository
+# Clone and install
 git clone https://github.com/juacker/clai.git
-cd clai
+cd clai && npm install
 
-# Install dependencies
-npm install
-
-# Run in development mode
+# Run development
 make dev
 
-# Build for production
-make build
-```
-
-## Usage
-
-### Development
-
-```bash
-# Start Vite dev server
-npm run dev
-
-# Start full desktop app with hot reload
-npm run tauri dev
-```
-
-### Build
-
-```bash
-# Build frontend only
-npm run build
-
-# Build desktop application
-npm run tauri build
-```
-
-## Commands
-
-Commands are entered in the terminal input. Prefix with `/` for system commands, or type directly to chat with AI.
-
-| Command | Description |
-|---------|-------------|
-| `/help` | Display command reference |
-| `/ctx` | Manage space/room context |
-| `/tab new` | Create new tab |
-| `/tab close` | Close current tab |
-| `/tab next` | Switch to next tab |
-| `/tab prev` | Switch to previous tab |
-| `/tile split-h` | Split tile horizontally |
-| `/tile split-v` | Split tile vertically |
-| `/tile close` | Close current tile |
-| `/tile next` | Focus next tile |
-| `/tile prev` | Focus previous tile |
-| `/reset-all` | Reset entire layout |
-
-## Keyboard Shortcuts
-
-| Action | macOS | Windows/Linux |
-|--------|-------|---------------|
-| Focus terminal | `Cmd+L` | `Ctrl+L` |
-| New tab | `Cmd+T` | `Ctrl+T` |
-| Close tab | `Cmd+W` | `Ctrl+W` |
-| Next tab | `Cmd+Tab` | `Ctrl+Tab` |
-| Previous tab | `Cmd+Shift+Tab` | `Ctrl+Shift+Tab` |
-| Go to tab 1-9 | `Alt+1-9` | `Alt+1-9` |
-| Split vertical | `Cmd+Shift+V` | `Ctrl+Shift+V` |
-| Split horizontal | `Cmd+-` | `Ctrl+-` |
-| Close tile | `Cmd+Shift+W` | `Ctrl+Shift+W` |
-| Next tile | `Cmd+]` | `Ctrl+]` |
-| Previous tile | `Cmd+[` | `Ctrl+[` |
-| Toggle chat | `Cmd+Shift+C` | `Ctrl+Shift+C` |
-
-## Configuration
-
-### Authentication
-
-On first launch, you'll be prompted to enter:
-- **Netdata API Token** - Your Netdata Cloud bearer token
-- **Base URL** - Defaults to `https://app.netdata.cloud`
-
-### Tauri Settings
-
-Configuration is in `src-tauri/tauri.conf.json`:
-- Window dimensions (default: 800x600)
-- App identifier: `com.juacker.clai`
-- Build commands and paths
-
-## Tech Stack
-
-**Frontend**
-- React 19
-- Vite
-- D3.js for charts
-- React Router DOM
-
-**Desktop**
-- Tauri 2
-- Rust
-
-**Styling**
-- CSS Modules
-- React Resizable Panels
-
-## Project Structure
-
-```
-clai/
-├── src/                    # React frontend
-│   ├── components/         # UI components
-│   ├── contexts/           # React Context state
-│   ├── hooks/              # Custom hooks
-│   ├── pages/              # Route pages
-│   ├── utils/              # Utilities & command handlers
-│   └── api/                # API client
-├── src-tauri/              # Rust backend
-│   ├── src/                # Rust source
-│   └── tauri.conf.json     # Tauri config
-└── docs/                   # Architecture docs
+# Run CI checks before pushing
+make ci
 ```
 
 ## License
