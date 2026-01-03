@@ -1,6 +1,6 @@
 /**
  * Anomalies Component CSS Module
- * Hilbert curve visualization with click-to-canvas functionality
+ * Hilbert curve visualization with click-to-dashboard functionality
  *
  * Design: Analytical, investigative feel - "command center" for finding issues
  */
@@ -229,12 +229,12 @@
   transform: translateX(2px);
 }
 
-.contextItem.inCanvas {
+.contextItem.inDashboard {
   background: var(--color-healthy-bg);
   border-color: var(--color-healthy-border);
 }
 
-.contextItem.inCanvas:hover {
+.contextItem.inDashboard:hover {
   background: rgba(0, 163, 68, 0.12);
   border-color: var(--color-healthy);
 }
@@ -277,7 +277,7 @@
   opacity: 1;
 }
 
-.inCanvasBadge {
+.inDashboardBadge {
   font-size: 10px;
   font-weight: 600;
   color: var(--color-healthy-dark);

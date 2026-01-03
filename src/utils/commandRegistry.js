@@ -12,7 +12,7 @@
 
 import Echo from '../components/Echo';
 import Anomalies from '../components/Anomalies/Anomalies';
-import Canvas from '../components/Canvas/Canvas';
+import Dashboard from '../components/Dashboard/Dashboard';
 import Help from '../components/Help/Help';
 
 /**
@@ -22,7 +22,7 @@ import Help from '../components/Help/Help';
 export const COMMAND_COMPONENTS = {
   echo: Echo,
   anomalies: Anomalies,
-  canvas: Canvas,
+  dashboard: Dashboard,
   help: Help,
 };
 

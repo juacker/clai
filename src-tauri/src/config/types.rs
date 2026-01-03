@@ -170,7 +170,7 @@ impl AgentConfig {
     /// Currently all agents use the same tools. This may be extended
     /// in the future to support custom tool configurations.
     pub fn required_tools(&self) -> Vec<&'static str> {
-        vec!["netdata", "canvas", "tabs"]
+        vec!["netdata", "dashboard", "tabs"]
     }
 
     /// Generates the system prompt from the description using the template.
@@ -648,7 +648,7 @@ mod tests {
         let tools = agent.required_tools();
 
         assert!(tools.contains(&"netdata"));
-        assert!(tools.contains(&"canvas"));
+        assert!(tools.contains(&"dashboard"));
         assert!(tools.contains(&"tabs"));
         assert_eq!(tools.len(), 3);
     }

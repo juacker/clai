@@ -1,11 +1,11 @@
 /**
- * Canvas Component Styles
+ * Dashboard Component Styles
  * Dashboard view for monitoring charts
  *
  * Design: Trustworthy data visualization, professional cards, clear hierarchy
  */
 
-.canvasWrapper {
+.dashboardWrapper {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -138,8 +138,8 @@
   transform: rotate(180deg);
 }
 
-/* Canvas Container */
-.canvasContainer {
+/* Dashboard Container */
+.dashboardContainer {
   display: flex;
   flex-direction: column;
   height: 100%;

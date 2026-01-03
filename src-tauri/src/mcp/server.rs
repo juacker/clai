@@ -14,7 +14,7 @@
 //!     │
 //!     ├─→ netdata.query → NetdataTools (Rust-native, direct API call)
 //!     │
-//!     └─→ canvas.*/tabs.* → CanvasTools/TabsTools (JS-bridge, Tauri events)
+//!     └─→ dashboard.*/tabs.* → DashboardTools/TabsTools (JS-bridge, Tauri events)
 //! ```
 //!
 //! # Usage
@@ -60,10 +60,10 @@ use tokio_util::sync::CancellationToken;
 use crate::api::netdata::NetdataApi;
 
 use super::bridge::JsBridge;
-use super::tools::{CanvasTools, NetdataTools, TabsTools};
+use super::tools::{DashboardTools, NetdataTools, TabsTools};
 
 // Re-export parameter types from tool modules (single source of truth)
-pub use super::tools::canvas::{AddChartParams, RemoveChartParams, SetTimeRangeParams};
+pub use super::tools::dashboard::{AddChartParams, RemoveChartParams, SetTimeRangeParams};
 pub use super::tools::netdata::NetdataQueryParams;
 pub use super::tools::tabs::{RemoveTileParams, SplitTileParams};
 
@@ -232,7 +232,7 @@ async fn log_requests(request: Request<Body>, next: Next) -> Response {
 /// # Tool Categories
 ///
 /// - **netdata.*** - Rust-native, execute directly via API
-/// - **canvas.*** - JS-bridge, execute via Tauri events
+/// - **dashboard.*** - JS-bridge, execute via Tauri events
 /// - **tabs.*** - JS-bridge, execute via Tauri events
 ///
 /// # Tool Filtering
@@ -244,8 +244,8 @@ async fn log_requests(request: Request<Body>, next: Next) -> Response {
 pub struct McpToolServer {
     /// Netdata tools (Rust-native).
     netdata: NetdataTools,
-    /// Canvas tools (JS-bridge).
-    canvas: CanvasTools,
+    /// Dashboard tools (JS-bridge).
+    dashboard: DashboardTools,
     /// Tabs tools (JS-bridge).
     tabs: TabsTools,
     /// Allowed tools filter. If None, all tools are allowed.
@@ -265,11 +265,11 @@ impl McpToolServer {
     /// Create a new MCP tool server with bound context (without JS bridge).
     ///
     /// This constructor creates a server without a JS bridge, useful for testing.
-    /// Canvas and tabs tools will return errors when executed.
+    /// Dashboard and tabs tools will return errors when executed.
     pub fn new(api: Arc<NetdataApi>, agent_id: String, space_id: String, room_id: String) -> Self {
         Self {
             netdata: NetdataTools::new(api, space_id.clone(), room_id.clone()),
-            canvas: CanvasTools::new(agent_id.clone(), space_id.clone(), room_id.clone()),
+            dashboard: DashboardTools::new(agent_id.clone(), space_id.clone(), room_id.clone()),
             tabs: TabsTools::new(agent_id, space_id, room_id),
             allowed_tools: None,
         }
@@ -285,7 +285,7 @@ impl McpToolServer {
     ) -> Self {
         Self {
             netdata: NetdataTools::new(api, space_id.clone(), room_id.clone()),
-            canvas: CanvasTools::with_bridge(
+            dashboard: DashboardTools::with_bridge(
                 agent_id.clone(),
                 space_id.clone(),
                 room_id.clone(),
@@ -306,7 +306,7 @@ impl McpToolServer {
 
     /// Get the agent ID.
     pub fn agent_id(&self) -> &str {
-        self.canvas.agent_id()
+        self.dashboard.agent_id()
     }
 
     /// Get the space ID.
@@ -440,109 +440,109 @@ impl McpToolServer {
     }
 
     // -------------------------------------------------------------------------
-    // Canvas Tools (JS-bridge)
+    // Dashboard Tools (JS-bridge)
     // -------------------------------------------------------------------------
 
-    /// Add a metric chart to the canvas for visualization.
+    /// Add a metric chart to the dashboard for visualization.
     #[tool(
-        name = "canvas.addChart",
-        description = "Add a metric chart to the canvas. Displays time-series data for the specified metric context."
+        name = "dashboard.addChart",
+        description = "Add a metric chart to the dashboard. Displays time-series data for the specified metric context."
     )]
-    async fn canvas_add_chart(
+    async fn dashboard_add_chart(
         &self,
         params: Parameters<AddChartParams>,
     ) -> Result<CallToolResult, McpError> {
-        tracing::debug!(context = %params.0.context, "canvas.addChart called");
+        tracing::debug!(context = %params.0.context, "dashboard.addChart called");
 
-        let result = self.canvas.add_chart(params.0).await.map_err(|e| {
-            tracing::warn!(error = %e, "canvas.addChart error");
+        let result = self.dashboard.add_chart(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "dashboard.addChart error");
             McpError::internal_error(e.to_string(), None)
         })?;
 
-        tracing::debug!(result = ?result, "canvas.addChart success");
+        tracing::debug!(result = ?result, "dashboard.addChart success");
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string(&result).unwrap_or_default(),
         )]))
     }
 
-    /// Remove a chart from the canvas by its ID.
+    /// Remove a chart from the dashboard by its ID.
     #[tool(
-        name = "canvas.removeChart",
-        description = "Remove a chart from the canvas by its ID."
+        name = "dashboard.removeChart",
+        description = "Remove a chart from the dashboard by its ID."
     )]
-    async fn canvas_remove_chart(
+    async fn dashboard_remove_chart(
         &self,
         params: Parameters<RemoveChartParams>,
     ) -> Result<CallToolResult, McpError> {
-        tracing::debug!(chart_id = %params.0.chart_id, "canvas.removeChart called");
+        tracing::debug!(chart_id = %params.0.chart_id, "dashboard.removeChart called");
 
-        self.canvas.remove_chart(params.0).await.map_err(|e| {
-            tracing::warn!(error = %e, "canvas.removeChart error");
+        self.dashboard.remove_chart(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "dashboard.removeChart error");
             McpError::internal_error(e.to_string(), None)
         })?;
 
-        tracing::debug!("canvas.removeChart success");
+        tracing::debug!("dashboard.removeChart success");
         Ok(CallToolResult::success(vec![Content::text(
             "Chart removed",
         )]))
     }
 
-    /// Get a list of all charts currently displayed on the canvas.
+    /// Get a list of all charts currently displayed on the dashboard.
     #[tool(
-        name = "canvas.getCharts",
-        description = "Get a list of all charts currently displayed on the canvas."
+        name = "dashboard.getCharts",
+        description = "Get a list of all charts currently displayed on the dashboard."
     )]
-    async fn canvas_get_charts(&self) -> Result<CallToolResult, McpError> {
-        tracing::debug!("canvas.getCharts called");
+    async fn dashboard_get_charts(&self) -> Result<CallToolResult, McpError> {
+        tracing::debug!("dashboard.getCharts called");
 
-        let result = self.canvas.get_charts().await.map_err(|e| {
-            tracing::warn!(error = %e, "canvas.getCharts error");
+        let result = self.dashboard.get_charts().await.map_err(|e| {
+            tracing::warn!(error = %e, "dashboard.getCharts error");
             McpError::internal_error(e.to_string(), None)
         })?;
 
-        tracing::debug!(chart_count = result.len(), "canvas.getCharts success");
+        tracing::debug!(chart_count = result.len(), "dashboard.getCharts success");
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string(&result).unwrap_or_default(),
         )]))
     }
 
-    /// Remove all charts from the canvas.
+    /// Remove all charts from the dashboard.
     #[tool(
-        name = "canvas.clearCharts",
-        description = "Remove all charts from the canvas. Use to start fresh."
+        name = "dashboard.clearCharts",
+        description = "Remove all charts from the dashboard. Use to start fresh."
     )]
-    async fn canvas_clear_charts(&self) -> Result<CallToolResult, McpError> {
-        tracing::debug!("canvas.clearCharts called");
+    async fn dashboard_clear_charts(&self) -> Result<CallToolResult, McpError> {
+        tracing::debug!("dashboard.clearCharts called");
 
-        self.canvas.clear_charts().await.map_err(|e| {
-            tracing::warn!(error = %e, "canvas.clearCharts error");
+        self.dashboard.clear_charts().await.map_err(|e| {
+            tracing::warn!(error = %e, "dashboard.clearCharts error");
             McpError::internal_error(e.to_string(), None)
         })?;
 
-        tracing::debug!("canvas.clearCharts success");
+        tracing::debug!("dashboard.clearCharts success");
         Ok(CallToolResult::success(vec![Content::text(
             "All charts cleared",
         )]))
     }
 
-    /// Set the time range for all charts on the canvas.
+    /// Set the time range for all charts on the dashboard.
     #[tool(
-        name = "canvas.setTimeRange",
+        name = "dashboard.setTimeRange",
         description = "Set the time range for all charts. Options: 5m, 15m, 30m, 1h, 2h, 6h, 12h, 24h, 7d"
     )]
-    async fn canvas_set_time_range(
+    async fn dashboard_set_time_range(
         &self,
         params: Parameters<SetTimeRangeParams>,
     ) -> Result<CallToolResult, McpError> {
-        tracing::debug!(range = %params.0.range, "canvas.setTimeRange called");
+        tracing::debug!(range = %params.0.range, "dashboard.setTimeRange called");
 
         let range = params.0.range.clone();
-        self.canvas.set_time_range(params.0).await.map_err(|e| {
-            tracing::warn!(error = %e, "canvas.setTimeRange error");
+        self.dashboard.set_time_range(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "dashboard.setTimeRange error");
             McpError::internal_error(e.to_string(), None)
         })?;
 
-        tracing::debug!(range = %range, "canvas.setTimeRange success");
+        tracing::debug!(range = %range, "dashboard.setTimeRange success");
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Time range set to {}",
             range
@@ -632,7 +632,7 @@ impl ServerHandler for McpToolServer {
         ServerInfo {
             instructions: Some(
                 "Netdata AI Agent tools. Use netdata.query for data analysis, \
-                 canvas.* for chart visualization, and tabs.* for layout management."
+                 dashboard.* for chart visualization, and tabs.* for layout management."
                     .into(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
@@ -786,11 +786,11 @@ mod tests {
 
         let tool_names: Vec<_> = all_tools.iter().map(|r| r.name()).collect();
         assert!(tool_names.contains(&"netdata.query"));
-        assert!(tool_names.contains(&"canvas.addChart"));
-        assert!(tool_names.contains(&"canvas.removeChart"));
-        assert!(tool_names.contains(&"canvas.getCharts"));
-        assert!(tool_names.contains(&"canvas.clearCharts"));
-        assert!(tool_names.contains(&"canvas.setTimeRange"));
+        assert!(tool_names.contains(&"dashboard.addChart"));
+        assert!(tool_names.contains(&"dashboard.removeChart"));
+        assert!(tool_names.contains(&"dashboard.getCharts"));
+        assert!(tool_names.contains(&"dashboard.clearCharts"));
+        assert!(tool_names.contains(&"dashboard.setTimeRange"));
         assert!(tool_names.contains(&"tabs.splitTile"));
         assert!(tool_names.contains(&"tabs.removeTile"));
         assert!(tool_names.contains(&"tabs.getTileLayout"));

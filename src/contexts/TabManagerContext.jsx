@@ -118,10 +118,10 @@ const createTab = (title = null, commandId = null, initialContext = null) => ({
       selectedSpaceId: null,
       selectedRoomId: null,
     },
-    // Canvas state for inter-command messaging
-    canvas: {
-      metrics: [],      // Array of metric contexts sent to canvas
-      commandId: null,  // ID of canvas command in this tab (singleton)
+    // Dashboard state for inter-command messaging
+    dashboard: {
+      metrics: [],      // Array of metric contexts sent to dashboard
+      commandId: null,  // ID of dashboard command in this tab (singleton)
     },
     customContext: {},
   },
@@ -827,47 +827,47 @@ export const TabManagerProvider = ({ children }) => {
   }, [activeTabId, getTabContext]);
 
   // ============================================
-  // Canvas State Management (Inter-Command Messaging)
+  // Dashboard State Management (Inter-Command Messaging)
   // ============================================
 
   /**
-   * Get canvas state for a tab (for a specific space/room)
+   * Get dashboard state for a tab (for a specific space/room)
    * @param {string} tabId - Tab ID
    * @param {string} spaceRoomKey - Optional key in format 'spaceId_roomId'
-   * @returns {Object} Canvas state { metrics: [], commandId: null }
+   * @returns {Object} Dashboard state { elements: [], commandId: null }
    */
-  const getCanvasState = useCallback((tabId, spaceRoomKey = null) => {
+  const getDashboardState = useCallback((tabId, spaceRoomKey = null) => {
     const tab = tabs.find(t => t.id === tabId);
-    const canvas = tab?.context?.canvas || {};
-    const commandId = canvas.commandId || null;
+    const dashboard = tab?.context?.dashboard || {};
+    const commandId = dashboard.commandId || null;
 
-    // If no space/room key provided, return empty elements (canvas exists but no context)
+    // If no space/room key provided, return empty elements (dashboard exists but no context)
     if (!spaceRoomKey) {
       return { elements: [], commandId };
     }
 
     // Get elements for specific space/room
-    const elements = canvas.bySpaceRoom?.[spaceRoomKey] || [];
+    const elements = dashboard.bySpaceRoom?.[spaceRoomKey] || [];
     return { elements, commandId };
   }, [tabs]);
 
   /**
-   * Get canvas state for active tab
+   * Get dashboard state for active tab
    * @param {string} spaceRoomKey - Optional key in format 'spaceId_roomId'
-   * @returns {Object} Canvas state { metrics: [], commandId: null }
+   * @returns {Object} Dashboard state { elements: [], commandId: null }
    */
-  const getActiveCanvasState = useCallback((spaceRoomKey = null) => {
-    if (!activeTabId) return { metrics: [], commandId: null };
-    return getCanvasState(activeTabId, spaceRoomKey);
-  }, [activeTabId, getCanvasState]);
+  const getActiveDashboardState = useCallback((spaceRoomKey = null) => {
+    if (!activeTabId) return { elements: [], commandId: null };
+    return getDashboardState(activeTabId, spaceRoomKey);
+  }, [activeTabId, getDashboardState]);
 
   /**
-   * Add an element to canvas in a tab (for a specific space/room)
+   * Add an element to dashboard in a tab (for a specific space/room)
    * @param {string} tabId - Tab ID
    * @param {Object} element - Element config { id, type, config }
    * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
    */
-  const addCanvasElement = useCallback((tabId, element, spaceRoomKey) => {
+  const addDashboardElement = useCallback((tabId, element, spaceRoomKey) => {
     if (!spaceRoomKey) return; // Require space/room context
     if (!element || !element.id) return; // Require valid element with id
 
@@ -875,7 +875,7 @@ export const TabManagerProvider = ({ children }) => {
       prev.map(tab => {
         if (tab.id !== tabId) return tab;
 
-        const bySpaceRoom = tab.context?.canvas?.bySpaceRoom || {};
+        const bySpaceRoom = tab.context?.dashboard?.bySpaceRoom || {};
         const currentElements = bySpaceRoom[spaceRoomKey] || [];
 
         // Don't add duplicates (check by element id)
@@ -885,8 +885,8 @@ export const TabManagerProvider = ({ children }) => {
           ...tab,
           context: {
             ...tab.context,
-            canvas: {
-              ...tab.context?.canvas,
+            dashboard: {
+              ...tab.context?.dashboard,
               bySpaceRoom: {
                 ...bySpaceRoom,
                 [spaceRoomKey]: [...currentElements, element],
@@ -899,27 +899,27 @@ export const TabManagerProvider = ({ children }) => {
   }, []);
 
   /**
-   * Remove an element from canvas in a tab (for a specific space/room)
+   * Remove an element from dashboard in a tab (for a specific space/room)
    * @param {string} tabId - Tab ID
    * @param {string} elementId - Element ID to remove
    * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
    */
-  const removeCanvasElement = useCallback((tabId, elementId, spaceRoomKey) => {
+  const removeDashboardElement = useCallback((tabId, elementId, spaceRoomKey) => {
     if (!spaceRoomKey) return;
 
     setTabs(prev =>
       prev.map(tab => {
         if (tab.id !== tabId) return tab;
 
-        const bySpaceRoom = tab.context?.canvas?.bySpaceRoom || {};
+        const bySpaceRoom = tab.context?.dashboard?.bySpaceRoom || {};
         const currentElements = bySpaceRoom[spaceRoomKey] || [];
 
         return {
           ...tab,
           context: {
             ...tab.context,
-            canvas: {
-              ...tab.context?.canvas,
+            dashboard: {
+              ...tab.context?.dashboard,
               bySpaceRoom: {
                 ...bySpaceRoom,
                 [spaceRoomKey]: currentElements.filter(el => el.id !== elementId),
@@ -932,24 +932,24 @@ export const TabManagerProvider = ({ children }) => {
   }, []);
 
   /**
-   * Clear all metrics from canvas in a tab (for a specific space/room)
+   * Clear all metrics from dashboard in a tab (for a specific space/room)
    * @param {string} tabId - Tab ID
    * @param {string} spaceRoomKey - Optional key - if not provided, clears all space/rooms
    */
-  const clearCanvasMetrics = useCallback((tabId, spaceRoomKey = null) => {
+  const clearDashboardMetrics = useCallback((tabId, spaceRoomKey = null) => {
     setTabs(prev =>
       prev.map(tab => {
         if (tab.id !== tabId) return tab;
 
         if (spaceRoomKey) {
           // Clear only specific space/room
-          const bySpaceRoom = tab.context?.canvas?.bySpaceRoom || {};
+          const bySpaceRoom = tab.context?.dashboard?.bySpaceRoom || {};
           return {
             ...tab,
             context: {
               ...tab.context,
-              canvas: {
-                ...tab.context?.canvas,
+              dashboard: {
+                ...tab.context?.dashboard,
                 bySpaceRoom: {
                   ...bySpaceRoom,
                   [spaceRoomKey]: [],
@@ -963,8 +963,8 @@ export const TabManagerProvider = ({ children }) => {
             ...tab,
             context: {
               ...tab.context,
-              canvas: {
-                ...tab.context?.canvas,
+              dashboard: {
+                ...tab.context?.dashboard,
                 bySpaceRoom: {},
               },
             },
@@ -975,11 +975,11 @@ export const TabManagerProvider = ({ children }) => {
   }, []);
 
   /**
-   * Set the canvas command ID for a tab (singleton tracking)
+   * Set the dashboard command ID for a tab (singleton tracking)
    * @param {string} tabId - Tab ID
-   * @param {string|null} commandId - Canvas command ID or null to clear
+   * @param {string|null} commandId - Dashboard command ID or null to clear
    */
-  const setCanvasCommandId = useCallback((tabId, commandId) => {
+  const setDashboardCommandId = useCallback((tabId, commandId) => {
     setTabs(prev =>
       prev.map(tab => {
         if (tab.id !== tabId) return tab;
@@ -988,8 +988,8 @@ export const TabManagerProvider = ({ children }) => {
           ...tab,
           context: {
             ...tab.context,
-            canvas: {
-              ...tab.context?.canvas,
+            dashboard: {
+              ...tab.context?.dashboard,
               commandId,
             },
           },
@@ -999,18 +999,18 @@ export const TabManagerProvider = ({ children }) => {
   }, []);
 
   /**
-   * Check if an element is already in canvas for a tab (for a specific space/room)
+   * Check if an element is already in dashboard for a tab (for a specific space/room)
    * @param {string} tabId - Tab ID
    * @param {string} elementId - Element ID to check
    * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
-   * @returns {boolean} True if element is in canvas
+   * @returns {boolean} True if element is in dashboard
    */
-  const isElementInCanvas = useCallback((tabId, elementId, spaceRoomKey) => {
+  const isElementInDashboard = useCallback((tabId, elementId, spaceRoomKey) => {
     if (!spaceRoomKey) return false;
-    const canvasState = getCanvasState(tabId, spaceRoomKey);
-    const elements = canvasState.elements || [];
+    const dashboardState = getDashboardState(tabId, spaceRoomKey);
+    const elements = dashboardState.elements || [];
     return elements.some(el => el.id === elementId);
-  }, [getCanvasState]);
+  }, [getDashboardState]);
 
   /**
    * Split a tile in the active tab
@@ -1422,14 +1422,14 @@ export const TabManagerProvider = ({ children }) => {
     getTabContext,
     getActiveTabContext,
 
-    // Canvas State Management (Inter-Command Messaging)
-    getCanvasState,
-    getActiveCanvasState,
-    addCanvasElement,
-    removeCanvasElement,
-    clearCanvasMetrics,
-    setCanvasCommandId,
-    isElementInCanvas,
+    // Dashboard State Management (Inter-Command Messaging)
+    getDashboardState,
+    getActiveDashboardState,
+    addDashboardElement,
+    removeDashboardElement,
+    clearDashboardMetrics,
+    setDashboardCommandId,
+    isElementInDashboard,
 
     // Command Integration
     addCommandToActiveTile,
@@ -1465,13 +1465,13 @@ export const TabManagerProvider = ({ children }) => {
     updateTabContext,
     getTabContext,
     getActiveTabContext,
-    getCanvasState,
-    getActiveCanvasState,
-    addCanvasElement,
-    removeCanvasElement,
-    clearCanvasMetrics,
-    setCanvasCommandId,
-    isElementInCanvas,
+    getDashboardState,
+    getActiveDashboardState,
+    addDashboardElement,
+    removeDashboardElement,
+    clearDashboardMetrics,
+    setDashboardCommandId,
+    isElementInDashboard,
     addCommandToActiveTile,
     handleLayoutCommand,
     splitTile,

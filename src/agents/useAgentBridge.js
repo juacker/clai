@@ -2,7 +2,7 @@
  * useAgentBridge Hook
  *
  * This hook initializes the agent bridge and registers tool handlers
- * that interact with the TabManager and Canvas.
+ * that interact with the TabManager and Dashboard.
  *
  * Usage:
  * ```jsx
@@ -53,10 +53,10 @@ export const useAgentBridge = () => {
     closeTile,
     getTile,
     getActiveTab,
-    addCanvasElement,
-    removeCanvasElement,
-    clearCanvasMetrics,
-    getCanvasState,
+    addDashboardElement,
+    removeDashboardElement,
+    clearDashboardMetrics,
+    getDashboardState,
   } = tabManager;
 
   // Store tabManager ref for handlers (avoids stale closure issues)
@@ -68,7 +68,7 @@ export const useAgentBridge = () => {
   executeCommandRef.current = executeCommand;
 
   /**
-   * Setup an agent's tab with canvas command.
+   * Setup an agent's tab with dashboard command.
    * Called BEFORE CLI starts to avoid race conditions.
    * Does NOT switch to the new tab - avoids interrupting user activity.
    *
@@ -126,8 +126,8 @@ export const useAgentBridge = () => {
       },
     });
 
-    // Execute canvas command - assigned to the new tab's root tile
-    executeCommandRef.current('canvas');
+    // Execute dashboard command - assigned to the new tab's root tile
+    executeCommandRef.current('dashboard');
 
     // Store the mapping
     setAgentTab(agentId, spaceId, roomId, newTab.id);
@@ -180,8 +180,8 @@ export const useAgentBridge = () => {
       return result;
     });
 
-    // Register canvas tool handlers
-    registerToolHandler('canvas.addChart', async (request) => {
+    // Register dashboard tool handlers
+    registerToolHandler('dashboard.addChart', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
       const tabId = getAgentTabId(agentId, spaceId, roomId);
 
@@ -192,8 +192,8 @@ export const useAgentBridge = () => {
       const chartId = generateChartId();
       const spaceRoomKey = `${spaceId}_${roomId}`;
 
-      // Add chart to canvas (type: 'context-chart' matches Canvas component expectation)
-      tabManagerRef.current.addCanvasElement(tabId, {
+      // Add chart to dashboard (type: 'context-chart' matches Dashboard component expectation)
+      tabManagerRef.current.addDashboardElement(tabId, {
         id: chartId,
         type: 'context-chart',
         config: {
@@ -206,7 +206,7 @@ export const useAgentBridge = () => {
       return { chartId };
     });
 
-    registerToolHandler('canvas.removeChart', async (request) => {
+    registerToolHandler('dashboard.removeChart', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
       const tabId = getAgentTabId(agentId, spaceId, roomId);
 
@@ -215,12 +215,12 @@ export const useAgentBridge = () => {
       }
 
       const spaceRoomKey = `${spaceId}_${roomId}`;
-      tabManagerRef.current.removeCanvasElement(tabId, params.chartId, spaceRoomKey);
+      tabManagerRef.current.removeDashboardElement(tabId, params.chartId, spaceRoomKey);
 
       return { success: true };
     });
 
-    registerToolHandler('canvas.getCharts', async (request) => {
+    registerToolHandler('dashboard.getCharts', async (request) => {
       const { agentId, spaceId, roomId } = request;
       const tabId = getAgentTabId(agentId, spaceId, roomId);
 
@@ -229,8 +229,8 @@ export const useAgentBridge = () => {
       }
 
       const spaceRoomKey = `${spaceId}_${roomId}`;
-      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
-      const elements = canvasState.elements || [];
+      const dashboardState = tabManagerRef.current.getDashboardState(tabId, spaceRoomKey);
+      const elements = dashboardState.elements || [];
 
       // Map elements to chart info
       const charts = elements
@@ -243,7 +243,7 @@ export const useAgentBridge = () => {
       return { charts };
     });
 
-    registerToolHandler('canvas.clearCharts', async (request) => {
+    registerToolHandler('dashboard.clearCharts', async (request) => {
       const { agentId, spaceId, roomId } = request;
       const tabId = getAgentTabId(agentId, spaceId, roomId);
 
@@ -252,12 +252,12 @@ export const useAgentBridge = () => {
       }
 
       const spaceRoomKey = `${spaceId}_${roomId}`;
-      tabManagerRef.current.clearCanvasMetrics(tabId, spaceRoomKey);
+      tabManagerRef.current.clearDashboardMetrics(tabId, spaceRoomKey);
 
       return { success: true };
     });
 
-    registerToolHandler('canvas.setTimeRange', async (request) => {
+    registerToolHandler('dashboard.setTimeRange', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
       const tabId = getAgentTabId(agentId, spaceId, roomId);
 
@@ -266,10 +266,10 @@ export const useAgentBridge = () => {
       }
 
       // Update tab context with time range
-      // The canvas component will read this from context
+      // The dashboard component will read this from context
       tabManagerRef.current.updateTabContext(tabId, {
-        canvas: {
-          ...tabManagerRef.current.getTabContext(tabId)?.canvas,
+        dashboard: {
+          ...tabManagerRef.current.getTabContext(tabId)?.dashboard,
           timeRange: params.range,
         },
       });
@@ -377,11 +377,11 @@ export const useAgentBridge = () => {
 
       // Unregister all handlers
       unregisterToolHandler('agent.setup');
-      unregisterToolHandler('canvas.addChart');
-      unregisterToolHandler('canvas.removeChart');
-      unregisterToolHandler('canvas.getCharts');
-      unregisterToolHandler('canvas.clearCharts');
-      unregisterToolHandler('canvas.setTimeRange');
+      unregisterToolHandler('dashboard.addChart');
+      unregisterToolHandler('dashboard.removeChart');
+      unregisterToolHandler('dashboard.getCharts');
+      unregisterToolHandler('dashboard.clearCharts');
+      unregisterToolHandler('dashboard.setTimeRange');
       unregisterToolHandler('tabs.splitTile');
       unregisterToolHandler('tabs.removeTile');
       unregisterToolHandler('tabs.getTileLayout');

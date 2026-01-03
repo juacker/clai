@@ -31,7 +31,8 @@
     "react-resizable-panels": "^3.0.6",
     "react-router-dom": "^7.9.5",
     "react-syntax-highlighter": "^16.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "tldraw": "^4.2.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

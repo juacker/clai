@@ -49,11 +49,11 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
   const [activeFilters, setActiveFilters] = useState({});
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Canvas integration
-  const { sendToCanvas, isElementInCanvas } = useCommandMessaging();
-  const [sentToCanvas, setSentToCanvas] = useState(false);
+  // Dashboard integration
+  const { sendToDashboard, isElementInDashboard } = useCommandMessaging();
+  const [sentToDashboard, setSentToDashboard] = useState(false);
 
-  // Create space/room key for canvas (using props passed from Chat)
+  // Create space/room key for dashboard (using props passed from Chat)
   const spaceRoomKey = useMemo(() => {
     if (!space?.id || !room?.id) return null;
     return `${space.id}_${room.id}`;
@@ -69,14 +69,14 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     return `context-chart-${context}${groupByStr}${filterStr}`;
   }, [toolInput?.context, activeGroupBy, activeFilters]);
 
-  // Check if already in canvas
-  const alreadyInCanvas = useMemo(() => {
+  // Check if already in dashboard
+  const alreadyInDashboard = useMemo(() => {
     if (!spaceRoomKey) return false;
-    return isElementInCanvas(elementId, spaceRoomKey);
-  }, [isElementInCanvas, elementId, spaceRoomKey]);
+    return isElementInDashboard(elementId, spaceRoomKey);
+  }, [isElementInDashboard, elementId, spaceRoomKey]);
 
-  // Handle send to canvas
-  const handleSendToCanvas = useCallback(() => {
+  // Handle send to dashboard
+  const handleSendToDashboard = useCallback(() => {
     if (!spaceRoomKey || !toolInput?.context) return;
 
     // Convert activeFilters to filterBy format
@@ -97,12 +97,12 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
       },
     };
 
-    const result = sendToCanvas(element, spaceRoomKey);
+    const result = sendToDashboard(element, spaceRoomKey);
     if (result.success) {
-      setSentToCanvas(true);
-      setTimeout(() => setSentToCanvas(false), 2000);
+      setSentToDashboard(true);
+      setTimeout(() => setSentToDashboard(false), 2000);
     }
-  }, [sendToCanvas, spaceRoomKey, toolInput, activeGroupBy, activeFilters, elementId]);
+  }, [sendToDashboard, spaceRoomKey, toolInput, activeGroupBy, activeFilters, elementId]);
 
   // Netdata chart color palette
   const DEFAULT_COLORS = useMemo(() => [
@@ -1006,15 +1006,15 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
       <div className={styles.chartHeader}>
         <div className={styles.chartTitleRow}>
           <h3 className={styles.chartTitle}>{getChartTitle()}</h3>
-          {/* Send to Canvas Button */}
+          {/* Send to Dashboard Button */}
           {spaceRoomKey && (
             <button
-              className={`${styles.sendToCanvasButton} ${alreadyInCanvas || sentToCanvas ? styles.sent : ''}`}
-              onClick={handleSendToCanvas}
-              disabled={alreadyInCanvas}
-              title={alreadyInCanvas ? 'Already in Canvas' : sentToCanvas ? 'Sent!' : 'Send to Canvas'}
+              className={`${styles.sendToDashboardButton} ${alreadyInDashboard || sentToDashboard ? styles.sent : ''}`}
+              onClick={handleSendToDashboard}
+              disabled={alreadyInDashboard}
+              title={alreadyInDashboard ? 'Already in Dashboard' : sentToDashboard ? 'Sent!' : 'Send to Dashboard'}
             >
-              {sentToCanvas ? 'Sent!' : alreadyInCanvas ? 'In Canvas' : '+ Canvas'}
+              {sentToDashboard ? 'Sent!' : alreadyInDashboard ? 'In Dashboard' : '+ Dashboard'}
             </button>
           )}
         </div>

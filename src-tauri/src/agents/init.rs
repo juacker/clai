@@ -215,7 +215,10 @@ mod tests {
         assert_eq!(definition.name, "Test Agent");
         assert_eq!(definition.interval_ms, 5 * 60 * 1000); // 5 minutes in ms
         assert!(!definition.prompt.is_empty());
-        assert_eq!(definition.required_tools, vec!["netdata", "canvas", "tabs"]);
+        assert_eq!(
+            definition.required_tools,
+            vec!["netdata", "dashboard", "tabs"]
+        );
     }
 
     #[test]

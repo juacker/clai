@@ -1,16 +1,16 @@
-//! Canvas tools for AI agents.
+//! Dashboard tools for AI agents.
 //!
 //! These tools allow AI agents to manipulate charts and visualizations
-//! on the canvas. They are defined in Rust but execute via JS bridge
+//! on the dashboard. They are defined in Rust but execute via JS bridge
 //! (Tauri events to the frontend).
 //!
 //! # Available Tools
 //!
-//! - `canvas.addChart` - Add a metric chart to the canvas
-//! - `canvas.removeChart` - Remove a chart by ID
-//! - `canvas.getCharts` - List all charts on the canvas
-//! - `canvas.clearCharts` - Remove all charts
-//! - `canvas.setTimeRange` - Set the time range for all charts
+//! - `dashboard.addChart` - Add a metric chart to the dashboard
+//! - `dashboard.removeChart` - Remove a chart by ID
+//! - `dashboard.getCharts` - List all charts on the dashboard
+//! - `dashboard.clearCharts` - Remove all charts
+//! - `dashboard.setTimeRange` - Set the time range for all charts
 //!
 //! # Execution
 //!
@@ -27,7 +27,7 @@ use crate::mcp::bridge::JsBridge;
 // Tool Parameter Types (Single Source of Truth)
 // =============================================================================
 
-/// Parameters for adding a chart to the canvas.
+/// Parameters for adding a chart to the dashboard.
 ///
 /// Used by both the MCP server (for schema generation) and the bridge
 /// (for serialization).
@@ -49,7 +49,7 @@ pub struct AddChartParams {
     pub filter_by: Option<Value>,
 }
 
-/// Parameters for removing a chart from the canvas.
+/// Parameters for removing a chart from the dashboard.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoveChartParams {
@@ -80,7 +80,7 @@ pub struct AddChartResult {
     pub chart_id: String,
 }
 
-/// Information about a chart on the canvas.
+/// Information about a chart on the dashboard.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)] // Used via MCP tool responses
@@ -91,17 +91,17 @@ pub struct ChartInfo {
     pub context: String,
 }
 
-/// Canvas tools with agent context bound at creation time.
+/// Dashboard tools with agent context bound at creation time.
 ///
-/// These tools manipulate charts on the canvas. They execute via Tauri
+/// These tools manipulate charts on the dashboard. They execute via Tauri
 /// events to the frontend, which handles the actual UI operations.
 ///
 /// # Context Binding
 ///
 /// The tool is created with agent context (agent_id, space_id, room_id).
-/// When a canvas tool is called, the frontend will:
+/// When a dashboard tool is called, the frontend will:
 /// 1. Find or create a tab owned by this agent
-/// 2. Execute the operation on that tab's canvas
+/// 2. Execute the operation on that tab's dashboard
 ///
 /// This allows lazy tab creation - agents only get a tab when they
 /// actually need to display something.
@@ -120,7 +120,7 @@ pub struct ChartInfo {
 /// is not available.
 #[derive(Clone)]
 #[allow(dead_code)] // Fields and methods used via MCP
-pub struct CanvasTools {
+pub struct DashboardTools {
     /// Agent ID - identifies the agent type.
     agent_id: String,
     /// Space ID - the Netdata space this agent operates in.
@@ -132,8 +132,8 @@ pub struct CanvasTools {
 }
 
 #[allow(dead_code)] // Methods called via MCP protocol
-impl CanvasTools {
-    /// Create canvas tools bound to an agent's context (without bridge).
+impl DashboardTools {
+    /// Create dashboard tools bound to an agent's context (without bridge).
     ///
     /// This constructor creates tools without a JS bridge, useful for testing.
     /// Tools will return an error when executed.
@@ -146,7 +146,7 @@ impl CanvasTools {
         }
     }
 
-    /// Create canvas tools with a JS bridge for actual execution.
+    /// Create dashboard tools with a JS bridge for actual execution.
     ///
     /// The tab will be created lazily when the first UI operation is performed.
     pub fn with_bridge(
@@ -175,7 +175,7 @@ impl CanvasTools {
             .ok_or_else(|| ToolError::ExecutionFailed("JS bridge not available".to_string()))
     }
 
-    /// Add a chart to the canvas.
+    /// Add a chart to the dashboard.
     ///
     /// Calls the JS bridge to create the chart in the frontend.
     pub async fn add_chart(&self, params: AddChartParams) -> Result<AddChartResult, ToolError> {
@@ -185,7 +185,7 @@ impl CanvasTools {
                 &self.agent_id,
                 &self.space_id,
                 &self.room_id,
-                "canvas.addChart",
+                "dashboard.addChart",
                 serde_json::to_value(&params)
                     .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
@@ -195,7 +195,7 @@ impl CanvasTools {
         serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 
-    /// Remove a chart from the canvas.
+    /// Remove a chart from the dashboard.
     pub async fn remove_chart(&self, params: RemoveChartParams) -> Result<(), ToolError> {
         let bridge = self.bridge()?;
         bridge
@@ -203,7 +203,7 @@ impl CanvasTools {
                 &self.agent_id,
                 &self.space_id,
                 &self.room_id,
-                "canvas.removeChart",
+                "dashboard.removeChart",
                 serde_json::to_value(&params)
                     .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
@@ -212,7 +212,7 @@ impl CanvasTools {
         Ok(())
     }
 
-    /// Get all charts on the canvas.
+    /// Get all charts on the dashboard.
     pub async fn get_charts(&self) -> Result<Vec<ChartInfo>, ToolError> {
         let bridge = self.bridge()?;
         let result = bridge
@@ -220,7 +220,7 @@ impl CanvasTools {
                 &self.agent_id,
                 &self.space_id,
                 &self.room_id,
-                "canvas.getCharts",
+                "dashboard.getCharts",
                 serde_json::json!({}),
             )
             .await
@@ -229,7 +229,7 @@ impl CanvasTools {
         serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 
-    /// Clear all charts from the canvas.
+    /// Clear all charts from the dashboard.
     pub async fn clear_charts(&self) -> Result<(), ToolError> {
         let bridge = self.bridge()?;
         bridge
@@ -237,7 +237,7 @@ impl CanvasTools {
                 &self.agent_id,
                 &self.space_id,
                 &self.room_id,
-                "canvas.clearCharts",
+                "dashboard.clearCharts",
                 serde_json::json!({}),
             )
             .await
@@ -253,7 +253,7 @@ impl CanvasTools {
                 &self.agent_id,
                 &self.space_id,
                 &self.room_id,
-                "canvas.setTimeRange",
+                "dashboard.setTimeRange",
                 serde_json::to_value(&params)
                     .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
@@ -273,9 +273,9 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_canvas_tools_creation() {
+    fn test_dashboard_tools_creation() {
         // Just verify construction succeeds
-        let _tools = CanvasTools::new(
+        let _tools = DashboardTools::new(
             "anomaly_investigator".to_string(),
             "space-123".to_string(),
             "room-456".to_string(),

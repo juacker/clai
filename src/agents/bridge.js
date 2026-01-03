@@ -25,7 +25,7 @@
  * ```
  *
  * Tool Categories:
- * - canvas.* - Chart management (addChart, removeChart, etc.)
+ * - dashboard.* - Chart management (addChart, removeChart, etc.)
  * - tabs.* - Tile layout management (splitTile, removeTile, etc.)
  */
 
@@ -58,11 +58,11 @@ const getAgentKey = (agentId, spaceId, roomId) => {
  * Tool handlers are functions that execute tool operations and return results.
  * They receive the full request object and should return a result or throw an error.
  *
- * @param {string} toolName - Full tool name (e.g., "canvas.addChart")
+ * @param {string} toolName - Full tool name (e.g., "dashboard.addChart")
  * @param {Function} handler - Async function (request) => result
  *
  * @example
- * registerToolHandler('canvas.addChart', async (request) => {
+ * registerToolHandler('dashboard.addChart', async (request) => {
  *   const { params, agentId, spaceId, roomId } = request;
  *   // ... execute operation
  *   return { chartId: 'chart-001' };
@@ -158,7 +158,7 @@ const sendResponse = async (requestId, success, result = null, error = null) => 
  * @param {string} request.agentId - Agent type identifier
  * @param {string} request.spaceId - Netdata space ID
  * @param {string} request.roomId - Netdata room ID
- * @param {string} request.tool - Tool name (e.g., "canvas.addChart")
+ * @param {string} request.tool - Tool name (e.g., "dashboard.addChart")
  * @param {Object} request.params - Tool parameters
  */
 const handleToolRequest = async (request) => {

@@ -42,8 +42,8 @@
   flex: 1;
 }
 
-/* Send to Canvas Button */
-.sendToCanvasButton {
+/* Send to Dashboard Button */
+.sendToDashboardButton {
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 500;
@@ -57,21 +57,21 @@
   opacity: 0;
 }
 
-.chartContainer:hover .sendToCanvasButton {
+.chartContainer:hover .sendToDashboardButton {
   opacity: 1;
 }
 
-.sendToCanvasButton:hover:not(:disabled) {
+.sendToDashboardButton:hover:not(:disabled) {
   background: var(--color-primary);
   border-color: var(--color-primary);
   color: white;
 }
 
-.sendToCanvasButton:disabled {
+.sendToDashboardButton:disabled {
   cursor: default;
 }
 
-.sendToCanvasButton.sent {
+.sendToDashboardButton.sent {
   background: rgba(0, 171, 68, 0.1);
   border-color: rgba(0, 171, 68, 0.3);
   color: #00ab44;

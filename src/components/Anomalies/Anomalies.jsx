@@ -2,10 +2,10 @@
  * Anomalies Component - Hilbert Curve Visualization
  *
  * Displays metrics using a Hilbert curve layout with anomaly rate coloring.
- * Clicking on a metric sends it to the Canvas component for charting.
+ * Clicking on a metric sends it to the Dashboard component for charting.
  *
  * This component is focused on anomaly visualization only.
- * Charts are handled by the separate Canvas command.
+ * Charts are handled by the separate Dashboard command.
  */
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -431,9 +431,9 @@ function getSeverityLevel(anomalyRate) {
 
 const Anomalies = ({ command }) => {
   const { selectedSpace, selectedRoom } = useTabContext();
-  const { sendToCanvas, isElementInCanvas } = useCommandMessaging();
+  const { sendToDashboard, isElementInDashboard } = useCommandMessaging();
 
-  // Create space/room key for canvas storage
+  // Create space/room key for dashboard storage
   const spaceRoomKey = useMemo(() => {
     if (!selectedSpace?.id || !selectedRoom?.id) return null;
     return `${selectedSpace.id}_${selectedRoom.id}`;
@@ -824,15 +824,15 @@ const Anomalies = ({ command }) => {
     return null;
   }, [visualGroups]);
 
-  // Send metric to canvas
+  // Send metric to dashboard
   const handleMetricClick = useCallback((context) => {
     if (!spaceRoomKey) return; // Need space/room context
 
     // Use context as element ID (it's unique)
     const elementId = `context-chart-${context}`;
 
-    if (isElementInCanvas(elementId, spaceRoomKey)) {
-      return; // Already in canvas
+    if (isElementInDashboard(elementId, spaceRoomKey)) {
+      return; // Already in dashboard
     }
 
     // Create element config
@@ -844,12 +844,12 @@ const Anomalies = ({ command }) => {
       },
     };
 
-    const result = sendToCanvas(element, spaceRoomKey);
+    const result = sendToDashboard(element, spaceRoomKey);
     if (result.success) {
       setSentFeedback(context);
       setTimeout(() => setSentFeedback(null), 1500);
     }
-  }, [sendToCanvas, isElementInCanvas, spaceRoomKey]);
+  }, [sendToDashboard, isElementInDashboard, spaceRoomKey]);
 
   // Handle container resizing
   useEffect(() => {
@@ -1067,7 +1067,7 @@ const Anomalies = ({ command }) => {
           )}
         </div>
         <div className={styles.toolbarRight}>
-          <span className={styles.hint}>Click metric to add to canvas</span>
+          <span className={styles.hint}>Click metric to add to dashboard</span>
         </div>
       </div>
 
@@ -1108,12 +1108,12 @@ const Anomalies = ({ command }) => {
                   filteredContexts.map((context) => {
                     const anomalyRate = anomalyRates.get(context);
                     const color = getColorForAnomalyRate(anomalyRate);
-                    const inCanvas = spaceRoomKey && isElementInCanvas(`context-chart-${context}`, spaceRoomKey);
+                    const inDashboard = spaceRoomKey && isElementInDashboard(`context-chart-${context}`, spaceRoomKey);
                     const justSent = sentFeedback === context;
                     return (
                       <div
                         key={context}
-                        className={`${styles.contextItem} ${inCanvas ? styles.inCanvas : ''}`}
+                        className={`${styles.contextItem} ${inDashboard ? styles.inDashboard : ''}`}
                         onClick={() => handleMetricClick(context)}
                       >
                         <div className={styles.contextBand} style={{ backgroundColor: color }} />
@@ -1121,8 +1121,8 @@ const Anomalies = ({ command }) => {
                         <div className={styles.statusIndicator}>
                           {justSent ? (
                             <span className={styles.sentBadge}>Sent!</span>
-                          ) : inCanvas ? (
-                            <span className={styles.inCanvasBadge}>In Canvas</span>
+                          ) : inDashboard ? (
+                            <span className={styles.inDashboardBadge}>In Dashboard</span>
                           ) : (
                             <span className={styles.addHint}>+ Add</span>
                           )}
@@ -1139,12 +1139,12 @@ const Anomalies = ({ command }) => {
                 sortedGroupMetrics?.map((context) => {
                   const anomalyRate = anomalyRates.get(context);
                   const color = getColorForAnomalyRate(anomalyRate);
-                  const inCanvas = spaceRoomKey && isElementInCanvas(`context-chart-${context}`, spaceRoomKey);
+                  const inDashboard = spaceRoomKey && isElementInDashboard(`context-chart-${context}`, spaceRoomKey);
                   const justSent = sentFeedback === context;
                   return (
                     <div
                       key={context}
-                      className={`${styles.contextItem} ${inCanvas ? styles.inCanvas : ''}`}
+                      className={`${styles.contextItem} ${inDashboard ? styles.inDashboard : ''}`}
                       onClick={() => handleMetricClick(context)}
                     >
                       <div className={styles.contextBand} style={{ backgroundColor: color }} />
@@ -1152,8 +1152,8 @@ const Anomalies = ({ command }) => {
                       <div className={styles.statusIndicator}>
                         {justSent ? (
                           <span className={styles.sentBadge}>Sent!</span>
-                        ) : inCanvas ? (
-                          <span className={styles.inCanvasBadge}>In Canvas</span>
+                        ) : inDashboard ? (
+                          <span className={styles.inDashboardBadge}>In Dashboard</span>
                         ) : (
                           <span className={styles.addHint}>+ Add</span>
                         )}

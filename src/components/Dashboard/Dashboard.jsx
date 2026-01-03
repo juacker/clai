@@ -1,8 +1,8 @@
 /**
- * Canvas Component
+ * Dashboard Component
  *
  * Displays charts for metrics sent from other commands (like anomalies).
- * This is a receiver component that subscribes to canvas metrics from
+ * This is a receiver component that subscribes to dashboard metrics from
  * the CommandMessagingContext.
  *
  * Features:
@@ -17,9 +17,9 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useTabContext } from '../../contexts/TabContext';
 import { useCommandMessaging } from '../../contexts/CommandMessagingContext';
 import { useDebounce } from '../../hooks/useDebounce';
-import { validateCanvasElement } from '../../utils/canvasElementValidator';
+import { validateDashboardElement } from '../../utils/dashboardElementValidator';
 import ContextChart from '../ChartsView/ContextChart';
-import styles from './Canvas.module.css';
+import styles from './Dashboard.module.css';
 
 // Time interval options
 const TIME_INTERVALS = [
@@ -228,33 +228,33 @@ const FilterModalContent = React.memo(({
 });
 
 /**
- * Canvas Component
+ * Dashboard Component
  */
-const Canvas = ({ command }) => {
+const Dashboard = ({ command }) => {
   // Get tab context for space/room
   const { selectedSpace, selectedRoom } = useTabContext();
 
   // Get messaging context
   const {
-    getCanvasElements,
-    removeFromCanvas,
-    clearCanvas,
-    registerCanvas,
-    unregisterCanvas,
+    getDashboardElements,
+    removeFromDashboard,
+    clearDashboard,
+    registerDashboard,
+    unregisterDashboard,
   } = useCommandMessaging();
 
-  // Create space/room key for canvas storage
+  // Create space/room key for dashboard storage
   const spaceRoomKey = useMemo(() => {
     if (!selectedSpace?.id || !selectedRoom?.id) return null;
     return `${selectedSpace.id}_${selectedRoom.id}`;
   }, [selectedSpace?.id, selectedRoom?.id]);
 
-  // Get canvas elements for current space/room (only valid ones)
-  const canvasElements = useMemo(() => {
-    const elements = getCanvasElements(spaceRoomKey);
+  // Get dashboard elements for current space/room (only valid ones)
+  const dashboardElements = useMemo(() => {
+    const elements = getDashboardElements(spaceRoomKey);
     // Filter out any invalid elements as a safety check
-    return elements.filter(element => validateCanvasElement(element).valid);
-  }, [getCanvasElements, spaceRoomKey]);
+    return elements.filter(element => validateDashboardElement(element).valid);
+  }, [getDashboardElements, spaceRoomKey]);
 
   // Selected time interval
   const [selectedInterval, setSelectedInterval] = useState(TIME_INTERVALS[3]); // Default 1h
@@ -274,17 +274,17 @@ const Canvas = ({ command }) => {
   const [expandedGroups, setExpandedGroups] = useState({});
 
   // Generate unique instance ID for keys
-  const instanceId = useRef(`canvas_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+  const instanceId = useRef(`dashboard_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
 
-  // Register canvas on mount, unregister on unmount
+  // Register dashboard on mount, unregister on unmount
   useEffect(() => {
     if (command?.id) {
-      registerCanvas(command.id);
+      registerDashboard(command.id);
     }
     return () => {
-      unregisterCanvas();
+      unregisterDashboard();
     };
-  }, [command?.id, registerCanvas, unregisterCanvas]);
+  }, [command?.id, registerDashboard, unregisterDashboard]);
 
   // Calculate time range based on selected interval (recalculates on refresh)
   const timeRange = useMemo(() => {
@@ -309,7 +309,7 @@ const Canvas = ({ command }) => {
 
   // Auto-refresh effect
   useEffect(() => {
-    if (!autoRefreshEnabled || canvasElements.length === 0) {
+    if (!autoRefreshEnabled || dashboardElements.length === 0) {
       return;
     }
 
@@ -319,18 +319,18 @@ const Canvas = ({ command }) => {
     }, intervalMs);
 
     return () => clearInterval(timerId);
-  }, [autoRefreshEnabled, selectedInterval, canvasElements.length]);
+  }, [autoRefreshEnabled, selectedInterval, dashboardElements.length]);
 
   // Handle remove element
   const handleRemoveElement = useCallback((elementId) => {
     if (!spaceRoomKey) return;
-    removeFromCanvas(elementId, spaceRoomKey);
-  }, [removeFromCanvas, spaceRoomKey]);
+    removeFromDashboard(elementId, spaceRoomKey);
+  }, [removeFromDashboard, spaceRoomKey]);
 
   // Handle clear all
   const handleClearAll = useCallback(() => {
-    clearCanvas(spaceRoomKey);
-  }, [clearCanvas, spaceRoomKey]);
+    clearDashboard(spaceRoomKey);
+  }, [clearDashboard, spaceRoomKey]);
 
   // Handle chart summary updates
   const handleChartSummary = useCallback((context, summary) => {
@@ -531,18 +531,18 @@ const Canvas = ({ command }) => {
   ]);
 
   // Empty state
-  if (canvasElements.length === 0) {
+  if (dashboardElements.length === 0) {
     return (
-      <div className={styles.canvasWrapper}>
+      <div className={styles.dashboardWrapper}>
         <div className={styles.headerBar}>
           <div className={styles.headerLeft}>
-            <span className={styles.headerTitle}>Canvas</span>
+            <span className={styles.headerTitle}>Dashboard</span>
           </div>
         </div>
-        <div className={styles.canvasContainer}>
+        <div className={styles.dashboardContainer}>
           <div className={styles.emptyState}>
             <div className={styles.emptyStateIcon}>📊</div>
-            <h3 className={styles.emptyStateTitle}>No metrics in canvas</h3>
+            <h3 className={styles.emptyStateTitle}>No metrics in dashboard</h3>
             <p className={styles.emptyStateText}>
               Click on metrics in the <strong>anomalies</strong> view to add charts here.
               <br />
@@ -555,12 +555,12 @@ const Canvas = ({ command }) => {
   }
 
   return (
-    <div className={styles.canvasWrapper}>
+    <div className={styles.dashboardWrapper}>
       {/* Header Bar */}
       <div className={styles.headerBar}>
         <div className={styles.headerLeft}>
-          <span className={styles.headerTitle}>Canvas</span>
-          <span className={styles.metricCount}>{canvasElements.length} element{canvasElements.length !== 1 ? 's' : ''}</span>
+          <span className={styles.headerTitle}>Dashboard</span>
+          <span className={styles.metricCount}>{dashboardElements.length} element{dashboardElements.length !== 1 ? 's' : ''}</span>
           <div className={styles.timeIntervalSelector}>
             {TIME_INTERVALS.map((interval) => (
               <button
@@ -681,9 +681,9 @@ const Canvas = ({ command }) => {
       )}
 
       {/* Charts Grid */}
-      <div className={styles.canvasContainer}>
+      <div className={styles.dashboardContainer}>
         <div className={styles.chartsGrid}>
-          {canvasElements.map((element) => {
+          {dashboardElements.map((element) => {
             // Currently only supporting context-chart type
             if (element.type === 'context-chart') {
               const { context, groupBy, filterBy, valueAgg, timeAgg } = element.config;
@@ -737,4 +737,4 @@ const Canvas = ({ command }) => {
   );
 };
 
-export default Canvas;
+export default Dashboard;
