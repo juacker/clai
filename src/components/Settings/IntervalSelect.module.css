@@ -1,0 +1,138 @@
+/**
+ * IntervalSelect Component Styles
+ *
+ * Custom styled dropdown
+ */
+
+.container {
+  position: relative;
+  width: 100%;
+}
+
+.container.disabled {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Trigger button */
+.trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  text-align: left;
+}
+
+.trigger:hover:not(:disabled) {
+  border-color: var(--color-border-medium);
+}
+
+.trigger:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-alpha-20);
+}
+
+.trigger:disabled {
+  background: var(--color-bg-secondary);
+  cursor: not-allowed;
+}
+
+.triggerOpen {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-alpha-20);
+}
+
+.selectedLabel {
+  flex: 1;
+}
+
+/* Chevron icon */
+.chevron {
+  color: var(--color-text-tertiary);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* Dropdown - rendered via portal at body level */
+.dropdown {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-light);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12),
+              0 2px 4px rgba(0, 0, 0, 0.08);
+  z-index: 10002; /* Above modal overlay (10001) */
+  overflow: hidden;
+  animation: dropdownAppear 0.15s ease;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* Option */
+.option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+  text-align: left;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.option:hover {
+  background: var(--color-bg-hover);
+}
+
+.option:focus {
+  outline: none;
+  background: var(--color-bg-hover);
+}
+
+.optionSelected {
+  background: var(--color-primary-alpha-10);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.optionSelected:hover {
+  background: var(--color-primary-alpha-15, rgba(99, 102, 241, 0.15));
+}
+
+.checkIcon {
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+}
+
+/* Animation */
+@keyframes dropdownAppear {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

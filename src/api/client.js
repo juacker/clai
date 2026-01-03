@@ -532,6 +532,140 @@ export const validateAiProvider = async (provider) => {
 };
 
 // ============================================================================
+// Agent Management
+// ============================================================================
+
+/**
+ * Get all agents
+ * @returns {Promise<Array>} List of agents
+ */
+export const getAgents = async () => {
+  try {
+    return await invoke('get_agents');
+  } catch (error) {
+    handleApiError(error, 'Failed to get agents');
+  }
+};
+
+/**
+ * Get a single agent by ID
+ * @param {string} id - Agent ID
+ * @returns {Promise<Object|null>} Agent or null if not found
+ */
+export const getAgent = async (id) => {
+  try {
+    return await invoke('get_agent', { id });
+  } catch (error) {
+    handleApiError(error, 'Failed to get agent');
+  }
+};
+
+/**
+ * Create a new agent
+ * @param {Object} request - Agent creation request
+ * @param {string} request.name - Agent name
+ * @param {string} request.description - Agent description (supports markdown)
+ * @param {number} request.intervalMinutes - Check interval in minutes
+ * @returns {Promise<Object>} Created agent
+ */
+export const createAgent = async (request) => {
+  try {
+    return await invoke('create_agent', { request });
+  } catch (error) {
+    handleApiError(error, 'Failed to create agent');
+  }
+};
+
+/**
+ * Update an existing agent
+ * @param {Object} request - Agent update request
+ * @param {string} request.id - Agent ID
+ * @param {string} request.name - Agent name
+ * @param {string} request.description - Agent description
+ * @param {number} request.intervalMinutes - Check interval in minutes
+ * @returns {Promise<Object>} Updated agent
+ */
+export const updateAgent = async (request) => {
+  try {
+    return await invoke('update_agent', { request });
+  } catch (error) {
+    handleApiError(error, 'Failed to update agent');
+  }
+};
+
+/**
+ * Delete an agent
+ * @param {string} id - Agent ID
+ * @returns {Promise<void>}
+ */
+export const deleteAgent = async (id) => {
+  try {
+    return await invoke('delete_agent', { id });
+  } catch (error) {
+    handleApiError(error, 'Failed to delete agent');
+  }
+};
+
+/**
+ * Enable an agent for a specific space/room
+ * @param {string} agentId - Agent ID
+ * @param {string} spaceId - Space ID
+ * @param {string} roomId - Room ID
+ * @returns {Promise<Object>} Updated agent
+ */
+export const enableAgentForRoom = async (agentId, spaceId, roomId) => {
+  try {
+    return await invoke('enable_agent_for_room', { agentId, spaceId, roomId });
+  } catch (error) {
+    handleApiError(error, 'Failed to enable agent');
+  }
+};
+
+/**
+ * Disable an agent for a specific space/room
+ * @param {string} agentId - Agent ID
+ * @param {string} spaceId - Space ID
+ * @param {string} roomId - Room ID
+ * @returns {Promise<Object>} Updated agent
+ */
+export const disableAgentForRoom = async (agentId, spaceId, roomId) => {
+  try {
+    return await invoke('disable_agent_for_room', { agentId, spaceId, roomId });
+  } catch (error) {
+    handleApiError(error, 'Failed to disable agent');
+  }
+};
+
+/**
+ * Get all agents enabled for a specific space/room
+ * @param {string} spaceId - Space ID
+ * @param {string} roomId - Room ID
+ * @returns {Promise<Array>} List of enabled agents
+ */
+export const getAgentsForRoom = async (spaceId, roomId) => {
+  try {
+    return await invoke('get_agents_for_room', { spaceId, roomId });
+  } catch (error) {
+    handleApiError(error, 'Failed to get agents for room');
+  }
+};
+
+/**
+ * Toggle all agents on/off for a space/room
+ * @param {string} spaceId - Space ID
+ * @param {string} roomId - Room ID
+ * @param {boolean} enabled - Whether to enable or disable
+ * @returns {Promise<Object>} Toggle result with affected count
+ */
+export const toggleAgentsForRoom = async (spaceId, roomId, enabled) => {
+  try {
+    return await invoke('toggle_agents_for_room', { spaceId, roomId, enabled });
+  } catch (error) {
+    handleApiError(error, 'Failed to toggle agents');
+  }
+};
+
+// ============================================================================
 // Legacy Compatibility
 // ============================================================================
 

@@ -2,12 +2,13 @@
  * SettingsModal Component
  *
  * Main settings modal with sidebar navigation for different settings sections.
- * Currently supports: AI Provider, Autonomous Agents (placeholder for Phase 6)
+ * Supports: AI Provider selection and Autonomous Agents management.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import ProviderSettings from './ProviderSettings';
+import AgentsSettings from './AgentsSettings';
 import styles from './SettingsModal.module.css';
 
 /**
@@ -106,13 +107,7 @@ const SettingsModal = ({ isOpen, onClose, initialTab = TABS.PROVIDER }) => {
       case TABS.PROVIDER:
         return <ProviderSettings />;
       case TABS.AGENTS:
-        return (
-          <div className={styles.placeholder}>
-            <AgentsIcon />
-            <h3>Autonomous Agents</h3>
-            <p>Agent management coming soon...</p>
-          </div>
-        );
+        return <AgentsSettings />;
       default:
         return null;
     }
