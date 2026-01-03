@@ -2,6 +2,8 @@
 //!
 //! These commands manage the auto-pilot feature, allowing users to enable
 //! or disable AI agents for specific spaces/rooms.
+//!
+//! Each room can be toggled independently.
 
 use tauri::State;
 
@@ -11,24 +13,22 @@ use crate::api::netdata::NetdataApi;
 use crate::config::{AgentInfo, AutopilotStatus, ProviderInfo};
 use crate::AppState;
 
-/// Name of the "All Nodes" room in Netdata Cloud.
-const ALL_NODES_ROOM_NAME: &str = "All nodes";
-
 /// Get the auto-pilot status for a space/room.
 ///
 /// This command:
 /// 1. Loads config to check enabled rooms, provider, and agents
-/// 2. Fetches rooms to find "All Nodes" room
-/// 3. Checks billing API for credits
-/// 4. Returns computed status including provider and agent info
+/// 2. Checks billing API for credits
+/// 3. Returns computed status including provider and agent info
+///
+/// Each room can be toggled independently.
 #[tauri::command]
 pub async fn get_autopilot_status(
     space_id: String,
     room_id: String,
     state: State<'_, AppState>,
 ) -> Result<AutopilotStatus, String> {
-    // Get provider and agent info first (before any async operations)
-    let (provider_info, agent_info) = {
+    // Get provider, agent info, and room status (before any async operations)
+    let (provider_info, agent_info, room_enabled) = {
         let config_manager = state.config_manager.lock().unwrap();
         let provider = config_manager.get_ai_provider();
         let provider_info = ProviderInfo::from_provider(provider.as_ref());
@@ -39,7 +39,11 @@ pub async fn get_autopilot_status(
         let enabled_count = config_manager.count_agents_enabled(&space_id, &room_id);
         let agent_info = AgentInfo::new(total_count, enabled_count);
 
-        (provider_info, agent_info)
+        // Check if current room has auto-pilot enabled
+        let space_config = config_manager.get_space_autopilot(&space_id);
+        let room_enabled = space_config.is_room_enabled(&room_id);
+
+        (provider_info, agent_info, room_enabled)
     };
 
     // Get token for API calls
@@ -51,16 +55,6 @@ pub async fn get_autopilot_status(
 
     let base_url = state.base_url.lock().unwrap().clone();
     let api = NetdataApi::new(create_client(), base_url, token);
-
-    // Fetch rooms to find "All Nodes"
-    let rooms = api
-        .get_rooms(&space_id)
-        .await
-        .map_err(|e| format!("Failed to fetch rooms: {}", e))?;
-
-    let all_nodes_room = rooms.iter().find(|r| r.name == ALL_NODES_ROOM_NAME);
-    let all_nodes_room_id = all_nodes_room.map(|r| r.id.clone());
-    let is_all_nodes_room = all_nodes_room_id.as_ref() == Some(&room_id);
 
     // Check credits
     let billing = api
@@ -79,53 +73,21 @@ pub async fn get_autopilot_status(
         return Ok(AutopilotStatus::no_credits(provider_info, agent_info));
     }
 
-    // Get config for autopilot status
-    let config_manager = state.config_manager.lock().unwrap();
-    let space_config = config_manager.get_space_autopilot(&space_id);
-
-    // Check if All Nodes has auto-pilot enabled
-    let all_nodes_enabled = all_nodes_room_id
-        .as_ref()
-        .map(|id| space_config.is_room_enabled(id))
-        .unwrap_or(false);
-
-    // Check if current room has auto-pilot enabled
-    let current_room_enabled = space_config.is_room_enabled(&room_id);
-
-    // Determine status based on context
-    if is_all_nodes_room {
-        // In All Nodes room - can toggle directly
-        Ok(AutopilotStatus::available(
-            all_nodes_enabled,
-            has_credits,
-            provider_info,
-            agent_info,
-        ))
-    } else if all_nodes_enabled {
-        // In other room, but All Nodes is enabled - inherited, can't toggle here
-        Ok(AutopilotStatus::via_all_nodes(
-            has_credits,
-            provider_info,
-            agent_info,
-        ))
-    } else {
-        // In other room, All Nodes is not enabled - can toggle for this room
-        Ok(AutopilotStatus::available(
-            current_room_enabled,
-            has_credits,
-            provider_info,
-            agent_info,
-        ))
-    }
+    // Return status - each room can toggle independently
+    Ok(AutopilotStatus::available(
+        room_enabled,
+        has_credits,
+        provider_info,
+        agent_info,
+    ))
 }
 
 /// Enable or disable auto-pilot for a room.
 ///
 /// Rules:
 /// - Provider must be configured to enable auto-pilot
-/// - If enabling All Nodes, it will cover the entire space
-/// - If All Nodes is enabled, cannot enable other rooms (must disable All Nodes first)
-/// - Disabling a room only affects that room
+/// - Credits must be available to enable
+/// - Each room can be toggled independently
 #[tauri::command]
 pub async fn set_autopilot_enabled(
     space_id: String,
@@ -141,28 +103,17 @@ pub async fn set_autopilot_enabled(
         }
     }
 
-    // Get token for API calls
-    let token = state
-        .token_storage
-        .get_token()
-        .map_err(|e| format!("Failed to get token: {}", e))?
-        .ok_or_else(|| "Not authenticated".to_string())?;
-
-    let base_url = state.base_url.lock().unwrap().clone();
-    let api = NetdataApi::new(create_client(), base_url, token);
-
-    // Fetch rooms to find "All Nodes"
-    let rooms = api
-        .get_rooms(&space_id)
-        .await
-        .map_err(|e| format!("Failed to fetch rooms: {}", e))?;
-
-    let all_nodes_room = rooms.iter().find(|r| r.name == ALL_NODES_ROOM_NAME);
-    let all_nodes_room_id = all_nodes_room.map(|r| r.id.clone());
-    let is_all_nodes_room = all_nodes_room_id.as_ref() == Some(&room_id);
-
     // Check credits if enabling
     if enabled {
+        let token = state
+            .token_storage
+            .get_token()
+            .map_err(|e| format!("Failed to get token: {}", e))?
+            .ok_or_else(|| "Not authenticated".to_string())?;
+
+        let base_url = state.base_url.lock().unwrap().clone();
+        let api = NetdataApi::new(create_client(), base_url, token);
+
         let billing = api
             .get_billing_plan(&space_id)
             .await
@@ -179,9 +130,7 @@ pub async fn set_autopilot_enabled(
         }
     }
 
-    // Collect rooms to update scheduler (do config operations first, then async scheduler ops)
-    let rooms_to_remove: Vec<String>;
-    let room_to_add: Option<String>;
+    // Update config and get state for scheduler operations
     let config_for_scheduler: crate::config::ClaiConfig;
 
     {
@@ -189,63 +138,25 @@ pub async fn set_autopilot_enabled(
         let config_manager = state.config_manager.lock().unwrap();
 
         if enabled {
-            // Check if All Nodes is already enabled (and we're not in All Nodes)
-            if !is_all_nodes_room {
-                if let Some(ref all_nodes_id) = all_nodes_room_id {
-                    if config_manager.is_autopilot_enabled(&space_id, all_nodes_id) {
-                        return Err(
-                            "Cannot enable auto-pilot: All Nodes is already enabled. Disable it first."
-                                .to_string(),
-                        );
-                    }
-                }
-            }
-
-            // If enabling All Nodes, disable other rooms first
-            if is_all_nodes_room {
-                let enabled_rooms = config_manager.get_enabled_rooms(&space_id);
-                rooms_to_remove = enabled_rooms
-                    .into_iter()
-                    .filter(|r| Some(r) != all_nodes_room_id.as_ref())
-                    .collect();
-
-                // Disable other rooms in config
-                for other_room_id in &rooms_to_remove {
-                    config_manager
-                        .disable_autopilot(&space_id, other_room_id)
-                        .map_err(|e| format!("Failed to disable room {}: {}", other_room_id, e))?;
-                }
-            } else {
-                rooms_to_remove = vec![];
-            }
-
-            // Enable in config
             config_manager
                 .enable_autopilot(&space_id, &room_id)
                 .map_err(|e| format!("Failed to enable auto-pilot: {}", e))?;
-
-            room_to_add = Some(room_id.clone());
         } else {
-            // Disable in config
             config_manager
                 .disable_autopilot(&space_id, &room_id)
                 .map_err(|e| format!("Failed to disable auto-pilot: {}", e))?;
-
-            rooms_to_remove = vec![room_id.clone()];
-            room_to_add = None;
         }
 
         // Clone config for scheduler operations (before dropping lock)
         config_for_scheduler = config_manager.get();
     } // config_manager lock dropped here
 
-    // Now do async scheduler operations (lock is released)
-    for other_room_id in rooms_to_remove {
-        remove_instances_for_room(&state.scheduler, &space_id, &other_room_id).await;
-    }
-
-    if let Some(room) = room_to_add {
-        create_instances_for_room(&state.scheduler, &config_for_scheduler, &space_id, &room).await;
+    // Update scheduler
+    if enabled {
+        create_instances_for_room(&state.scheduler, &config_for_scheduler, &space_id, &room_id)
+            .await;
+    } else {
+        remove_instances_for_room(&state.scheduler, &space_id, &room_id).await;
     }
 
     Ok(())

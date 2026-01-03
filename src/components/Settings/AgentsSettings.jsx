@@ -110,6 +110,8 @@ const AgentsSettings = () => {
     try {
       await deleteAgent(agentId);
       setAgents(agents.filter(a => a.id !== agentId));
+      // Notify badge to refresh (agent count changed)
+      window.dispatchEvent(new CustomEvent('agent-assignments-changed'));
     } catch (err) {
       console.error('[AgentsSettings] Failed to delete agent:', err);
       setError('Failed to delete agent. Please try again.');
@@ -137,6 +139,8 @@ const AgentsSettings = () => {
       }
       setIsFormOpen(false);
       setEditingAgent(null);
+      // Notify badge to refresh (agent count changed)
+      window.dispatchEvent(new CustomEvent('agent-assignments-changed'));
     } catch (err) {
       console.error('[AgentsSettings] Failed to save agent:', err);
       throw err; // Re-throw so form can show error

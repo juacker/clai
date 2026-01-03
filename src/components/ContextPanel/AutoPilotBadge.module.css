@@ -1,7 +1,8 @@
 /**
  * AutoPilotBadge Component Styles
  *
- * Toggle badge for auto-pilot status with enabled/disabled states
+ * Toggle badge for auto-pilot status with enabled/disabled states.
+ * Provider configuration is now done in Settings modal.
  */
 
 /* Base Badge Styles */
@@ -43,6 +44,22 @@
   font-weight: 600;
 }
 
+/* Enabled but no agents assigned - Amber/warning theme */
+.enabledNoAgents {
+  background: var(--color-warning-alpha-10, rgba(245, 158, 11, 0.1));
+  color: var(--color-warning-dark, #b45309);
+  border: 1px solid var(--color-warning-alpha-30, rgba(245, 158, 11, 0.3));
+}
+
+.enabledNoAgents .icon {
+  color: var(--color-warning, #f59e0b);
+}
+
+.enabledNoAgents .status {
+  color: var(--color-warning, #f59e0b);
+  font-weight: 600;
+}
+
 /* Disabled State - Neutral/muted theme */
 .disabled {
   background: var(--color-overlay-04);
@@ -58,6 +75,52 @@
   color: var(--color-text-tertiary);
 }
 
+/* Needs Provider State - Amber/warning theme */
+.needsProvider {
+  background: var(--color-warning-alpha-10, rgba(245, 158, 11, 0.1));
+  color: var(--color-warning-dark, #b45309);
+  border: 1px solid var(--color-warning-alpha-30, rgba(245, 158, 11, 0.3));
+}
+
+.needsProvider .icon {
+  color: var(--color-warning, #f59e0b);
+}
+
+.needsProvider .status {
+  color: var(--color-warning, #f59e0b);
+  font-weight: 600;
+}
+
+/* No Agents State - Gray/neutral theme */
+.noAgents {
+  background: var(--color-overlay-04);
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border-light);
+}
+
+.noAgents .icon {
+  color: var(--color-text-tertiary);
+}
+
+.noAgents .status {
+  color: var(--color-text-tertiary);
+}
+
+/* No Credits State - Red/error theme */
+.noCredits {
+  background: var(--color-critical-alpha-10, rgba(239, 68, 68, 0.1));
+  color: var(--color-critical-dark, #b91c1c);
+  border: 1px solid var(--color-critical-alpha-30, rgba(239, 68, 68, 0.3));
+}
+
+.noCredits .icon {
+  color: var(--color-critical, #ef4444);
+}
+
+.noCredits .status {
+  color: var(--color-critical, #ef4444);
+}
+
 /* Clickable Badge */
 .clickable {
   cursor: pointer;
@@ -68,10 +131,10 @@
   outline-offset: 2px;
 }
 
-/* Non-toggleable (via All Nodes or no credits) */
+/* Non-toggleable (no credits, no provider, no agents) */
 .nonToggleable {
-  cursor: not-allowed;
-  opacity: 0.8;
+  cursor: default;
+  opacity: 0.9;
 }
 
 /* Toggling State */
@@ -138,6 +201,11 @@
     border-color: var(--color-primary-alpha-40);
   }
 
+  .clickable.enabledNoAgents:hover {
+    background: var(--color-warning-alpha-15, rgba(245, 158, 11, 0.15));
+    border-color: var(--color-warning-alpha-40, rgba(245, 158, 11, 0.4));
+  }
+
   .clickable.disabled:hover {
     background: var(--color-overlay-08);
     border-color: var(--color-border-medium);
@@ -159,272 +227,5 @@
   to {
     opacity: 1;
     transform: scale(1);
-  }
-}
-
-/* Needs Provider State - Amber/warning theme */
-.needsProvider {
-  background: var(--color-warning-alpha-10, rgba(245, 158, 11, 0.1));
-  color: var(--color-warning-dark, #b45309);
-  border: 1px solid var(--color-warning-alpha-30, rgba(245, 158, 11, 0.3));
-  cursor: pointer;
-}
-
-.needsProvider .icon {
-  color: var(--color-warning, #f59e0b);
-}
-
-.needsProvider .status {
-  color: var(--color-warning, #f59e0b);
-  font-weight: 600;
-}
-
-/* Settings Button */
-.settingsButton {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px;
-  margin-left: 4px;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-xs, 2px);
-  cursor: pointer;
-  color: inherit;
-  opacity: 0.6;
-  transition: all var(--transition-fast);
-}
-
-.settingsButton:hover {
-  opacity: 1;
-  background: var(--color-overlay-08);
-}
-
-.settingsButton svg {
-  width: 12px;
-  height: 12px;
-}
-
-/* Provider Selector Modal - Matching ContextSelector style */
-.providerOverlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(8px);
-  z-index: 10000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.providerModal {
-  background: var(--color-bg-primary, #FDFCFB);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15),
-              0 2px 8px rgba(0, 0, 0, 0.08);
-  min-width: 360px;
-  max-width: 90vw;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.providerHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--color-overlay-06);
-  background: linear-gradient(to bottom, #fafbfc, #ffffff);
-  font-weight: 600;
-  font-size: 17px;
-  color: #1a1a1a;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  letter-spacing: -0.01em;
-}
-
-.closeButton {
-  background: none;
-  border: none;
-  font-size: 32px;
-  line-height: 1;
-  color: rgba(0, 0, 0, 0.4);
-  cursor: pointer;
-  padding: 0;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-.closeButton:hover {
-  background: var(--color-bg-hover);
-  color: rgba(0, 0, 0, 0.7);
-}
-
-.providerList {
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  background: var(--color-bg-primary);
-  overflow-y: auto;
-  max-height: 420px;
-}
-
-.providerItem {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border: none;
-  background: transparent;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  text-align: left;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-}
-
-.providerItem:hover:not(:disabled) {
-  background: rgba(102, 126, 234, 0.05);
-  transform: translateX(2px);
-}
-
-.providerItem.selected {
-  background: linear-gradient(135deg, rgba(0, 163, 68, 0.08), rgba(0, 163, 68, 0.12));
-}
-
-.providerItem.selected:hover {
-  background: linear-gradient(135deg, rgba(0, 163, 68, 0.12), rgba(0, 163, 68, 0.15));
-}
-
-.providerItem.unavailable {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.providerItem.unavailable:hover {
-  background: transparent;
-  transform: none;
-}
-
-.providerInfo {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.providerName {
-  font-weight: 500;
-  font-size: 15px;
-  color: #1a1a1a;
-}
-
-.providerItem.selected .providerName {
-  font-weight: 600;
-  color: var(--color-primary);
-}
-
-.providerVersion {
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-  font-family: 'Monaco', 'Menlo', monospace;
-}
-
-.providerError {
-  font-size: 12px;
-  color: var(--color-critical);
-}
-
-.checkIcon {
-  color: var(--color-primary);
-  display: flex;
-  align-items: center;
-  animation: checkmarkAppear 0.2s ease;
-}
-
-@keyframes checkmarkAppear {
-  from {
-    opacity: 0;
-    transform: scale(0.8);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.providerFooter {
-  padding: 16px 24px;
-  border-top: 1px solid var(--color-overlay-06);
-  background: #fafbfc;
-}
-
-.providerHint {
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-}
-
-.providerHint code {
-  background: var(--color-overlay-08);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 11px;
-}
-
-/* Loading state for provider list */
-.providerLoading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 24px;
-  color: var(--color-text-secondary);
-  font-size: 14px;
-  gap: 12px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-}
-
-.providerLoading svg {
-  width: 20px;
-  height: 20px;
-  animation: spin 1s linear infinite;
-  will-change: transform;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }

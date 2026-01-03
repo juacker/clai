@@ -2,17 +2,16 @@
  * AutoPilotBadge Component
  *
  * Displays auto-pilot status and provides toggle functionality.
- * Shows different states: enabled, disabled, via All Nodes, no credits, no provider.
- * Includes provider selection when no provider is configured.
+ * Shows different states: enabled, disabled, no credits, no provider, no agents.
+ *
+ * Provider and agent configuration is now done via the Settings modal.
+ * This badge acts as a simple ON/OFF toggle for the current room.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import ReactDOM from 'react-dom';
 import {
   getAutopilotStatus,
   setAutopilotEnabled,
-  getAvailableAiProviders,
-  setAiProvider,
 } from '../../api/client';
 import styles from './AutoPilotBadge.module.css';
 
@@ -42,78 +41,6 @@ const LoadingIcon = () => (
 );
 
 /**
- * Settings/gear icon for provider selection
- */
-const SettingsIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="3" />
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-  </svg>
-);
-
-/**
- * Check icon for selected provider
- */
-const CheckIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12" />
-  </svg>
-);
-
-/**
- * Provider Selector Modal/Dropdown
- */
-const ProviderSelector = ({ providers, currentProvider, onSelect, onClose, loading }) => {
-  return (
-    <div className={styles.providerOverlay} onClick={onClose}>
-      <div className={styles.providerModal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.providerHeader}>
-          <span>Select AI Provider</span>
-          <button className={styles.closeButton} onClick={onClose}>×</button>
-        </div>
-        {loading ? (
-          <div className={styles.providerLoading}>
-            <LoadingIcon />
-            <span>Detecting providers...</span>
-          </div>
-        ) : (
-          <div className={styles.providerList}>
-            {providers.map((provider) => {
-              const isSelected = currentProvider?.type === provider.provider.type;
-              const isAvailable = provider.available;
-
-              return (
-                <button
-                  key={provider.command}
-                  className={`${styles.providerItem} ${isSelected ? styles.selected : ''} ${!isAvailable ? styles.unavailable : ''}`}
-                  onClick={() => isAvailable && onSelect(provider)}
-                  disabled={!isAvailable}
-                >
-                  <div className={styles.providerInfo}>
-                    <span className={styles.providerName}>{provider.name}</span>
-                    {provider.version && (
-                      <span className={styles.providerVersion}>{provider.version}</span>
-                    )}
-                    {!isAvailable && provider.error && (
-                      <span className={styles.providerError}>{provider.error}</span>
-                    )}
-                  </div>
-                  {isSelected && (
-                    <span className={styles.checkIcon}>
-                      <CheckIcon />
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-/**
  * AutoPilotBadge displays auto-pilot status and allows toggling
  *
  * @param {Object} props
@@ -125,9 +52,6 @@ const AutoPilotBadge = ({ spaceId, roomId }) => {
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
   const [error, setError] = useState(null);
-  const [showProviderSelector, setShowProviderSelector] = useState(false);
-  const [providers, setProviders] = useState([]);
-  const [loadingProviders, setLoadingProviders] = useState(true); // Start true so modal shows spinner immediately
 
   // Fetch status when space/room changes
   const fetchStatus = useCallback(async () => {
@@ -156,42 +80,21 @@ const AutoPilotBadge = ({ spaceId, roomId }) => {
     fetchStatus();
   }, [fetchStatus]);
 
-  // Fetch providers when modal opens
+  // Listen for agent assignment changes to refresh status
   useEffect(() => {
-    if (showProviderSelector && loadingProviders && providers.length === 0) {
-      // Use requestAnimationFrame to wait for browser to paint the loading state
-      // Then use setTimeout to defer to next tick, ensuring paint completes
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          getAvailableAiProviders()
-            .then((result) => {
-              setProviders(result);
-            })
-            .catch((err) => {
-              console.error('[AutoPilotBadge] Failed to fetch providers:', err);
-            })
-            .finally(() => {
-              setLoadingProviders(false);
-            });
-        }, 50);
-      });
-    }
-  }, [showProviderSelector, loadingProviders, providers.length]);
+    const handleAgentChange = () => {
+      fetchStatus();
+    };
+
+    window.addEventListener('agent-assignments-changed', handleAgentChange);
+    return () => {
+      window.removeEventListener('agent-assignments-changed', handleAgentChange);
+    };
+  }, [fetchStatus]);
 
   // Handle toggle click
   const handleToggle = async () => {
-    if (!status || toggling) return;
-
-    // If no provider, show selector instead
-    if (!status.provider_configured) {
-      // Reset state before showing modal so spinner appears
-      setProviders([]);
-      setLoadingProviders(true);
-      setShowProviderSelector(true);
-      return;
-    }
-
-    if (!status.can_toggle) return;
+    if (!status || toggling || !status.can_toggle) return;
 
     setToggling(true);
     setError(null);
@@ -206,31 +109,6 @@ const AutoPilotBadge = ({ spaceId, roomId }) => {
     } finally {
       setToggling(false);
     }
-  };
-
-  // Handle provider selection
-  const handleProviderSelect = async (providerInfo) => {
-    setLoadingProviders(true);
-    try {
-      await setAiProvider(providerInfo.provider);
-      setShowProviderSelector(false);
-      // Refresh status after provider change
-      await fetchStatus();
-    } catch (err) {
-      console.error('[AutoPilotBadge] Failed to set provider:', err);
-      setError(err.message);
-    } finally {
-      setLoadingProviders(false);
-    }
-  };
-
-  // Handle settings click (to change provider)
-  const handleSettingsClick = (e) => {
-    e.stopPropagation();
-    // Reset state before showing modal so spinner appears
-    setProviders([]);
-    setLoadingProviders(true);
-    setShowProviderSelector(true); // Just show modal, useEffect will fetch
   };
 
   // Don't render if no space/room
@@ -255,88 +133,90 @@ const AutoPilotBadge = ({ spaceId, roomId }) => {
     return null;
   }
 
-  // Determine badge state and styling
+  // Extract status fields
   const isEnabled = status.enabled;
   const canToggle = status.can_toggle && !toggling;
-  const viaAllNodes = status.via_all_nodes;
   const hasCredits = status.has_credits;
   const providerConfigured = status.provider_configured;
   const providerName = status.provider_name;
+  const hasAgents = status.has_agents;
+  const enabledAgentCount = status.enabled_agent_count || 0;
+  const totalAgentCount = status.total_agent_count || 0;
+
+  // Determine display text and state
+  let displayText;
+  let tooltip;
+  let badgeState;
+
+  if (!hasAgents) {
+    // No agents configured - show "No Agents"
+    displayText = 'No Agents';
+    tooltip = 'No agents configured. Configure agents in Settings.';
+    badgeState = 'noAgents';
+  } else if (!providerConfigured) {
+    // No provider - show "Setup"
+    displayText = 'Setup';
+    tooltip = 'No AI provider configured. Configure provider in Settings.';
+    badgeState = 'needsProvider';
+  } else if (!hasCredits) {
+    // No credits
+    displayText = 'No Credits';
+    tooltip = 'Auto-pilot requires AI credits. Add credits to enable.';
+    badgeState = 'noCredits';
+  } else if (isEnabled && enabledAgentCount === 0) {
+    // Enabled but no agents assigned - show warning
+    displayText = 'ON (0)';
+    tooltip = `Auto-pilot enabled but no agents assigned to this room. Assign agents in Settings.`;
+    tooltip += ' Click to disable.';
+    badgeState = 'enabledNoAgents';
+  } else if (isEnabled) {
+    // Enabled with agents - show agent count
+    displayText = `ON (${enabledAgentCount})`;
+    tooltip = `Auto-pilot enabled. ${enabledAgentCount} of ${totalAgentCount} agent${totalAgentCount !== 1 ? 's' : ''} assigned to this room.`;
+    if (providerName) {
+      tooltip += ` Using ${providerName}.`;
+    }
+    tooltip += ' Click to disable.';
+    badgeState = 'enabled';
+  } else {
+    // Disabled
+    displayText = 'OFF';
+    tooltip = `Auto-pilot disabled. ${enabledAgentCount} of ${totalAgentCount} agent${totalAgentCount !== 1 ? 's' : ''} assigned to this room.`;
+    if (providerName) {
+      tooltip += ` Using ${providerName}.`;
+    }
+    tooltip += ' Click to enable.';
+    badgeState = 'disabled';
+  }
 
   // Build class names
   const badgeClasses = [
     styles.badge,
-    isEnabled ? styles.enabled : styles.disabled,
-    !providerConfigured ? styles.needsProvider : '',
-    (!canToggle && providerConfigured) ? styles.nonToggleable : styles.clickable,
+    styles[badgeState],
+    canToggle ? styles.clickable : styles.nonToggleable,
     toggling ? styles.toggling : '',
   ].filter(Boolean).join(' ');
 
-  // Determine display text and tooltip
-  let displayText = isEnabled ? 'ON' : 'OFF';
-  let tooltip = `Auto-pilot: ${isEnabled ? 'Enabled' : 'Disabled'}`;
-
-  if (!providerConfigured) {
-    displayText = 'Setup';
-    tooltip = 'Click to select an AI provider';
-  } else if (viaAllNodes && isEnabled) {
-    displayText = 'ON (All Nodes)';
-    tooltip = 'Auto-pilot enabled via All Nodes room. Disable All Nodes first to change.';
-  } else if (!hasCredits) {
-    tooltip = 'Auto-pilot requires AI credits. Add credits to enable.';
-  } else if (status.message) {
-    tooltip = status.message;
-  } else if (canToggle) {
-    tooltip = `Click to ${isEnabled ? 'disable' : 'enable'} auto-pilot`;
-  }
-
-  // Add provider info to tooltip
-  if (providerConfigured && providerName) {
-    tooltip += ` • Using ${providerName}`;
-  }
-
   return (
-    <>
-      <div
-        className={badgeClasses}
-        title={tooltip}
-        onClick={handleToggle}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            handleToggle();
-          }
-        }}
-      >
-        <span className={styles.icon}>
-          {toggling ? <LoadingIcon /> : <AutoPilotIcon />}
-        </span>
-        <span className={styles.label}>Auto-pilot</span>
-        <span className={styles.status}>{displayText}</span>
-        {providerConfigured && (
-          <button
-            className={styles.settingsButton}
-            onClick={handleSettingsClick}
-            title={`Change provider (${providerName})`}
-          >
-            <SettingsIcon />
-          </button>
-        )}
-      </div>
-
-      {showProviderSelector && ReactDOM.createPortal(
-        <ProviderSelector
-          providers={providers}
-          currentProvider={status.provider}
-          onSelect={handleProviderSelect}
-          onClose={() => setShowProviderSelector(false)}
-          loading={loadingProviders}
-        />,
-        document.body
-      )}
-    </>
+    <div
+      className={badgeClasses}
+      title={tooltip}
+      onClick={handleToggle}
+      role="button"
+      tabIndex={canToggle ? 0 : -1}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && canToggle) {
+          e.preventDefault();
+          handleToggle();
+        }
+      }}
+    >
+      <span className={styles.icon}>
+        {toggling ? <LoadingIcon /> : <AutoPilotIcon />}
+      </span>
+      <span className={styles.label}>Auto-pilot</span>
+      <span className={styles.status}>{displayText}</span>
+    </div>
   );
 };
 

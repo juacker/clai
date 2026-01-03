@@ -231,6 +231,9 @@ const RoomAssignmentModal = ({ isOpen, onClose, agent, onUpdate }) => {
         onUpdate();
       }
 
+      // Dispatch event so AutoPilotBadge can refresh
+      window.dispatchEvent(new CustomEvent('agent-assignments-changed'));
+
       onClose();
     } catch (err) {
       console.error('[RoomAssignmentModal] Failed to save assignments:', err);
