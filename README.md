@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="public/icon.png" alt="CLAI" width="128" height="128">
+  <img src="public/icon.svg" alt="CLAI" width="128" height="128">
 </p>
 
-<h1 align="center">CLAI - Netdata AI Desktop</h1>
+<h1 align="center">CLAI</h1>
 
 <p align="center">
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT"></a>
