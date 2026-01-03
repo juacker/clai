@@ -16,7 +16,7 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
   const { executeCommand, commandHistory } = useCommand();
   const { handleLayoutCommand, getActiveTab } = useTabManager();
   const { setActiveContext, toggleChat, openChat, isCurrentChatOpen } = useChatManager();
-  const { focusCanvasTile } = useCommandMessaging();
+  const { focusDashboardTile } = useCommandMessaging();
   // Try to get tab context, but don't throw error if not available
   const tabContext = useContext(TabContext);
   const [inputValue, setInputValue] = useState('');
@@ -186,9 +186,9 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
         return;
       }
 
-      // Handle canvas singleton behavior - focus existing canvas instead of creating new one
-      if (command.type === 'canvas' && focusCanvasTile()) {
-        addOutputMessage('Focused existing canvas', 'success');
+      // Handle dashboard singleton behavior - focus existing dashboard instead of creating new one
+      if (command.type === 'dashboard' && focusDashboardTile()) {
+        addOutputMessage('Focused existing dashboard', 'success');
         return;
       }
 

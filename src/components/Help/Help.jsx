@@ -30,6 +30,7 @@ const Help = () => {
             <div className={styles.commandRow}><code>/help</code> <span>This reference</span></div>
             <div className={styles.commandRow}><code>/anomalies</code> <span>Anomaly detection</span></div>
             <div className={styles.commandRow}><code>/dashboard</code> <span>Chart dashboard</span></div>
+            <div className={styles.commandRow}><code>/canvas</code> <span>Whiteboard</span></div>
             <div className={styles.commandRow}><code>/reset-all</code> <span>Reset layout</span></div>
             <div className={styles.commandRow}><code>/tab</code> <span>New tab</span></div>
             <div className={styles.commandRow}><code>/tab close</code> / <code>next</code> / <code>prev</code> / <code>list</code></div>

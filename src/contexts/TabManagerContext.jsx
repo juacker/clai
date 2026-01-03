@@ -1012,6 +1012,100 @@ export const TabManagerProvider = ({ children }) => {
     return elements.some(el => el.id === elementId);
   }, [getDashboardState]);
 
+  // ============================================
+  // Canvas State Management (React Flow)
+  // ============================================
+
+  /**
+   * Get canvas state for a tab (for a specific space/room)
+   * @param {string} tabId - Tab ID
+   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
+   * @returns {Object} Canvas state { nodes: [], edges: [], commandId: null }
+   */
+  const getCanvasState = useCallback((tabId, spaceRoomKey = null) => {
+    const tab = tabs.find(t => t.id === tabId);
+    const canvas = tab?.context?.canvas || {};
+    const commandId = canvas.commandId || null;
+
+    if (!spaceRoomKey) {
+      return { nodes: [], edges: [], commandId };
+    }
+
+    const spaceRoomData = canvas.bySpaceRoom?.[spaceRoomKey] || {};
+    return {
+      nodes: spaceRoomData.nodes || [],
+      edges: spaceRoomData.edges || [],
+      commandId,
+    };
+  }, [tabs]);
+
+  /**
+   * Get canvas state for active tab
+   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
+   * @returns {Object} Canvas state { nodes: [], edges: [], commandId: null }
+   */
+  const getActiveCanvasState = useCallback((spaceRoomKey = null) => {
+    if (!activeTabId) return { nodes: [], edges: [], commandId: null };
+    return getCanvasState(activeTabId, spaceRoomKey);
+  }, [activeTabId, getCanvasState]);
+
+  /**
+   * Set canvas state for a tab (for a specific space/room)
+   * @param {string} tabId - Tab ID
+   * @param {Array} nodes - React Flow nodes array
+   * @param {Array} edges - React Flow edges array
+   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
+   */
+  const setCanvasState = useCallback((tabId, nodes, edges, spaceRoomKey) => {
+    if (!spaceRoomKey) return;
+
+    setTabs(prev =>
+      prev.map(tab => {
+        if (tab.id !== tabId) return tab;
+
+        const bySpaceRoom = tab.context?.canvas?.bySpaceRoom || {};
+
+        return {
+          ...tab,
+          context: {
+            ...tab.context,
+            canvas: {
+              ...tab.context?.canvas,
+              bySpaceRoom: {
+                ...bySpaceRoom,
+                [spaceRoomKey]: { nodes, edges },
+              },
+            },
+          },
+        };
+      })
+    );
+  }, []);
+
+  /**
+   * Set canvas command ID for a tab
+   * @param {string} tabId - Tab ID
+   * @param {string} commandId - Canvas command ID
+   */
+  const setCanvasCommandId = useCallback((tabId, commandId) => {
+    setTabs(prev =>
+      prev.map(tab => {
+        if (tab.id !== tabId) return tab;
+
+        return {
+          ...tab,
+          context: {
+            ...tab.context,
+            canvas: {
+              ...tab.context?.canvas,
+              commandId,
+            },
+          },
+        };
+      })
+    );
+  }, []);
+
   /**
    * Split a tile in the active tab
    * @param {string} tileId - Tile ID to split
@@ -1431,6 +1525,12 @@ export const TabManagerProvider = ({ children }) => {
     setDashboardCommandId,
     isElementInDashboard,
 
+    // Canvas State Management (React Flow)
+    getCanvasState,
+    getActiveCanvasState,
+    setCanvasState,
+    setCanvasCommandId,
+
     // Command Integration
     addCommandToActiveTile,
     handleLayoutCommand,
@@ -1472,6 +1572,10 @@ export const TabManagerProvider = ({ children }) => {
     clearDashboardMetrics,
     setDashboardCommandId,
     isElementInDashboard,
+    getCanvasState,
+    getActiveCanvasState,
+    setCanvasState,
+    setCanvasCommandId,
     addCommandToActiveTile,
     handleLayoutCommand,
     splitTile,

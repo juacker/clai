@@ -13,6 +13,7 @@
 import Echo from '../components/Echo';
 import Anomalies from '../components/Anomalies/Anomalies';
 import Dashboard from '../components/Dashboard/Dashboard';
+import Canvas from '../components/Canvas/Canvas';
 import Help from '../components/Help/Help';
 
 /**
@@ -23,6 +24,7 @@ export const COMMAND_COMPONENTS = {
   echo: Echo,
   anomalies: Anomalies,
   dashboard: Dashboard,
+  canvas: Canvas,
   help: Help,
 };
 
