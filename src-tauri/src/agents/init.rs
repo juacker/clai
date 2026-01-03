@@ -3,8 +3,7 @@
 //! This module handles initializing the scheduler with agent definitions
 //! and managing agent instances based on configuration.
 //!
-//! Agent definitions are now loaded from `ConfigManager` (user-configurable agents).
-//! The old `definitions/` module is deprecated and will be removed.
+//! Agent definitions are loaded from `ConfigManager` (user-configurable agents).
 
 use crate::agents::{AgentDefinition, SharedScheduler};
 use crate::auth::TokenStorage;
