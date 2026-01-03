@@ -8,7 +8,7 @@ use tauri::State;
 use crate::agents::init::{create_instances_for_room, remove_instances_for_room};
 use crate::api::client::create_client;
 use crate::api::netdata::NetdataApi;
-use crate::config::{AutopilotStatus, ProviderInfo};
+use crate::config::{AgentInfo, AutopilotStatus, ProviderInfo};
 use crate::AppState;
 
 /// Name of the "All Nodes" room in Netdata Cloud.
@@ -17,21 +17,29 @@ const ALL_NODES_ROOM_NAME: &str = "All nodes";
 /// Get the auto-pilot status for a space/room.
 ///
 /// This command:
-/// 1. Loads config to check enabled rooms and provider
+/// 1. Loads config to check enabled rooms, provider, and agents
 /// 2. Fetches rooms to find "All Nodes" room
 /// 3. Checks billing API for credits
-/// 4. Returns computed status including provider info
+/// 4. Returns computed status including provider and agent info
 #[tauri::command]
 pub async fn get_autopilot_status(
     space_id: String,
     room_id: String,
     state: State<'_, AppState>,
 ) -> Result<AutopilotStatus, String> {
-    // Get provider info first (before any async operations)
-    let provider_info = {
+    // Get provider and agent info first (before any async operations)
+    let (provider_info, agent_info) = {
         let config_manager = state.config_manager.lock().unwrap();
         let provider = config_manager.get_ai_provider();
-        ProviderInfo::from_provider(provider.as_ref())
+        let provider_info = ProviderInfo::from_provider(provider.as_ref());
+
+        // Get agent counts
+        let agents = config_manager.get_agents();
+        let total_count = agents.len();
+        let enabled_count = config_manager.count_agents_enabled(&space_id, &room_id);
+        let agent_info = AgentInfo::new(total_count, enabled_count);
+
+        (provider_info, agent_info)
     };
 
     // Get token for API calls
@@ -66,9 +74,9 @@ pub async fn get_autopilot_status(
         .map(|c| c > 0)
         .unwrap_or(false);
 
-    // No credits? Return early (but still include provider info)
+    // No credits? Return early (but still include provider and agent info)
     if !has_credits {
-        return Ok(AutopilotStatus::no_credits(provider_info));
+        return Ok(AutopilotStatus::no_credits(provider_info, agent_info));
     }
 
     // Get config for autopilot status
@@ -91,16 +99,22 @@ pub async fn get_autopilot_status(
             all_nodes_enabled,
             has_credits,
             provider_info,
+            agent_info,
         ))
     } else if all_nodes_enabled {
         // In other room, but All Nodes is enabled - inherited, can't toggle here
-        Ok(AutopilotStatus::via_all_nodes(has_credits, provider_info))
+        Ok(AutopilotStatus::via_all_nodes(
+            has_credits,
+            provider_info,
+            agent_info,
+        ))
     } else {
         // In other room, All Nodes is not enabled - can toggle for this room
         Ok(AutopilotStatus::available(
             current_room_enabled,
             has_credits,
             provider_info,
+            agent_info,
         ))
     }
 }

@@ -335,7 +335,7 @@ pub struct AutopilotStatus {
     pub enabled: bool,
 
     /// Can the user toggle auto-pilot in the current room?
-    /// False if: no credits, no provider, or enabled via All Nodes (and not in All Nodes room).
+    /// False if: no credits, no provider, no agents, or enabled via All Nodes (and not in All Nodes room).
     pub can_toggle: bool,
 
     /// Is this room's auto-pilot inherited from "All Nodes"?
@@ -346,6 +346,15 @@ pub struct AutopilotStatus {
 
     /// Is an AI provider configured?
     pub provider_configured: bool,
+
+    /// Are any agents configured in the system?
+    pub has_agents: bool,
+
+    /// Number of agents enabled for this space/room.
+    pub enabled_agent_count: usize,
+
+    /// Total number of agents configured.
+    pub total_agent_count: usize,
 
     /// Display name of the configured provider (if any).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -360,6 +369,7 @@ pub struct AutopilotStatus {
     /// - "Enabled via All Nodes"
     /// - "Requires AI credits"
     /// - "Select AI provider"
+    /// - "No agents configured"
     /// - "Disable in All Nodes first"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
@@ -384,11 +394,50 @@ impl ProviderInfo {
     }
 }
 
+/// Agent information for status constructors.
+#[derive(Debug, Clone)]
+pub struct AgentInfo {
+    /// Whether any agents are configured.
+    pub has_agents: bool,
+    /// Number of agents enabled for the current space/room.
+    pub enabled_count: usize,
+    /// Total number of agents configured.
+    pub total_count: usize,
+}
+
+impl AgentInfo {
+    /// Creates agent info with the given counts.
+    pub fn new(total_count: usize, enabled_count: usize) -> Self {
+        Self {
+            has_agents: total_count > 0,
+            enabled_count,
+            total_count,
+        }
+    }
+
+    /// Creates agent info indicating no agents are configured.
+    #[cfg(test)]
+    pub fn none() -> Self {
+        Self {
+            has_agents: false,
+            enabled_count: 0,
+            total_count: 0,
+        }
+    }
+}
+
 impl AutopilotStatus {
     /// Creates a status for when the toggle is available.
-    pub fn available(enabled: bool, has_credits: bool, provider: ProviderInfo) -> Self {
-        let can_toggle = has_credits && provider.configured;
-        let message = if !provider.configured {
+    pub fn available(
+        enabled: bool,
+        has_credits: bool,
+        provider: ProviderInfo,
+        agents: AgentInfo,
+    ) -> Self {
+        let can_toggle = has_credits && provider.configured && agents.has_agents;
+        let message = if !agents.has_agents {
+            Some("No agents configured".to_string())
+        } else if !provider.configured {
             Some("Select AI provider".to_string())
         } else if !has_credits {
             Some("Requires AI credits".to_string())
@@ -402,6 +451,9 @@ impl AutopilotStatus {
             via_all_nodes: false,
             has_credits,
             provider_configured: provider.configured,
+            has_agents: agents.has_agents,
+            enabled_agent_count: agents.enabled_count,
+            total_agent_count: agents.total_count,
             provider_name: provider.name,
             provider: provider.provider,
             message,
@@ -409,13 +461,16 @@ impl AutopilotStatus {
     }
 
     /// Creates a status for when enabled via All Nodes room.
-    pub fn via_all_nodes(has_credits: bool, provider: ProviderInfo) -> Self {
+    pub fn via_all_nodes(has_credits: bool, provider: ProviderInfo, agents: AgentInfo) -> Self {
         Self {
             enabled: true,
             can_toggle: false,
             via_all_nodes: true,
             has_credits,
             provider_configured: provider.configured,
+            has_agents: agents.has_agents,
+            enabled_agent_count: agents.enabled_count,
+            total_agent_count: agents.total_count,
             provider_name: provider.name,
             provider: provider.provider,
             message: Some("Enabled via All Nodes".to_string()),
@@ -423,13 +478,16 @@ impl AutopilotStatus {
     }
 
     /// Creates a status for when no credits are available.
-    pub fn no_credits(provider: ProviderInfo) -> Self {
+    pub fn no_credits(provider: ProviderInfo, agents: AgentInfo) -> Self {
         Self {
             enabled: false,
             can_toggle: false,
             via_all_nodes: false,
             has_credits: false,
             provider_configured: provider.configured,
+            has_agents: agents.has_agents,
+            enabled_agent_count: agents.enabled_count,
+            total_agent_count: agents.total_count,
             provider_name: provider.name,
             provider: provider.provider,
             message: Some("Requires AI credits".to_string()),
@@ -496,26 +554,42 @@ mod tests {
             name: Some("Claude Code".to_string()),
             provider: Some(AiProvider::Claude),
         };
+        let agents = AgentInfo::new(2, 1); // 2 total, 1 enabled
 
-        let available = AutopilotStatus::available(true, true, provider.clone());
+        let available = AutopilotStatus::available(true, true, provider.clone(), agents.clone());
         assert!(available.enabled);
         assert!(available.can_toggle);
         assert!(!available.via_all_nodes);
         assert!(available.provider_configured);
+        assert!(available.has_agents);
+        assert_eq!(available.enabled_agent_count, 1);
+        assert_eq!(available.total_agent_count, 2);
         assert!(available.message.is_none());
 
-        let via_all = AutopilotStatus::via_all_nodes(true, provider.clone());
+        let via_all = AutopilotStatus::via_all_nodes(true, provider.clone(), agents.clone());
         assert!(via_all.enabled);
         assert!(!via_all.can_toggle);
         assert!(via_all.via_all_nodes);
         assert!(via_all.provider_configured);
+        assert!(via_all.has_agents);
         assert!(via_all.message.is_some());
 
-        let no_credits = AutopilotStatus::no_credits(provider);
+        let no_credits = AutopilotStatus::no_credits(provider.clone(), agents.clone());
         assert!(!no_credits.enabled);
         assert!(!no_credits.can_toggle);
         assert!(!no_credits.has_credits);
         assert!(no_credits.provider_configured);
+        assert!(no_credits.has_agents);
+
+        // Test with no agents configured
+        let no_agents = AgentInfo::none();
+        let no_agents_status = AutopilotStatus::available(false, true, provider, no_agents);
+        assert!(!no_agents_status.can_toggle); // Can't toggle without agents
+        assert!(!no_agents_status.has_agents);
+        assert_eq!(
+            no_agents_status.message,
+            Some("No agents configured".to_string())
+        );
     }
 
     #[test]

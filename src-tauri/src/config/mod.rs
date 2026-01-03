@@ -12,7 +12,7 @@
 pub mod types;
 
 pub use types::{
-    AgentConfig, AiProvider, AutopilotStatus, ClaiConfig, ProviderInfo, SpaceAutopilot,
+    AgentConfig, AgentInfo, AiProvider, AutopilotStatus, ClaiConfig, ProviderInfo, SpaceAutopilot,
     SpaceConfig, SpaceRoomPair,
 };
 
