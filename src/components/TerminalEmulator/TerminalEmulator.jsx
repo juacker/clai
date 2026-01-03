@@ -9,6 +9,7 @@ import { handleContextCommand, isContextCommand } from '../../utils/contextComma
 import { isCommandSupported } from '../../utils/commandRegistry';
 import ContextPanel from '../ContextPanel/ContextPanel';
 import UserAvatar from '../UserAvatar';
+import { SettingsModal } from '../Settings';
 import styles from './TerminalEmulator.module.css';
 
 const TerminalEmulator = ({ userInfo, onSendToChat }) => {
@@ -23,6 +24,7 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
   const [outputMessages, setOutputMessages] = useState([]);
   const [isOutputVisible, setIsOutputVisible] = useState(true);
   const [isHoveringOutput, setIsHoveringOutput] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const inputRef = useRef(null);
   const outputRef = useRef(null);
   const autoCollapseTimerRef = useRef(null);
@@ -262,6 +264,11 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
     }
   };
 
+  // Handle settings menu click
+  const handleSettingsClick = () => {
+    setIsSettingsOpen(true);
+  };
+
   return (
     <div className={`${styles.terminal} ${isChatOpen ? styles.chatOpen : ''}`} onClick={handleTerminalClick}>
       {/* Context Panel - shows space/room badges */}
@@ -293,6 +300,7 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
             userName={userInfo?.name || userInfo?.email}
             size="small"
             showMenu={true}
+            onSettingsClick={handleSettingsClick}
           />
         </div>
 
@@ -333,6 +341,12 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
           ))}
         </div>
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
     </div>
   );
 };

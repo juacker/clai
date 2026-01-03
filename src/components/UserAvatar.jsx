@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { clearToken } from '../api/client';
 import styles from './UserAvatar.module.css';
 
-const UserAvatar = ({ avatarUrl, userName, size = 'medium', showMenu = false }) => {
+const UserAvatar = ({ avatarUrl, userName, size = 'medium', showMenu = false, onSettingsClick }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const navigate = useNavigate();
@@ -26,6 +26,13 @@ const UserAvatar = ({ avatarUrl, userName, size = 'medium', showMenu = false }) 
 
     // Redirect to login page
     navigate('/login');
+  };
+
+  const handleSettingsClick = () => {
+    setIsMenuOpen(false);
+    if (onSettingsClick) {
+      onSettingsClick();
+    }
   };
 
   const toggleMenu = (e) => {
@@ -82,6 +89,10 @@ const UserAvatar = ({ avatarUrl, userName, size = 'medium', showMenu = false }) 
             <div className={styles.menuUserName}>{userName}</div>
           </div>
           <div className={styles.menuDivider} />
+          <button className={styles.menuItem} onClick={handleSettingsClick}>
+            <span className={styles.menuIcon}>⚙️</span>
+            <span>Settings</span>
+          </button>
           <button className={styles.menuItem} onClick={handleLogout}>
             <span className={styles.menuIcon}>🚪</span>
             <span>Logout</span>

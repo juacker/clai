@@ -1,0 +1,225 @@
+/**
+ * ProviderSettings Component Styles
+ *
+ * AI Provider selection list
+ */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Section Header */
+.sectionHeader {
+  margin-bottom: 4px;
+}
+
+.sectionTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary, #1a1a1a);
+  margin: 0 0 8px 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.sectionDescription {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.noProviders {
+  color: var(--color-warning, #f59e0b);
+}
+
+/* Loading State */
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  gap: 12px;
+}
+
+/* Error State */
+.errorState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  color: var(--color-critical, #DC2626);
+  font-size: 14px;
+  gap: 8px;
+}
+
+.errorBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--color-critical-alpha-10, rgba(220, 38, 38, 0.1));
+  border: 1px solid var(--color-critical-alpha-30, rgba(220, 38, 38, 0.3));
+  border-radius: 8px;
+  color: var(--color-critical, #DC2626);
+  font-size: 13px;
+}
+
+/* Provider List */
+.providerList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.providerItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-primary);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.providerItem:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-medium);
+  transform: translateX(2px);
+}
+
+.providerItem.selected {
+  background: var(--color-primary-alpha-05, rgba(99, 102, 241, 0.05));
+  border-color: var(--color-primary-alpha-30, rgba(99, 102, 241, 0.3));
+}
+
+.providerItem.selected:hover {
+  background: var(--color-primary-alpha-10, rgba(99, 102, 241, 0.1));
+}
+
+.providerItem.unavailable {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: var(--color-bg-secondary);
+}
+
+.providerItem.unavailable:hover {
+  transform: none;
+  border-color: var(--color-border-light);
+}
+
+/* Provider Info */
+.providerInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.providerMain {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.providerName {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--color-text-primary, #1a1a1a);
+}
+
+.providerItem.selected .providerName {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.providerVersion {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+}
+
+.providerCommand {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.providerCommand code {
+  background: var(--color-overlay-06);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+}
+
+.providerError {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-critical, #DC2626);
+}
+
+.providerError svg {
+  flex-shrink: 0;
+}
+
+/* Check Icon */
+.checkIcon {
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  animation: checkmarkAppear 0.2s ease;
+}
+
+.savingIcon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Hint */
+.hint {
+  padding: 16px;
+  background: var(--color-bg-secondary);
+  border-radius: 8px;
+  margin-top: 8px;
+}
+
+.hint p {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Spinner Animation */
+.spinner {
+  animation: spin 1s linear infinite;
+  will-change: transform;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes checkmarkAppear {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
