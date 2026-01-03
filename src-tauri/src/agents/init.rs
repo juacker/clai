@@ -36,7 +36,9 @@ fn agent_config_to_definition(config: &AgentConfig) -> AgentDefinition {
 ///
 /// This should be called once at app startup. It:
 /// 1. Registers all user-configured agents as definitions
-/// 2. If user is logged in, restores agent instances for enabled rooms
+/// 2. If user is logged in, restores agent instances for rooms where:
+///    - The agent is assigned to the room (agent.enabled_rooms)
+///    - Autopilot is enabled for that room (space.autopilot.enabled_rooms)
 pub fn initialize_scheduler(
     scheduler: &SharedScheduler,
     config_manager: &ConfigManager,
@@ -60,10 +62,19 @@ pub fn initialize_scheduler(
         return;
     }
 
-    // Restore agent instances from agent enabled_rooms
+    // Restore agent instances from agent enabled_rooms (if autopilot is enabled)
     for agent_config in &config.agents {
         for room in &agent_config.enabled_rooms {
-            scheduler.create_instance(&agent_config.id, &room.space_id, &room.room_id);
+            // Only create instance if autopilot is enabled for this room
+            let autopilot_enabled = config
+                .spaces
+                .get(&room.space_id)
+                .map(|s| s.autopilot.is_room_enabled(&room.room_id))
+                .unwrap_or(false);
+
+            if autopilot_enabled {
+                scheduler.create_instance(&agent_config.id, &room.space_id, &room.room_id);
+            }
         }
     }
 }
@@ -73,7 +84,9 @@ pub fn initialize_scheduler(
 /// Called after user logs in (if they weren't logged in at app startup).
 /// Takes the config directly to avoid holding locks across await points.
 ///
-/// This registers all agent definitions and creates instances for enabled rooms.
+/// This registers all agent definitions and creates instances for rooms where:
+/// 1. The agent is assigned to the room (agent.enabled_rooms)
+/// 2. Autopilot is enabled for that room (space.autopilot.enabled_rooms)
 pub async fn restore_instances_from_config(
     scheduler: &SharedScheduler,
     config: crate::config::ClaiConfig,
@@ -86,7 +99,16 @@ pub async fn restore_instances_from_config(
         scheduler.register_definition(definition);
 
         for room in &agent_config.enabled_rooms {
-            scheduler.create_instance(&agent_config.id, &room.space_id, &room.room_id);
+            // Only create instance if autopilot is enabled for this room
+            let autopilot_enabled = config
+                .spaces
+                .get(&room.space_id)
+                .map(|s| s.autopilot.is_room_enabled(&room.room_id))
+                .unwrap_or(false);
+
+            if autopilot_enabled {
+                scheduler.create_instance(&agent_config.id, &room.space_id, &room.room_id);
+            }
         }
     }
 }
@@ -124,10 +146,10 @@ pub async fn create_instance_for_agent(
     scheduler.create_instance(agent_id, space_id, room_id);
 }
 
-/// Creates scheduler instances for ALL agents in a room.
+/// Creates scheduler instances for agents assigned to a room.
 ///
-/// Used by the legacy autopilot system when enabling a room.
-/// For new code, prefer using `create_instance_for_agent` for specific agents.
+/// Only creates instances for agents that have the room in their `enabled_rooms`.
+/// Called when auto-pilot is toggled ON for a room.
 pub async fn create_instances_for_room(
     scheduler: &SharedScheduler,
     config: &crate::config::ClaiConfig,
@@ -137,6 +159,11 @@ pub async fn create_instances_for_room(
     let mut scheduler = scheduler.lock().await;
 
     for agent_config in &config.agents {
+        // Only create instance if agent is assigned to this room
+        if !agent_config.is_enabled_for(space_id, room_id) {
+            continue;
+        }
+
         // Register definition if not already registered
         let definition = agent_config_to_definition(agent_config);
         scheduler.register_definition(definition);
