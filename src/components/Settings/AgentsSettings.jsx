@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { getAgents, createAgent, updateAgent, deleteAgent } from '../../api/client';
+import { getAgents, createAgent, updateAgent, deleteAgent, getSpaces } from '../../api/client';
 import AgentCard from './AgentCard';
 import AgentFormModal from './AgentFormModal';
 import styles from './AgentsSettings.module.css';
@@ -47,29 +47,44 @@ const WarningIcon = () => (
  */
 const AgentsSettings = () => {
   const [agents, setAgents] = useState([]);
+  const [spaces, setSpaces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
-  // Fetch agents on mount
+  // Fetch agents and spaces on mount
   useEffect(() => {
-    fetchAgents();
+    fetchData();
   }, []);
 
-  const fetchAgents = async () => {
+  const fetchData = async () => {
     setLoading(true);
     setError(null);
 
+    try {
+      const [agentsResult, spacesResult] = await Promise.all([
+        getAgents(),
+        getSpaces(),
+      ]);
+      setAgents(agentsResult || []);
+      setSpaces(spacesResult || []);
+    } catch (err) {
+      console.error('[AgentsSettings] Failed to fetch data:', err);
+      setError('Failed to load agents. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAgents = async () => {
     try {
       const result = await getAgents();
       setAgents(result || []);
     } catch (err) {
       console.error('[AgentsSettings] Failed to fetch agents:', err);
       setError('Failed to load agents. Please try again.');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -194,8 +209,10 @@ const AgentsSettings = () => {
             <AgentCard
               key={agent.id}
               agent={agent}
+              spaces={spaces}
               onEdit={() => handleEdit(agent)}
               onDelete={() => handleDelete(agent.id)}
+              onUpdate={fetchAgents}
               isDeleting={deletingId === agent.id}
             />
           ))}

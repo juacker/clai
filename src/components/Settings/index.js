@@ -10,3 +10,4 @@ export { default as AgentsSettings } from './AgentsSettings';
 export { default as AgentCard } from './AgentCard';
 export { default as AgentFormModal } from './AgentFormModal';
 export { default as IntervalSelect } from './IntervalSelect';
+export { default as RoomAssignmentModal } from './RoomAssignmentModal';

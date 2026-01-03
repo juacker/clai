@@ -63,12 +63,41 @@
   text-overflow: ellipsis;
 }
 
-.enabledInfo {
-  font-size: 11px;
-  color: var(--color-success, #059669);
-  display: flex;
+/* Room Assignment Button */
+.roomAssignButton {
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px dashed var(--color-border-medium);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  margin-top: 4px;
+  width: fit-content;
+}
+
+.roomAssignButton:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.roomAssignButtonActive {
+  background: var(--color-success-alpha-10, rgba(5, 150, 105, 0.1));
+  border-style: solid;
+  border-color: var(--color-success-alpha-30, rgba(5, 150, 105, 0.3));
+  color: var(--color-success, #059669);
+}
+
+.roomAssignButtonActive:hover {
+  background: var(--color-success-alpha-15, rgba(5, 150, 105, 0.15));
+  border-color: var(--color-success, #059669);
+  color: var(--color-success, #059669);
 }
 
 /* Card Actions */

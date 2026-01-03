@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import RoomAssignmentModal from './RoomAssignmentModal';
 import styles from './AgentCard.module.css';
 
 /**
@@ -36,6 +37,69 @@ const LoadingIcon = () => (
     <path d="M12 2a10 10 0 0 1 10 10" />
   </svg>
 );
+
+/**
+ * Room/location icon
+ */
+const RoomIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+    <circle cx="12" cy="10" r="3" />
+  </svg>
+);
+
+/**
+ * Format room assignments for display
+ * Shows space names with room counts, falls back to total count if too long
+ * @param {Array} enabledRooms - Array of {space_id, room_id}
+ * @param {Array} spaces - Array of space objects with {id, name}
+ * @param {number} maxLength - Maximum display length before fallback
+ */
+const formatRoomAssignments = (enabledRooms, spaces, maxLength = 30) => {
+  if (!enabledRooms || enabledRooms.length === 0) {
+    return 'Assign to rooms';
+  }
+
+  // Group rooms by space
+  const roomsBySpace = {};
+  for (const room of enabledRooms) {
+    if (!roomsBySpace[room.space_id]) {
+      roomsBySpace[room.space_id] = 0;
+    }
+    roomsBySpace[room.space_id]++;
+  }
+
+  // Build display string with space names
+  const spaceParts = [];
+  for (const [spaceId, count] of Object.entries(roomsBySpace)) {
+    const space = spaces?.find(s => s.id === spaceId);
+    const spaceName = space?.name || 'Unknown';
+    if (count === 1) {
+      spaceParts.push(spaceName);
+    } else {
+      spaceParts.push(`${spaceName} (${count})`);
+    }
+  }
+
+  // Try showing all spaces
+  let display = spaceParts.join(', ');
+  if (display.length <= maxLength) {
+    return display;
+  }
+
+  // Try showing first space + count
+  if (spaceParts.length > 1) {
+    const remaining = enabledRooms.length - roomsBySpace[Object.keys(roomsBySpace)[0]];
+    display = `${spaceParts[0]} +${remaining}`;
+    if (display.length <= maxLength) {
+      return display;
+    }
+  }
+
+  // Fall back to count
+  const count = enabledRooms.length;
+  return `${count} room${count !== 1 ? 's' : ''}`;
+};
 
 /**
  * Format interval for display
@@ -76,12 +140,15 @@ const truncateDescription = (text, maxLength = 120) => {
  *
  * @param {Object} props
  * @param {Object} props.agent - The agent data
+ * @param {Array} props.spaces - Available spaces for name lookup
  * @param {Function} props.onEdit - Callback when edit is clicked
  * @param {Function} props.onDelete - Callback when delete is clicked
+ * @param {Function} props.onUpdate - Callback when agent data changes (e.g., room assignments)
  * @param {boolean} props.isDeleting - Whether deletion is in progress
  */
-const AgentCard = ({ agent, onEdit, onDelete, isDeleting }) => {
+const AgentCard = ({ agent, spaces, onEdit, onDelete, onUpdate, isDeleting }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRoomAssignment, setShowRoomAssignment] = useState(false);
 
   const handleDeleteClick = () => {
     setShowDeleteConfirm(true);
@@ -95,6 +162,8 @@ const AgentCard = ({ agent, onEdit, onDelete, isDeleting }) => {
   const handleCancelDelete = () => {
     setShowDeleteConfirm(false);
   };
+
+  const roomCount = agent.enabledRooms?.length || 0;
 
   return (
     <div className={styles.card}>
@@ -112,11 +181,13 @@ const AgentCard = ({ agent, onEdit, onDelete, isDeleting }) => {
           </p>
         )}
 
-        {agent.enabledRooms && agent.enabledRooms.length > 0 && (
-          <div className={styles.enabledInfo}>
-            Active in {agent.enabledRooms.length} room{agent.enabledRooms.length !== 1 ? 's' : ''}
-          </div>
-        )}
+        <button
+          className={`${styles.roomAssignButton} ${roomCount > 0 ? styles.roomAssignButtonActive : ''}`}
+          onClick={() => setShowRoomAssignment(true)}
+        >
+          <RoomIcon />
+          <span>{formatRoomAssignments(agent.enabledRooms, spaces)}</span>
+        </button>
       </div>
 
       <div className={styles.cardActions}>
@@ -157,6 +228,14 @@ const AgentCard = ({ agent, onEdit, onDelete, isDeleting }) => {
           </>
         )}
       </div>
+
+      {/* Room Assignment Modal */}
+      <RoomAssignmentModal
+        isOpen={showRoomAssignment}
+        onClose={() => setShowRoomAssignment(false)}
+        agent={agent}
+        onUpdate={onUpdate}
+      />
     </div>
   );
 };
