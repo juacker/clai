@@ -114,6 +114,8 @@ fn command_exists(cmd: &str) -> bool {
 }
 
 /// Gets the version of a command by running `<cmd> --version`.
+/// Currently unused for performance reasons, but kept for future use.
+#[allow(dead_code)]
 fn get_command_version(cmd: &str) -> Option<String> {
     let mut command = get_host_command(cmd);
     command.arg("--version");
@@ -129,10 +131,14 @@ fn get_command_version(cmd: &str) -> Option<String> {
 }
 
 /// Checks if a provider is available and can be executed.
+///
+/// Note: Version detection is skipped for performance reasons.
+/// Running `<cmd> --version` can take 1-2 seconds per provider,
+/// causing noticeable UI delays when opening settings.
 pub fn check_provider(provider: &AiProvider) -> AvailableProvider {
     let cmd = provider.command();
 
-    // First check if command exists
+    // Check if command exists (fast - just runs `which`)
     if !command_exists(cmd) {
         return AvailableProvider::unavailable(
             provider.clone(),
@@ -144,12 +150,8 @@ pub fn check_provider(provider: &AiProvider) -> AvailableProvider {
         );
     }
 
-    // Try to get version to verify it's executable
-    let version = get_command_version(cmd);
-
-    // If we got a version, it's available
-    // If not, it might still work but we couldn't get version
-    AvailableProvider::available(provider.clone(), version)
+    // Skip version detection for performance - spawning CLIs is slow
+    AvailableProvider::available(provider.clone(), None)
 }
 
 /// Gets all known providers with their availability status.
@@ -210,10 +212,11 @@ mod tests {
     fn test_available_provider_creation() {
         let provider = AiProvider::Claude;
 
-        let available = AvailableProvider::available(provider.clone(), Some("1.0.0".to_string()));
+        // Version is now optional (skipped for performance)
+        let available = AvailableProvider::available(provider.clone(), None);
         assert!(available.available);
         assert_eq!(available.name, "Claude Code");
-        assert_eq!(available.version, Some("1.0.0".to_string()));
+        assert_eq!(available.version, None);
 
         let unavailable = AvailableProvider::unavailable(provider, "Not found".to_string());
         assert!(!unavailable.available);
