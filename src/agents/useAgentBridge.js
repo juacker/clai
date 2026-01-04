@@ -2,7 +2,13 @@
  * useAgentBridge Hook
  *
  * This hook initializes the agent bridge and registers tool handlers
- * that interact with the TabManager and Dashboard.
+ * that interact with the TabManager, Dashboard, and Canvas.
+ *
+ * Tool Categories:
+ * - agent.* - Agent lifecycle (setup)
+ * - dashboard.* - Chart management (addChart, removeChart, etc.)
+ * - tabs.* - Tile layout management (splitTile, removeTile, etc.)
+ * - canvas.* - Node-based canvas (addChart, addStatusBadge, addText, addEdge, etc.)
  *
  * Usage:
  * ```jsx
@@ -38,6 +44,16 @@ const generateChartId = () => `chart_${Date.now()}_${Math.random().toString(36).
 const generateTileId = () => `tile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 /**
+ * Generate a unique node ID
+ */
+const generateNodeId = (prefix = 'node') => `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+/**
+ * Generate a unique edge ID
+ */
+const generateEdgeId = (sourceId, targetId) => `edge_${sourceId}_${targetId}_${Date.now()}`;
+
+/**
  * Hook to initialize and connect the agent bridge to TabManager
  */
 export const useAgentBridge = () => {
@@ -57,6 +73,8 @@ export const useAgentBridge = () => {
     removeDashboardElement,
     clearDashboardMetrics,
     getDashboardState,
+    getCanvasState,
+    setCanvasState,
   } = tabManager;
 
   // Store tabManager ref for handlers (avoids stale closure issues)
@@ -369,6 +387,253 @@ export const useAgentBridge = () => {
       };
     });
 
+    // =========================================================================
+    // Canvas Tool Handlers
+    // =========================================================================
+
+    registerToolHandler('canvas.addChart', async (request) => {
+      const { agentId, spaceId, roomId, params } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
+
+      if (!tabId) {
+        throw new Error('No tab found for this agent. Call agent.setup first.');
+      }
+
+      const spaceRoomKey = `${spaceId}_${roomId}`;
+      const nodeId = generateNodeId('chart');
+
+      // Get current canvas state
+      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
+      const currentNodes = canvasState.nodes || [];
+      const currentEdges = canvasState.edges || [];
+
+      // Create the chart node
+      const newNode = {
+        id: nodeId,
+        type: 'chart',
+        position: { x: params.x, y: params.y },
+        data: {
+          context: params.context,
+          title: params.title || null,
+          groupBy: params.groupBy || [],
+          filterBy: params.filterBy || {},
+          timeRange: params.timeRange || '15m',
+          width: params.width || 400,
+          height: params.height || 300,
+        },
+      };
+
+      // Update canvas state
+      tabManagerRef.current.setCanvasState(
+        tabId,
+        [...currentNodes, newNode],
+        currentEdges,
+        spaceRoomKey
+      );
+
+      return { nodeId };
+    });
+
+    registerToolHandler('canvas.addStatusBadge', async (request) => {
+      const { agentId, spaceId, roomId, params } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
+
+      if (!tabId) {
+        throw new Error('No tab found for this agent. Call agent.setup first.');
+      }
+
+      const spaceRoomKey = `${spaceId}_${roomId}`;
+      const nodeId = generateNodeId('badge');
+
+      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
+      const currentNodes = canvasState.nodes || [];
+      const currentEdges = canvasState.edges || [];
+
+      const newNode = {
+        id: nodeId,
+        type: 'statusBadge',
+        position: { x: params.x, y: params.y },
+        data: {
+          status: params.status,
+          message: params.message,
+          title: params.title || null,
+          showTimestamp: false,
+          timestamp: new Date().toISOString(),
+        },
+      };
+
+      tabManagerRef.current.setCanvasState(
+        tabId,
+        [...currentNodes, newNode],
+        currentEdges,
+        spaceRoomKey
+      );
+
+      return { nodeId };
+    });
+
+    registerToolHandler('canvas.addText', async (request) => {
+      const { agentId, spaceId, roomId, params } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
+
+      if (!tabId) {
+        throw new Error('No tab found for this agent. Call agent.setup first.');
+      }
+
+      const spaceRoomKey = `${spaceId}_${roomId}`;
+      const nodeId = generateNodeId('text');
+
+      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
+      const currentNodes = canvasState.nodes || [];
+      const currentEdges = canvasState.edges || [];
+
+      const newNode = {
+        id: nodeId,
+        type: 'text',
+        position: { x: params.x, y: params.y },
+        data: {
+          text: params.text,
+          size: params.size || 'medium',
+          color: params.color || null,
+          backgroundColor: params.backgroundColor || null,
+          align: 'left',
+          showHandles: true,
+        },
+      };
+
+      tabManagerRef.current.setCanvasState(
+        tabId,
+        [...currentNodes, newNode],
+        currentEdges,
+        spaceRoomKey
+      );
+
+      return { nodeId };
+    });
+
+    registerToolHandler('canvas.addEdge', async (request) => {
+      const { agentId, spaceId, roomId, params } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
+
+      if (!tabId) {
+        throw new Error('No tab found for this agent. Call agent.setup first.');
+      }
+
+      const spaceRoomKey = `${spaceId}_${roomId}`;
+      const edgeId = generateEdgeId(params.sourceId, params.targetId);
+
+      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
+      const currentNodes = canvasState.nodes || [];
+      const currentEdges = canvasState.edges || [];
+
+      const newEdge = {
+        id: edgeId,
+        source: params.sourceId,
+        target: params.targetId,
+        type: 'smoothstep',
+        animated: params.animated !== false,
+        label: params.label || undefined,
+      };
+
+      tabManagerRef.current.setCanvasState(
+        tabId,
+        currentNodes,
+        [...currentEdges, newEdge],
+        spaceRoomKey
+      );
+
+      return { edgeId };
+    });
+
+    registerToolHandler('canvas.removeNode', async (request) => {
+      const { agentId, spaceId, roomId, params } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
+
+      if (!tabId) {
+        throw new Error('No tab found for this agent');
+      }
+
+      const spaceRoomKey = `${spaceId}_${roomId}`;
+      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
+      const currentNodes = canvasState.nodes || [];
+      const currentEdges = canvasState.edges || [];
+
+      // Remove node and any connected edges
+      const filteredNodes = currentNodes.filter(n => n.id !== params.nodeId);
+      const filteredEdges = currentEdges.filter(
+        e => e.source !== params.nodeId && e.target !== params.nodeId
+      );
+
+      tabManagerRef.current.setCanvasState(
+        tabId,
+        filteredNodes,
+        filteredEdges,
+        spaceRoomKey
+      );
+
+      return { success: true };
+    });
+
+    registerToolHandler('canvas.removeEdge', async (request) => {
+      const { agentId, spaceId, roomId, params } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
+
+      if (!tabId) {
+        throw new Error('No tab found for this agent');
+      }
+
+      const spaceRoomKey = `${spaceId}_${roomId}`;
+      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
+      const currentNodes = canvasState.nodes || [];
+      const currentEdges = canvasState.edges || [];
+
+      const filteredEdges = currentEdges.filter(e => e.id !== params.edgeId);
+
+      tabManagerRef.current.setCanvasState(
+        tabId,
+        currentNodes,
+        filteredEdges,
+        spaceRoomKey
+      );
+
+      return { success: true };
+    });
+
+    registerToolHandler('canvas.getNodes', async (request) => {
+      const { agentId, spaceId, roomId } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
+
+      if (!tabId) {
+        return [];
+      }
+
+      const spaceRoomKey = `${spaceId}_${roomId}`;
+      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
+      const nodes = canvasState.nodes || [];
+
+      // Return simplified node info
+      return nodes.map(n => ({
+        nodeId: n.id,
+        nodeType: n.type,
+        x: n.position?.x || 0,
+        y: n.position?.y || 0,
+      }));
+    });
+
+    registerToolHandler('canvas.clearCanvas', async (request) => {
+      const { agentId, spaceId, roomId } = request;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
+
+      if (!tabId) {
+        return { success: true };
+      }
+
+      const spaceRoomKey = `${spaceId}_${roomId}`;
+      tabManagerRef.current.setCanvasState(tabId, [], [], spaceRoomKey);
+
+      return { success: true };
+    });
+
     // Cleanup on unmount
     return () => {
       // Reset the ref so handlers can be re-registered on next mount
@@ -385,6 +650,15 @@ export const useAgentBridge = () => {
       unregisterToolHandler('tabs.splitTile');
       unregisterToolHandler('tabs.removeTile');
       unregisterToolHandler('tabs.getTileLayout');
+      // Canvas handlers
+      unregisterToolHandler('canvas.addChart');
+      unregisterToolHandler('canvas.addStatusBadge');
+      unregisterToolHandler('canvas.addText');
+      unregisterToolHandler('canvas.addEdge');
+      unregisterToolHandler('canvas.removeNode');
+      unregisterToolHandler('canvas.removeEdge');
+      unregisterToolHandler('canvas.getNodes');
+      unregisterToolHandler('canvas.clearCanvas');
 
       // Note: We don't call cleanupAgentBridge here because
       // other components might still be using it. It should be

@@ -1,0 +1,38 @@
+/**
+ * TextNode Styles
+ */
+
+.textNode {
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-width: 400px;
+  min-width: 50px;
+  transition: box-shadow 0.2s ease;
+}
+
+.textNode.withBackground {
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.textNode.selected {
+  box-shadow: 0 0 0 2px var(--color-primary-alpha, rgba(0, 171, 68, 0.3));
+}
+
+.text {
+  line-height: 1.5;
+}
+
+.handle {
+  width: 6px;
+  height: 6px;
+  background: var(--color-primary, #00ab44);
+  border: 1px solid white;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.textNode:hover .handle {
+  opacity: 1;
+}

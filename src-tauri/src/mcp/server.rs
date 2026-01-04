@@ -60,9 +60,13 @@ use tokio_util::sync::CancellationToken;
 use crate::api::netdata::NetdataApi;
 
 use super::bridge::JsBridge;
-use super::tools::{DashboardTools, NetdataTools, TabsTools};
+use super::tools::{CanvasTools, DashboardTools, NetdataTools, TabsTools};
 
 // Re-export parameter types from tool modules (single source of truth)
+pub use super::tools::canvas::{
+    AddChartNodeParams, AddEdgeParams, AddStatusBadgeParams, AddTextNodeParams, RemoveEdgeParams,
+    RemoveNodeParams,
+};
 pub use super::tools::dashboard::{AddChartParams, RemoveChartParams, SetTimeRangeParams};
 pub use super::tools::netdata::NetdataQueryParams;
 pub use super::tools::tabs::{RemoveTileParams, SplitTileParams};
@@ -234,6 +238,7 @@ async fn log_requests(request: Request<Body>, next: Next) -> Response {
 /// - **netdata.*** - Rust-native, execute directly via API
 /// - **dashboard.*** - JS-bridge, execute via Tauri events
 /// - **tabs.*** - JS-bridge, execute via Tauri events
+/// - **canvas.*** - JS-bridge, execute via Tauri events
 ///
 /// # Tool Filtering
 ///
@@ -248,6 +253,8 @@ pub struct McpToolServer {
     dashboard: DashboardTools,
     /// Tabs tools (JS-bridge).
     tabs: TabsTools,
+    /// Canvas tools (JS-bridge).
+    canvas: CanvasTools,
     /// Allowed tools filter. If None, all tools are allowed.
     allowed_tools: Option<Vec<String>>,
 }
@@ -265,12 +272,13 @@ impl McpToolServer {
     /// Create a new MCP tool server with bound context (without JS bridge).
     ///
     /// This constructor creates a server without a JS bridge, useful for testing.
-    /// Dashboard and tabs tools will return errors when executed.
+    /// Dashboard, tabs, and canvas tools will return errors when executed.
     pub fn new(api: Arc<NetdataApi>, agent_id: String, space_id: String, room_id: String) -> Self {
         Self {
             netdata: NetdataTools::new(api, space_id.clone(), room_id.clone()),
             dashboard: DashboardTools::new(agent_id.clone(), space_id.clone(), room_id.clone()),
-            tabs: TabsTools::new(agent_id, space_id, room_id),
+            tabs: TabsTools::new(agent_id.clone(), space_id.clone(), room_id.clone()),
+            canvas: CanvasTools::new(agent_id, space_id, room_id),
             allowed_tools: None,
         }
     }
@@ -291,7 +299,13 @@ impl McpToolServer {
                 room_id.clone(),
                 bridge.clone(),
             ),
-            tabs: TabsTools::with_bridge(agent_id, space_id, room_id, bridge),
+            tabs: TabsTools::with_bridge(
+                agent_id.clone(),
+                space_id.clone(),
+                room_id.clone(),
+                bridge.clone(),
+            ),
+            canvas: CanvasTools::with_bridge(agent_id, space_id, room_id, bridge),
             allowed_tools: None,
         }
     }
@@ -617,6 +631,176 @@ impl McpToolServer {
             serde_json::to_string(&result).unwrap_or_default(),
         )]))
     }
+
+    // -------------------------------------------------------------------------
+    // Canvas Tools (JS-bridge)
+    // -------------------------------------------------------------------------
+
+    /// Add a chart node to the canvas for metric visualization.
+    #[tool(
+        name = "canvas.addChart",
+        description = "Add a chart node to the canvas. Displays time-series data for the specified metric context. Returns the node ID."
+    )]
+    async fn canvas_add_chart(
+        &self,
+        params: Parameters<AddChartNodeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(context = %params.0.context, x = %params.0.x, y = %params.0.y, "canvas.addChart called");
+
+        let result = self.canvas.add_chart(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.addChart error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!(result = ?result, "canvas.addChart success");
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
+    /// Add a status badge node to show health status.
+    #[tool(
+        name = "canvas.addStatusBadge",
+        description = "Add a status badge node to the canvas. Shows color-coded status (healthy/warning/critical/unknown). Returns the node ID."
+    )]
+    async fn canvas_add_status_badge(
+        &self,
+        params: Parameters<AddStatusBadgeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(status = %params.0.status, x = %params.0.x, y = %params.0.y, "canvas.addStatusBadge called");
+
+        let result = self.canvas.add_status_badge(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.addStatusBadge error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!(result = ?result, "canvas.addStatusBadge success");
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
+    /// Add a text label node for annotations.
+    #[tool(
+        name = "canvas.addText",
+        description = "Add a text label node to the canvas. Useful for annotations and headings. Returns the node ID."
+    )]
+    async fn canvas_add_text(
+        &self,
+        params: Parameters<AddTextNodeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(text = %params.0.text, x = %params.0.x, y = %params.0.y, "canvas.addText called");
+
+        let result = self.canvas.add_text(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.addText error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!(result = ?result, "canvas.addText success");
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
+    /// Add an edge connecting two nodes.
+    #[tool(
+        name = "canvas.addEdge",
+        description = "Add an edge (connection) between two nodes on the canvas. Returns the edge ID."
+    )]
+    async fn canvas_add_edge(
+        &self,
+        params: Parameters<AddEdgeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(source = %params.0.source_id, target = %params.0.target_id, "canvas.addEdge called");
+
+        let result = self.canvas.add_edge(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.addEdge error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!(result = ?result, "canvas.addEdge success");
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
+    /// Remove a node from the canvas.
+    #[tool(
+        name = "canvas.removeNode",
+        description = "Remove a node from the canvas by its ID."
+    )]
+    async fn canvas_remove_node(
+        &self,
+        params: Parameters<RemoveNodeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(node_id = %params.0.node_id, "canvas.removeNode called");
+
+        self.canvas.remove_node(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.removeNode error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!("canvas.removeNode success");
+        Ok(CallToolResult::success(vec![Content::text("Node removed")]))
+    }
+
+    /// Remove an edge from the canvas.
+    #[tool(
+        name = "canvas.removeEdge",
+        description = "Remove an edge from the canvas by its ID."
+    )]
+    async fn canvas_remove_edge(
+        &self,
+        params: Parameters<RemoveEdgeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(edge_id = %params.0.edge_id, "canvas.removeEdge called");
+
+        self.canvas.remove_edge(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.removeEdge error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!("canvas.removeEdge success");
+        Ok(CallToolResult::success(vec![Content::text("Edge removed")]))
+    }
+
+    /// Get all nodes on the canvas.
+    #[tool(
+        name = "canvas.getNodes",
+        description = "Get a list of all nodes currently on the canvas with their IDs, types, and positions."
+    )]
+    async fn canvas_get_nodes(&self) -> Result<CallToolResult, McpError> {
+        tracing::debug!("canvas.getNodes called");
+
+        let result = self.canvas.get_nodes().await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.getNodes error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!(node_count = result.len(), "canvas.getNodes success");
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
+    /// Clear all nodes and edges from the canvas.
+    #[tool(
+        name = "canvas.clearCanvas",
+        description = "Remove all nodes and edges from the canvas. Use to start fresh."
+    )]
+    async fn canvas_clear_canvas(&self) -> Result<CallToolResult, McpError> {
+        tracing::debug!("canvas.clearCanvas called");
+
+        self.canvas.clear_canvas().await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.clearCanvas error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!("canvas.clearCanvas success");
+        Ok(CallToolResult::success(vec![Content::text(
+            "Canvas cleared",
+        )]))
+    }
 }
 
 // =============================================================================
@@ -632,7 +816,8 @@ impl ServerHandler for McpToolServer {
         ServerInfo {
             instructions: Some(
                 "Netdata AI Agent tools. Use netdata.query for data analysis, \
-                 dashboard.* for chart visualization, and tabs.* for layout management."
+                 dashboard.* for chart visualization, tabs.* for layout management, \
+                 and canvas.* for creating node-based visualizations."
                     .into(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
@@ -780,20 +965,32 @@ mod tests {
 
     #[test]
     fn test_tool_router_returns_all_tools() {
-        // Verify that tool_router returns all 9 tools
+        // Verify that tool_router returns all 17 tools (9 original + 8 canvas)
         let all_tools: Vec<_> = (McpToolServer::tool_router)().into_iter().collect();
-        assert_eq!(all_tools.len(), 9);
+        assert_eq!(all_tools.len(), 17);
 
         let tool_names: Vec<_> = all_tools.iter().map(|r| r.name()).collect();
+        // Netdata tools
         assert!(tool_names.contains(&"netdata.query"));
+        // Dashboard tools
         assert!(tool_names.contains(&"dashboard.addChart"));
         assert!(tool_names.contains(&"dashboard.removeChart"));
         assert!(tool_names.contains(&"dashboard.getCharts"));
         assert!(tool_names.contains(&"dashboard.clearCharts"));
         assert!(tool_names.contains(&"dashboard.setTimeRange"));
+        // Tabs tools
         assert!(tool_names.contains(&"tabs.splitTile"));
         assert!(tool_names.contains(&"tabs.removeTile"));
         assert!(tool_names.contains(&"tabs.getTileLayout"));
+        // Canvas tools
+        assert!(tool_names.contains(&"canvas.addChart"));
+        assert!(tool_names.contains(&"canvas.addStatusBadge"));
+        assert!(tool_names.contains(&"canvas.addText"));
+        assert!(tool_names.contains(&"canvas.addEdge"));
+        assert!(tool_names.contains(&"canvas.removeNode"));
+        assert!(tool_names.contains(&"canvas.removeEdge"));
+        assert!(tool_names.contains(&"canvas.getNodes"));
+        assert!(tool_names.contains(&"canvas.clearCanvas"));
     }
 
     #[tokio::test]

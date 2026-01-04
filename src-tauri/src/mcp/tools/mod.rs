@@ -8,7 +8,7 @@
 //! These tools execute directly in Rust:
 //! - `netdata.query` - Query Netdata Cloud AI for analysis
 //!
-//! ## JS-bridge (`dashboard.*`, `tabs.*`)
+//! ## JS-bridge (`dashboard.*`, `tabs.*`, `canvas.*`)
 //! These tools are defined in Rust but execute via Tauri events to the frontend:
 //! - `dashboard.addChart` - Add a metric chart to the dashboard
 //! - `dashboard.removeChart` - Remove a chart by ID
@@ -18,7 +18,16 @@
 //! - `tabs.addTile` - Add a tile to the current tab
 //! - `tabs.removeTile` - Remove a tile by ID
 //! - `tabs.getTileLayout` - Get current tile layout
+//! - `canvas.addChart` - Add a chart node to the canvas
+//! - `canvas.addStatusBadge` - Add a status badge node
+//! - `canvas.addText` - Add a text label node
+//! - `canvas.addEdge` - Connect two nodes with an edge
+//! - `canvas.removeNode` - Remove a node by ID
+//! - `canvas.removeEdge` - Remove an edge by ID
+//! - `canvas.getNodes` - List all nodes on the canvas
+//! - `canvas.clearCanvas` - Remove all nodes and edges
 
+pub mod canvas;
 pub mod dashboard;
 pub mod netdata;
 pub mod tabs;
@@ -29,6 +38,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::netdata::NetdataApi;
 
+pub use canvas::CanvasTools;
 pub use dashboard::DashboardTools;
 pub use netdata::NetdataQueryTool;
 pub use tabs::TabsTools;
