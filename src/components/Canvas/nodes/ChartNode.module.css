@@ -6,9 +6,9 @@
   background: var(--color-bg-primary, #ffffff);
   border: 1px solid var(--color-border, #e0e0e0);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease, height 0.2s ease;
 }
 
 .chartNode.selected {
@@ -30,8 +30,9 @@
 
 .chartContainer {
   width: 100%;
-  height: calc(100% - 40px);
+  min-height: calc(100% - 40px);
   position: relative;
+  overflow: visible;
 }
 
 .chartNode:not(:has(.nodeTitle)) .chartContainer {

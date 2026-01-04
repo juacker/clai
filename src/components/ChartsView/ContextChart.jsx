@@ -118,7 +118,8 @@ const ContextChart = ({
   room,
   onRemove,
   onSummaryUpdate,
-  showRefreshIndicator = true
+  showRefreshIndicator = true,
+  zoom = 1, // React Flow zoom level for crisp rendering at any zoom
 }) => {
 
   const canvasRef = useRef(null);
@@ -1023,8 +1024,10 @@ const ContextChart = ({
       const canvasWidth = width + margin.left + margin.right;
       const canvasHeight = height + margin.top + margin.bottom;
 
-      // Set canvas size with device pixel ratio
-      const dpr = window.devicePixelRatio || 1;
+      // Set canvas size with device pixel ratio and zoom for crisp rendering
+      // When zoomed in (zoom > 1), render at higher resolution to avoid pixelation
+      const baseDP = window.devicePixelRatio || 1;
+      const dpr = baseDP * Math.max(zoom, 1);
       canvas.width = canvasWidth * dpr;
       canvas.height = canvasHeight * dpr;
       canvas.style.width = `${canvasWidth}px`;
@@ -1196,7 +1199,7 @@ const ContextChart = ({
       console.error('Chart rendering error:', err);
       setError(err.message);
     }
-  }, [dimensions, chartData, selectedSeries, DEFAULT_COLORS, showTooltip, hideTooltip]);
+  }, [dimensions, chartData, selectedSeries, DEFAULT_COLORS, showTooltip, hideTooltip, zoom]);
 
   // Generate chart title
   const getChartTitle = () => {
