@@ -182,6 +182,15 @@ pub struct RemoveEdgeParams {
     pub edge_id: String,
 }
 
+/// Parameters for getting node details.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetNodeDetailsParams {
+    /// The unique ID of the node to get details for.
+    #[schemars(description = "The unique ID of the node")]
+    pub node_id: String,
+}
+
 // =============================================================================
 // Result Types
 // =============================================================================
@@ -241,6 +250,40 @@ pub struct CanvasInfo {
     pub nodes: Vec<NodeInfo>,
     /// List of edges.
     pub edges: Vec<EdgeInfo>,
+}
+
+/// Detailed information about a node, including its full data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct NodeDetailedInfo {
+    /// The node's unique ID.
+    pub node_id: String,
+    /// The node type (chart, statusBadge, text).
+    pub node_type: String,
+    /// X position.
+    pub x: f64,
+    /// Y position.
+    pub y: f64,
+    /// Full node data (varies by node type).
+    pub data: Value,
+}
+
+/// Detailed information about an edge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct EdgeDetailedInfo {
+    /// The edge's unique ID.
+    pub edge_id: String,
+    /// Source node ID.
+    pub source_id: String,
+    /// Target node ID.
+    pub target_id: String,
+    /// Optional label.
+    pub label: Option<String>,
+    /// Whether the edge is animated.
+    pub animated: Option<bool>,
 }
 
 // =============================================================================
@@ -444,6 +487,44 @@ impl CanvasTools {
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         Ok(())
     }
+
+    /// Get detailed information about a specific node.
+    pub async fn get_node_details(
+        &self,
+        params: GetNodeDetailsParams,
+    ) -> Result<NodeDetailedInfo, ToolError> {
+        let bridge = self.bridge()?;
+        let result = bridge
+            .call_tool(
+                &self.agent_id,
+                &self.space_id,
+                &self.room_id,
+                "canvas.getNodeDetails",
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
+            )
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
+    }
+
+    /// Get all nodes with their full data.
+    pub async fn get_nodes_detailed(&self) -> Result<Vec<NodeDetailedInfo>, ToolError> {
+        let bridge = self.bridge()?;
+        let result = bridge
+            .call_tool(
+                &self.agent_id,
+                &self.space_id,
+                &self.room_id,
+                "canvas.getNodesDetailed",
+                serde_json::json!({}),
+            )
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
+    }
 }
 
 // =============================================================================
@@ -532,5 +613,15 @@ mod tests {
 
         let params: RemoveNodeParams = serde_json::from_value(json).unwrap();
         assert_eq!(params.node_id, "node-123");
+    }
+
+    #[test]
+    fn test_get_node_details_params() {
+        let json = json!({
+            "nodeId": "chart_123"
+        });
+
+        let params: GetNodeDetailsParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.node_id, "chart_123");
     }
 }

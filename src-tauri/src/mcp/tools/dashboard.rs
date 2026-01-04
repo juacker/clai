@@ -91,6 +91,21 @@ pub struct ChartInfo {
     pub context: String,
 }
 
+/// Detailed information about a chart, including full configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Used via MCP tool responses
+pub struct ChartDetailedInfo {
+    /// The chart's unique ID.
+    pub chart_id: String,
+    /// The metric context being displayed.
+    pub context: String,
+    /// Grouping dimensions (if any).
+    pub group_by: Option<Vec<String>>,
+    /// Filter criteria (if any).
+    pub filter_by: Option<Value>,
+}
+
 /// Dashboard tools with agent context bound at creation time.
 ///
 /// These tools manipulate charts on the dashboard. They execute via Tauri
@@ -260,6 +275,23 @@ impl DashboardTools {
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         Ok(())
+    }
+
+    /// Get all charts with their full configuration.
+    pub async fn get_charts_detailed(&self) -> Result<Vec<ChartDetailedInfo>, ToolError> {
+        let bridge = self.bridge()?;
+        let result = bridge
+            .call_tool(
+                &self.agent_id,
+                &self.space_id,
+                &self.room_id,
+                "dashboard.getChartsDetailed",
+                serde_json::json!({}),
+            )
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 }
 

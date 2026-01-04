@@ -64,12 +64,12 @@ use super::tools::{CanvasTools, DashboardTools, NetdataTools, TabsTools};
 
 // Re-export parameter types from tool modules (single source of truth)
 pub use super::tools::canvas::{
-    AddChartNodeParams, AddEdgeParams, AddStatusBadgeParams, AddTextNodeParams, RemoveEdgeParams,
-    RemoveNodeParams,
+    AddChartNodeParams, AddEdgeParams, AddStatusBadgeParams, AddTextNodeParams,
+    GetNodeDetailsParams, RemoveEdgeParams, RemoveNodeParams,
 };
 pub use super::tools::dashboard::{AddChartParams, RemoveChartParams, SetTimeRangeParams};
 pub use super::tools::netdata::NetdataQueryParams;
-pub use super::tools::tabs::{RemoveTileParams, SplitTileParams};
+pub use super::tools::tabs::{GetTileContentParams, RemoveTileParams, SplitTileParams};
 
 // =============================================================================
 // Error Types
@@ -563,6 +563,28 @@ impl McpToolServer {
         ))]))
     }
 
+    /// Get all charts with their full configuration details.
+    #[tool(
+        name = "dashboard.getChartsDetailed",
+        description = "Get all charts with full configuration including groupBy and filterBy settings."
+    )]
+    async fn dashboard_get_charts_detailed(&self) -> Result<CallToolResult, McpError> {
+        tracing::debug!("dashboard.getChartsDetailed called");
+
+        let result = self.dashboard.get_charts_detailed().await.map_err(|e| {
+            tracing::warn!(error = %e, "dashboard.getChartsDetailed error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!(
+            chart_count = result.len(),
+            "dashboard.getChartsDetailed success"
+        );
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
     // -------------------------------------------------------------------------
     // Tabs Tools (JS-bridge)
     // -------------------------------------------------------------------------
@@ -627,6 +649,28 @@ impl McpToolServer {
         })?;
 
         tracing::debug!(layout = ?result, "tabs.getTileLayout success");
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
+    /// Get the content of a specific tile.
+    #[tool(
+        name = "tabs.getTileContent",
+        description = "Get what command is running in a tile (e.g., 'dashboard', 'canvas', 'anomalies')."
+    )]
+    async fn tabs_get_tile_content(
+        &self,
+        params: Parameters<GetTileContentParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(tile_id = %params.0.tile_id, "tabs.getTileContent called");
+
+        let result = self.tabs.get_tile_content(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "tabs.getTileContent error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!(result = ?result, "tabs.getTileContent success");
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string(&result).unwrap_or_default(),
         )]))
@@ -801,6 +845,47 @@ impl McpToolServer {
             "Canvas cleared",
         )]))
     }
+
+    /// Get detailed information about a specific node.
+    #[tool(
+        name = "canvas.getNodeDetails",
+        description = "Get full details about a specific node including its data (context, title, status, etc.)."
+    )]
+    async fn canvas_get_node_details(
+        &self,
+        params: Parameters<GetNodeDetailsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(node_id = %params.0.node_id, "canvas.getNodeDetails called");
+
+        let result = self.canvas.get_node_details(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.getNodeDetails error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!(result = ?result, "canvas.getNodeDetails success");
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
+    /// Get all nodes with their full data.
+    #[tool(
+        name = "canvas.getNodesDetailed",
+        description = "Get all nodes with their full data including context, title, status, text content, etc."
+    )]
+    async fn canvas_get_nodes_detailed(&self) -> Result<CallToolResult, McpError> {
+        tracing::debug!("canvas.getNodesDetailed called");
+
+        let result = self.canvas.get_nodes_detailed().await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.getNodesDetailed error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!(node_count = result.len(), "canvas.getNodesDetailed success");
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
 }
 
 // =============================================================================
@@ -965,24 +1050,26 @@ mod tests {
 
     #[test]
     fn test_tool_router_returns_all_tools() {
-        // Verify that tool_router returns all 17 tools (9 original + 8 canvas)
+        // Verify that tool_router returns all 21 tools
         let all_tools: Vec<_> = (McpToolServer::tool_router)().into_iter().collect();
-        assert_eq!(all_tools.len(), 17);
+        assert_eq!(all_tools.len(), 21);
 
         let tool_names: Vec<_> = all_tools.iter().map(|r| r.name()).collect();
-        // Netdata tools
+        // Netdata tools (1)
         assert!(tool_names.contains(&"netdata.query"));
-        // Dashboard tools
+        // Dashboard tools (6)
         assert!(tool_names.contains(&"dashboard.addChart"));
         assert!(tool_names.contains(&"dashboard.removeChart"));
         assert!(tool_names.contains(&"dashboard.getCharts"));
         assert!(tool_names.contains(&"dashboard.clearCharts"));
         assert!(tool_names.contains(&"dashboard.setTimeRange"));
-        // Tabs tools
+        assert!(tool_names.contains(&"dashboard.getChartsDetailed"));
+        // Tabs tools (4)
         assert!(tool_names.contains(&"tabs.splitTile"));
         assert!(tool_names.contains(&"tabs.removeTile"));
         assert!(tool_names.contains(&"tabs.getTileLayout"));
-        // Canvas tools
+        assert!(tool_names.contains(&"tabs.getTileContent"));
+        // Canvas tools (10)
         assert!(tool_names.contains(&"canvas.addChart"));
         assert!(tool_names.contains(&"canvas.addStatusBadge"));
         assert!(tool_names.contains(&"canvas.addText"));
@@ -991,6 +1078,8 @@ mod tests {
         assert!(tool_names.contains(&"canvas.removeEdge"));
         assert!(tool_names.contains(&"canvas.getNodes"));
         assert!(tool_names.contains(&"canvas.clearCanvas"));
+        assert!(tool_names.contains(&"canvas.getNodeDetails"));
+        assert!(tool_names.contains(&"canvas.getNodesDetailed"));
     }
 
     #[tokio::test]
