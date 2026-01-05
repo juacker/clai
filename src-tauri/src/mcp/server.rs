@@ -64,7 +64,7 @@ use super::tools::{CanvasTools, DashboardTools, NetdataTools, TabsTools};
 
 // Re-export parameter types from tool modules (single source of truth)
 pub use super::tools::canvas::{
-    AddChartNodeParams, AddEdgeParams, AddStatusBadgeParams, AddTextNodeParams,
+    AddChartNodeParams, AddEdgeParams, AddMarkdownNodeParams, AddStatusBadgeParams,
     GetNodeDetailsParams, RemoveEdgeParams, RemoveNodeParams, UpdateNodeParams,
 };
 pub use super::tools::dashboard::{AddChartParams, RemoveChartParams, SetTimeRangeParams};
@@ -724,23 +724,23 @@ impl McpToolServer {
         )]))
     }
 
-    /// Add a text label node for annotations.
+    /// Add a markdown node for rich text content.
     #[tool(
-        name = "canvas.addText",
-        description = "Add a text label node to the canvas. Useful for annotations and headings. Returns the node ID."
+        name = "canvas.addMarkdown",
+        description = "Add a markdown node to the canvas. Supports full markdown including headings, tables, code blocks, lists, and more. Returns the node ID."
     )]
-    async fn canvas_add_text(
+    async fn canvas_add_markdown(
         &self,
-        params: Parameters<AddTextNodeParams>,
+        params: Parameters<AddMarkdownNodeParams>,
     ) -> Result<CallToolResult, McpError> {
-        tracing::debug!(text = %params.0.text, x = %params.0.x, y = %params.0.y, "canvas.addText called");
+        tracing::debug!(content_len = %params.0.content.len(), x = %params.0.x, y = %params.0.y, "canvas.addMarkdown called");
 
-        let result = self.canvas.add_text(params.0).await.map_err(|e| {
-            tracing::warn!(error = %e, "canvas.addText error");
+        let result = self.canvas.add_markdown(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.addMarkdown error");
             McpError::internal_error(e.to_string(), None)
         })?;
 
-        tracing::debug!(result = ?result, "canvas.addText success");
+        tracing::debug!(result = ?result, "canvas.addMarkdown success");
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string(&result).unwrap_or_default(),
         )]))
@@ -1094,7 +1094,7 @@ mod tests {
         // Canvas tools (10)
         assert!(tool_names.contains(&"canvas.addChart"));
         assert!(tool_names.contains(&"canvas.addStatusBadge"));
-        assert!(tool_names.contains(&"canvas.addText"));
+        assert!(tool_names.contains(&"canvas.addMarkdown"));
         assert!(tool_names.contains(&"canvas.addEdge"));
         assert!(tool_names.contains(&"canvas.removeNode"));
         assert!(tool_names.contains(&"canvas.removeEdge"));

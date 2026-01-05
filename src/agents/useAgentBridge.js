@@ -476,9 +476,9 @@ export const useAgentBridge = () => {
       return { nodeId };
     });
 
-    registerToolHandler('canvas.addText', async (request) => {
+    registerToolHandler('canvas.addMarkdown', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
-      console.log('[Agent Canvas] addText called:', { agentId, text: params.text?.substring(0, 50), size: params.size });
+      console.log('[Agent Canvas] addMarkdown called:', { agentId, contentLen: params.content?.length });
       const tabId = getAgentTabId(agentId, spaceId, roomId);
 
       if (!tabId) {
@@ -486,7 +486,7 @@ export const useAgentBridge = () => {
       }
 
       const spaceRoomKey = `${spaceId}_${roomId}`;
-      const nodeId = generateNodeId('text');
+      const nodeId = generateNodeId('markdown');
 
       const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
       const currentNodes = canvasState.nodes || [];
@@ -494,14 +494,12 @@ export const useAgentBridge = () => {
 
       const newNode = {
         id: nodeId,
-        type: 'text',
+        type: 'markdown',
         position: { x: params.x, y: params.y },
         data: {
-          text: params.text,
-          size: params.size || 'medium',
-          color: params.color || null,
-          backgroundColor: params.backgroundColor || null,
-          align: 'left',
+          content: params.content,
+          width: params.width || 400,
+          maxHeight: params.maxHeight || null,
           showHandles: true,
         },
       };
@@ -513,7 +511,7 @@ export const useAgentBridge = () => {
         spaceRoomKey
       );
 
-      console.log('[Agent Canvas] addText success:', { nodeId, totalNodes: currentNodes.length + 1 });
+      console.log('[Agent Canvas] addMarkdown success:', { nodeId, totalNodes: currentNodes.length + 1 });
       return { nodeId };
     });
 
@@ -821,7 +819,7 @@ export const useAgentBridge = () => {
       // Canvas handlers
       unregisterToolHandler('canvas.addChart');
       unregisterToolHandler('canvas.addStatusBadge');
-      unregisterToolHandler('canvas.addText');
+      unregisterToolHandler('canvas.addMarkdown');
       unregisterToolHandler('canvas.addEdge');
       unregisterToolHandler('canvas.removeNode');
       unregisterToolHandler('canvas.removeEdge');

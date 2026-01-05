@@ -6,10 +6,10 @@
 
 import ChartNode from './ChartNode';
 import StatusBadgeNode from './StatusBadgeNode';
-import TextNode from './TextNode';
+import MarkdownNode from './MarkdownNode';
 
 // Re-export individual components
-export { ChartNode, StatusBadgeNode, TextNode };
+export { ChartNode, StatusBadgeNode, MarkdownNode };
 
 /**
  * Node types map for React Flow
@@ -18,5 +18,5 @@ export { ChartNode, StatusBadgeNode, TextNode };
 export const nodeTypes = {
   chart: ChartNode,
   statusBadge: StatusBadgeNode,
-  text: TextNode,
+  markdown: MarkdownNode,
 };

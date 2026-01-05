@@ -94,12 +94,11 @@ Query Netdata Cloud AI about your infrastructure using natural language. Ask abo
 - message: Status description
 - title: Optional title above the badge
 
-**canvas.addText** - Add text labels or headings
+**canvas.addMarkdown** - Add rich markdown content
 - x, y: Position on canvas
-- text: The text content
-- size: "small", "medium", "large", or "heading"
-- color: Optional CSS color
-- backgroundColor: Optional CSS color
+- content: Markdown text (supports headings, tables, code blocks, lists, links, etc.)
+- width: Optional width in pixels (default: 400)
+- maxHeight: Optional max height before scrolling
 
 **canvas.addEdge** - Connect two nodes with an arrow
 - sourceId: ID of the source node
@@ -252,7 +251,7 @@ mod tests {
         // All canvas tools should be documented
         assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.addChart"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.addStatusBadge"));
-        assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.addText"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.addMarkdown"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.addEdge"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.removeNode"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.removeEdge"));

@@ -109,10 +109,10 @@ pub struct AddStatusBadgeParams {
     pub title: Option<String>,
 }
 
-/// Parameters for adding a text node.
+/// Parameters for adding a markdown node.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct AddTextNodeParams {
+pub struct AddMarkdownNodeParams {
     /// X position on the canvas.
     #[schemars(description = "X coordinate on the canvas")]
     pub x: f64,
@@ -121,24 +121,19 @@ pub struct AddTextNodeParams {
     #[schemars(description = "Y coordinate on the canvas")]
     pub y: f64,
 
-    /// Text content.
-    #[schemars(description = "Text content to display")]
-    pub text: String,
+    /// Markdown content to render.
+    #[schemars(description = "Markdown content (supports tables, code blocks, lists, headings, etc.)")]
+    pub content: String,
 
-    /// Text size.
-    #[schemars(description = "Size: small, medium, large, heading")]
+    /// Width of the node in pixels.
+    #[schemars(description = "Width in pixels (default: 400)")]
     #[serde(default)]
-    pub size: Option<String>,
+    pub width: Option<f64>,
 
-    /// Text color (CSS color value).
-    #[schemars(description = "Text color (e.g., '#333', 'red')")]
+    /// Maximum height before scrolling.
+    #[schemars(description = "Maximum height in pixels before scrolling (optional)")]
     #[serde(default)]
-    pub color: Option<String>,
-
-    /// Background color (CSS color value).
-    #[schemars(description = "Background color (optional)")]
-    #[serde(default)]
-    pub background_color: Option<String>,
+    pub max_height: Option<f64>,
 }
 
 /// Parameters for adding an edge between nodes.
@@ -412,15 +407,15 @@ impl CanvasTools {
         serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 
-    /// Add a text node to the canvas.
-    pub async fn add_text(&self, params: AddTextNodeParams) -> Result<AddNodeResult, ToolError> {
+    /// Add a markdown node to the canvas.
+    pub async fn add_markdown(&self, params: AddMarkdownNodeParams) -> Result<AddNodeResult, ToolError> {
         let bridge = self.bridge()?;
         let result = bridge
             .call_tool(
                 &self.agent_id,
                 &self.space_id,
                 &self.room_id,
-                "canvas.addText",
+                "canvas.addMarkdown",
                 serde_json::to_value(&params)
                     .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
@@ -623,17 +618,17 @@ mod tests {
     }
 
     #[test]
-    fn test_add_text_node_params() {
+    fn test_add_markdown_node_params() {
         let json = json!({
             "x": 0.0,
             "y": 0.0,
-            "text": "Infrastructure Overview",
-            "size": "heading"
+            "content": "## Infrastructure Overview\n\n| Metric | Value |\n|--------|-------|\n| CPU | 85% |",
+            "width": 500.0
         });
 
-        let params: AddTextNodeParams = serde_json::from_value(json).unwrap();
-        assert_eq!(params.text, "Infrastructure Overview");
-        assert_eq!(params.size, Some("heading".to_string()));
+        let params: AddMarkdownNodeParams = serde_json::from_value(json).unwrap();
+        assert!(params.content.contains("Infrastructure Overview"));
+        assert_eq!(params.width, Some(500.0));
     }
 
     #[test]
