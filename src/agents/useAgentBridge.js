@@ -694,6 +694,57 @@ export const useAgentBridge = () => {
       }));
     });
 
+    registerToolHandler('canvas.updateNode', async (request) => {
+      const { agentId, spaceId, roomId, params } = request;
+      const { nodeId, x, y, data } = params;
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
+
+      if (!tabId) {
+        throw new Error('No tab found for this agent');
+      }
+
+      const spaceRoomKey = `${spaceId}_${roomId}`;
+      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
+      const nodes = canvasState.nodes || [];
+      const edges = canvasState.edges || [];
+
+      // Find the node to update
+      const nodeIndex = nodes.findIndex(n => n.id === nodeId);
+      if (nodeIndex === -1) {
+        throw new Error(`Node not found: ${nodeId}`);
+      }
+
+      const existingNode = nodes[nodeIndex];
+
+      // Build updated node
+      const updatedNode = {
+        ...existingNode,
+        position: {
+          x: x !== undefined ? x : existingNode.position?.x || 0,
+          y: y !== undefined ? y : existingNode.position?.y || 0,
+        },
+        data: data ? { ...existingNode.data, ...data } : existingNode.data,
+      };
+
+      // Update the nodes array
+      const newNodes = [...nodes];
+      newNodes[nodeIndex] = updatedNode;
+
+      // Save the updated canvas state
+      tabManagerRef.current.setCanvasState(tabId, newNodes, edges, spaceRoomKey);
+
+      console.log('[canvas.updateNode] Updated node:', nodeId, 'position:', updatedNode.position);
+
+      // Return the updated node info
+      return {
+        nodeId: updatedNode.id,
+        nodeType: updatedNode.type,
+        x: updatedNode.position.x,
+        y: updatedNode.position.y,
+        data: updatedNode.data || {},
+      };
+    });
+
     registerToolHandler('tabs.getTileContent', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
       const tabId = getAgentTabId(agentId, spaceId, roomId);
@@ -776,6 +827,7 @@ export const useAgentBridge = () => {
       unregisterToolHandler('canvas.removeEdge');
       unregisterToolHandler('canvas.getNodeDetails');
       unregisterToolHandler('canvas.getNodesDetailed');
+      unregisterToolHandler('canvas.updateNode');
       // Visibility handlers
       unregisterToolHandler('tabs.getTileContent');
       unregisterToolHandler('dashboard.getChartsDetailed');

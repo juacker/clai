@@ -191,6 +191,33 @@ pub struct GetNodeDetailsParams {
     pub node_id: String,
 }
 
+/// Parameters for updating a node's position and/or data.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateNodeParams {
+    /// The unique ID of the node to update.
+    #[schemars(description = "The unique ID of the node to update")]
+    pub node_id: String,
+
+    /// New X position (optional).
+    #[schemars(description = "New X coordinate (optional)")]
+    #[serde(default)]
+    pub x: Option<f64>,
+
+    /// New Y position (optional).
+    #[schemars(description = "New Y coordinate (optional)")]
+    #[serde(default)]
+    pub y: Option<f64>,
+
+    /// Partial data updates to merge with existing data (optional).
+    /// For chart nodes: title, context, groupBy, filterBy, timeRange, width, height
+    /// For statusBadge nodes: status, message, title
+    /// For text nodes: text, size, color, backgroundColor
+    #[schemars(description = "Partial data to merge with existing node data (optional)")]
+    #[serde(default)]
+    pub data: Option<Value>,
+}
+
 // =============================================================================
 // Result Types
 // =============================================================================
@@ -519,6 +546,24 @@ impl CanvasTools {
                 &self.room_id,
                 "canvas.getNodesDetailed",
                 serde_json::json!({}),
+            )
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
+    }
+
+    /// Update a node's position and/or data.
+    pub async fn update_node(&self, params: UpdateNodeParams) -> Result<NodeDetailedInfo, ToolError> {
+        let bridge = self.bridge()?;
+        let result = bridge
+            .call_tool(
+                &self.agent_id,
+                &self.space_id,
+                &self.room_id,
+                "canvas.updateNode",
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;

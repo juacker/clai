@@ -65,7 +65,7 @@ use super::tools::{CanvasTools, DashboardTools, NetdataTools, TabsTools};
 // Re-export parameter types from tool modules (single source of truth)
 pub use super::tools::canvas::{
     AddChartNodeParams, AddEdgeParams, AddStatusBadgeParams, AddTextNodeParams,
-    GetNodeDetailsParams, RemoveEdgeParams, RemoveNodeParams,
+    GetNodeDetailsParams, RemoveEdgeParams, RemoveNodeParams, UpdateNodeParams,
 };
 pub use super::tools::dashboard::{AddChartParams, RemoveChartParams, SetTimeRangeParams};
 pub use super::tools::netdata::NetdataQueryParams;
@@ -886,6 +886,28 @@ impl McpToolServer {
             serde_json::to_string(&result).unwrap_or_default(),
         )]))
     }
+
+    /// Update a node's position and/or data.
+    #[tool(
+        name = "canvas.updateNode",
+        description = "Update an existing node's position (x, y) and/or data. Use this to reposition nodes or update their properties without recreating them."
+    )]
+    async fn canvas_update_node(
+        &self,
+        params: Parameters<UpdateNodeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(node_id = %params.0.node_id, x = ?params.0.x, y = ?params.0.y, "canvas.updateNode called");
+
+        let result = self.canvas.update_node(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "canvas.updateNode error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!(result = ?result, "canvas.updateNode success");
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
 }
 
 // =============================================================================
@@ -1050,9 +1072,9 @@ mod tests {
 
     #[test]
     fn test_tool_router_returns_all_tools() {
-        // Verify that tool_router returns all 21 tools
+        // Verify that tool_router returns all 22 tools
         let all_tools: Vec<_> = (McpToolServer::tool_router)().into_iter().collect();
-        assert_eq!(all_tools.len(), 21);
+        assert_eq!(all_tools.len(), 22);
 
         let tool_names: Vec<_> = all_tools.iter().map(|r| r.name()).collect();
         // Netdata tools (1)
@@ -1080,6 +1102,7 @@ mod tests {
         assert!(tool_names.contains(&"canvas.clearCanvas"));
         assert!(tool_names.contains(&"canvas.getNodeDetails"));
         assert!(tool_names.contains(&"canvas.getNodesDetailed"));
+        assert!(tool_names.contains(&"canvas.updateNode"));
     }
 
     #[tokio::test]
