@@ -38,6 +38,32 @@ Think of yourself as a presenter creating visual slides, not a chatbot writing t
 - Simple "show me these metrics" requests
 - Building a monitoring view the user will check regularly
 
+## IMPORTANT: Tab State Persists
+
+**Your tab may already contain content.** You are not always starting from scratch:
+
+1. **Periodic execution**: Agents can run on a schedule. Your previous output (canvas nodes, dashboard charts, tile layout) will persist across executions. Consider whether to update existing elements, add new ones, or clear and rebuild.
+
+2. **User edits**: Users can manually edit the tab - moving canvas nodes, deleting charts, changing tile layouts, or adding their own content. Respect their changes when possible.
+
+3. **Check before acting**: Always inspect the current state before making changes:
+   - `tabs.getTileLayout` - See how the tab is split
+   - `tabs.getTileContent` - See what command is in each tile
+   - `canvas.getNodesDetailed` - See what's on the canvas (if canvas active)
+   - `dashboard.getChartsDetailed` - See what charts are displayed (if dashboard active)
+
+4. **Why check first?**
+   - Avoid duplicating content you already created
+   - Preserve user modifications
+   - Update existing elements instead of recreating them
+   - Position new elements relative to existing ones
+   - Understand the current layout before splitting tiles
+
+5. **Update vs. replace strategy**:
+   - For periodic monitoring: Consider updating status badges and keeping charts rather than clearing everything
+   - For one-time reports: Clearing and rebuilding may be appropriate
+   - When in doubt: Check existing content and make an informed decision
+
 ## Your Task
 
 {{description}}
@@ -83,6 +109,11 @@ Query Netdata Cloud AI about your infrastructure using natural language. Ask abo
 
 **canvas.removeNode** - Remove a node by ID
 **canvas.removeEdge** - Remove an edge by ID
+**canvas.updateNode** - Update a node's position and/or data
+- nodeId: The ID of the node to update
+- x, y: New position (optional)
+- data: Partial data to merge with existing (optional)
+
 **canvas.getNodes** - List all nodes (returns nodeId, nodeType, x, y)
 **canvas.getNodeDetails** - Get full details about a specific node (returns nodeId, nodeType, x, y, data)
 **canvas.getNodesDetailed** - List all nodes with their full data
@@ -114,15 +145,17 @@ Query Netdata Cloud AI about your infrastructure using natural language. Ask abo
 
 ## Best Practices
 
-1. **Clear before creating**: Use `canvas.clearCanvas` when starting a new visualization
-2. **Position thoughtfully**: Start at (50, 50), space elements ~200-300px apart
-3. **Lead with status**: Add a status badge at the top to summarize health at a glance
-4. **Use headings**: Add text nodes with size "heading" to title your visualization
-5. **Show relationships**: Connect related elements with edges to show dependencies
-6. **Explain visually**: Instead of writing text analysis, create status badges and text nodes
-7. **Query first**: Use netdata.query to discover available metrics before visualizing
-8. **Check existing state**: Use `canvas.getNodesDetailed` to see what's already displayed with full details
-9. **Inspect tiles**: Use `tabs.getTileContent` to see what command is running in each tile"#;
+1. **Check tab state first**: ALWAYS inspect your tab before making changes:
+   - `tabs.getTileLayout` and `tabs.getTileContent` to understand the layout
+   - `canvas.getNodesDetailed` if using canvas
+   - `dashboard.getChartsDetailed` if using dashboard
+2. **Decide: update or rebuild**: Based on existing content, decide whether to update elements, add to them, or clear and start fresh
+3. **Position thoughtfully**: Start at (50, 50), space elements ~200-300px apart. When adding to existing content, position relative to existing nodes
+4. **Lead with status**: Add a status badge at the top to summarize health at a glance
+5. **Use headings**: Add text nodes with size "heading" to title your visualization
+6. **Show relationships**: Connect related elements with edges to show dependencies
+7. **Explain visually**: Instead of writing text analysis, create status badges and text nodes
+8. **Query first**: Use netdata.query to discover available metrics before visualizing"#;
 
 /// Generates a prompt from the template by substituting the description.
 ///
@@ -190,9 +223,21 @@ mod tests {
         assert!(AGENT_PROMPT_TEMPLATE.contains("# Your Role"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("## CRITICAL: How You Communicate"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("## When to Use Canvas vs Dashboard"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("## IMPORTANT: Tab State Persists"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("## Your Task"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("## Available Tools"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("## Best Practices"));
+    }
+
+    #[test]
+    fn test_template_explains_tab_persistence() {
+        // Agent must understand tab state can have existing content
+        assert!(AGENT_PROMPT_TEMPLATE.contains("Tab State Persists"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("tab may already contain content"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("Periodic execution"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("User edits"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("Check before acting"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("Update vs. replace strategy"));
     }
 
     #[test]
@@ -211,6 +256,7 @@ mod tests {
         assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.addEdge"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.removeNode"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.removeEdge"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.updateNode"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.getNodes"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.getNodeDetails"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.getNodesDetailed"));
