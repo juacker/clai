@@ -122,7 +122,9 @@ pub struct AddMarkdownNodeParams {
     pub y: f64,
 
     /// Markdown content to render.
-    #[schemars(description = "Markdown content (supports tables, code blocks, lists, headings, etc.)")]
+    #[schemars(
+        description = "Markdown content (supports tables, code blocks, lists, headings, etc.)"
+    )]
     pub content: String,
 
     /// Width of the node in pixels.
@@ -408,7 +410,10 @@ impl CanvasTools {
     }
 
     /// Add a markdown node to the canvas.
-    pub async fn add_markdown(&self, params: AddMarkdownNodeParams) -> Result<AddNodeResult, ToolError> {
+    pub async fn add_markdown(
+        &self,
+        params: AddMarkdownNodeParams,
+    ) -> Result<AddNodeResult, ToolError> {
         let bridge = self.bridge()?;
         let result = bridge
             .call_tool(
@@ -549,7 +554,10 @@ impl CanvasTools {
     }
 
     /// Update a node's position and/or data.
-    pub async fn update_node(&self, params: UpdateNodeParams) -> Result<NodeDetailedInfo, ToolError> {
+    pub async fn update_node(
+        &self,
+        params: UpdateNodeParams,
+    ) -> Result<NodeDetailedInfo, ToolError> {
         let bridge = self.bridge()?;
         let result = bridge
             .call_tool(
