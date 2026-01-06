@@ -9,6 +9,7 @@ import React from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useCommand } from '../../contexts/CommandContext';
 import { useTabManager } from '../../contexts/TabManagerContext';
+import { useTabContext } from '../../contexts/TabContext';
 import { getCommandComponent } from '../../utils/commandRegistry';
 import styles from './TileView.module.css';
 
@@ -20,8 +21,9 @@ import styles from './TileView.module.css';
  * @returns {JSX.Element}
  */
 const TileView = ({ tile, activeTileId }) => {
-  const { getCommand } = useCommand();
-  const { setActiveTile, closeTile } = useTabManager();
+  const { getCommand: getCommandFromHistory } = useCommand();
+  const { setActiveTile, closeTile, getCommandFromTab } = useTabManager();
+  const { tabId } = useTabContext();
 
   // Determine if this tile is active
   const isActive = tile.id === activeTileId;
@@ -40,12 +42,15 @@ const TileView = ({ tile, activeTileId }) => {
   };
 
   // Render split tile (contains child tiles)
+  // Our terminology: 'vertical' = vertical divider = side by side
+  // PanelGroup terminology: 'horizontal' = side by side
+  // So we invert when passing to PanelGroup
   if (tile.type === 'split') {
-    const isHorizontal = tile.direction === 'horizontal';
+    const panelDirection = tile.direction === 'vertical' ? 'horizontal' : 'vertical';
 
     return (
       <PanelGroup
-        direction={isHorizontal ? 'horizontal' : 'vertical'}
+        direction={panelDirection}
         className={styles.panelGroup}
         data-tile-id={tile.id}
       >
@@ -66,7 +71,7 @@ const TileView = ({ tile, activeTileId }) => {
               {/* Render resize handle between tiles (except after last tile) */}
               {index < tile.children.length - 1 && (
                 <PanelResizeHandle
-                  className={`${styles.resizeHandle} ${isHorizontal ? styles.resizeHandleHorizontal : styles.resizeHandleVertical
+                  className={`${styles.resizeHandle} ${panelDirection === 'horizontal' ? styles.resizeHandleHorizontal : styles.resizeHandleVertical
                     }`}
                 />
               )}
@@ -79,7 +84,10 @@ const TileView = ({ tile, activeTileId }) => {
 
   // Render leaf tile (contains command visualization)
   if (tile.type === 'leaf') {
-    const command = tile.commandId ? getCommand(tile.commandId) : null;
+    // Try CommandRegistry first (for content commands), then fall back to CommandContext
+    const command = tile.commandId
+      ? (getCommandFromTab(tabId, tile.commandId) || getCommandFromHistory(tile.commandId))
+      : null;
 
     return (
       <div

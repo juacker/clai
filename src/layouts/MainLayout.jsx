@@ -64,43 +64,43 @@ const MainLayout = () => {
     fetchUserInfo();
   }, [navigate]);
 
-  if (loading) {
-    return (
-      <div className={styles.mainLayout}>
-        <div className={styles.loadingContainer}>
-          <p>Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
+  // Always render providers and AgentBridgeInitializer to avoid unmount/remount issues
+  // Only the inner content changes based on loading state
   return (
     <CommandProvider>
       <SharedSpaceRoomDataProvider>
         <TabManagerProvider>
           <AgentBridgeInitializer>
-          <CommandMessagingProvider>
-            <ChatManagerProvider>
-            <div className={styles.mainLayout}>
-              {/* Fixed chat panel on right side (full height) */}
-              <DesktopChatPanel
-                message={messageForChat}
-                onMessageProcessed={handleMessageProcessed}
-              />
+            <CommandMessagingProvider>
+              <ChatManagerProvider>
+                {loading ? (
+                  <div className={styles.mainLayout}>
+                    <div className={styles.loadingContainer}>
+                      <p>Loading...</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className={styles.mainLayout}>
+                    {/* Fixed chat panel on right side (full height) */}
+                    <DesktopChatPanel
+                      message={messageForChat}
+                      onMessageProcessed={handleMessageProcessed}
+                    />
 
-              {/* Fixed TerminalEmulator at bottom */}
-              <TerminalEmulatorWrapper
-                userInfo={userInfo}
-                onSendToChat={handleSendToChat}
-              />
+                    {/* Fixed TerminalEmulator at bottom */}
+                    <TerminalEmulatorWrapper
+                      userInfo={userInfo}
+                      onSendToChat={handleSendToChat}
+                    />
 
-              {/* Content area - takes remaining flex space */}
-              <div className={styles.contentArea}>
-                <Outlet context={{ userInfo }} />
-              </div>
-            </div>
-          </ChatManagerProvider>
-          </CommandMessagingProvider>
+                    {/* Content area - takes remaining flex space */}
+                    <div className={styles.contentArea}>
+                      <Outlet context={{ userInfo }} />
+                    </div>
+                  </div>
+                )}
+              </ChatManagerProvider>
+            </CommandMessagingProvider>
           </AgentBridgeInitializer>
         </TabManagerProvider>
       </SharedSpaceRoomDataProvider>

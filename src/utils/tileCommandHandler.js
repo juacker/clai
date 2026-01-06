@@ -105,7 +105,7 @@ function handleTileInfo(tileManager) {
 
 /**
  * Handle tile split-v [command]
- * Vim-style vertical split: creates a vertical divider (panes side by side)
+ * Vertical split: creates a vertical divider (panes side by side)
  */
 function handleSplitVertical(args, tileManager) {
   const { activeTileId, splitTile } = tileManager;
@@ -121,8 +121,8 @@ function handleSplitVertical(args, tileManager) {
   const commandText = args.join(' ') || null;
 
   try {
-    // Vim-style: vertical split = horizontal panel direction (side by side)
-    const result = splitTile(activeTileId, 'horizontal', commandText);
+    // vertical = vertical divider = side by side
+    const result = splitTile(activeTileId, 'vertical', commandText);
     if (result.success) {
       return {
         success: true,
@@ -142,7 +142,7 @@ function handleSplitVertical(args, tileManager) {
 
 /**
  * Handle tile split-h [command]
- * Vim-style horizontal split: creates a horizontal divider (panes stacked)
+ * Horizontal split: creates a horizontal divider (panes stacked)
  */
 function handleSplitHorizontal(args, tileManager) {
   const { activeTileId, splitTile } = tileManager;
@@ -158,8 +158,8 @@ function handleSplitHorizontal(args, tileManager) {
   const commandText = args.join(' ') || null;
 
   try {
-    // Vim-style: horizontal split = vertical panel direction (stacked)
-    const result = splitTile(activeTileId, 'vertical', commandText);
+    // horizontal = horizontal divider = stacked
+    const result = splitTile(activeTileId, 'horizontal', commandText);
     if (result.success) {
       return {
         success: true,

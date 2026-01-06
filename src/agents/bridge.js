@@ -38,8 +38,11 @@ const EVENT_TOOL_REQUEST = 'agent:tool:request';
 // Track registered tool handlers
 const toolHandlers = new Map();
 
-// Track agent tab mappings (agentId_spaceId_roomId -> tabId)
+// Track agent tab mappings (agentId_spaceId_roomId -> { tabId, agentName })
 const agentTabs = new Map();
+
+// Track in-progress tab creations to prevent duplicates from rapid calls
+const tabCreationLocks = new Map();
 
 /**
  * Generate a unique ID for an agent in a specific space/room
@@ -96,19 +99,25 @@ export const getRegisteredTools = () => {
  * @param {string} spaceId - Netdata space ID
  * @param {string} roomId - Netdata room ID
  * @param {string} tabId - Tab ID to associate with this agent
+ * @param {string} agentName - Human-readable agent name (for tab recreation)
  */
-export const setAgentTab = (agentId, spaceId, roomId, tabId) => {
+export const setAgentTab = (agentId, spaceId, roomId, tabId, agentName = null) => {
   const key = getAgentKey(agentId, spaceId, roomId);
-  agentTabs.set(key, tabId);
+  // Preserve existing agentName if not provided
+  const existing = agentTabs.get(key);
+  agentTabs.set(key, {
+    tabId,
+    agentName: agentName || existing?.agentName || agentId,
+  });
 };
 
 /**
- * Get the tab ID for an agent (if exists)
+ * Get the tab info for an agent (if exists)
  *
  * @param {string} agentId - Agent type identifier
  * @param {string} spaceId - Netdata space ID
  * @param {string} roomId - Netdata room ID
- * @returns {string|null} Tab ID or null if not found
+ * @returns {{ tabId: string, agentName: string }|null} Tab info or null if not found
  */
 export const getAgentTab = (agentId, spaceId, roomId) => {
   const key = getAgentKey(agentId, spaceId, roomId);
@@ -125,6 +134,45 @@ export const getAgentTab = (agentId, spaceId, roomId) => {
 export const clearAgentTab = (agentId, spaceId, roomId) => {
   const key = getAgentKey(agentId, spaceId, roomId);
   agentTabs.delete(key);
+};
+
+/**
+ * Check if tab creation is in progress for an agent
+ * Used to prevent duplicate tab creation from rapid tool calls
+ *
+ * @param {string} agentId - Agent type identifier
+ * @param {string} spaceId - Netdata space ID
+ * @param {string} roomId - Netdata room ID
+ * @returns {string|null} The tabId being created, or null if no creation in progress
+ */
+export const getTabCreationLock = (agentId, spaceId, roomId) => {
+  const key = getAgentKey(agentId, spaceId, roomId);
+  return tabCreationLocks.get(key) || null;
+};
+
+/**
+ * Set a lock indicating tab creation is in progress
+ *
+ * @param {string} agentId - Agent type identifier
+ * @param {string} spaceId - Netdata space ID
+ * @param {string} roomId - Netdata room ID
+ * @param {string} tabId - The tabId being created
+ */
+export const setTabCreationLock = (agentId, spaceId, roomId, tabId) => {
+  const key = getAgentKey(agentId, spaceId, roomId);
+  tabCreationLocks.set(key, tabId);
+};
+
+/**
+ * Clear the tab creation lock for an agent
+ *
+ * @param {string} agentId - Agent type identifier
+ * @param {string} spaceId - Netdata space ID
+ * @param {string} roomId - Netdata room ID
+ */
+export const clearTabCreationLock = (agentId, spaceId, roomId) => {
+  const key = getAgentKey(agentId, spaceId, roomId);
+  tabCreationLocks.delete(key);
 };
 
 /**
@@ -151,6 +199,38 @@ const sendResponse = async (requestId, success, result = null, error = null) => 
 };
 
 /**
+ * Wait for a handler to be registered (with timeout)
+ * This handles the race condition where Rust sends a request before React registers handlers
+ *
+ * @param {string} tool - Tool name to wait for
+ * @param {number} maxWaitMs - Maximum time to wait in milliseconds
+ * @param {number} checkIntervalMs - How often to check for the handler
+ * @returns {Promise<Function|null>} The handler or null if timeout
+ */
+const waitForHandler = (tool, maxWaitMs = 2000, checkIntervalMs = 50) => {
+  return new Promise((resolve) => {
+    const startTime = Date.now();
+
+    const check = () => {
+      const handler = toolHandlers.get(tool);
+      if (handler) {
+        resolve(handler);
+        return;
+      }
+
+      if (Date.now() - startTime >= maxWaitMs) {
+        resolve(null); // Timeout
+        return;
+      }
+
+      setTimeout(check, checkIntervalMs);
+    };
+
+    check();
+  });
+};
+
+/**
  * Handle a tool request from Rust
  *
  * @param {Object} request - Tool request object
@@ -168,10 +248,16 @@ const handleToolRequest = async (request) => {
 
   try {
     // Find the handler for this tool
-    const handler = toolHandlers.get(tool);
+    let handler = toolHandlers.get(tool);
+
+    // If handler not found, wait for it (handles race condition at startup)
+    if (!handler) {
+      console.log(`[AgentBridge] Handler not ready for ${tool}, waiting...`);
+      handler = await waitForHandler(tool);
+    }
 
     if (!handler) {
-      throw new Error(`No handler registered for tool: ${tool}`);
+      throw new Error(`No handler registered for tool: ${tool} (timeout waiting for registration)`);
     }
 
     // Execute the handler (pass agentId as part of request for handlers)
@@ -244,6 +330,7 @@ export const cleanupAgentBridge = () => {
   // Clear all state
   toolHandlers.clear();
   agentTabs.clear();
+  tabCreationLocks.clear();
 };
 
 export default {

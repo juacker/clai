@@ -4,6 +4,7 @@ import * as d3 from 'd3';
 import { getData } from '../../api/client';
 import { useCommandMessaging } from '../../contexts/CommandMessagingContext';
 import NetdataSpinner from '../common/NetdataSpinner';
+import DashboardPicker from '../common/DashboardPicker';
 import styles from './LoadChartBlock.module.css';
 
 /**
@@ -50,34 +51,13 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Dashboard integration
-  const { sendToDashboard, isElementInDashboard } = useCommandMessaging();
+  const { sendToDashboard, sendToDashboardById, highlightDashboard } = useCommandMessaging();
   const [sentToDashboard, setSentToDashboard] = useState(false);
-
-  // Create space/room key for dashboard (using props passed from Chat)
-  const spaceRoomKey = useMemo(() => {
-    if (!space?.id || !room?.id) return null;
-    return `${space.id}_${room.id}`;
-  }, [space?.id, room?.id]);
-
-  // Generate element ID based on context and current filters
-  const elementId = useMemo(() => {
-    const context = toolInput?.context || 'unknown';
-    const groupByStr = activeGroupBy.length > 0 ? `-gb-${activeGroupBy.join('-')}` : '';
-    const filterStr = Object.keys(activeFilters).length > 0
-      ? `-f-${Object.entries(activeFilters).map(([k, v]) => `${k}:${v.join(',')}`).join('-')}`
-      : '';
-    return `context-chart-${context}${groupByStr}${filterStr}`;
-  }, [toolInput?.context, activeGroupBy, activeFilters]);
-
-  // Check if already in dashboard
-  const alreadyInDashboard = useMemo(() => {
-    if (!spaceRoomKey) return false;
-    return isElementInDashboard(elementId, spaceRoomKey);
-  }, [isElementInDashboard, elementId, spaceRoomKey]);
+  const [dashboardPicker, setDashboardPicker] = useState(null); // { dashboards, config, position }
 
   // Handle send to dashboard
-  const handleSendToDashboard = useCallback(() => {
-    if (!spaceRoomKey || !toolInput?.context) return;
+  const handleSendToDashboard = useCallback((event) => {
+    if (!toolInput?.context) return;
 
     // Convert activeFilters to filterBy format
     const filterBy = {};
@@ -85,24 +65,44 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
       filterBy[label] = values;
     });
 
-    const element = {
-      id: elementId,
-      type: 'context-chart',
-      config: {
-        context: toolInput.context,
-        groupBy: activeGroupBy,
-        filterBy: filterBy,
-        valueAgg: toolInput.value_agg || 'avg',
-        timeAgg: toolInput.time_agg || 'average',
-      },
+    const config = {
+      context: toolInput.context,
+      groupBy: activeGroupBy,
+      filterBy: filterBy,
+      valueAgg: toolInput.value_agg || 'avg',
+      timeAgg: toolInput.time_agg || 'average',
     };
 
-    const result = sendToDashboard(element, spaceRoomKey);
+    const result = sendToDashboard(config);
+    if (result.success) {
+      setSentToDashboard(true);
+      setTimeout(() => setSentToDashboard(false), 2000);
+    } else if (result.needsSelection) {
+      // Multiple dashboards - show picker at click position
+      setDashboardPicker({
+        dashboards: result.dashboards,
+        config: result.config,
+        position: event ? { top: event.clientY, left: event.clientX } : null,
+      });
+    }
+  }, [sendToDashboard, toolInput, activeGroupBy, activeFilters]);
+
+  // Handle dashboard selection from picker
+  const handleDashboardSelect = useCallback((dashboardId) => {
+    if (!dashboardPicker) return;
+
+    const result = sendToDashboardById(dashboardId, dashboardPicker.config);
     if (result.success) {
       setSentToDashboard(true);
       setTimeout(() => setSentToDashboard(false), 2000);
     }
-  }, [sendToDashboard, spaceRoomKey, toolInput, activeGroupBy, activeFilters, elementId]);
+    setDashboardPicker(null);
+  }, [dashboardPicker, sendToDashboardById]);
+
+  // Cancel dashboard picker
+  const handleDashboardPickerCancel = useCallback(() => {
+    setDashboardPicker(null);
+  }, []);
 
   // Netdata chart color palette
   const DEFAULT_COLORS = useMemo(() => [
@@ -1007,16 +1007,13 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
         <div className={styles.chartTitleRow}>
           <h3 className={styles.chartTitle}>{getChartTitle()}</h3>
           {/* Send to Dashboard Button */}
-          {spaceRoomKey && (
-            <button
-              className={`${styles.sendToDashboardButton} ${alreadyInDashboard || sentToDashboard ? styles.sent : ''}`}
-              onClick={handleSendToDashboard}
-              disabled={alreadyInDashboard}
-              title={alreadyInDashboard ? 'Already in Dashboard' : sentToDashboard ? 'Sent!' : 'Send to Dashboard'}
-            >
-              {sentToDashboard ? 'Sent!' : alreadyInDashboard ? 'In Dashboard' : '+ Dashboard'}
-            </button>
-          )}
+          <button
+            className={`${styles.sendToDashboardButton} ${sentToDashboard ? styles.sent : ''}`}
+            onClick={handleSendToDashboard}
+            title={sentToDashboard ? 'Sent!' : 'Send to Dashboard'}
+          >
+            {sentToDashboard ? 'Sent!' : '+ Dashboard'}
+          </button>
         </div>
 
         {/* Filters & Grouping Panel */}
@@ -1219,6 +1216,17 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
           )}
         </div>,
         document.body
+      )}
+
+      {/* Dashboard picker for multiple dashboards */}
+      {dashboardPicker && (
+        <DashboardPicker
+          dashboards={dashboardPicker.dashboards}
+          onSelect={handleDashboardSelect}
+          onCancel={handleDashboardPickerCancel}
+          onHighlight={highlightDashboard}
+          position={dashboardPicker.position}
+        />
       )}
     </div>
   );

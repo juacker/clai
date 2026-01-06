@@ -65,9 +65,12 @@ use super::tools::{CanvasTools, DashboardTools, NetdataTools, TabsTools};
 // Re-export parameter types from tool modules (single source of truth)
 pub use super::tools::canvas::{
     AddChartNodeParams, AddEdgeParams, AddMarkdownNodeParams, AddStatusBadgeParams,
-    GetNodeDetailsParams, RemoveEdgeParams, RemoveNodeParams, UpdateNodeParams,
+    ClearCanvasParams, GetNodeDetailsParams, GetNodesDetailedParams, GetNodesParams,
+    RemoveEdgeParams, RemoveNodeParams, UpdateNodeParams,
 };
-pub use super::tools::dashboard::{AddChartParams, RemoveChartParams, SetTimeRangeParams};
+pub use super::tools::dashboard::{
+    AddChartParams, ClearChartsParams, GetChartsParams, RemoveChartParams, SetTimeRangeParams,
+};
 pub use super::tools::netdata::NetdataQueryParams;
 pub use super::tools::tabs::{GetTileContentParams, RemoveTileParams, SplitTileParams};
 
@@ -504,12 +507,15 @@ impl McpToolServer {
     /// Get a list of all charts currently displayed on the dashboard.
     #[tool(
         name = "dashboard.getCharts",
-        description = "Get a list of all charts currently displayed on the dashboard."
+        description = "Get a list of all charts currently displayed on the dashboard. Optionally specify a commandId to target a specific dashboard."
     )]
-    async fn dashboard_get_charts(&self) -> Result<CallToolResult, McpError> {
+    async fn dashboard_get_charts(
+        &self,
+        params: Parameters<GetChartsParams>,
+    ) -> Result<CallToolResult, McpError> {
         tracing::debug!("dashboard.getCharts called");
 
-        let result = self.dashboard.get_charts().await.map_err(|e| {
+        let result = self.dashboard.get_charts(params.0).await.map_err(|e| {
             tracing::warn!(error = %e, "dashboard.getCharts error");
             McpError::internal_error(e.to_string(), None)
         })?;
@@ -523,12 +529,15 @@ impl McpToolServer {
     /// Remove all charts from the dashboard.
     #[tool(
         name = "dashboard.clearCharts",
-        description = "Remove all charts from the dashboard. Use to start fresh."
+        description = "Remove all charts from the dashboard. Use to start fresh. Optionally specify a commandId to target a specific dashboard."
     )]
-    async fn dashboard_clear_charts(&self) -> Result<CallToolResult, McpError> {
+    async fn dashboard_clear_charts(
+        &self,
+        params: Parameters<ClearChartsParams>,
+    ) -> Result<CallToolResult, McpError> {
         tracing::debug!("dashboard.clearCharts called");
 
-        self.dashboard.clear_charts().await.map_err(|e| {
+        self.dashboard.clear_charts(params.0).await.map_err(|e| {
             tracing::warn!(error = %e, "dashboard.clearCharts error");
             McpError::internal_error(e.to_string(), None)
         })?;
@@ -566,15 +575,22 @@ impl McpToolServer {
     /// Get all charts with their full configuration details.
     #[tool(
         name = "dashboard.getChartsDetailed",
-        description = "Get all charts with full configuration including groupBy and filterBy settings."
+        description = "Get all charts with full configuration including groupBy and filterBy settings. Optionally specify a commandId to target a specific dashboard."
     )]
-    async fn dashboard_get_charts_detailed(&self) -> Result<CallToolResult, McpError> {
+    async fn dashboard_get_charts_detailed(
+        &self,
+        params: Parameters<GetChartsParams>,
+    ) -> Result<CallToolResult, McpError> {
         tracing::debug!("dashboard.getChartsDetailed called");
 
-        let result = self.dashboard.get_charts_detailed().await.map_err(|e| {
-            tracing::warn!(error = %e, "dashboard.getChartsDetailed error");
-            McpError::internal_error(e.to_string(), None)
-        })?;
+        let result = self
+            .dashboard
+            .get_charts_detailed(params.0)
+            .await
+            .map_err(|e| {
+                tracing::warn!(error = %e, "dashboard.getChartsDetailed error");
+                McpError::internal_error(e.to_string(), None)
+            })?;
 
         tracing::debug!(
             chart_count = result.len(),
@@ -592,7 +608,7 @@ impl McpToolServer {
     /// Split an existing tile to create a new one.
     #[tool(
         name = "tabs.splitTile",
-        description = "Split an existing tile. 'vertical' creates side-by-side tiles, 'horizontal' creates stacked tiles."
+        description = "Split an existing tile. 'vertical' creates side-by-side tiles, 'horizontal' creates stacked tiles. Optionally creates a command (canvas, dashboard, etc.) in the new tile by setting commandType."
     )]
     async fn tabs_split_tile(
         &self,
@@ -601,6 +617,7 @@ impl McpToolServer {
         tracing::debug!(
             parent_tile_id = %params.0.parent_tile_id,
             split_type = %params.0.split_type,
+            command_type = ?params.0.command_type,
             "tabs.splitTile called"
         );
 
@@ -813,10 +830,13 @@ impl McpToolServer {
         name = "canvas.getNodes",
         description = "Get a list of all nodes currently on the canvas with their IDs, types, and positions."
     )]
-    async fn canvas_get_nodes(&self) -> Result<CallToolResult, McpError> {
-        tracing::debug!("canvas.getNodes called");
+    async fn canvas_get_nodes(
+        &self,
+        params: Parameters<GetNodesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(command_id = %params.0.command_id, "canvas.getNodes called");
 
-        let result = self.canvas.get_nodes().await.map_err(|e| {
+        let result = self.canvas.get_nodes(params.0).await.map_err(|e| {
             tracing::warn!(error = %e, "canvas.getNodes error");
             McpError::internal_error(e.to_string(), None)
         })?;
@@ -832,10 +852,13 @@ impl McpToolServer {
         name = "canvas.clearCanvas",
         description = "Remove all nodes and edges from the canvas. Use to start fresh."
     )]
-    async fn canvas_clear_canvas(&self) -> Result<CallToolResult, McpError> {
-        tracing::debug!("canvas.clearCanvas called");
+    async fn canvas_clear_canvas(
+        &self,
+        params: Parameters<ClearCanvasParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(command_id = %params.0.command_id, "canvas.clearCanvas called");
 
-        self.canvas.clear_canvas().await.map_err(|e| {
+        self.canvas.clear_canvas(params.0).await.map_err(|e| {
             tracing::warn!(error = %e, "canvas.clearCanvas error");
             McpError::internal_error(e.to_string(), None)
         })?;
@@ -873,13 +896,20 @@ impl McpToolServer {
         name = "canvas.getNodesDetailed",
         description = "Get all nodes with their full data including context, title, status, text content, etc."
     )]
-    async fn canvas_get_nodes_detailed(&self) -> Result<CallToolResult, McpError> {
-        tracing::debug!("canvas.getNodesDetailed called");
+    async fn canvas_get_nodes_detailed(
+        &self,
+        params: Parameters<GetNodesDetailedParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(command_id = %params.0.command_id, "canvas.getNodesDetailed called");
 
-        let result = self.canvas.get_nodes_detailed().await.map_err(|e| {
-            tracing::warn!(error = %e, "canvas.getNodesDetailed error");
-            McpError::internal_error(e.to_string(), None)
-        })?;
+        let result = self
+            .canvas
+            .get_nodes_detailed(params.0)
+            .await
+            .map_err(|e| {
+                tracing::warn!(error = %e, "canvas.getNodesDetailed error");
+                McpError::internal_error(e.to_string(), None)
+            })?;
 
         tracing::debug!(node_count = result.len(), "canvas.getNodesDetailed success");
         Ok(CallToolResult::success(vec![Content::text(

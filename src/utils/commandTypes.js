@@ -34,6 +34,16 @@ export const LAYOUT_COMMANDS = {
   RESET_ALL: 'reset-all'
 };
 
+// Content Commands (create entry in CommandRegistry, display in tiles)
+export const CONTENT_COMMANDS = {
+  CANVAS: 'canvas',
+  DASHBOARD: 'dashboard',
+  ANOMALIES: 'anomalies',
+  HELP: 'help',
+  ECHO: 'echo',
+  CHAT: 'chat'
+};
+
 /**
  * Check if a command is a layout command
  * @param {Object} command - Command object
@@ -50,5 +60,15 @@ export const isLayoutCommand = (command) => {
  */
 export const isSystemCommand = (command) => {
   return Object.values(SYSTEM_COMMANDS).includes(command.type);
+};
+
+/**
+ * Check if a command is a content command
+ * Content commands create entries in CommandRegistry and render in tiles
+ * @param {Object} command - Command object
+ * @returns {boolean} True if it's a content command
+ */
+export const isContentCommand = (command) => {
+  return Object.values(CONTENT_COMMANDS).includes(command.type);
 };
 

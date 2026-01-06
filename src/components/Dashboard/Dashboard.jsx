@@ -1,13 +1,15 @@
 /**
  * Dashboard Component
  *
- * Displays charts for metrics sent from other commands (like anomalies).
- * This is a receiver component that subscribes to dashboard metrics from
- * the CommandMessagingContext.
+ * Displays charts for metrics in a responsive grid layout.
+ * State is owned by this component and persisted to localStorage
+ * using the commandId. The component registers an API with the
+ * CommandRegistry so other commands can add/remove charts.
  *
  * Features:
- * - Receives metrics via inter-command messaging
- * - Displays charts in a responsive grid
+ * - Owns its own state (elements array)
+ * - Registers API via useCommandRegistration
+ * - Persists to localStorage using commandId
  * - Supports time range selection
  * - Global filtering and grouping options
  * - Allows removing individual metrics or clearing all
@@ -15,7 +17,7 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useTabContext } from '../../contexts/TabContext';
-import { useCommandMessaging } from '../../contexts/CommandMessagingContext';
+import { useCommandRegistration } from '../../hooks/useCommandRegistration';
 import { useDebounce } from '../../hooks/useDebounce';
 import { validateDashboardElement } from '../../utils/dashboardElementValidator';
 import ContextChart from '../ChartsView/ContextChart';
@@ -228,36 +230,81 @@ const FilterModalContent = React.memo(({
 });
 
 /**
+ * Get the localStorage key for a dashboard
+ */
+const getStorageKey = (commandId) => `dashboard_${commandId}`;
+
+/**
+ * Load dashboard state from localStorage
+ */
+const loadDashboardState = (commandId) => {
+  if (!commandId) return { elements: [], timeRange: '1h' };
+
+  try {
+    const saved = localStorage.getItem(getStorageKey(commandId));
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        elements: parsed.elements || [],
+        timeRange: parsed.timeRange || '1h',
+      };
+    }
+  } catch (e) {
+    console.error('[Dashboard] Failed to load state:', e);
+  }
+
+  return { elements: [], timeRange: '1h' };
+};
+
+/**
+ * Save dashboard state to localStorage
+ */
+const saveDashboardState = (commandId, elements, timeRange) => {
+  if (!commandId) return;
+
+  try {
+    localStorage.setItem(getStorageKey(commandId), JSON.stringify({ elements, timeRange }));
+  } catch (e) {
+    console.error('[Dashboard] Failed to save state:', e);
+  }
+};
+
+/**
+ * Generate a unique element ID
+ */
+const generateElementId = () =>
+  `el_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+/**
  * Dashboard Component
  */
 const Dashboard = ({ command }) => {
-  // Get tab context for space/room
+  const commandId = command?.id;
+
+  // Get tab context for space/room (used for data fetching)
   const { selectedSpace, selectedRoom } = useTabContext();
 
-  // Get messaging context
-  const {
-    getDashboardElements,
-    removeFromDashboard,
-    clearDashboard,
-    registerDashboard,
-    unregisterDashboard,
-  } = useCommandMessaging();
+  // Load initial state from localStorage
+  const initialState = useRef(loadDashboardState(commandId));
 
-  // Create space/room key for dashboard storage
-  const spaceRoomKey = useMemo(() => {
-    if (!selectedSpace?.id || !selectedRoom?.id) return null;
-    return `${selectedSpace.id}_${selectedRoom.id}`;
-  }, [selectedSpace?.id, selectedRoom?.id]);
+  // Dashboard owns its elements array
+  const [elements, setElements] = useState(initialState.current.elements);
 
-  // Get dashboard elements for current space/room (only valid ones)
-  const dashboardElements = useMemo(() => {
-    const elements = getDashboardElements(spaceRoomKey);
-    // Filter out any invalid elements as a safety check
-    return elements.filter(element => validateDashboardElement(element).valid);
-  }, [getDashboardElements, spaceRoomKey]);
+  // Track if initialized (for save debouncing)
+  const isInitializedRef = useRef(false);
+
+  // Initialize on first render
+  useEffect(() => {
+    isInitializedRef.current = true;
+  }, []);
+
+  // Find the initial time interval from saved state
+  const initialInterval = TIME_INTERVALS.find(
+    i => i.label === initialState.current.timeRange
+  ) || TIME_INTERVALS[3];
 
   // Selected time interval
-  const [selectedInterval, setSelectedInterval] = useState(TIME_INTERVALS[3]); // Default 1h
+  const [selectedInterval, setSelectedInterval] = useState(initialInterval);
 
   // Auto-refresh state
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
@@ -276,15 +323,104 @@ const Dashboard = ({ command }) => {
   // Generate unique instance ID for keys
   const instanceId = useRef(`dashboard_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
 
-  // Register dashboard on mount, unregister on unmount
+  // Save state to localStorage when it changes (debounced)
   useEffect(() => {
-    if (command?.id) {
-      registerDashboard(command.id);
-    }
-    return () => {
-      unregisterDashboard();
-    };
-  }, [command?.id, registerDashboard, unregisterDashboard]);
+    if (!commandId || !isInitializedRef.current) return;
+
+    const timeoutId = setTimeout(() => {
+      saveDashboardState(commandId, elements, selectedInterval.label);
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [commandId, elements, selectedInterval]);
+
+  // Get valid dashboard elements
+  const dashboardElements = useMemo(() => {
+    return elements.filter(element => validateDashboardElement(element).valid);
+  }, [elements]);
+
+  // Register API with CommandRegistry
+  useCommandRegistration(
+    commandId,
+    () => ({
+      type: 'dashboard',
+
+      /**
+       * Add a chart to the dashboard
+       * @param {object} config - Chart configuration
+       * @returns {string} Generated element ID
+       */
+      addChart: (config) => {
+        const elementId = generateElementId();
+        const element = {
+          id: elementId,
+          type: 'context-chart',
+          config,
+        };
+
+        // Validate before adding
+        const validation = validateDashboardElement(element);
+        if (!validation.valid) {
+          console.error('[Dashboard] Invalid element:', validation.error);
+          return null;
+        }
+
+        setElements((prev) => [...prev, element]);
+        return elementId;
+      },
+
+      /**
+       * Remove a chart from the dashboard
+       * @param {string} chartId - Chart element ID
+       * @returns {boolean} Success
+       */
+      removeChart: (chartId) => {
+        setElements((prev) => prev.filter((el) => el.id !== chartId));
+        return true;
+      },
+
+      /**
+       * Get all charts
+       * @returns {Array} Array of chart elements
+       */
+      getCharts: () => elements.filter((el) => el.type === 'context-chart'),
+
+      /**
+       * Get all charts with detailed config
+       * @returns {Array} Array of chart elements with full config
+       */
+      getChartsDetailed: () => elements.filter((el) => el.type === 'context-chart'),
+
+      /**
+       * Check if an element exists in the dashboard
+       * @param {string} elementId - Element ID to check
+       * @returns {boolean} True if exists
+       */
+      hasElement: (elementId) => elements.some((el) => el.id === elementId),
+
+      /**
+       * Set the time range for all charts
+       * @param {string} range - Time range label (e.g., '15m', '1h')
+       * @returns {boolean} Success
+       */
+      setTimeRange: (range) => {
+        const interval = TIME_INTERVALS.find((i) => i.label === range);
+        if (interval) {
+          setSelectedInterval(interval);
+          return true;
+        }
+        return false;
+      },
+
+      /**
+       * Clear all charts from the dashboard
+       */
+      clearCharts: () => {
+        setElements([]);
+      },
+    }),
+    [elements, setElements, selectedInterval, setSelectedInterval]
+  );
 
   // Calculate time range based on selected interval (recalculates on refresh)
   const timeRange = useMemo(() => {
@@ -323,14 +459,13 @@ const Dashboard = ({ command }) => {
 
   // Handle remove element
   const handleRemoveElement = useCallback((elementId) => {
-    if (!spaceRoomKey) return;
-    removeFromDashboard(elementId, spaceRoomKey);
-  }, [removeFromDashboard, spaceRoomKey]);
+    setElements((prev) => prev.filter((el) => el.id !== elementId));
+  }, []);
 
   // Handle clear all
   const handleClearAll = useCallback(() => {
-    clearDashboard(spaceRoomKey);
-  }, [clearDashboard, spaceRoomKey]);
+    setElements([]);
+  }, []);
 
   // Handle chart summary updates
   const handleChartSummary = useCallback((context, summary) => {

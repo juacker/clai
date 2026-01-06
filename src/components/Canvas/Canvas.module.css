@@ -32,3 +32,49 @@
   border-radius: 4px;
   border: 1px solid var(--color-border, #e0e0e0);
 }
+
+/* Custom controls panel */
+.controlsPanel {
+  bottom: 10px !important;
+  left: 10px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Stack container for control buttons */
+.controlsStack {
+  display: flex;
+  flex-direction: column;
+  background: #fefefe;
+  border-radius: 2px;
+  box-shadow: 0 0 2px 1px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+/* Control button */
+.controlButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  color: #222;
+}
+
+.controlButton:last-child {
+  border-bottom: none;
+}
+
+.controlButton:hover {
+  background: #f4f4f4;
+}
+
+.controlButton:active {
+  background: #ddd;
+}

@@ -11,6 +11,8 @@ import { useCommand } from './CommandContext';
 import { useSharedSpaceRoomData } from './SharedSpaceRoomDataContext';
 import { handleTabCommand } from '../utils/tabCommandHandler';
 import { handleTileCommand } from '../utils/tileCommandHandler';
+import { CommandRegistry } from '../commands/CommandRegistry';
+import { isContentCommand, isLayoutCommand } from '../utils/commandTypes';
 
 const TabManagerContext = createContext(null);
 
@@ -117,11 +119,6 @@ const createTab = (title = null, commandId = null, initialContext = null) => ({
     spaceRoom: {
       selectedSpaceId: null,
       selectedRoomId: null,
-    },
-    // Dashboard state for inter-command messaging
-    dashboard: {
-      metrics: [],      // Array of metric contexts sent to dashboard
-      commandId: null,  // ID of dashboard command in this tab (singleton)
     },
     customContext: {},
   },
@@ -320,8 +317,32 @@ export const TabManagerProvider = ({ children }) => {
   // Track if we've initialized default context
   const hasInitializedDefaults = useRef(false);
 
+  // CommandRegistry instances per tab (Map<tabId, CommandRegistry>)
+  // Stored in ref because APIs are mutable and shouldn't trigger re-renders
+  const registriesRef = useRef(new Map());
+
   // Cache for default space/room to use when creating new tabs
   const defaultSpaceRoom = useRef(null);
+
+  /**
+   * Get or create a CommandRegistry for a tab
+   * @param {string} tabId - Tab ID
+   * @returns {CommandRegistry} Registry for the tab
+   */
+  const getRegistry = useCallback((tabId) => {
+    if (!registriesRef.current.has(tabId)) {
+      registriesRef.current.set(tabId, new CommandRegistry());
+    }
+    return registriesRef.current.get(tabId);
+  }, []);
+
+  /**
+   * Remove a CommandRegistry when a tab is closed
+   * @param {string} tabId - Tab ID
+   */
+  const removeRegistry = useCallback((tabId) => {
+    registriesRef.current.delete(tabId);
+  }, []);
 
   /**
    * Load tabs from localStorage on mount
@@ -516,6 +537,13 @@ export const TabManagerProvider = ({ children }) => {
   /**
    * When a new command is executed, add it to the active tile
    * If no tabs exist, create the first tab automatically
+   *
+   * For content commands (canvas, dashboard, etc.):
+   * - Creates an entry in the CommandRegistry
+   * - Assigns the registry's commandId to the tile
+   *
+   * For layout commands (tab, tile):
+   * - Skipped here, handled by handleLayoutCommand
    */
   useEffect(() => {
     // Only process if we have a command and it's different from the last one we processed
@@ -523,67 +551,110 @@ export const TabManagerProvider = ({ children }) => {
       // Mark this command as processed
       lastProcessedCommandId.current = currentCommand.id;
 
+      // Skip layout commands - they're handled by handleLayoutCommand
+      if (isLayoutCommand(currentCommand)) {
+        return;
+      }
+
       // If no tabs exist, create the first tab
       if (tabs.length === 0) {
-        const newTab = createTab('Tab 1', currentCommand.id);
+        const newTab = createTab('Tab 1', null); // Create tab without command
         setTabs([newTab]);
         setActiveTabId(newTab.id);
         setActiveTileId(newTab.rootTile.id);
-        return; // Exit early, the tab is created with the command
+
+        // For content commands, create registry entry and assign to tile
+        if (isContentCommand(currentCommand)) {
+          const registry = getRegistry(newTab.id);
+          const commandId = registry.create(currentCommand.type, currentCommand.args || {});
+          registry.assignToTile(commandId, newTab.rootTile.id);
+
+          // Update the tile with the new commandId
+          setTabs(prev => prev.map(tab => {
+            if (tab.id === newTab.id) {
+              return {
+                ...tab,
+                rootTile: { ...tab.rootTile, commandId },
+              };
+            }
+            return tab;
+          }));
+        }
+        return;
       }
 
       // If tabs exist, add command to active tile
       if (activeTabId && activeTileId) {
-        setTabs(prev => {
-          // First, check if any tile already has this command
-          const activeTab = prev.find(t => t.id === activeTabId);
-          if (activeTab) {
-            const tileHasCommand = (tile, cmdId) => {
-              if (tile.commandId === cmdId) return true;
-              if (tile.type === 'split' && tile.children) {
-                return tile.children.some(child => tileHasCommand(child, cmdId));
+        // For content commands, create registry entry
+        if (isContentCommand(currentCommand)) {
+          const registry = getRegistry(activeTabId);
+          const commandId = registry.create(currentCommand.type, currentCommand.args || {});
+          registry.assignToTile(commandId, activeTileId);
+
+          setTabs(prev => {
+            return prev.map(tab => {
+              if (tab.id === activeTabId) {
+                // Recursively update the active tile in the tree
+                const updateTileTree = (tile) => {
+                  if (tile.id === activeTileId) {
+                    return { ...tile, commandId };
+                  }
+                  if (tile.type === 'split' && tile.children) {
+                    return {
+                      ...tile,
+                      children: tile.children.map(updateTileTree),
+                    };
+                  }
+                  return tile;
+                };
+
+                return { ...tab, rootTile: updateTileTree(tab.rootTile) };
               }
-              return false;
-            };
-
-            // Skip if command already assigned to a tile (e.g., via splitTile)
-            if (tileHasCommand(activeTab.rootTile, currentCommand.id)) {
-              return prev;
-            }
-          }
-
-          return prev.map(tab => {
-            if (tab.id === activeTabId) {
-              // Recursively update the active tile in the tree
-              const updateTileTree = (tile) => {
-                if (tile.id === activeTileId) {
-                  // Found the active tile - update its command
-                  return {
-                    ...tile,
-                    commandId: currentCommand.id,
-                  };
-                }
-                if (tile.type === 'split' && tile.children) {
-                  // Recursively search children
-                  return {
-                    ...tile,
-                    children: tile.children.map(updateTileTree),
-                  };
-                }
-                return tile;
-              };
-
-              return {
-                ...tab,
-                rootTile: updateTileTree(tab.rootTile),
-              };
-            }
-            return tab;
+              return tab;
+            });
           });
-        });
+        } else {
+          // Non-content commands (fallback to old behavior for compatibility)
+          setTabs(prev => {
+            const activeTab = prev.find(t => t.id === activeTabId);
+            if (activeTab) {
+              const tileHasCommand = (tile, cmdId) => {
+                if (tile.commandId === cmdId) return true;
+                if (tile.type === 'split' && tile.children) {
+                  return tile.children.some(child => tileHasCommand(child, cmdId));
+                }
+                return false;
+              };
+
+              if (tileHasCommand(activeTab.rootTile, currentCommand.id)) {
+                return prev;
+              }
+            }
+
+            return prev.map(tab => {
+              if (tab.id === activeTabId) {
+                const updateTileTree = (tile) => {
+                  if (tile.id === activeTileId) {
+                    return { ...tile, commandId: currentCommand.id };
+                  }
+                  if (tile.type === 'split' && tile.children) {
+                    return {
+                      ...tile,
+                      children: tile.children.map(updateTileTree),
+                    };
+                  }
+                  return tile;
+                };
+
+                return { ...tab, rootTile: updateTileTree(tab.rootTile) };
+              }
+              return tab;
+            });
+          });
+        }
       }
     }
-  }, [currentCommand, tabs.length, activeTabId, activeTileId]);
+  }, [currentCommand, tabs.length, activeTabId, activeTileId, getRegistry]);
 
   /**
    * Create a new tab
@@ -638,6 +709,9 @@ export const TabManagerProvider = ({ children }) => {
    * @param {string} tabId - Tab ID to close
    */
   const closeTab = useCallback((tabId) => {
+    // Clean up the CommandRegistry for this tab
+    removeRegistry(tabId);
+
     setTabs(prev => {
       const filtered = prev.filter(t => t.id !== tabId);
 
@@ -781,6 +855,9 @@ export const TabManagerProvider = ({ children }) => {
    * Clear all tabs
    */
   const clearAllTabs = useCallback(() => {
+    // Clear all CommandRegistries
+    registriesRef.current.clear();
+
     setTabs([]);
     setActiveTabId(null);
     setActiveTileId(null);
@@ -825,286 +902,6 @@ export const TabManagerProvider = ({ children }) => {
     if (!activeTabId) return null;
     return getTabContext(activeTabId);
   }, [activeTabId, getTabContext]);
-
-  // ============================================
-  // Dashboard State Management (Inter-Command Messaging)
-  // ============================================
-
-  /**
-   * Get dashboard state for a tab (for a specific space/room)
-   * @param {string} tabId - Tab ID
-   * @param {string} spaceRoomKey - Optional key in format 'spaceId_roomId'
-   * @returns {Object} Dashboard state { elements: [], commandId: null }
-   */
-  const getDashboardState = useCallback((tabId, spaceRoomKey = null) => {
-    const tab = tabs.find(t => t.id === tabId);
-    const dashboard = tab?.context?.dashboard || {};
-    const commandId = dashboard.commandId || null;
-
-    // If no space/room key provided, return empty elements (dashboard exists but no context)
-    if (!spaceRoomKey) {
-      return { elements: [], commandId };
-    }
-
-    // Get elements for specific space/room
-    const elements = dashboard.bySpaceRoom?.[spaceRoomKey] || [];
-    return { elements, commandId };
-  }, [tabs]);
-
-  /**
-   * Get dashboard state for active tab
-   * @param {string} spaceRoomKey - Optional key in format 'spaceId_roomId'
-   * @returns {Object} Dashboard state { elements: [], commandId: null }
-   */
-  const getActiveDashboardState = useCallback((spaceRoomKey = null) => {
-    if (!activeTabId) return { elements: [], commandId: null };
-    return getDashboardState(activeTabId, spaceRoomKey);
-  }, [activeTabId, getDashboardState]);
-
-  /**
-   * Add an element to dashboard in a tab (for a specific space/room)
-   * @param {string} tabId - Tab ID
-   * @param {Object} element - Element config { id, type, config }
-   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
-   */
-  const addDashboardElement = useCallback((tabId, element, spaceRoomKey) => {
-    if (!spaceRoomKey) return; // Require space/room context
-    if (!element || !element.id) return; // Require valid element with id
-
-    setTabs(prev =>
-      prev.map(tab => {
-        if (tab.id !== tabId) return tab;
-
-        const bySpaceRoom = tab.context?.dashboard?.bySpaceRoom || {};
-        const currentElements = bySpaceRoom[spaceRoomKey] || [];
-
-        // Don't add duplicates (check by element id)
-        if (currentElements.some(el => el.id === element.id)) return tab;
-
-        return {
-          ...tab,
-          context: {
-            ...tab.context,
-            dashboard: {
-              ...tab.context?.dashboard,
-              bySpaceRoom: {
-                ...bySpaceRoom,
-                [spaceRoomKey]: [...currentElements, element],
-              },
-            },
-          },
-        };
-      })
-    );
-  }, []);
-
-  /**
-   * Remove an element from dashboard in a tab (for a specific space/room)
-   * @param {string} tabId - Tab ID
-   * @param {string} elementId - Element ID to remove
-   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
-   */
-  const removeDashboardElement = useCallback((tabId, elementId, spaceRoomKey) => {
-    if (!spaceRoomKey) return;
-
-    setTabs(prev =>
-      prev.map(tab => {
-        if (tab.id !== tabId) return tab;
-
-        const bySpaceRoom = tab.context?.dashboard?.bySpaceRoom || {};
-        const currentElements = bySpaceRoom[spaceRoomKey] || [];
-
-        return {
-          ...tab,
-          context: {
-            ...tab.context,
-            dashboard: {
-              ...tab.context?.dashboard,
-              bySpaceRoom: {
-                ...bySpaceRoom,
-                [spaceRoomKey]: currentElements.filter(el => el.id !== elementId),
-              },
-            },
-          },
-        };
-      })
-    );
-  }, []);
-
-  /**
-   * Clear all metrics from dashboard in a tab (for a specific space/room)
-   * @param {string} tabId - Tab ID
-   * @param {string} spaceRoomKey - Optional key - if not provided, clears all space/rooms
-   */
-  const clearDashboardMetrics = useCallback((tabId, spaceRoomKey = null) => {
-    setTabs(prev =>
-      prev.map(tab => {
-        if (tab.id !== tabId) return tab;
-
-        if (spaceRoomKey) {
-          // Clear only specific space/room
-          const bySpaceRoom = tab.context?.dashboard?.bySpaceRoom || {};
-          return {
-            ...tab,
-            context: {
-              ...tab.context,
-              dashboard: {
-                ...tab.context?.dashboard,
-                bySpaceRoom: {
-                  ...bySpaceRoom,
-                  [spaceRoomKey]: [],
-                },
-              },
-            },
-          };
-        } else {
-          // Clear all space/rooms
-          return {
-            ...tab,
-            context: {
-              ...tab.context,
-              dashboard: {
-                ...tab.context?.dashboard,
-                bySpaceRoom: {},
-              },
-            },
-          };
-        }
-      })
-    );
-  }, []);
-
-  /**
-   * Set the dashboard command ID for a tab (singleton tracking)
-   * @param {string} tabId - Tab ID
-   * @param {string|null} commandId - Dashboard command ID or null to clear
-   */
-  const setDashboardCommandId = useCallback((tabId, commandId) => {
-    setTabs(prev =>
-      prev.map(tab => {
-        if (tab.id !== tabId) return tab;
-
-        return {
-          ...tab,
-          context: {
-            ...tab.context,
-            dashboard: {
-              ...tab.context?.dashboard,
-              commandId,
-            },
-          },
-        };
-      })
-    );
-  }, []);
-
-  /**
-   * Check if an element is already in dashboard for a tab (for a specific space/room)
-   * @param {string} tabId - Tab ID
-   * @param {string} elementId - Element ID to check
-   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
-   * @returns {boolean} True if element is in dashboard
-   */
-  const isElementInDashboard = useCallback((tabId, elementId, spaceRoomKey) => {
-    if (!spaceRoomKey) return false;
-    const dashboardState = getDashboardState(tabId, spaceRoomKey);
-    const elements = dashboardState.elements || [];
-    return elements.some(el => el.id === elementId);
-  }, [getDashboardState]);
-
-  // ============================================
-  // Canvas State Management (React Flow)
-  // ============================================
-
-  /**
-   * Get canvas state for a tab (for a specific space/room)
-   * @param {string} tabId - Tab ID
-   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
-   * @returns {Object} Canvas state { nodes: [], edges: [], commandId: null }
-   */
-  const getCanvasState = useCallback((tabId, spaceRoomKey = null) => {
-    const tab = tabs.find(t => t.id === tabId);
-    const canvas = tab?.context?.canvas || {};
-    const commandId = canvas.commandId || null;
-
-    if (!spaceRoomKey) {
-      return { nodes: [], edges: [], commandId };
-    }
-
-    const spaceRoomData = canvas.bySpaceRoom?.[spaceRoomKey] || {};
-    return {
-      nodes: spaceRoomData.nodes || [],
-      edges: spaceRoomData.edges || [],
-      commandId,
-    };
-  }, [tabs]);
-
-  /**
-   * Get canvas state for active tab
-   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
-   * @returns {Object} Canvas state { nodes: [], edges: [], commandId: null }
-   */
-  const getActiveCanvasState = useCallback((spaceRoomKey = null) => {
-    if (!activeTabId) return { nodes: [], edges: [], commandId: null };
-    return getCanvasState(activeTabId, spaceRoomKey);
-  }, [activeTabId, getCanvasState]);
-
-  /**
-   * Set canvas state for a tab (for a specific space/room)
-   * @param {string} tabId - Tab ID
-   * @param {Array} nodes - React Flow nodes array
-   * @param {Array} edges - React Flow edges array
-   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
-   */
-  const setCanvasState = useCallback((tabId, nodes, edges, spaceRoomKey) => {
-    if (!spaceRoomKey) return;
-
-    setTabs(prev =>
-      prev.map(tab => {
-        if (tab.id !== tabId) return tab;
-
-        const bySpaceRoom = tab.context?.canvas?.bySpaceRoom || {};
-
-        return {
-          ...tab,
-          context: {
-            ...tab.context,
-            canvas: {
-              ...tab.context?.canvas,
-              bySpaceRoom: {
-                ...bySpaceRoom,
-                [spaceRoomKey]: { nodes, edges },
-              },
-            },
-          },
-        };
-      })
-    );
-  }, []);
-
-  /**
-   * Set canvas command ID for a tab
-   * @param {string} tabId - Tab ID
-   * @param {string} commandId - Canvas command ID
-   */
-  const setCanvasCommandId = useCallback((tabId, commandId) => {
-    setTabs(prev =>
-      prev.map(tab => {
-        if (tab.id !== tabId) return tab;
-
-        return {
-          ...tab,
-          context: {
-            ...tab.context,
-            canvas: {
-              ...tab.context?.canvas,
-              commandId,
-            },
-          },
-        };
-      })
-    );
-  }, []);
 
   /**
    * Split a tile in the active tab
@@ -1177,6 +974,70 @@ export const TabManagerProvider = ({ children }) => {
 
     return result;
   }, [activeTabId]);
+
+  /**
+   * Split a tile in a specific tab (for agent bridge)
+   * @param {string} tabId - Tab ID
+   * @param {string} tileId - Tile ID to split
+   * @param {string} direction - 'horizontal' or 'vertical'
+   * @param {string} newCommandId - Optional command ID for the new tile
+   * @returns {Object} Result with success status and new tile ID
+   */
+  const splitTileInTab = useCallback((tabId, tileId, direction, newCommandId = null) => {
+    // Use a result object that will be populated inside setTabs callback
+    let result = { success: false, message: 'Unknown error', newTileId: null };
+
+    // Compute everything inside setTabs to use latest state (prev)
+    setTabs(prev => {
+      const tab = prev.find(t => t.id === tabId);
+      if (!tab) {
+        result = { success: false, message: 'Tab not found', newTileId: null };
+        return prev;
+      }
+
+      // Find the tile to split using prev state
+      const tileToSplit = findTileById(tab.rootTile, tileId);
+      if (!tileToSplit) {
+        result = { success: false, message: 'Tile not found', newTileId: null };
+        return prev;
+      }
+
+      // Create the split tile
+      const splitTileResult = splitTileInternal(tileToSplit, direction, newCommandId);
+
+      // Update the tile tree
+      const updateTileTree = (tile) => {
+        if (tile.id === tileId) {
+          return splitTileResult;
+        }
+        if (tile.type === 'split' && tile.children) {
+          return {
+            ...tile,
+            children: tile.children.map(updateTileTree),
+          };
+        }
+        return tile;
+      };
+
+      const updatedRootTile = updateTileTree(tab.rootTile);
+
+      // Set result with new tile ID
+      const newTileId = splitTileResult.children[1].id;
+      result = {
+        success: true,
+        message: `Tile split ${direction}`,
+        newTileId,
+      };
+
+      return prev.map(t =>
+        t.id === tabId
+          ? { ...t, rootTile: updatedRootTile }
+          : t
+      );
+    });
+
+    return result;
+  }, []);
 
   /**
    * Close a tile in the active tab
@@ -1489,6 +1350,203 @@ export const TabManagerProvider = ({ children }) => {
     return true;
   }, [activeTileId, getLeafTiles]);
 
+  // ============================================
+  // CommandRegistry Methods
+  // ============================================
+
+  /**
+   * Create a new command in the active tab's registry
+   * @param {string} type - Command type (canvas, dashboard, etc.)
+   * @param {object} args - Command arguments
+   * @returns {string|null} Command ID or null if no active tab
+   */
+  const createCommand = useCallback((type, args = {}) => {
+    if (!activeTabId) return null;
+    const registry = getRegistry(activeTabId);
+    return registry.create(type, args);
+  }, [activeTabId, getRegistry]);
+
+  /**
+   * Delete a command from the active tab's registry
+   * @param {string} commandId - Command ID to delete
+   * @returns {boolean} True if deleted
+   */
+  const deleteCommand = useCallback((commandId) => {
+    if (!activeTabId) return false;
+    const registry = getRegistry(activeTabId);
+    return registry.delete(commandId);
+  }, [activeTabId, getRegistry]);
+
+  /**
+   * Get a command from the active tab's registry
+   * @param {string} commandId - Command ID
+   * @returns {Object|undefined} Command entry
+   */
+  const getCommand = useCallback((commandId) => {
+    if (!activeTabId) return undefined;
+    const registry = getRegistry(activeTabId);
+    return registry.get(commandId);
+  }, [activeTabId, getRegistry]);
+
+  /**
+   * Get all commands from the active tab's registry
+   * @returns {Array} Array of command entries
+   */
+  const getCommands = useCallback(() => {
+    if (!activeTabId) return [];
+    const registry = getRegistry(activeTabId);
+    return registry.getAll();
+  }, [activeTabId, getRegistry]);
+
+  /**
+   * Get commands by type from the active tab's registry
+   * @param {string} type - Command type to filter by
+   * @returns {Array} Array of matching command entries
+   */
+  const getCommandsByType = useCallback((type) => {
+    if (!activeTabId) return [];
+    const registry = getRegistry(activeTabId);
+    return registry.getByType(type);
+  }, [activeTabId, getRegistry]);
+
+  /**
+   * Get the command assigned to a specific tile
+   * @param {string} tileId - Tile ID
+   * @returns {Object|undefined} Command entry
+   */
+  const getCommandByTile = useCallback((tileId) => {
+    if (!activeTabId) return undefined;
+    const registry = getRegistry(activeTabId);
+    return registry.getByTile(tileId);
+  }, [activeTabId, getRegistry]);
+
+  /**
+   * Assign a command to a tile
+   * @param {string} commandId - Command ID
+   * @param {string} tileId - Tile ID
+   */
+  const assignCommandToTile = useCallback((commandId, tileId) => {
+    if (!activeTabId) return;
+    const registry = getRegistry(activeTabId);
+    registry.assignToTile(commandId, tileId);
+  }, [activeTabId, getRegistry]);
+
+  /**
+   * Register a component API with the registry (called by useCommandRegistration hook)
+   * @param {string} commandId - Command ID
+   * @param {object} api - API object with methods
+   */
+  const registerCommandApi = useCallback((commandId, api) => {
+    if (!activeTabId) return;
+    const registry = getRegistry(activeTabId);
+    registry.registerApi(commandId, api);
+  }, [activeTabId, getRegistry]);
+
+  /**
+   * Unregister a component API (called by useCommandRegistration hook on unmount)
+   * @param {string} commandId - Command ID
+   */
+  const unregisterCommandApi = useCallback((commandId) => {
+    if (!activeTabId) return;
+    const registry = getRegistry(activeTabId);
+    registry.unregisterApi(commandId);
+  }, [activeTabId, getRegistry]);
+
+  /**
+   * Register a component API in a specific tab's registry
+   * @param {string} tabId - Tab ID where the component lives
+   * @param {string} commandId - Command ID
+   * @param {object} api - API object with methods
+   */
+  const registerCommandApiInTab = useCallback((tabId, commandId, api) => {
+    if (!tabId) return;
+    const registry = getRegistry(tabId);
+    if (registry) {
+      registry.registerApi(commandId, api);
+    }
+  }, [getRegistry]);
+
+  /**
+   * Unregister a component API from a specific tab's registry
+   * @param {string} tabId - Tab ID where the component lives
+   * @param {string} commandId - Command ID
+   */
+  const unregisterCommandApiInTab = useCallback((tabId, commandId) => {
+    if (!tabId) return;
+    const registry = getRegistry(tabId);
+    if (registry) {
+      registry.unregisterApi(commandId);
+    }
+  }, [getRegistry]);
+
+  /**
+   * Get command from a specific tab's registry (for agent bridge)
+   * @param {string} tabId - Tab ID
+   * @param {string} commandId - Command ID
+   * @returns {Object|undefined} Command entry
+   */
+  const getCommandFromTab = useCallback((tabId, commandId) => {
+    const registry = getRegistry(tabId);
+    return registry.get(commandId);
+  }, [getRegistry]);
+
+  /**
+   * Get commands by type from a specific tab's registry
+   * @param {string} tabId - Tab ID
+   * @param {string} type - Command type
+   * @returns {Array} Array of matching commands
+   */
+  const getCommandsByTypeFromTab = useCallback((tabId, type) => {
+    const registry = getRegistry(tabId);
+    return registry.getByType(type);
+  }, [getRegistry]);
+
+  /**
+   * Create a command in a specific tab's registry (for agent bridge)
+   * @param {string} tabId - Tab ID
+   * @param {string} type - Command type
+   * @param {object} args - Command arguments
+   * @returns {Object|null} Command entry or null if tab not found
+   */
+  const createCommandInTab = useCallback((tabId, type, args = {}) => {
+    const registry = getRegistry(tabId);
+    if (!registry) return null;
+    const commandId = registry.create(type, args);
+    return registry.get(commandId);
+  }, [getRegistry]);
+
+  /**
+   * Assign a command to a tile in a specific tab (for agent bridge)
+   * @param {string} tabId - Tab ID
+   * @param {string} commandId - Command ID
+   * @param {string} tileId - Tile ID
+   */
+  const assignCommandToTileInTab = useCallback((tabId, commandId, tileId) => {
+    const registry = getRegistry(tabId);
+    if (!registry) return;
+    registry.assignToTile(commandId, tileId);
+
+    // Update the tile's commandId in the tab structure
+    setTabs(prev => prev.map(tab => {
+      if (tab.id !== tabId) return tab;
+
+      const updateTileCommandId = (tile) => {
+        if (tile.id === tileId) {
+          return { ...tile, commandId };
+        }
+        if (tile.children) {
+          return { ...tile, children: tile.children.map(updateTileCommandId) };
+        }
+        return tile;
+      };
+
+      return {
+        ...tab,
+        rootTile: updateTileCommandId(tab.rootTile),
+      };
+    }));
+  }, [getRegistry]);
+
   const value = useMemo(() => ({
     // State
     tabs,
@@ -1516,21 +1574,6 @@ export const TabManagerProvider = ({ children }) => {
     getTabContext,
     getActiveTabContext,
 
-    // Dashboard State Management (Inter-Command Messaging)
-    getDashboardState,
-    getActiveDashboardState,
-    addDashboardElement,
-    removeDashboardElement,
-    clearDashboardMetrics,
-    setDashboardCommandId,
-    isElementInDashboard,
-
-    // Canvas State Management (React Flow)
-    getCanvasState,
-    getActiveCanvasState,
-    setCanvasState,
-    setCanvasCommandId,
-
     // Command Integration
     addCommandToActiveTile,
     handleLayoutCommand,
@@ -1546,6 +1589,24 @@ export const TabManagerProvider = ({ children }) => {
     // Tile Navigation
     focusNextTile,
     focusPrevTile,
+
+    // CommandRegistry Methods
+    createCommand,
+    deleteCommand,
+    getCommand,
+    getCommands,
+    getCommandsByType,
+    getCommandByTile,
+    assignCommandToTile,
+    registerCommandApi,
+    unregisterCommandApi,
+    registerCommandApiInTab,
+    unregisterCommandApiInTab,
+    getCommandFromTab,
+    getCommandsByTypeFromTab,
+    createCommandInTab,
+    assignCommandToTileInTab,
+    splitTileInTab,
   }), [
     tabs,
     activeTabId,
@@ -1565,17 +1626,6 @@ export const TabManagerProvider = ({ children }) => {
     updateTabContext,
     getTabContext,
     getActiveTabContext,
-    getDashboardState,
-    getActiveDashboardState,
-    addDashboardElement,
-    removeDashboardElement,
-    clearDashboardMetrics,
-    setDashboardCommandId,
-    isElementInDashboard,
-    getCanvasState,
-    getActiveCanvasState,
-    setCanvasState,
-    setCanvasCommandId,
     addCommandToActiveTile,
     handleLayoutCommand,
     splitTile,
@@ -1584,7 +1634,23 @@ export const TabManagerProvider = ({ children }) => {
     getTile,
     getLeafTiles,
     focusNextTile,
-    focusPrevTile
+    focusPrevTile,
+    createCommand,
+    deleteCommand,
+    getCommand,
+    getCommands,
+    getCommandsByType,
+    getCommandByTile,
+    assignCommandToTile,
+    registerCommandApi,
+    unregisterCommandApi,
+    registerCommandApiInTab,
+    unregisterCommandApiInTab,
+    getCommandFromTab,
+    getCommandsByTypeFromTab,
+    createCommandInTab,
+    assignCommandToTileInTab,
+    splitTileInTab,
   ]);
 
   return (

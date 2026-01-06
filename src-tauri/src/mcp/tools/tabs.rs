@@ -37,6 +37,14 @@ pub struct SplitTileParams {
     /// How to split: "vertical" (side by side) or "horizontal" (stacked).
     #[schemars(description = "Split type: 'vertical' or 'horizontal'")]
     pub split_type: String,
+
+    /// Optional command type to create in the new tile.
+    /// If provided, creates a command (canvas, dashboard, etc.) in the new tile.
+    #[schemars(
+        description = "Command type to create: 'canvas', 'dashboard', 'anomalies', etc. (optional)"
+    )]
+    #[serde(default)]
+    pub command_type: Option<String>,
 }
 
 /// Parameters for removing a tile from the tab.
@@ -55,6 +63,10 @@ pub struct RemoveTileParams {
 pub struct SplitTileResult {
     /// The ID of the newly created tile.
     pub tile_id: String,
+
+    /// The ID of the command created in the new tile (if commandType was provided).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_id: Option<String>,
 }
 
 /// A node in the tile tree.
@@ -311,6 +323,7 @@ mod tests {
         let params: SplitTileParams = serde_json::from_value(json).unwrap();
         assert_eq!(params.parent_tile_id, "tile-123");
         assert_eq!(params.split_type, "vertical");
+        assert_eq!(params.command_type, None);
     }
 
     #[test]
@@ -323,6 +336,21 @@ mod tests {
         let params: SplitTileParams = serde_json::from_value(json).unwrap();
         assert_eq!(params.parent_tile_id, "tile-456");
         assert_eq!(params.split_type, "horizontal");
+        assert_eq!(params.command_type, None);
+    }
+
+    #[test]
+    fn test_split_tile_params_with_command_type() {
+        let json = json!({
+            "parentTileId": "tile-789",
+            "splitType": "vertical",
+            "commandType": "canvas"
+        });
+
+        let params: SplitTileParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.parent_tile_id, "tile-789");
+        assert_eq!(params.split_type, "vertical");
+        assert_eq!(params.command_type, Some("canvas".to_string()));
     }
 
     #[test]

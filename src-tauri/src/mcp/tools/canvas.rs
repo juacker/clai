@@ -40,6 +40,10 @@ use crate::mcp::bridge::JsBridge;
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AddChartNodeParams {
+    /// The canvas command ID (from tabs.splitTile or tabs.getTileLayout).
+    #[schemars(description = "Canvas command ID (from tabs.splitTile or tabs.getTileLayout)")]
+    pub command_id: String,
+
     /// X position on the canvas.
     #[schemars(description = "X coordinate on the canvas")]
     pub x: f64,
@@ -87,6 +91,10 @@ pub struct AddChartNodeParams {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AddStatusBadgeParams {
+    /// The canvas command ID (from tabs.splitTile or tabs.getTileLayout).
+    #[schemars(description = "Canvas command ID (from tabs.splitTile or tabs.getTileLayout)")]
+    pub command_id: String,
+
     /// X position on the canvas.
     #[schemars(description = "X coordinate on the canvas")]
     pub x: f64,
@@ -113,6 +121,10 @@ pub struct AddStatusBadgeParams {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AddMarkdownNodeParams {
+    /// The canvas command ID (from tabs.splitTile or tabs.getTileLayout).
+    #[schemars(description = "Canvas command ID (from tabs.splitTile or tabs.getTileLayout)")]
+    pub command_id: String,
+
     /// X position on the canvas.
     #[schemars(description = "X coordinate on the canvas")]
     pub x: f64,
@@ -142,6 +154,10 @@ pub struct AddMarkdownNodeParams {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AddEdgeParams {
+    /// The canvas command ID (from tabs.splitTile or tabs.getTileLayout).
+    #[schemars(description = "Canvas command ID (from tabs.splitTile or tabs.getTileLayout)")]
+    pub command_id: String,
+
     /// Source node ID.
     #[schemars(description = "ID of the source node")]
     pub source_id: String,
@@ -165,6 +181,10 @@ pub struct AddEdgeParams {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoveNodeParams {
+    /// The canvas command ID (from tabs.splitTile or tabs.getTileLayout).
+    #[schemars(description = "Canvas command ID (from tabs.splitTile or tabs.getTileLayout)")]
+    pub command_id: String,
+
     /// The unique ID of the node to remove.
     #[schemars(description = "The unique ID of the node to remove")]
     pub node_id: String,
@@ -174,6 +194,10 @@ pub struct RemoveNodeParams {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoveEdgeParams {
+    /// The canvas command ID (from tabs.splitTile or tabs.getTileLayout).
+    #[schemars(description = "Canvas command ID (from tabs.splitTile or tabs.getTileLayout)")]
+    pub command_id: String,
+
     /// The unique ID of the edge to remove.
     #[schemars(description = "The unique ID of the edge to remove")]
     pub edge_id: String,
@@ -183,6 +207,10 @@ pub struct RemoveEdgeParams {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GetNodeDetailsParams {
+    /// The canvas command ID (from tabs.splitTile or tabs.getTileLayout).
+    #[schemars(description = "Canvas command ID (from tabs.splitTile or tabs.getTileLayout)")]
+    pub command_id: String,
+
     /// The unique ID of the node to get details for.
     #[schemars(description = "The unique ID of the node")]
     pub node_id: String,
@@ -192,6 +220,10 @@ pub struct GetNodeDetailsParams {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateNodeParams {
+    /// The canvas command ID (from tabs.splitTile or tabs.getTileLayout).
+    #[schemars(description = "Canvas command ID (from tabs.splitTile or tabs.getTileLayout)")]
+    pub command_id: String,
+
     /// The unique ID of the node to update.
     #[schemars(description = "The unique ID of the node to update")]
     pub node_id: String,
@@ -213,6 +245,33 @@ pub struct UpdateNodeParams {
     #[schemars(description = "Partial data to merge with existing node data (optional)")]
     #[serde(default)]
     pub data: Option<Value>,
+}
+
+/// Parameters for getting all nodes from a canvas.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetNodesParams {
+    /// The canvas command ID (from tabs.splitTile or tabs.getTileLayout).
+    #[schemars(description = "Canvas command ID (from tabs.splitTile or tabs.getTileLayout)")]
+    pub command_id: String,
+}
+
+/// Parameters for clearing all nodes and edges from a canvas.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearCanvasParams {
+    /// The canvas command ID (from tabs.splitTile or tabs.getTileLayout).
+    #[schemars(description = "Canvas command ID (from tabs.splitTile or tabs.getTileLayout)")]
+    pub command_id: String,
+}
+
+/// Parameters for getting all nodes with detailed data from a canvas.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetNodesDetailedParams {
+    /// The canvas command ID (from tabs.splitTile or tabs.getTileLayout).
+    #[schemars(description = "Canvas command ID (from tabs.splitTile or tabs.getTileLayout)")]
+    pub command_id: String,
 }
 
 // =============================================================================
@@ -483,7 +542,7 @@ impl CanvasTools {
     }
 
     /// Get all nodes on the canvas.
-    pub async fn get_nodes(&self) -> Result<Vec<NodeInfo>, ToolError> {
+    pub async fn get_nodes(&self, params: GetNodesParams) -> Result<Vec<NodeInfo>, ToolError> {
         let bridge = self.bridge()?;
         let result = bridge
             .call_tool(
@@ -491,7 +550,8 @@ impl CanvasTools {
                 &self.space_id,
                 &self.room_id,
                 "canvas.getNodes",
-                serde_json::json!({}),
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -500,7 +560,7 @@ impl CanvasTools {
     }
 
     /// Clear all nodes and edges from the canvas.
-    pub async fn clear_canvas(&self) -> Result<(), ToolError> {
+    pub async fn clear_canvas(&self, params: ClearCanvasParams) -> Result<(), ToolError> {
         let bridge = self.bridge()?;
         bridge
             .call_tool(
@@ -508,7 +568,8 @@ impl CanvasTools {
                 &self.space_id,
                 &self.room_id,
                 "canvas.clearCanvas",
-                serde_json::json!({}),
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -537,7 +598,10 @@ impl CanvasTools {
     }
 
     /// Get all nodes with their full data.
-    pub async fn get_nodes_detailed(&self) -> Result<Vec<NodeDetailedInfo>, ToolError> {
+    pub async fn get_nodes_detailed(
+        &self,
+        params: GetNodesDetailedParams,
+    ) -> Result<Vec<NodeDetailedInfo>, ToolError> {
         let bridge = self.bridge()?;
         let result = bridge
             .call_tool(
@@ -545,7 +609,8 @@ impl CanvasTools {
                 &self.space_id,
                 &self.room_id,
                 "canvas.getNodesDetailed",
-                serde_json::json!({}),
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -596,6 +661,7 @@ mod tests {
     #[test]
     fn test_add_chart_node_params() {
         let json = json!({
+            "commandId": "canvas_123",
             "x": 100.0,
             "y": 200.0,
             "context": "system.cpu",
@@ -604,6 +670,7 @@ mod tests {
         });
 
         let params: AddChartNodeParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.command_id, "canvas_123");
         assert_eq!(params.x, 100.0);
         assert_eq!(params.y, 200.0);
         assert_eq!(params.context, "system.cpu");
@@ -614,6 +681,7 @@ mod tests {
     #[test]
     fn test_add_status_badge_params() {
         let json = json!({
+            "commandId": "canvas_123",
             "x": 50.0,
             "y": 50.0,
             "status": "healthy",
@@ -621,6 +689,7 @@ mod tests {
         });
 
         let params: AddStatusBadgeParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.command_id, "canvas_123");
         assert_eq!(params.status, "healthy");
         assert_eq!(params.message, "All systems operational");
     }
@@ -628,6 +697,7 @@ mod tests {
     #[test]
     fn test_add_markdown_node_params() {
         let json = json!({
+            "commandId": "canvas_123",
             "x": 0.0,
             "y": 0.0,
             "content": "## Infrastructure Overview\n\n| Metric | Value |\n|--------|-------|\n| CPU | 85% |",
@@ -635,6 +705,7 @@ mod tests {
         });
 
         let params: AddMarkdownNodeParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.command_id, "canvas_123");
         assert!(params.content.contains("Infrastructure Overview"));
         assert_eq!(params.width, Some(500.0));
     }
@@ -642,12 +713,14 @@ mod tests {
     #[test]
     fn test_add_edge_params() {
         let json = json!({
+            "commandId": "canvas_123",
             "sourceId": "node-1",
             "targetId": "node-2",
             "label": "depends on"
         });
 
         let params: AddEdgeParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.command_id, "canvas_123");
         assert_eq!(params.source_id, "node-1");
         assert_eq!(params.target_id, "node-2");
         assert_eq!(params.label, Some("depends on".to_string()));
@@ -656,20 +729,82 @@ mod tests {
     #[test]
     fn test_remove_node_params() {
         let json = json!({
+            "commandId": "canvas_123",
             "nodeId": "node-123"
         });
 
         let params: RemoveNodeParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.command_id, "canvas_123");
         assert_eq!(params.node_id, "node-123");
     }
 
     #[test]
     fn test_get_node_details_params() {
         let json = json!({
+            "commandId": "canvas_123",
             "nodeId": "chart_123"
         });
 
         let params: GetNodeDetailsParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.command_id, "canvas_123");
         assert_eq!(params.node_id, "chart_123");
+    }
+
+    #[test]
+    fn test_remove_edge_params() {
+        let json = json!({
+            "commandId": "canvas_123",
+            "edgeId": "edge-456"
+        });
+
+        let params: RemoveEdgeParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.command_id, "canvas_123");
+        assert_eq!(params.edge_id, "edge-456");
+    }
+
+    #[test]
+    fn test_update_node_params() {
+        let json = json!({
+            "commandId": "canvas_123",
+            "nodeId": "node-789",
+            "x": 200.0,
+            "data": { "title": "Updated Title" }
+        });
+
+        let params: UpdateNodeParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.command_id, "canvas_123");
+        assert_eq!(params.node_id, "node-789");
+        assert_eq!(params.x, Some(200.0));
+        assert!(params.data.is_some());
+    }
+
+    #[test]
+    fn test_get_nodes_params() {
+        let json = json!({
+            "commandId": "canvas_123"
+        });
+
+        let params: GetNodesParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.command_id, "canvas_123");
+    }
+
+    #[test]
+    fn test_clear_canvas_params() {
+        let json = json!({
+            "commandId": "canvas_123"
+        });
+
+        let params: ClearCanvasParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.command_id, "canvas_123");
+    }
+
+    #[test]
+    fn test_get_nodes_detailed_params() {
+        let json = json!({
+            "commandId": "canvas_123"
+        });
+
+        let params: GetNodesDetailedParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.command_id, "canvas_123");
     }
 }

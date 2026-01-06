@@ -4,24 +4,14 @@
  * Provides inter-command messaging capabilities, particularly for
  * sending data (elements, charts) to the dashboard command.
  *
+ * Now uses the Dashboard's registered API via CommandRegistry instead of
+ * storing dashboard state in TabManagerContext.
+ *
  * Features:
- * - sendToDashboard(element, spaceRoomKey): Sends an element to dashboard for a space/room
- * - isElementInDashboard(elementId, spaceRoomKey): Checks if an element is already in dashboard
- * - getDashboardElements(spaceRoomKey): Get elements for a specific space/room
+ * - sendToDashboard(config): Sends a chart config to dashboard
+ * - isElementInDashboard(elementId): Checks if an element is already in dashboard
+ * - getDashboardElements(): Get all elements from dashboard
  * - dashboardExists: Boolean indicating if dashboard command exists in current tab
- *
- * Element format:
- * {
- *   id: "unique-id",
- *   type: "context-chart" | "timeseries-chart" | "bar-chart" | etc,
- *   config: { ... element-specific configuration }
- * }
- *
- * Dashboard elements are stored per space/room combination, so switching
- * space/room shows different elements (and switching back preserves them).
- *
- * Calling components should use useTabContext to get selectedSpace/selectedRoom
- * and create the spaceRoomKey: `${selectedSpace.id}_${selectedRoom.id}`
  */
 
 import React, { createContext, useContext, useCallback, useMemo } from 'react';
@@ -51,85 +41,138 @@ export const CommandMessagingProvider = ({ children }) => {
   const {
     activeTabId,
     activeTileId,
-    getDashboardState,
-    getActiveDashboardState,
-    addDashboardElement,
-    removeDashboardElement,
-    clearDashboardMetrics,
-    setDashboardCommandId,
-    isElementInDashboard: checkElementInDashboard,
     splitTile,
     getLeafTiles,
     setActiveTile,
+    getCommandsByType,
   } = useTabManager();
 
   const { executeCommand } = useCommand();
 
   /**
+   * Get all dashboard commands from the current tab
+   * @returns {Array} Array of dashboard command entries
+   */
+  const getDashboards = useCallback(() => {
+    return getCommandsByType('dashboard');
+  }, [getCommandsByType]);
+
+  /**
+   * Get the first dashboard command from the current tab (if exists)
+   */
+  const getDashboardCommand = useCallback(() => {
+    const dashboards = getDashboards();
+    return dashboards.length > 0 ? dashboards[0] : null;
+  }, [getDashboards]);
+
+  /**
    * Whether dashboard command exists in current tab
    */
   const dashboardExists = useMemo(() => {
-    const dashboardState = getActiveDashboardState();
-    return !!dashboardState.commandId;
-  }, [getActiveDashboardState]);
+    const dashboards = getDashboards();
+    return dashboards.length > 0;
+  }, [getDashboards]);
 
   /**
-   * Get dashboard elements for a specific space/room
-   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
+   * Number of dashboards in the current tab
+   */
+  const dashboardCount = useMemo(() => {
+    return getDashboards().length;
+  }, [getDashboards]);
+
+  /**
+   * Get dashboard elements
    * @returns {Array} Array of element configs
    */
-  const getDashboardElements = useCallback((spaceRoomKey) => {
-    if (!spaceRoomKey) return [];
-    const dashboardState = getActiveDashboardState(spaceRoomKey);
-    return dashboardState.elements || [];
-  }, [getActiveDashboardState]);
+  const getDashboardElements = useCallback(() => {
+    const dashboard = getDashboardCommand();
+    if (!dashboard?.api?.getCharts) return [];
+    return dashboard.api.getCharts();
+  }, [getDashboardCommand]);
 
   /**
-   * Check if an element is already in dashboard for a space/room
+   * Check if an element is already in dashboard
    * @param {string} elementId - Element ID to check
-   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
    * @returns {boolean} True if element is in dashboard
    */
-  const isElementInDashboard = useCallback((elementId, spaceRoomKey) => {
-    if (!activeTabId || !spaceRoomKey) return false;
-    return checkElementInDashboard(activeTabId, elementId, spaceRoomKey);
-  }, [activeTabId, checkElementInDashboard]);
+  const isElementInDashboard = useCallback((elementId) => {
+    const dashboard = getDashboardCommand();
+    if (!dashboard?.api?.hasElement) return false;
+    return dashboard.api.hasElement(elementId);
+  }, [getDashboardCommand]);
 
   /**
-   * Send an element to dashboard for a specific space/room
-   * If dashboard doesn't exist, auto-creates it via horizontal split (left/right)
-   * @param {Object} element - Element config { id, type, config }
-   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
-   * @returns {Object} Result with success status
+   * Send a chart config to a specific dashboard by ID
+   * @param {string} dashboardId - The dashboard command ID
+   * @param {Object} config - Chart configuration { context, groupBy?, filterBy?, ... }
+   * @returns {Object} Result with success status and elementId
    */
-  const sendToDashboard = useCallback((element, spaceRoomKey) => {
+  const sendToDashboardById = useCallback((dashboardId, config) => {
     if (!activeTabId) {
       return { success: false, message: 'No active tab' };
     }
 
-    if (!spaceRoomKey) {
-      return { success: false, message: 'No space/room selected' };
-    }
-
-    if (!element || !element.id) {
-      return { success: false, message: 'Invalid element: missing id' };
+    if (!config || !config.context) {
+      return { success: false, message: 'Invalid config: missing context' };
     }
 
     // Validate element configuration
+    const element = { id: 'temp', type: 'context-chart', config };
     const validation = validateDashboardElement(element);
     if (!validation.valid) {
       return { success: false, message: `Invalid element: ${validation.error}` };
     }
 
-    // Check if element is already in dashboard
-    if (isElementInDashboard(element.id, spaceRoomKey)) {
-      return { success: false, message: 'Element already in dashboard' };
+    // Find the specific dashboard
+    const dashboards = getDashboards();
+    const dashboard = dashboards.find(d => d.id === dashboardId);
+
+    if (!dashboard) {
+      return { success: false, message: 'Dashboard not found' };
     }
 
-    const currentDashboardState = getDashboardState(activeTabId, spaceRoomKey);
+    // Wait for dashboard API to be ready (component needs to mount)
+    if (!dashboard?.api?.addChart) {
+      return { success: false, message: 'Dashboard not ready yet, please try again' };
+    }
 
-    // If dashboard doesn't exist, create it via horizontal split (left/right)
-    if (!currentDashboardState.commandId) {
+    // Add the chart to dashboard
+    const elementId = dashboard.api.addChart(config);
+    if (!elementId) {
+      return { success: false, message: 'Failed to add chart to dashboard' };
+    }
+
+    return { success: true, message: 'Chart sent to dashboard', elementId };
+  }, [activeTabId, getDashboards]);
+
+  /**
+   * Send a chart config to dashboard
+   * - If no dashboard exists, auto-creates one via horizontal split (left/right)
+   * - If one dashboard exists, sends directly to it
+   * - If multiple dashboards exist, returns needsSelection: true with list of dashboards
+   * @param {Object} config - Chart configuration { context, groupBy?, filterBy?, ... }
+   * @returns {Object} Result with success status, elementId, or needsSelection flag
+   */
+  const sendToDashboard = useCallback((config) => {
+    if (!activeTabId) {
+      return { success: false, message: 'No active tab' };
+    }
+
+    if (!config || !config.context) {
+      return { success: false, message: 'Invalid config: missing context' };
+    }
+
+    // Validate element configuration
+    const element = { id: 'temp', type: 'context-chart', config };
+    const validation = validateDashboardElement(element);
+    if (!validation.valid) {
+      return { success: false, message: `Invalid element: ${validation.error}` };
+    }
+
+    const dashboards = getDashboards();
+
+    // If no dashboard exists, create one via horizontal split (left/right)
+    if (dashboards.length === 0) {
       if (!activeTileId) {
         return { success: false, message: 'No active tile' };
       }
@@ -141,54 +184,72 @@ export const CommandMessagingProvider = ({ children }) => {
       }
 
       // Split the current tile horizontally (side by side: left | right)
-      // Pass the dashboard command ID so the new tile is created with the command already assigned
       const splitResult = splitTile(activeTileId, 'horizontal', dashboardCommand.id);
       if (!splitResult.success) {
         return { success: false, message: `Failed to split tile: ${splitResult.message}` };
       }
+
+      // Get the newly created dashboard
+      const newDashboards = getDashboards();
+      const dashboard = newDashboards.length > 0 ? newDashboards[0] : null;
+
+      if (!dashboard?.api?.addChart) {
+        return { success: false, message: 'Dashboard not ready yet, please try again' };
+      }
+
+      const elementId = dashboard.api.addChart(config);
+      if (!elementId) {
+        return { success: false, message: 'Failed to add chart to dashboard' };
+      }
+
+      return { success: true, message: 'Chart sent to dashboard', elementId };
     }
 
-    // Add the element to dashboard for the space/room
-    addDashboardElement(activeTabId, element, spaceRoomKey);
+    // If multiple dashboards exist, return selection needed
+    if (dashboards.length > 1) {
+      // Return dashboard info for picker UI
+      const dashboardInfo = dashboards.map((d, index) => ({
+        id: d.id,
+        label: `Dashboard ${index + 1}`,
+        chartCount: d.api?.getCharts?.()?.length || 0,
+      }));
+      return { success: false, needsSelection: true, dashboards: dashboardInfo, config };
+    }
 
-    return { success: true, message: 'Element sent to dashboard' };
-  }, [activeTabId, activeTileId, isElementInDashboard, getDashboardState, splitTile, executeCommand, addDashboardElement]);
+    // Single dashboard - send directly
+    const dashboard = dashboards[0];
+
+    if (!dashboard?.api?.addChart) {
+      return { success: false, message: 'Dashboard not ready yet, please try again' };
+    }
+
+    const elementId = dashboard.api.addChart(config);
+    if (!elementId) {
+      return { success: false, message: 'Failed to add chart to dashboard' };
+    }
+
+    return { success: true, message: 'Chart sent to dashboard', elementId };
+  }, [activeTabId, activeTileId, getDashboards, splitTile, executeCommand]);
 
   /**
-   * Remove an element from dashboard for a specific space/room
+   * Remove an element from dashboard
    * @param {string} elementId - Element ID to remove
-   * @param {string} spaceRoomKey - Key in format 'spaceId_roomId'
+   * @returns {boolean} Success
    */
-  const removeFromDashboard = useCallback((elementId, spaceRoomKey) => {
-    if (!activeTabId || !spaceRoomKey) return;
-    removeDashboardElement(activeTabId, elementId, spaceRoomKey);
-  }, [activeTabId, removeDashboardElement]);
+  const removeFromDashboard = useCallback((elementId) => {
+    const dashboard = getDashboardCommand();
+    if (!dashboard?.api?.removeChart) return false;
+    return dashboard.api.removeChart(elementId);
+  }, [getDashboardCommand]);
 
   /**
-   * Clear all metrics from dashboard for a specific space/room
-   * @param {string} spaceRoomKey - Optional key - if not provided, clears all space/rooms
+   * Clear all charts from dashboard
    */
-  const clearDashboard = useCallback((spaceRoomKey = null) => {
-    if (!activeTabId) return;
-    clearDashboardMetrics(activeTabId, spaceRoomKey);
-  }, [activeTabId, clearDashboardMetrics]);
-
-  /**
-   * Register dashboard command with the tab (called by Dashboard component on mount)
-   * @param {string} commandId - Dashboard command ID
-   */
-  const registerDashboard = useCallback((commandId) => {
-    if (!activeTabId) return;
-    setDashboardCommandId(activeTabId, commandId);
-  }, [activeTabId, setDashboardCommandId]);
-
-  /**
-   * Unregister dashboard command (called by Dashboard component on unmount)
-   */
-  const unregisterDashboard = useCallback(() => {
-    if (!activeTabId) return;
-    setDashboardCommandId(activeTabId, null);
-  }, [activeTabId, setDashboardCommandId]);
+  const clearDashboard = useCallback(() => {
+    const dashboard = getDashboardCommand();
+    if (!dashboard?.api?.clearCharts) return;
+    dashboard.api.clearCharts();
+  }, [getDashboardCommand]);
 
   /**
    * Focus the dashboard tile if it exists (singleton behavior)
@@ -196,14 +257,14 @@ export const CommandMessagingProvider = ({ children }) => {
    * @returns {boolean} True if dashboard was focused, false if no dashboard exists
    */
   const focusDashboardTile = useCallback(() => {
-    const currentDashboardState = getActiveDashboardState();
-    if (!currentDashboardState.commandId) {
+    const dashboard = getDashboardCommand();
+    if (!dashboard) {
       return false;
     }
 
     // Find the tile containing the dashboard command
     const leafTiles = getLeafTiles();
-    const dashboardTile = leafTiles.find(tile => tile.commandId === currentDashboardState.commandId);
+    const dashboardTile = leafTiles.find(tile => tile.commandId === dashboard.id);
 
     if (dashboardTile) {
       setActiveTile(dashboardTile.id);
@@ -211,33 +272,64 @@ export const CommandMessagingProvider = ({ children }) => {
     }
 
     return false;
-  }, [getActiveDashboardState, getLeafTiles, setActiveTile]);
+  }, [getDashboardCommand, getLeafTiles, setActiveTile]);
+
+  /**
+   * Highlight a dashboard tile (for picker hover preview)
+   * @param {string|null} dashboardId - Dashboard command ID to highlight, or null to clear
+   */
+  const highlightDashboard = useCallback((dashboardId) => {
+    // Remove any existing highlights
+    document.querySelectorAll('[data-dashboard-highlight="true"]').forEach(el => {
+      el.removeAttribute('data-dashboard-highlight');
+    });
+
+    if (!dashboardId) return;
+
+    // Find the dashboard command
+    const dashboards = getDashboards();
+    const dashboard = dashboards.find(d => d.id === dashboardId);
+    if (!dashboard) return;
+
+    // Find the tile containing this dashboard
+    const leafTiles = getLeafTiles();
+    const tile = leafTiles.find(t => t.commandId === dashboardId);
+    if (!tile) return;
+
+    // Find and highlight the tile element
+    const tileElement = document.querySelector(`[data-tile-id="${tile.id}"]`);
+    if (tileElement) {
+      tileElement.setAttribute('data-dashboard-highlight', 'true');
+    }
+  }, [getDashboards, getLeafTiles]);
 
   const value = useMemo(() => ({
     // State
     dashboardExists,
+    dashboardCount,
 
     // Actions
+    getDashboards,
     getDashboardElements,
     sendToDashboard,
+    sendToDashboardById,
     removeFromDashboard,
     clearDashboard,
     isElementInDashboard,
     focusDashboardTile,
-
-    // Dashboard registration (for Dashboard component)
-    registerDashboard,
-    unregisterDashboard,
+    highlightDashboard,
   }), [
     dashboardExists,
+    dashboardCount,
+    getDashboards,
     getDashboardElements,
     sendToDashboard,
+    sendToDashboardById,
     removeFromDashboard,
     clearDashboard,
     isElementInDashboard,
     focusDashboardTile,
-    registerDashboard,
-    unregisterDashboard,
+    highlightDashboard,
   ]);
 
   return (

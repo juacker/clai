@@ -34,6 +34,11 @@ use crate::mcp::bridge::JsBridge;
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AddChartParams {
+    /// Optional dashboard command ID. If omitted, uses the first dashboard in the tab.
+    #[schemars(description = "Dashboard command ID (optional - uses first dashboard if omitted)")]
+    #[serde(default)]
+    pub command_id: Option<String>,
+
     /// The metric context to chart (e.g., "system.cpu", "disk.io").
     #[schemars(description = "Metric context to chart (e.g., 'system.cpu', 'disk.io')")]
     pub context: String,
@@ -53,6 +58,11 @@ pub struct AddChartParams {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoveChartParams {
+    /// Optional dashboard command ID. If omitted, uses the first dashboard in the tab.
+    #[schemars(description = "Dashboard command ID (optional - uses first dashboard if omitted)")]
+    #[serde(default)]
+    pub command_id: Option<String>,
+
     /// The unique ID of the chart to remove.
     #[schemars(description = "The unique ID of the chart to remove")]
     pub chart_id: String,
@@ -62,9 +72,34 @@ pub struct RemoveChartParams {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SetTimeRangeParams {
+    /// Optional dashboard command ID. If omitted, uses the first dashboard in the tab.
+    #[schemars(description = "Dashboard command ID (optional - uses first dashboard if omitted)")]
+    #[serde(default)]
+    pub command_id: Option<String>,
+
     /// Time range to display.
     #[schemars(description = "Time range: 5m, 15m, 30m, 1h, 2h, 6h, 12h, 24h, 7d")]
     pub range: String,
+}
+
+/// Parameters for getting charts (with optional commandId).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetChartsParams {
+    /// Optional dashboard command ID. If omitted, uses the first dashboard in the tab.
+    #[schemars(description = "Dashboard command ID (optional - uses first dashboard if omitted)")]
+    #[serde(default)]
+    pub command_id: Option<String>,
+}
+
+/// Parameters for clearing charts (with optional commandId).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearChartsParams {
+    /// Optional dashboard command ID. If omitted, uses the first dashboard in the tab.
+    #[schemars(description = "Dashboard command ID (optional - uses first dashboard if omitted)")]
+    #[serde(default)]
+    pub command_id: Option<String>,
 }
 
 // =============================================================================
@@ -228,7 +263,7 @@ impl DashboardTools {
     }
 
     /// Get all charts on the dashboard.
-    pub async fn get_charts(&self) -> Result<Vec<ChartInfo>, ToolError> {
+    pub async fn get_charts(&self, params: GetChartsParams) -> Result<Vec<ChartInfo>, ToolError> {
         let bridge = self.bridge()?;
         let result = bridge
             .call_tool(
@@ -236,7 +271,8 @@ impl DashboardTools {
                 &self.space_id,
                 &self.room_id,
                 "dashboard.getCharts",
-                serde_json::json!({}),
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -245,7 +281,7 @@ impl DashboardTools {
     }
 
     /// Clear all charts from the dashboard.
-    pub async fn clear_charts(&self) -> Result<(), ToolError> {
+    pub async fn clear_charts(&self, params: ClearChartsParams) -> Result<(), ToolError> {
         let bridge = self.bridge()?;
         bridge
             .call_tool(
@@ -253,7 +289,8 @@ impl DashboardTools {
                 &self.space_id,
                 &self.room_id,
                 "dashboard.clearCharts",
-                serde_json::json!({}),
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -278,7 +315,10 @@ impl DashboardTools {
     }
 
     /// Get all charts with their full configuration.
-    pub async fn get_charts_detailed(&self) -> Result<Vec<ChartDetailedInfo>, ToolError> {
+    pub async fn get_charts_detailed(
+        &self,
+        params: GetChartsParams,
+    ) -> Result<Vec<ChartDetailedInfo>, ToolError> {
         let bridge = self.bridge()?;
         let result = bridge
             .call_tool(
@@ -286,7 +326,8 @@ impl DashboardTools {
                 &self.space_id,
                 &self.room_id,
                 "dashboard.getChartsDetailed",
-                serde_json::json!({}),
+                serde_json::to_value(&params)
+                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;

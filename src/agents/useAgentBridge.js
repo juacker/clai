@@ -31,27 +31,15 @@ import {
   setAgentTab,
   getAgentTab,
   clearAgentTab,
+  getTabCreationLock,
+  setTabCreationLock,
+  clearTabCreationLock,
 } from './bridge';
 
 /**
  * Generate a unique chart ID
  */
 const generateChartId = () => `chart_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-/**
- * Generate a unique tile ID
- */
-const generateTileId = () => `tile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-/**
- * Generate a unique node ID
- */
-const generateNodeId = (prefix = 'node') => `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-/**
- * Generate a unique edge ID
- */
-const generateEdgeId = (sourceId, targetId) => `edge_${sourceId}_${targetId}_${Date.now()}`;
 
 /**
  * Hook to initialize and connect the agent bridge to TabManager
@@ -69,12 +57,7 @@ export const useAgentBridge = () => {
     closeTile,
     getTile,
     getActiveTab,
-    addDashboardElement,
-    removeDashboardElement,
-    clearDashboardMetrics,
-    getDashboardState,
-    getCanvasState,
-    setCanvasState,
+    getCommandFromTab,
   } = tabManager;
 
   // Store tabManager ref for handlers (avoids stale closure issues)
@@ -98,14 +81,14 @@ export const useAgentBridge = () => {
    */
   const setupAgentTab = (agentId, agentName, spaceId, roomId) => {
     // Check if we already have a tab for this agent in the Map
-    let tabId = getAgentTab(agentId, spaceId, roomId);
+    const tabInfo = getAgentTab(agentId, spaceId, roomId);
 
-    if (tabId) {
+    if (tabInfo?.tabId) {
       // Verify the tab still exists
-      const existingTab = tabManagerRef.current.tabs.find(t => t.id === tabId);
+      const existingTab = tabManagerRef.current.tabs.find(t => t.id === tabInfo.tabId);
       if (existingTab) {
         // Tab already exists, no need to create
-        return { tabId };
+        return { tabId: tabInfo.tabId };
       }
       // Tab was removed, clear the mapping
       clearAgentTab(agentId, spaceId, roomId);
@@ -119,8 +102,8 @@ export const useAgentBridge = () => {
     );
 
     if (existingAgentTab) {
-      // Found existing tab, restore the mapping
-      setAgentTab(agentId, spaceId, roomId, existingAgentTab.id);
+      // Found existing tab, restore the mapping (with agent name)
+      setAgentTab(agentId, spaceId, roomId, existingAgentTab.id, agentName);
       return { tabId: existingAgentTab.id };
     }
 
@@ -147,8 +130,8 @@ export const useAgentBridge = () => {
     // Execute canvas command - agents communicate visually through canvas
     executeCommandRef.current('canvas');
 
-    // Store the mapping
-    setAgentTab(agentId, spaceId, roomId, newTab.id);
+    // Store the mapping (with agent name for future recreation)
+    setAgentTab(agentId, spaceId, roomId, newTab.id, agentName);
 
     return { tabId: newTab.id };
   };
@@ -163,18 +146,118 @@ export const useAgentBridge = () => {
    * @returns {string|null} Tab ID or null
    */
   const getAgentTabId = (agentId, spaceId, roomId) => {
-    const tabId = getAgentTab(agentId, spaceId, roomId);
-    if (tabId) {
+    const tabInfo = getAgentTab(agentId, spaceId, roomId);
+    if (tabInfo?.tabId) {
       // Verify tab still exists
-      const existingTab = tabManagerRef.current.tabs.find(t => t.id === tabId);
+      const existingTab = tabManagerRef.current.tabs.find(t => t.id === tabInfo.tabId);
       if (existingTab) {
-        return tabId;
+        return tabInfo.tabId;
       }
-      // Tab was removed, clear stale mapping
-      clearAgentTab(agentId, spaceId, roomId);
+      // Tab was removed but we still have the mapping - don't clear it yet
+      // (ensureAgentTab will recreate the tab using the stored agentName)
     }
     return null;
   };
+
+  /**
+   * Ensure an agent has a tab, recreating it if the user closed it.
+   * This allows agents to continue working even if their tab was closed.
+   * Uses a lock to prevent duplicate tab creation from rapid tool calls.
+   *
+   * @param {string} agentId - Agent identifier
+   * @param {string} spaceId - Netdata space ID
+   * @param {string} roomId - Netdata room ID
+   * @returns {string} Tab ID (existing or newly created)
+   */
+  const ensureAgentTab = (agentId, spaceId, roomId) => {
+    // First check if tab exists (fast path)
+    const existingTabId = getAgentTabId(agentId, spaceId, roomId);
+    if (existingTabId) {
+      return existingTabId;
+    }
+
+    // Check if another call is already creating this tab
+    // Since setupAgentTab is synchronous, if we see a lock, creation is done
+    // and we should re-check the mapping
+    if (getTabCreationLock(agentId, spaceId, roomId)) {
+      // Creation was in progress - by now it should be done (sync code)
+      // Re-check the mapping
+      const tabIdAfterLock = getAgentTabId(agentId, spaceId, roomId);
+      if (tabIdAfterLock) {
+        return tabIdAfterLock;
+      }
+      // Still no tab? Fall through to create (lock holder may have failed)
+    }
+
+    // Tab doesn't exist - recreate it
+    const tabInfo = getAgentTab(agentId, spaceId, roomId);
+    const agentName = tabInfo?.agentName || agentId;
+
+    console.log(`[AgentBridge] Recreating closed tab for agent: ${agentId}`);
+
+    // Set lock before creating (value doesn't matter, just presence)
+    setTabCreationLock(agentId, spaceId, roomId, true);
+
+    try {
+      // Use setupAgentTab to create a new tab (synchronous)
+      const result = setupAgentTab(agentId, agentName, spaceId, roomId);
+      return result.tabId;
+    } finally {
+      // Clear lock - mapping is already updated by setupAgentTab
+      clearTabCreationLock(agentId, spaceId, roomId);
+    }
+  };
+
+  /**
+   * Helper to get a command from a request.
+   * Handles tab lookup, command lookup, and validation.
+   * Automatically recreates the tab if it was closed by the user.
+   *
+   * @param {string} commandType - Expected command type (canvas, dashboard, etc.)
+   * @param {Object} request - Tool request object
+   * @param {Object} options - Options
+   * @param {boolean} options.required - If true, throws on failure. If false, returns null.
+   * @returns {Object|null} Command entry with api, or null/throws
+   */
+  const getCommandByType = (commandType, request, { required = true } = {}) => {
+    const { agentId, spaceId, roomId, params } = request;
+    const { commandId } = params;
+
+    // Use ensureAgentTab to recreate tab if user closed it
+    const tabId = ensureAgentTab(agentId, spaceId, roomId);
+    if (!tabId) {
+      if (required) {
+        throw new Error('No tab found for this agent. Call agent.setup first.');
+      }
+      return null;
+    }
+
+    const command = tabManagerRef.current.getCommandFromTab(tabId, commandId);
+    if (!command) {
+      if (required) {
+        throw new Error(`${commandType} not found: ${commandId}`);
+      }
+      return null;
+    }
+    if (command.type !== commandType) {
+      if (required) {
+        throw new Error(`Command is not a ${commandType}: ${commandId} (type: ${command.type})`);
+      }
+      return null;
+    }
+
+    if (!command.api) {
+      if (required) {
+        throw new Error(`${commandType} not ready: ${commandId}`);
+      }
+      return null;
+    }
+
+    return command;
+  };
+
+  // Convenience wrapper for canvas commands
+  const getCanvasCommand = (request, options) => getCommandByType('canvas', request, options);
 
   useEffect(() => {
     // Prevent double initialization (React StrictMode)
@@ -198,92 +281,113 @@ export const useAgentBridge = () => {
       return result;
     });
 
+    // Helper to get dashboard command from agent's tab
+    const getDashboardFromTab = (tabId, commandId = null) => {
+      if (commandId) {
+        // Get specific dashboard by commandId
+        const command = tabManagerRef.current.getCommandFromTab(tabId, commandId);
+        if (!command || command.type !== 'dashboard') {
+          return null;
+        }
+        return command;
+      }
+      // Get first dashboard in tab
+      const dashboards = tabManagerRef.current.getCommandsByTypeFromTab(tabId, 'dashboard');
+      return dashboards.length > 0 ? dashboards[0] : null;
+    };
+
     // Register dashboard tool handlers
     registerToolHandler('dashboard.addChart', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
+      // Use ensureAgentTab to recreate tab if user closed it
+      const tabId = ensureAgentTab(agentId, spaceId, roomId);
 
-      if (!tabId) {
-        throw new Error('No tab found for this agent. Call agent.setup first.');
+      const dashboard = getDashboardFromTab(tabId, params.commandId);
+      if (!dashboard) {
+        throw new Error('No dashboard found. Create one with tabs.splitTile({ commandType: "dashboard" })');
+      }
+      if (!dashboard.api) {
+        throw new Error('Dashboard not ready yet');
       }
 
-      const chartId = generateChartId();
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-
-      // Add chart to dashboard (type: 'context-chart' matches Dashboard component expectation)
-      tabManagerRef.current.addDashboardElement(tabId, {
-        id: chartId,
-        type: 'context-chart',
-        config: {
-          context: params.context,
-          groupBy: params.groupBy || null,
-          filterBy: params.filterBy || null,
-        },
-      }, spaceRoomKey);
+      const chartId = dashboard.api.addChart({
+        context: params.context,
+        groupBy: params.groupBy || null,
+        filterBy: params.filterBy || null,
+      });
 
       return { chartId };
     });
 
     registerToolHandler('dashboard.removeChart', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
+      // Use ensureAgentTab to recreate tab if user closed it
+      const tabId = ensureAgentTab(agentId, spaceId, roomId);
 
-      if (!tabId) {
-        throw new Error('No tab found for this agent');
+      const dashboard = getDashboardFromTab(tabId, params.commandId);
+      if (!dashboard?.api) {
+        throw new Error('Dashboard not found or not ready');
       }
 
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      tabManagerRef.current.removeDashboardElement(tabId, params.chartId, spaceRoomKey);
-
+      dashboard.api.removeChart(params.chartId);
       return { success: true };
     });
 
     registerToolHandler('dashboard.getCharts', async (request) => {
-      const { agentId, spaceId, roomId } = request;
+      const { agentId, spaceId, roomId, params } = request;
       const tabId = getAgentTabId(agentId, spaceId, roomId);
 
       if (!tabId) {
         return { charts: [] };
       }
 
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      const dashboardState = tabManagerRef.current.getDashboardState(tabId, spaceRoomKey);
-      const elements = dashboardState.elements || [];
+      const dashboard = getDashboardFromTab(tabId, params?.commandId);
+      if (!dashboard?.api) {
+        return { charts: [] };
+      }
 
-      // Map elements to chart info
-      const charts = elements
-        .filter(el => el.type === 'context-chart')
-        .map(el => ({
-          chartId: el.id,
-          context: el.config?.context,
-        }));
+      const elements = dashboard.api.getCharts() || [];
+      const charts = elements.map(el => ({
+        chartId: el.id,
+        context: el.config?.context,
+      }));
 
       return { charts };
     });
 
     registerToolHandler('dashboard.clearCharts', async (request) => {
-      const { agentId, spaceId, roomId } = request;
+      const { agentId, spaceId, roomId, params } = request;
       const tabId = getAgentTabId(agentId, spaceId, roomId);
 
       if (!tabId) {
         return { success: true };
       }
 
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      tabManagerRef.current.clearDashboardMetrics(tabId, spaceRoomKey);
+      const dashboard = getDashboardFromTab(tabId, params?.commandId);
+      if (!dashboard?.api) {
+        return { success: true };
+      }
 
+      dashboard.api.clearCharts();
       return { success: true };
     });
 
     registerToolHandler('dashboard.setTimeRange', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
+      // Use ensureAgentTab to recreate tab if user closed it
+      const tabId = ensureAgentTab(agentId, spaceId, roomId);
 
-      if (!tabId) {
-        throw new Error('No tab found for this agent');
+      const dashboard = getDashboardFromTab(tabId, params?.commandId);
+      if (!dashboard?.api) {
+        throw new Error('Dashboard not found or not ready');
       }
 
-      // Update tab context with time range
+      const success = dashboard.api.setTimeRange(params.range);
+      if (!success) {
+        throw new Error(`Invalid time range: ${params.range}`);
+      }
+
+      // Update tab context with time range (for backwards compatibility)
       // The dashboard component will read this from context
       tabManagerRef.current.updateTabContext(tabId, {
         dashboard: {
@@ -298,11 +402,8 @@ export const useAgentBridge = () => {
     // Register tabs tool handlers
     registerToolHandler('tabs.splitTile', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
-
-      if (!tabId) {
-        throw new Error('No tab found for this agent. Call agent.setup first.');
-      }
+      // Use ensureAgentTab to recreate tab if user closed it
+      const tabId = ensureAgentTab(agentId, spaceId, roomId);
 
       // Get the parent tile ID - use the root tile if not specified
       let parentTileId = params.parentTileId;
@@ -315,8 +416,10 @@ export const useAgentBridge = () => {
         }
       }
 
-      // Split the tile
-      const result = tabManagerRef.current.splitTile(
+      // Split the tile in the agent's tab
+      // 'vertical' = side by side, 'horizontal' = stacked
+      const result = tabManagerRef.current.splitTileInTab(
+        tabId,
         parentTileId,
         params.splitType
       );
@@ -325,16 +428,30 @@ export const useAgentBridge = () => {
         throw new Error(result.message);
       }
 
-      return { tileId: result.newTileId };
+      const response = { tileId: result.newTileId };
+
+      // If commandType is provided, create a command in the new tile
+      if (params.commandType) {
+        const command = tabManagerRef.current.createCommandInTab(
+          tabId,
+          params.commandType,
+          {}
+        );
+
+        if (command) {
+          // Assign the command to the new tile
+          tabManagerRef.current.assignCommandToTileInTab(tabId, command.id, result.newTileId);
+          response.commandId = command.id;
+        }
+      }
+
+      return response;
     });
 
     registerToolHandler('tabs.removeTile', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
-
-      if (!tabId) {
-        throw new Error('No tab found for this agent');
-      }
+      // Use ensureAgentTab to recreate tab if user closed it
+      const tabId = ensureAgentTab(agentId, spaceId, roomId);
 
       const result = tabManagerRef.current.closeTile(params.tileId);
 
@@ -347,29 +464,26 @@ export const useAgentBridge = () => {
 
     registerToolHandler('tabs.getTileLayout', async (request) => {
       const { agentId, spaceId, roomId } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
-
-      if (!tabId) {
-        // Return a simple layout if no tab exists
-        return {
-          root: {
-            tileId: 'none',
-            splitType: null,
-            children: [],
-          },
-        };
-      }
+      // Use ensureAgentTab to recreate tab if user closed it
+      const tabId = ensureAgentTab(agentId, spaceId, roomId);
 
       const tab = tabManagerRef.current.tabs.find(t => t.id === tabId);
       if (!tab) {
         throw new Error('Tab not found');
       }
 
-      // Convert tile tree to layout format
+      // Convert tile tree to layout format (includes commandId for discovery)
       const convertTile = (tile) => {
         if (tile.type === 'leaf') {
+          // Look up the command to get its type
+          const command = tile.commandId
+            ? tabManagerRef.current.getCommandFromTab(tabId, tile.commandId)
+            : null;
+
           return {
             tileId: tile.id,
+            commandId: tile.commandId || null,
+            command: command?.type || null,
             splitType: null,
             children: [],
           };
@@ -377,6 +491,8 @@ export const useAgentBridge = () => {
 
         return {
           tileId: tile.id,
+          commandId: null,
+          command: null,
           splitType: tile.direction,
           children: tile.children.map(convertTile),
         };
@@ -392,232 +508,91 @@ export const useAgentBridge = () => {
     // =========================================================================
 
     registerToolHandler('canvas.addChart', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
-      console.log('[Agent Canvas] addChart called:', { agentId, params });
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
+      const { params } = request;
+      const { x, y, context, title, groupBy, filterBy, timeRange, width, height } = params;
 
-      if (!tabId) {
-        throw new Error('No tab found for this agent. Call agent.setup first.');
-      }
+      const command = getCanvasCommand(request);
+      const nodeId = command.api.addNode('chart', { x, y }, {
+        context,
+        title: title || null,
+        groupBy: groupBy || [],
+        filterBy: filterBy || {},
+        timeRange: timeRange || '15m',
+        width: width || 400,
+        height: height || 300,
+      });
 
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      const nodeId = generateNodeId('chart');
-
-      // Get current canvas state
-      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
-      const currentNodes = canvasState.nodes || [];
-      const currentEdges = canvasState.edges || [];
-
-      // Create the chart node
-      const newNode = {
-        id: nodeId,
-        type: 'chart',
-        position: { x: params.x, y: params.y },
-        data: {
-          context: params.context,
-          title: params.title || null,
-          groupBy: params.groupBy || [],
-          filterBy: params.filterBy || {},
-          timeRange: params.timeRange || '15m',
-          width: params.width || 400,
-          height: params.height || 300,
-        },
-      };
-
-      // Update canvas state
-      tabManagerRef.current.setCanvasState(
-        tabId,
-        [...currentNodes, newNode],
-        currentEdges,
-        spaceRoomKey
-      );
-
-      console.log('[Agent Canvas] addChart success:', { nodeId, totalNodes: currentNodes.length + 1 });
       return { nodeId };
     });
 
     registerToolHandler('canvas.addStatusBadge', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
-      console.log('[Agent Canvas] addStatusBadge called:', { agentId, params });
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
+      const { params } = request;
+      const { x, y, status, message, title } = params;
 
-      if (!tabId) {
-        throw new Error('No tab found for this agent. Call agent.setup first.');
-      }
+      const command = getCanvasCommand(request);
+      const nodeId = command.api.addNode('statusBadge', { x, y }, {
+        status,
+        message,
+        title: title || null,
+        showTimestamp: false,
+        timestamp: new Date().toISOString(),
+      });
 
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      const nodeId = generateNodeId('badge');
-
-      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
-      const currentNodes = canvasState.nodes || [];
-      const currentEdges = canvasState.edges || [];
-
-      const newNode = {
-        id: nodeId,
-        type: 'statusBadge',
-        position: { x: params.x, y: params.y },
-        data: {
-          status: params.status,
-          message: params.message,
-          title: params.title || null,
-          showTimestamp: false,
-          timestamp: new Date().toISOString(),
-        },
-      };
-
-      tabManagerRef.current.setCanvasState(
-        tabId,
-        [...currentNodes, newNode],
-        currentEdges,
-        spaceRoomKey
-      );
-
-      console.log('[Agent Canvas] addStatusBadge success:', { nodeId, status: params.status, totalNodes: currentNodes.length + 1 });
       return { nodeId };
     });
 
     registerToolHandler('canvas.addMarkdown', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
-      console.log('[Agent Canvas] addMarkdown called:', { agentId, contentLen: params.content?.length });
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
+      const { params } = request;
+      const { x, y, content, width, maxHeight } = params;
 
-      if (!tabId) {
-        throw new Error('No tab found for this agent. Call agent.setup first.');
-      }
+      const command = getCanvasCommand(request);
+      const nodeId = command.api.addNode('markdown', { x, y }, {
+        content,
+        width: width || 400,
+        maxHeight: maxHeight || null,
+        showHandles: true,
+      });
 
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      const nodeId = generateNodeId('markdown');
-
-      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
-      const currentNodes = canvasState.nodes || [];
-      const currentEdges = canvasState.edges || [];
-
-      const newNode = {
-        id: nodeId,
-        type: 'markdown',
-        position: { x: params.x, y: params.y },
-        data: {
-          content: params.content,
-          width: params.width || 400,
-          maxHeight: params.maxHeight || null,
-          showHandles: true,
-        },
-      };
-
-      tabManagerRef.current.setCanvasState(
-        tabId,
-        [...currentNodes, newNode],
-        currentEdges,
-        spaceRoomKey
-      );
-
-      console.log('[Agent Canvas] addMarkdown success:', { nodeId, totalNodes: currentNodes.length + 1 });
       return { nodeId };
     });
 
     registerToolHandler('canvas.addEdge', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
-      console.log('[Agent Canvas] addEdge called:', { agentId, sourceId: params.sourceId, targetId: params.targetId });
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
+      const { params } = request;
+      const { sourceId, targetId, label, animated } = params;
 
-      if (!tabId) {
-        throw new Error('No tab found for this agent. Call agent.setup first.');
-      }
+      const command = getCanvasCommand(request);
+      const edgeId = command.api.addEdge(sourceId, targetId, { label, animated });
 
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      const edgeId = generateEdgeId(params.sourceId, params.targetId);
-
-      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
-      const currentNodes = canvasState.nodes || [];
-      const currentEdges = canvasState.edges || [];
-
-      const newEdge = {
-        id: edgeId,
-        source: params.sourceId,
-        target: params.targetId,
-        type: 'smoothstep',
-        animated: params.animated !== false,
-        label: params.label || undefined,
-      };
-
-      tabManagerRef.current.setCanvasState(
-        tabId,
-        currentNodes,
-        [...currentEdges, newEdge],
-        spaceRoomKey
-      );
-
-      console.log('[Agent Canvas] addEdge success:', { edgeId, totalEdges: currentEdges.length + 1 });
       return { edgeId };
     });
 
     registerToolHandler('canvas.removeNode', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
+      const { params } = request;
+      const { nodeId } = params;
 
-      if (!tabId) {
-        throw new Error('No tab found for this agent');
-      }
-
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
-      const currentNodes = canvasState.nodes || [];
-      const currentEdges = canvasState.edges || [];
-
-      // Remove node and any connected edges
-      const filteredNodes = currentNodes.filter(n => n.id !== params.nodeId);
-      const filteredEdges = currentEdges.filter(
-        e => e.source !== params.nodeId && e.target !== params.nodeId
-      );
-
-      tabManagerRef.current.setCanvasState(
-        tabId,
-        filteredNodes,
-        filteredEdges,
-        spaceRoomKey
-      );
+      const command = getCanvasCommand(request);
+      command.api.removeNode(nodeId);
 
       return { success: true };
     });
 
     registerToolHandler('canvas.removeEdge', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
+      const { params } = request;
+      const { edgeId } = params;
 
-      if (!tabId) {
-        throw new Error('No tab found for this agent');
-      }
-
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
-      const currentNodes = canvasState.nodes || [];
-      const currentEdges = canvasState.edges || [];
-
-      const filteredEdges = currentEdges.filter(e => e.id !== params.edgeId);
-
-      tabManagerRef.current.setCanvasState(
-        tabId,
-        currentNodes,
-        filteredEdges,
-        spaceRoomKey
-      );
+      const command = getCanvasCommand(request);
+      command.api.removeEdge(edgeId);
 
       return { success: true };
     });
 
     registerToolHandler('canvas.getNodes', async (request) => {
-      const { agentId, spaceId, roomId } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
-
-      if (!tabId) {
+      const command = getCanvasCommand(request, { required: false });
+      if (!command) {
         return [];
       }
 
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
-      const nodes = canvasState.nodes || [];
-
-      // Return simplified node info
+      const nodes = command.api.getNodes();
       return nodes.map(n => ({
         nodeId: n.id,
         nodeType: n.type,
@@ -627,38 +602,24 @@ export const useAgentBridge = () => {
     });
 
     registerToolHandler('canvas.clearCanvas', async (request) => {
-      const { agentId, spaceId, roomId } = request;
-      console.log('[Agent Canvas] clearCanvas called:', { agentId });
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
-
-      if (!tabId) {
-        console.log('[Agent Canvas] clearCanvas: No tab found, returning success');
+      const command = getCanvasCommand(request, { required: false });
+      if (!command) {
         return { success: true };
       }
 
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      const prevState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
-      console.log('[Agent Canvas] clearCanvas: Clearing', { prevNodes: prevState.nodes?.length || 0, prevEdges: prevState.edges?.length || 0 });
-      tabManagerRef.current.setCanvasState(tabId, [], [], spaceRoomKey);
-
+      command.api.clear();
       return { success: true };
     });
 
     registerToolHandler('canvas.getNodeDetails', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
+      const { params } = request;
+      const { nodeId } = params;
 
-      if (!tabId) {
-        throw new Error('No tab found for this agent');
-      }
-
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
-      const nodes = canvasState.nodes || [];
-
-      const node = nodes.find(n => n.id === params.nodeId);
+      const command = getCanvasCommand(request);
+      const nodes = command.api.getNodes();
+      const node = nodes.find(n => n.id === nodeId);
       if (!node) {
-        throw new Error(`Node not found: ${params.nodeId}`);
+        throw new Error(`Node not found: ${nodeId}`);
       }
 
       return {
@@ -671,18 +632,12 @@ export const useAgentBridge = () => {
     });
 
     registerToolHandler('canvas.getNodesDetailed', async (request) => {
-      const { agentId, spaceId, roomId } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
-
-      if (!tabId) {
+      const command = getCanvasCommand(request, { required: false });
+      if (!command) {
         return [];
       }
 
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
-      const nodes = canvasState.nodes || [];
-
-      // Return full node info including data
+      const nodes = command.api.getNodes();
       return nodes.map(n => ({
         nodeId: n.id,
         nodeType: n.type,
@@ -693,63 +648,39 @@ export const useAgentBridge = () => {
     });
 
     registerToolHandler('canvas.updateNode', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
+      const { params } = request;
       const { nodeId, x, y, data } = params;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
 
-      if (!tabId) {
-        throw new Error('No tab found for this agent');
+      const command = getCanvasCommand(request);
+
+      // Build the updates object
+      const updates = {};
+      if (x !== undefined || y !== undefined) {
+        updates.position = { x, y };
+      }
+      if (data) {
+        updates.data = data;
       }
 
-      const spaceRoomKey = `${spaceId}_${roomId}`;
-      const canvasState = tabManagerRef.current.getCanvasState(tabId, spaceRoomKey);
-      const nodes = canvasState.nodes || [];
-      const edges = canvasState.edges || [];
+      command.api.updateNode(nodeId, updates);
 
-      // Find the node to update
-      const nodeIndex = nodes.findIndex(n => n.id === nodeId);
-      if (nodeIndex === -1) {
-        throw new Error(`Node not found: ${nodeId}`);
-      }
+      // Get the updated node to return
+      const nodes = command.api.getNodes();
+      const updatedNode = nodes.find(n => n.id === nodeId);
 
-      const existingNode = nodes[nodeIndex];
-
-      // Build updated node
-      const updatedNode = {
-        ...existingNode,
-        position: {
-          x: x !== undefined ? x : existingNode.position?.x || 0,
-          y: y !== undefined ? y : existingNode.position?.y || 0,
-        },
-        data: data ? { ...existingNode.data, ...data } : existingNode.data,
-      };
-
-      // Update the nodes array
-      const newNodes = [...nodes];
-      newNodes[nodeIndex] = updatedNode;
-
-      // Save the updated canvas state
-      tabManagerRef.current.setCanvasState(tabId, newNodes, edges, spaceRoomKey);
-
-      console.log('[canvas.updateNode] Updated node:', nodeId, 'position:', updatedNode.position);
-
-      // Return the updated node info
       return {
-        nodeId: updatedNode.id,
-        nodeType: updatedNode.type,
-        x: updatedNode.position.x,
-        y: updatedNode.position.y,
-        data: updatedNode.data || {},
+        nodeId: updatedNode?.id || nodeId,
+        nodeType: updatedNode?.type,
+        x: updatedNode?.position?.x || 0,
+        y: updatedNode?.position?.y || 0,
+        data: updatedNode?.data || {},
       };
     });
 
     registerToolHandler('tabs.getTileContent', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
-
-      if (!tabId) {
-        throw new Error('No tab found for this agent');
-      }
+      // Use ensureAgentTab to recreate tab if user closed it
+      const tabId = ensureAgentTab(agentId, spaceId, roomId);
 
       const tab = tabManagerRef.current.tabs.find(t => t.id === tabId);
       if (!tab) {
@@ -781,29 +712,32 @@ export const useAgentBridge = () => {
     });
 
     registerToolHandler('dashboard.getChartsDetailed', async (request) => {
-      const { agentId, spaceId, roomId } = request;
+      const { agentId, spaceId, roomId, params } = request;
       const tabId = getAgentTabId(agentId, spaceId, roomId);
 
       if (!tabId) {
         return [];
       }
 
-      const dashboard = tabManagerRef.current.getTabContext(tabId)?.dashboard;
-      const elements = dashboard?.elements || [];
+      const dashboard = getDashboardFromTab(tabId, params?.commandId);
+      if (!dashboard?.api) {
+        return [];
+      }
+
+      const elements = dashboard.api.getChartsDetailed() || [];
 
       // Return full chart info including groupBy and filterBy
       return elements.map(el => ({
         chartId: el.id,
-        context: el.context,
-        groupBy: el.groupBy || null,
-        filterBy: el.filterBy || null,
+        context: el.config?.context,
+        groupBy: el.config?.groupBy || null,
+        filterBy: el.config?.filterBy || null,
       }));
     });
 
     // Cleanup on unmount
     return () => {
       // Reset the ref so handlers can be re-registered on next mount
-      // (important for React StrictMode which mounts/unmounts/remounts)
       initializedRef.current = false;
 
       // Unregister all handlers

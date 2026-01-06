@@ -13,6 +13,7 @@ import { useTabContext } from '../../contexts/TabContext';
 import { useCommandMessaging } from '../../contexts/CommandMessagingContext';
 import { getContexts, getData } from '../../api/client';
 import NetdataSpinner from '../common/NetdataSpinner';
+import DashboardPicker from '../common/DashboardPicker';
 import styles from './Anomalies.module.css';
 
 // ============================================================================
@@ -431,13 +432,7 @@ function getSeverityLevel(anomalyRate) {
 
 const Anomalies = ({ command }) => {
   const { selectedSpace, selectedRoom } = useTabContext();
-  const { sendToDashboard, isElementInDashboard } = useCommandMessaging();
-
-  // Create space/room key for dashboard storage
-  const spaceRoomKey = useMemo(() => {
-    if (!selectedSpace?.id || !selectedRoom?.id) return null;
-    return `${selectedSpace.id}_${selectedRoom.id}`;
-  }, [selectedSpace?.id, selectedRoom?.id]);
+  const { sendToDashboard, sendToDashboardById, isElementInDashboard, highlightDashboard } = useCommandMessaging();
 
   const [contexts, setContexts] = useState([]);
   const [anomalyRates, setAnomalyRates] = useState(new Map());
@@ -449,6 +444,9 @@ const Anomalies = ({ command }) => {
   const [filterText, setFilterText] = useState('');
   const [debouncedFilterText, setDebouncedFilterText] = useState('');
   const [sentFeedback, setSentFeedback] = useState(null); // Track recently sent metric for feedback
+
+  // Dashboard picker state
+  const [dashboardPicker, setDashboardPicker] = useState(null); // { dashboards, config, position }
 
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
@@ -825,31 +823,44 @@ const Anomalies = ({ command }) => {
   }, [visualGroups]);
 
   // Send metric to dashboard
-  const handleMetricClick = useCallback((context) => {
-    if (!spaceRoomKey) return; // Need space/room context
-
-    // Use context as element ID (it's unique)
-    const elementId = `context-chart-${context}`;
-
-    if (isElementInDashboard(elementId, spaceRoomKey)) {
-      return; // Already in dashboard
-    }
-
-    // Create element config
-    const element = {
-      id: elementId,
-      type: 'context-chart',
-      config: {
-        context: context,
-      },
+  const handleMetricClick = useCallback((context, event) => {
+    // Create chart config
+    const config = {
+      context: context,
     };
 
-    const result = sendToDashboard(element, spaceRoomKey);
+    const result = sendToDashboard(config);
+
     if (result.success) {
       setSentFeedback(context);
       setTimeout(() => setSentFeedback(null), 1500);
+    } else if (result.needsSelection) {
+      // Multiple dashboards - show picker at click position
+      setDashboardPicker({
+        dashboards: result.dashboards,
+        config: result.config,
+        context: context, // Store context for feedback
+        position: event ? { top: event.clientY, left: event.clientX } : null,
+      });
     }
-  }, [sendToDashboard, isElementInDashboard, spaceRoomKey]);
+  }, [sendToDashboard]);
+
+  // Handle dashboard selection from picker
+  const handleDashboardSelect = useCallback((dashboardId) => {
+    if (!dashboardPicker) return;
+
+    const result = sendToDashboardById(dashboardId, dashboardPicker.config);
+    if (result.success) {
+      setSentFeedback(dashboardPicker.context);
+      setTimeout(() => setSentFeedback(null), 1500);
+    }
+    setDashboardPicker(null);
+  }, [dashboardPicker, sendToDashboardById]);
+
+  // Cancel dashboard picker
+  const handleDashboardPickerCancel = useCallback(() => {
+    setDashboardPicker(null);
+  }, []);
 
   // Handle container resizing
   useEffect(() => {
@@ -1108,13 +1119,13 @@ const Anomalies = ({ command }) => {
                   filteredContexts.map((context) => {
                     const anomalyRate = anomalyRates.get(context);
                     const color = getColorForAnomalyRate(anomalyRate);
-                    const inDashboard = spaceRoomKey && isElementInDashboard(`context-chart-${context}`, spaceRoomKey);
+                    const inDashboard = isElementInDashboard(`context-chart-${context}`);
                     const justSent = sentFeedback === context;
                     return (
                       <div
                         key={context}
                         className={`${styles.contextItem} ${inDashboard ? styles.inDashboard : ''}`}
-                        onClick={() => handleMetricClick(context)}
+                        onClick={(e) => handleMetricClick(context, e)}
                       >
                         <div className={styles.contextBand} style={{ backgroundColor: color }} />
                         <div className={styles.contextName}>{context}</div>
@@ -1139,13 +1150,13 @@ const Anomalies = ({ command }) => {
                 sortedGroupMetrics?.map((context) => {
                   const anomalyRate = anomalyRates.get(context);
                   const color = getColorForAnomalyRate(anomalyRate);
-                  const inDashboard = spaceRoomKey && isElementInDashboard(`context-chart-${context}`, spaceRoomKey);
+                  const inDashboard = isElementInDashboard(`context-chart-${context}`);
                   const justSent = sentFeedback === context;
                   return (
                     <div
                       key={context}
                       className={`${styles.contextItem} ${inDashboard ? styles.inDashboard : ''}`}
-                      onClick={() => handleMetricClick(context)}
+                      onClick={(e) => handleMetricClick(context, e)}
                     >
                       <div className={styles.contextBand} style={{ backgroundColor: color }} />
                       <div className={styles.contextName}>{context}</div>
@@ -1165,6 +1176,17 @@ const Anomalies = ({ command }) => {
             </div>
           </div>
         </>
+      )}
+
+      {/* Dashboard picker for multiple dashboards */}
+      {dashboardPicker && (
+        <DashboardPicker
+          dashboards={dashboardPicker.dashboards}
+          onSelect={handleDashboardSelect}
+          onCancel={handleDashboardPickerCancel}
+          onHighlight={highlightDashboard}
+          position={dashboardPicker.position}
+        />
       )}
     </div>
   );

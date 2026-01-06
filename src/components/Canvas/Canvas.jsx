@@ -2,150 +2,357 @@
  * Canvas Component
  *
  * React Flow-based node canvas for AI agent visualization.
- * Agents can create nodes (charts, status badges, text) and
+ * Agents can create nodes (charts, status badges, markdown) and
  * connect them with edges to visualize relationships.
  *
- * State is persisted per space/room in TabManagerContext.
+ * State is owned by this component and persisted to localStorage
+ * using the commandId. The component registers an API with the
+ * CommandRegistry so agents can manipulate it.
  *
  * Custom Node Types:
  * - chart: Netdata chart visualization (see ChartNode)
  * - statusBadge: Status indicator with severity levels (see StatusBadgeNode)
- * - text: Text labels and annotations (see TextNode)
+ * - markdown: Markdown content (see MarkdownNode)
  */
 
-import React, { useCallback, useContext, useEffect, useRef, useMemo } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
   ReactFlow,
-  Controls,
   Background,
   MiniMap,
+  Panel,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   addEdge,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useTabManager } from '../../contexts/TabManagerContext';
-import TabContext from '../../contexts/TabContext';
+import {
+  forceSimulation,
+  forceLink,
+  forceManyBody,
+  forceCenter,
+  forceCollide,
+  forceX,
+  forceY,
+} from 'd3-force';
+import { useCommandRegistration } from '../../hooks/useCommandRegistration';
 import { nodeTypes } from './nodes';
 import styles from './Canvas.module.css';
 
+/**
+ * Apply force-directed layout to nodes
+ * Connected nodes are pulled together, all nodes repel each other
+ * Uses actual node dimensions for proper collision detection
+ */
+const applyForceLayout = (nodes, edges, width = 800, height = 600) => {
+  if (nodes.length === 0) return nodes;
+
+  // Create simulation nodes with current positions and actual dimensions
+  const simNodes = nodes.map((node) => {
+    // Use measured dimensions or fallback to data dimensions or defaults
+    const nodeWidth = node.measured?.width || node.width || node.data?.width || 450;
+    const nodeHeight = node.measured?.height || node.height || node.data?.height || 350;
+    // For rectangular nodes with circular collision, use diagonal/2
+    // This ensures corners don't overlap since circles must cover the full rectangle
+    const diagonal = Math.sqrt(nodeWidth * nodeWidth + nodeHeight * nodeHeight);
+    return {
+      ...node,
+      x: node.position.x + nodeWidth / 2,
+      y: node.position.y + nodeHeight / 2,
+      nodeWidth,
+      nodeHeight,
+      radius: diagonal / 2 + 10, // Small padding for visual breathing room
+    };
+  });
+
+  // Create simulation links from edges
+  const simLinks = edges.map((edge) => ({
+    source: edge.source,
+    target: edge.target,
+  }));
+
+  // Create and run simulation - collision handles overlap, other forces for grouping
+  const simulation = forceSimulation(simNodes)
+    .force('charge', forceManyBody().strength(-800)) // Gentle repulsion
+    .force('link', forceLink(simLinks).id((d) => d.id).distance(200).strength(0.5))
+    .force('center', forceCenter(width / 2, height / 2))
+    .force('collision', forceCollide().radius((d) => d.radius).strength(1).iterations(4))
+    .force('x', forceX(width / 2).strength(0.05))
+    .force('y', forceY(height / 2).strength(0.05))
+    .stop();
+
+  // Run more simulation iterations for better convergence
+  for (let i = 0; i < 500; i++) {
+    simulation.tick();
+  }
+
+  // Map back to React Flow node format
+  return nodes.map((node) => {
+    const simNode = simNodes.find((n) => n.id === node.id);
+    return {
+      ...node,
+      position: {
+        x: simNode.x - simNode.nodeWidth / 2,
+        y: simNode.y - simNode.nodeHeight / 2,
+      },
+    };
+  });
+};
+
+/**
+ * Custom controls panel - replaces default Controls for consistent styling
+ */
+const CanvasControls = ({ nodes, edges, setNodes, containerRef }) => {
+  const { fitView, zoomIn, zoomOut } = useReactFlow();
+
+  const handleArrangeAndFit = useCallback(() => {
+    if (nodes.length === 0) {
+      fitView({ padding: 0.1, duration: 200 });
+      return;
+    }
+
+    // Get actual canvas dimensions for better layout
+    const width = containerRef.current?.offsetWidth || 1200;
+    const height = containerRef.current?.offsetHeight || 800;
+
+    // Apply force layout using actual dimensions
+    const newNodes = applyForceLayout(nodes, edges, width, height);
+    setNodes(newNodes);
+
+    // Fit view immediately with quick animation
+    requestAnimationFrame(() => {
+      fitView({ padding: 0.1, duration: 200 });
+    });
+  }, [nodes, edges, setNodes, fitView, containerRef]);
+
+  return (
+    <Panel position="bottom-left" className={styles.controlsPanel}>
+      <div className={styles.controlsStack}>
+        <button className={styles.controlButton} onClick={() => zoomIn()} title="Zoom in">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+        <button className={styles.controlButton} onClick={() => zoomOut()} title="Zoom out">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+        <button className={styles.controlButton} onClick={handleArrangeAndFit} title="Arrange nodes and fit view">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+          </svg>
+        </button>
+      </div>
+    </Panel>
+  );
+};
+
+/**
+ * Generate a unique node ID
+ */
+const generateNodeId = (prefix = 'node') =>
+  `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+/**
+ * Generate a unique edge ID
+ */
+const generateEdgeId = (sourceId, targetId) =>
+  `edge_${sourceId}_${targetId}_${Date.now()}`;
+
+/**
+ * Get the localStorage key for a canvas
+ * @param {string} commandId - Command ID
+ * @returns {string} localStorage key
+ */
+const getStorageKey = (commandId) => `canvas_${commandId}`;
+
+/**
+ * Load canvas state from localStorage
+ * @param {string} commandId - Command ID
+ * @returns {{ nodes: Array, edges: Array }} Canvas state
+ */
+const loadCanvasState = (commandId) => {
+  if (!commandId) return { nodes: [], edges: [] };
+
+  try {
+    const saved = localStorage.getItem(getStorageKey(commandId));
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        nodes: parsed.nodes || [],
+        edges: parsed.edges || [],
+      };
+    }
+  } catch (e) {
+    console.error('[Canvas] Failed to load state:', e);
+  }
+
+  return { nodes: [], edges: [] };
+};
+
+/**
+ * Save canvas state to localStorage
+ * @param {string} commandId - Command ID
+ * @param {Array} nodes - React Flow nodes
+ * @param {Array} edges - React Flow edges
+ */
+const saveCanvasState = (commandId, nodes, edges) => {
+  if (!commandId) return;
+
+  try {
+    localStorage.setItem(getStorageKey(commandId), JSON.stringify({ nodes, edges }));
+  } catch (e) {
+    console.error('[Canvas] Failed to save state:', e);
+  }
+};
+
 const Canvas = ({ command }) => {
-  const { activeTabId, getActiveCanvasState, setCanvasState } = useTabManager();
-  const tabContext = useContext(TabContext);
+  const commandId = command?.id;
 
-  // Get space/room key for state persistence
-  const spaceRoomKey = tabContext?.selectedSpace && tabContext?.selectedRoom
-    ? `${tabContext.selectedSpace.id}_${tabContext.selectedRoom.id}`
-    : null;
+  // Load initial state from localStorage
+  const initialState = useRef(loadCanvasState(commandId));
 
-  // Track previous space/room to detect changes
-  const prevSpaceRoomKeyRef = useRef(spaceRoomKey);
+  // React Flow state - owned by this component
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialState.current.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialState.current.edges);
 
-  // Get persisted state for current space/room
-  const persistedState = spaceRoomKey ? getActiveCanvasState(spaceRoomKey) : { nodes: [], edges: [] };
+  // Ref for container dimensions
+  const containerRef = useRef(null);
 
-  // React Flow state
-  const [nodes, setNodes, onNodesChange] = useNodesState(persistedState.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(persistedState.edges);
-
-  // Track if we should save (avoid saving on initial load)
+  // Track if initialized (for save debouncing)
   const isInitializedRef = useRef(false);
 
-  // Track if we're saving (to avoid sync loop)
-  const isSavingRef = useRef(false);
-
-  // Track local node/edge counts to detect external changes
-  const localCountRef = useRef({ nodes: 0, edges: 0 });
-
-  // Load state when space/room changes
+  // Initialize on first render
   useEffect(() => {
-    if (spaceRoomKey && spaceRoomKey !== prevSpaceRoomKeyRef.current) {
-      const newState = getActiveCanvasState(spaceRoomKey);
-      setNodes(newState.nodes);
-      setEdges(newState.edges);
-      localCountRef.current = { nodes: newState.nodes.length, edges: newState.edges.length };
-      prevSpaceRoomKeyRef.current = spaceRoomKey;
-      isInitializedRef.current = true;
-    } else if (spaceRoomKey && !isInitializedRef.current) {
-      // Initial load
-      localCountRef.current = { nodes: persistedState.nodes.length, edges: persistedState.edges.length };
-      isInitializedRef.current = true;
-    }
-  }, [spaceRoomKey, getActiveCanvasState, setNodes, setEdges, persistedState.nodes.length, persistedState.edges.length]);
+    isInitializedRef.current = true;
+  }, []);
 
-  // Sync external state changes (from agent bridge)
-  // This detects when the persisted state changes externally (not from local user interaction)
+  // Save state to localStorage when it changes (debounced)
   useEffect(() => {
-    if (!spaceRoomKey || !isInitializedRef.current || isSavingRef.current) return;
+    if (!commandId || !isInitializedRef.current) return;
 
-    const persistedNodeCount = persistedState.nodes.length;
-    const persistedEdgeCount = persistedState.edges.length;
-    const localNodeCount = localCountRef.current.nodes;
-    const localEdgeCount = localCountRef.current.edges;
+    const timeoutId = setTimeout(() => {
+      saveCanvasState(commandId, nodes, edges);
+    }, 300);
 
-    // Check if persisted state has nodes/edges that don't match what we expect
-    // This indicates an external change (e.g., from agent bridge)
-    const hasExternalChanges =
-      persistedNodeCount !== nodes.length ||
-      persistedEdgeCount !== edges.length;
+    return () => clearTimeout(timeoutId);
+  }, [commandId, nodes, edges]);
 
-    if (hasExternalChanges) {
-      // Check if this looks like an external addition (more items than we have locally)
-      const looksExternal =
-        persistedNodeCount > localNodeCount ||
-        persistedEdgeCount > localEdgeCount;
+  // Register API with CommandRegistry
+  // This allows agents to manipulate the canvas
+  useCommandRegistration(
+    commandId,
+    () => ({
+      type: 'canvas',
 
-      if (looksExternal) {
-        // Sync from persisted state
-        setNodes(persistedState.nodes);
-        setEdges(persistedState.edges);
-        localCountRef.current = { nodes: persistedNodeCount, edges: persistedEdgeCount };
-      }
-    }
-  }, [spaceRoomKey, persistedState.nodes, persistedState.edges, nodes.length, edges.length, setNodes, setEdges]);
+      /**
+       * Add a node to the canvas
+       * @param {string} nodeType - Node type (chart, statusBadge, markdown)
+       * @param {{ x: number, y: number }} position - Node position
+       * @param {object} data - Node data
+       * @returns {string} Generated node ID
+       */
+      addNode: (nodeType, position, data) => {
+        const nodeId = generateNodeId(nodeType);
+        const node = {
+          id: nodeId,
+          type: nodeType,
+          position,
+          data,
+        };
+        setNodes((prev) => [...prev, node]);
+        return nodeId;
+      },
 
-  // Update local count ref when local state changes
-  useEffect(() => {
-    localCountRef.current = { nodes: nodes.length, edges: edges.length };
-  }, [nodes.length, edges.length]);
+      // Remove a node (and its connected edges)
+      removeNode: (nodeId) => {
+        setNodes((prev) => prev.filter((n) => n.id !== nodeId));
+        setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
+        return true;
+      },
 
-  // Save state when nodes or edges change
-  useEffect(() => {
-    if (spaceRoomKey && activeTabId && isInitializedRef.current) {
-      // Mark that we're about to save (to prevent sync loop)
-      isSavingRef.current = true;
+      // Update a node's position or data
+      updateNode: (nodeId, updates) => {
+        setNodes((prev) =>
+          prev.map((n) => {
+            if (n.id !== nodeId) return n;
+            return {
+              ...n,
+              position: updates.position ?? n.position,
+              data: updates.data ? { ...n.data, ...updates.data } : n.data,
+            };
+          })
+        );
+        return true;
+      },
 
-      // Debounce saving to avoid too many updates
-      const timeoutId = setTimeout(() => {
-        setCanvasState(activeTabId, nodes, edges, spaceRoomKey);
-        // Allow sync again after a short delay
-        setTimeout(() => {
-          isSavingRef.current = false;
-        }, 100);
-      }, 300);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [nodes, edges, spaceRoomKey, activeTabId, setCanvasState]);
+      /**
+       * Add an edge between two nodes
+       * @param {string} sourceId - Source node ID
+       * @param {string} targetId - Target node ID
+       * @param {object} options - Edge options (label, animated)
+       * @returns {string} Generated edge ID
+       */
+      addEdge: (sourceId, targetId, options = {}) => {
+        const edgeId = generateEdgeId(sourceId, targetId);
+        const edge = {
+          id: edgeId,
+          source: sourceId,
+          target: targetId,
+          type: 'smoothstep',
+          animated: options.animated !== false,
+          label: options.label || undefined,
+        };
+        setEdges((prev) => [...prev, edge]);
+        return edgeId;
+      },
 
-  // Handle new connections
+      // Remove an edge
+      removeEdge: (edgeId) => {
+        setEdges((prev) => prev.filter((e) => e.id !== edgeId));
+        return true;
+      },
+
+      // Get all nodes
+      getNodes: () => nodes,
+
+      // Get all edges
+      getEdges: () => edges,
+
+      // Clear all nodes and edges
+      clear: () => {
+        setNodes([]);
+        setEdges([]);
+      },
+    }),
+    [nodes, edges, setNodes, setEdges]
+  );
+
+  // Handle new connections from user interaction
   const onConnect = useCallback(
     (params) => setEdges((eds) => addEdge(params, eds)),
     [setEdges]
   );
 
-  // Show message if no space/room selected
-  if (!spaceRoomKey) {
+  // Show placeholder if no commandId
+  if (!commandId) {
     return (
       <div className={styles.canvasWrapper}>
         <div className={styles.noContext}>
-          Select a space and room to use the canvas
+          Canvas not initialized
         </div>
       </div>
     );
   }
 
   return (
-    <div className={styles.canvasWrapper}>
+    <div className={styles.canvasWrapper} ref={containerRef}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -161,7 +368,7 @@ const Canvas = ({ command }) => {
           animated: true,
         }}
       >
-        <Controls showInteractive={false} />
+        <CanvasControls nodes={nodes} edges={edges} setNodes={setNodes} containerRef={containerRef} />
         <MiniMap
           nodeStrokeColor="#00ab44"
           nodeColor="#f0f0f0"
