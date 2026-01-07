@@ -26,45 +26,43 @@ Think of yourself as creating visual slides, not writing text. All findings must
 
 ## Working with Your Tab
 
-Your tab persists between executions and users can modify it. **STRONGLY prefer reusing existing canvases and dashboards** over creating new ones.
+Your tab persists between executions. **ALWAYS reuse existing canvases** - creating new tiles fragments the view.
 
-### Discovery Process (REQUIRED)
+### MANDATORY: Before Adding ANY Content
 
-1. **Call `tabs.getTileLayout`** to see your tab structure and get `commandId` values
-2. **Inspect existing content** with `canvas.getNodesDetailed({ commandId })` or `dashboard.getChartsDetailed`
-3. **Evaluate existing content** - Does it serve a similar purpose to your task? (e.g., both show infrastructure health, both monitor CPU, both display node status)
+**STOP! You MUST follow these steps IN ORDER before calling ANY content tool:**
 
-### Reuse vs Create Decision
+**Step 1:** Call `tabs.getTileLayout` to discover existing canvases/dashboards
 
-**REUSE existing canvas/dashboard when:**
-- The existing content has a similar purpose to your current task
-- You're showing updated information about the same topic
-- The existing canvas has related visualizations (even if outdated)
-- You want to refresh or expand on previous findings
+**Step 2:** For EACH canvas found, call `canvas.getNodesDetailed({ commandId: "the_command_id" })` to see its content
+- This tells you what's already there
+- Without this, you cannot make an informed decision
 
-**When reusing:** Clear the canvas (`canvas.clearCanvas`) and rebuild with fresh content, OR selectively update/remove specific nodes.
+**Step 3:** Decide based on what you found:
+- If canvas has ANY monitoring content → **REUSE IT** (clear and rebuild)
+- If canvas is empty → **USE IT** (no need to create new)
+- If no canvas exists at all → **THEN** create one with `tabs.splitTile`
 
-**CREATE new tile ONLY when:**
-- No existing canvas/dashboard serves a remotely similar purpose
-- You need to show fundamentally different content (e.g., existing shows CPU analysis, you need to show network topology)
-- The user explicitly requested a new view
+**WRONG (do not do this):**
+```
+tabs.getTileLayout → sees canvas exists → tabs.splitTile (creates another!)
+```
 
-**NEVER** create a new canvas just because you want a "clean slate" - clear the existing one instead.
+**CORRECT:**
+```
+tabs.getTileLayout → sees canvas with commandId "cmd_123"
+canvas.getNodesDetailed({ commandId: "cmd_123" }) → sees existing content
+canvas.clearCanvas({ commandId: "cmd_123" }) → clears it
+canvas.addStatusBadge({ commandId: "cmd_123", ... }) → adds fresh content
+```
 
 ### Command IDs
 
-Content tools require a `commandId` parameter. Get it from `tabs.getTileLayout` (existing) or `tabs.splitTile` with `commandType` (new).
-
-Example `tabs.getTileLayout` response:
+All canvas/dashboard tools require `commandId`. Get it from `tabs.getTileLayout` response:
 ```json
-{ "root": { "tileId": "tile_xxx", "commandId": "cmd_123", "command": "canvas", "children": [] } }
+{ "root": { "tileId": "tile_xxx", "commandId": "cmd_123", "command": "canvas", ... } }
 ```
-
-Example creating a new canvas (only when truly needed):
-```json
-tabs.splitTile({ parentTileId: "tile_xxx", splitType: "vertical", commandType: "canvas" })
-// Returns: { "tileId": "tile_yyy", "commandId": "cmd_456" }
-```
+Use `commandId: "cmd_123"` in subsequent tool calls.
 
 ## Your Task
 
@@ -190,7 +188,7 @@ Query Netdata Cloud AI about your infrastructure using natural language. Ask abo
 
 ## Best Practices
 
-1. **Reuse existing content**: Always check existing canvases/dashboards first - clear and rebuild rather than create new tiles
+1. **ALWAYS inspect before creating**: Call `canvas.getNodesDetailed` before deciding to split/create tiles
 2. **Query first**: Use `netdata.query` to discover available metrics before visualizing
 3. **Position thoughtfully**: Start at (50, 50), space elements ~200-300px apart
 4. **Lead with status**: Add a status badge summarizing health at a glance
@@ -272,10 +270,11 @@ mod tests {
     fn test_template_explains_tab_persistence() {
         // Agent must understand tab state can have existing content
         assert!(AGENT_PROMPT_TEMPLATE.contains("tab persists between executions"));
-        assert!(AGENT_PROMPT_TEMPLATE.contains("users can modify"));
-        assert!(AGENT_PROMPT_TEMPLATE.contains("STRONGLY prefer reusing"));
-        assert!(AGENT_PROMPT_TEMPLATE.contains("Reuse vs Create Decision"));
-        assert!(AGENT_PROMPT_TEMPLATE.contains("NEVER"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("ALWAYS reuse existing canvases"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("MANDATORY"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("canvas.getNodesDetailed"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("WRONG"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("CORRECT"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("commandId"));
     }
 
