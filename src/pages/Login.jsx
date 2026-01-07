@@ -34,8 +34,9 @@ const Login = () => {
 
   return (
     <div className={styles.loginPage}>
+      <img src="/icon.svg" alt="CLAI" className={styles.logo} />
       <div className={styles.loginCard}>
-        <h1>Login to Netdata AI</h1>
+        <h1>Login to Netdata</h1>
         <p className={styles.description}>
           Please enter your Netdata Cloud API token to continue.
         </p>
@@ -72,7 +73,19 @@ const Login = () => {
           </button>
         </form>
         <div className={styles.helpText}>
-          <p>Don't have a token? Generate one from your Netdata Cloud account settings.</p>
+          <p>
+            Don't have an account?{' '}
+            <a href="https://app.netdata.cloud" target="_blank" rel="noopener noreferrer">
+              Sign up for Netdata Cloud
+            </a>
+          </p>
+          <p>
+            Need an API token?{' '}
+            <a href="https://learn.netdata.cloud/docs/netdata-cloud/authentication-&-authorization/api-tokens" target="_blank" rel="noopener noreferrer">
+              Learn how to create one
+            </a>
+            <span className={styles.tokenHint}>Requires <code>scope:all</code> permission</span>
+          </p>
         </div>
       </div>
     </div>

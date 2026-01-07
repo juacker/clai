@@ -1,10 +1,12 @@
 .loginPage {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 100vh;
   background: var(--color-bg-secondary);
   position: relative;
+  gap: 2rem;
 }
 
 /* Mesh gradient background */
@@ -42,6 +44,12 @@
   mask-composite: exclude;
   opacity: 0.3;
   pointer-events: none;
+}
+
+.logo {
+  width: 72px;
+  height: 72px;
+  z-index: 1;
 }
 
 .loginCard h1 {
@@ -135,10 +143,40 @@
   padding-top: 1.5rem;
   border-top: 1px solid var(--color-border-light);
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .helpText p {
   color: var(--color-text-tertiary);
   font-size: 0.875rem;
   margin: 0;
+}
+
+.helpText a {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color var(--transition-fast);
+}
+
+.helpText a:hover {
+  color: var(--color-primary-dark);
+  text-decoration: underline;
+}
+
+.tokenHint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--color-text-quaternary, var(--color-text-tertiary));
+}
+
+.tokenHint code {
+  background: var(--color-bg-tertiary);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
 }
