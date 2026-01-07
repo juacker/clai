@@ -333,28 +333,6 @@ export const useAgentBridge = () => {
       return { success: true };
     });
 
-    registerToolHandler('dashboard.getCharts', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
-
-      if (!tabId) {
-        return { charts: [] };
-      }
-
-      const dashboard = getDashboardFromTab(tabId, params?.commandId);
-      if (!dashboard?.api) {
-        return { charts: [] };
-      }
-
-      const elements = dashboard.api.getCharts() || [];
-      const charts = elements.map(el => ({
-        chartId: el.id,
-        context: el.config?.context,
-      }));
-
-      return { charts };
-    });
-
     registerToolHandler('dashboard.clearCharts', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
       const tabId = getAgentTabId(agentId, spaceId, roomId);
@@ -472,18 +450,69 @@ export const useAgentBridge = () => {
         throw new Error('Tab not found');
       }
 
-      // Convert tile tree to layout format (includes commandId for discovery)
+      // Helper to get content details based on command type
+      // Returns enough info for agent to decide if content can be reused
+      const getContentDetails = (command) => {
+        if (!command?.api) return null;
+
+        if (command.type === 'canvas') {
+          // Get all canvas nodes with their data
+          const nodes = command.api.getNodes() || [];
+          return {
+            nodeCount: nodes.length,
+            nodes: nodes.map(n => {
+              const summary = { nodeId: n.id, nodeType: n.type };
+
+              // Include type-specific info so agent can evaluate content
+              if (n.type === 'chart') {
+                summary.context = n.data?.context || null; // e.g., "system.cpu"
+                summary.title = n.data?.title || null;
+              } else if (n.type === 'statusBadge') {
+                summary.status = n.data?.status || null; // e.g., "healthy"
+                summary.title = n.data?.title || null;
+                summary.message = n.data?.message?.substring(0, 100) || null;
+              } else if (n.type === 'markdown') {
+                // First 150 chars of content to understand what it's about
+                summary.contentPreview = n.data?.content?.substring(0, 150) || null;
+              } else {
+                summary.title = n.data?.title || null;
+              }
+
+              return summary;
+            }),
+          };
+        }
+
+        if (command.type === 'dashboard') {
+          // Get all dashboard charts
+          const charts = command.api.getChartsDetailed?.() || command.api.getCharts?.() || [];
+          return {
+            chartCount: charts.length,
+            charts: charts.map(c => ({
+              chartId: c.id,
+              context: c.config?.context,
+            })),
+          };
+        }
+
+        return null;
+      };
+
+      // Convert tile tree to layout format (includes commandId AND content for discovery)
       const convertTile = (tile) => {
         if (tile.type === 'leaf') {
-          // Look up the command to get its type
+          // Look up the command to get its type and content
           const command = tile.commandId
             ? tabManagerRef.current.getCommandFromTab(tabId, tile.commandId)
             : null;
+
+          const content = command ? getContentDetails(command) : null;
 
           return {
             tileId: tile.id,
             commandId: tile.commandId || null,
             command: command?.type || null,
+            content, // Include actual content details!
             splitType: null,
             children: [],
           };
@@ -493,14 +522,96 @@ export const useAgentBridge = () => {
           tileId: tile.id,
           commandId: null,
           command: null,
+          content: null,
           splitType: tile.direction,
           children: tile.children.map(convertTile),
         };
       };
 
-      return {
-        root: convertTile(tab.rootTile),
+      // Build the tree
+      const root = convertTile(tab.rootTile);
+
+      // Collect all canvases and dashboards for easy access
+      const collectCommands = (tile, result = { canvases: [], dashboards: [] }) => {
+        if (tile.command === 'canvas' && tile.commandId) {
+          result.canvases.push({
+            commandId: tile.commandId,
+            nodeCount: tile.content?.nodeCount || 0,
+            nodes: tile.content?.nodes || [],
+          });
+        } else if (tile.command === 'dashboard' && tile.commandId) {
+          result.dashboards.push({
+            commandId: tile.commandId,
+            chartCount: tile.content?.chartCount || 0,
+            charts: tile.content?.charts || [],
+          });
+        }
+        if (tile.children) {
+          tile.children.forEach(child => collectCommands(child, result));
+        }
+        return result;
       };
+
+      const available = collectCommands(root);
+
+      // Return flat lists only - agent doesn't need tree structure
+      // The agent just needs to know what canvases/dashboards exist and what's in them
+      return {
+        canvasCount: available.canvases.length,
+        canvases: available.canvases,
+        dashboardCount: available.dashboards.length,
+        dashboards: available.dashboards,
+      };
+    });
+
+    // Get full content details for any command by ID
+    registerToolHandler('tabs.getCommandContent', async (request) => {
+      const { agentId, spaceId, roomId, params } = request;
+      const { commandId } = params;
+
+      if (!commandId) {
+        throw new Error('commandId is required');
+      }
+
+      const tabId = ensureAgentTab(agentId, spaceId, roomId);
+      const command = tabManagerRef.current.getCommandFromTab(tabId, commandId);
+
+      if (!command) {
+        throw new Error(`Command not found: ${commandId}`);
+      }
+
+      const result = {
+        commandId,
+        commandType: command.type,
+        content: null,
+      };
+
+      if (command.type === 'canvas' && command.api) {
+        const nodes = command.api.getNodes() || [];
+        result.content = {
+          nodeCount: nodes.length,
+          nodes: nodes.map(n => ({
+            nodeId: n.id,
+            nodeType: n.type,
+            x: n.position?.x || 0,
+            y: n.position?.y || 0,
+            data: n.data || {},
+          })),
+        };
+      } else if (command.type === 'dashboard' && command.api) {
+        const charts = command.api.getChartsDetailed?.() || command.api.getCharts?.() || [];
+        result.content = {
+          chartCount: charts.length,
+          charts: charts.map(c => ({
+            chartId: c.id,
+            context: c.config?.context,
+            groupBy: c.config?.groupBy || null,
+            filterBy: c.config?.filterBy || null,
+          })),
+        };
+      }
+
+      return result;
     });
 
     // =========================================================================
@@ -586,21 +697,6 @@ export const useAgentBridge = () => {
       return { success: true };
     });
 
-    registerToolHandler('canvas.getNodes', async (request) => {
-      const command = getCanvasCommand(request, { required: false });
-      if (!command) {
-        return [];
-      }
-
-      const nodes = command.api.getNodes();
-      return nodes.map(n => ({
-        nodeId: n.id,
-        nodeType: n.type,
-        x: n.position?.x || 0,
-        y: n.position?.y || 0,
-      }));
-    });
-
     registerToolHandler('canvas.clearCanvas', async (request) => {
       const command = getCanvasCommand(request, { required: false });
       if (!command) {
@@ -609,42 +705,6 @@ export const useAgentBridge = () => {
 
       command.api.clear();
       return { success: true };
-    });
-
-    registerToolHandler('canvas.getNodeDetails', async (request) => {
-      const { params } = request;
-      const { nodeId } = params;
-
-      const command = getCanvasCommand(request);
-      const nodes = command.api.getNodes();
-      const node = nodes.find(n => n.id === nodeId);
-      if (!node) {
-        throw new Error(`Node not found: ${nodeId}`);
-      }
-
-      return {
-        nodeId: node.id,
-        nodeType: node.type,
-        x: node.position?.x || 0,
-        y: node.position?.y || 0,
-        data: node.data || {},
-      };
-    });
-
-    registerToolHandler('canvas.getNodesDetailed', async (request) => {
-      const command = getCanvasCommand(request, { required: false });
-      if (!command) {
-        return [];
-      }
-
-      const nodes = command.api.getNodes();
-      return nodes.map(n => ({
-        nodeId: n.id,
-        nodeType: n.type,
-        x: n.position?.x || 0,
-        y: n.position?.y || 0,
-        data: n.data || {},
-      }));
     });
 
     registerToolHandler('canvas.updateNode', async (request) => {
@@ -677,64 +737,6 @@ export const useAgentBridge = () => {
       };
     });
 
-    registerToolHandler('tabs.getTileContent', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
-      // Use ensureAgentTab to recreate tab if user closed it
-      const tabId = ensureAgentTab(agentId, spaceId, roomId);
-
-      const tab = tabManagerRef.current.tabs.find(t => t.id === tabId);
-      if (!tab) {
-        throw new Error('Tab not found');
-      }
-
-      // Find the tile by ID
-      const findTile = (tile, targetId) => {
-        if (tile.id === targetId) return tile;
-        if (tile.children) {
-          for (const child of tile.children) {
-            const found = findTile(child, targetId);
-            if (found) return found;
-          }
-        }
-        return null;
-      };
-
-      const tile = findTile(tab.rootTile, params.tileId);
-      if (!tile) {
-        throw new Error(`Tile not found: ${params.tileId}`);
-      }
-
-      return {
-        tileId: tile.id,
-        command: tile.type === 'leaf' ? (tile.command || null) : null,
-        isLeaf: tile.type === 'leaf',
-      };
-    });
-
-    registerToolHandler('dashboard.getChartsDetailed', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
-
-      if (!tabId) {
-        return [];
-      }
-
-      const dashboard = getDashboardFromTab(tabId, params?.commandId);
-      if (!dashboard?.api) {
-        return [];
-      }
-
-      const elements = dashboard.api.getChartsDetailed() || [];
-
-      // Return full chart info including groupBy and filterBy
-      return elements.map(el => ({
-        chartId: el.id,
-        context: el.config?.context,
-        groupBy: el.config?.groupBy || null,
-        filterBy: el.config?.filterBy || null,
-      }));
-    });
-
     // Cleanup on unmount
     return () => {
       // Reset the ref so handlers can be re-registered on next mount
@@ -744,12 +746,12 @@ export const useAgentBridge = () => {
       unregisterToolHandler('agent.setup');
       unregisterToolHandler('dashboard.addChart');
       unregisterToolHandler('dashboard.removeChart');
-      unregisterToolHandler('dashboard.getCharts');
       unregisterToolHandler('dashboard.clearCharts');
       unregisterToolHandler('dashboard.setTimeRange');
       unregisterToolHandler('tabs.splitTile');
       unregisterToolHandler('tabs.removeTile');
       unregisterToolHandler('tabs.getTileLayout');
+      unregisterToolHandler('tabs.getCommandContent');
       // Canvas handlers
       unregisterToolHandler('canvas.addChart');
       unregisterToolHandler('canvas.addStatusBadge');
@@ -757,13 +759,7 @@ export const useAgentBridge = () => {
       unregisterToolHandler('canvas.addEdge');
       unregisterToolHandler('canvas.removeNode');
       unregisterToolHandler('canvas.removeEdge');
-      unregisterToolHandler('canvas.getNodeDetails');
-      unregisterToolHandler('canvas.getNodesDetailed');
       unregisterToolHandler('canvas.updateNode');
-      // Visibility handlers
-      unregisterToolHandler('tabs.getTileContent');
-      unregisterToolHandler('dashboard.getChartsDetailed');
-      unregisterToolHandler('canvas.getNodes');
       unregisterToolHandler('canvas.clearCanvas');
 
       // Note: We don't call cleanupAgentBridge here because

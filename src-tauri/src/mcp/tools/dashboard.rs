@@ -8,7 +8,6 @@
 //!
 //! - `dashboard.addChart` - Add a metric chart to the dashboard
 //! - `dashboard.removeChart` - Remove a chart by ID
-//! - `dashboard.getCharts` - List all charts on the dashboard
 //! - `dashboard.clearCharts` - Remove all charts
 //! - `dashboard.setTimeRange` - Set the time range for all charts
 //!
@@ -80,16 +79,6 @@ pub struct SetTimeRangeParams {
     /// Time range to display.
     #[schemars(description = "Time range: 5m, 15m, 30m, 1h, 2h, 6h, 12h, 24h, 7d")]
     pub range: String,
-}
-
-/// Parameters for getting charts (with optional commandId).
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetChartsParams {
-    /// Optional dashboard command ID. If omitted, uses the first dashboard in the tab.
-    #[schemars(description = "Dashboard command ID (optional - uses first dashboard if omitted)")]
-    #[serde(default)]
-    pub command_id: Option<String>,
 }
 
 /// Parameters for clearing charts (with optional commandId).
@@ -262,24 +251,6 @@ impl DashboardTools {
         Ok(())
     }
 
-    /// Get all charts on the dashboard.
-    pub async fn get_charts(&self, params: GetChartsParams) -> Result<Vec<ChartInfo>, ToolError> {
-        let bridge = self.bridge()?;
-        let result = bridge
-            .call_tool(
-                &self.agent_id,
-                &self.space_id,
-                &self.room_id,
-                "dashboard.getCharts",
-                serde_json::to_value(&params)
-                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
-            )
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-
-        serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
-    }
-
     /// Clear all charts from the dashboard.
     pub async fn clear_charts(&self, params: ClearChartsParams) -> Result<(), ToolError> {
         let bridge = self.bridge()?;
@@ -312,27 +283,6 @@ impl DashboardTools {
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         Ok(())
-    }
-
-    /// Get all charts with their full configuration.
-    pub async fn get_charts_detailed(
-        &self,
-        params: GetChartsParams,
-    ) -> Result<Vec<ChartDetailedInfo>, ToolError> {
-        let bridge = self.bridge()?;
-        let result = bridge
-            .call_tool(
-                &self.agent_id,
-                &self.space_id,
-                &self.room_id,
-                "dashboard.getChartsDetailed",
-                serde_json::to_value(&params)
-                    .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
-            )
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-
-        serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 }
 

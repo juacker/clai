@@ -7,7 +7,8 @@
 //!
 //! - `tabs.splitTile` - Split an existing tile to create a new one
 //! - `tabs.removeTile` - Remove a tile by ID
-//! - `tabs.getTileLayout` - Get the current tile layout structure
+//! - `tabs.getTileLayout` - Get the current tile layout structure with content summaries
+//! - `tabs.getCommandContent` - Get full content details for a specific command
 //!
 //! # Execution
 //!
@@ -116,27 +117,13 @@ pub struct TileLayout {
     pub root: TileNode,
 }
 
-/// Parameters for getting tile content.
+/// Parameters for getting command content.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct GetTileContentParams {
-    /// The unique ID of the tile to get content for.
-    #[schemars(description = "The unique ID of the tile")]
-    pub tile_id: String,
-}
-
-/// Information about what's in a tile.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)] // Used via MCP tool responses
-pub struct TileContent {
-    /// The tile's unique ID.
-    pub tile_id: String,
-    /// The command running in this tile (e.g., "dashboard", "canvas", "anomalies").
-    /// None if the tile is a split container (not a leaf).
-    pub command: Option<String>,
-    /// Whether this is a leaf tile (displays content) or split container.
-    pub is_leaf: bool,
+pub struct GetCommandContentParams {
+    /// The command ID to get content for (from tabs.getTileLayout).
+    #[schemars(description = "The command ID (from tabs.getTileLayout or tabs.splitTile)")]
+    pub command_id: String,
 }
 
 /// Tabs tools with agent context bound at creation time.
@@ -256,7 +243,13 @@ impl TabsTools {
     }
 
     /// Get the current tile layout.
-    pub async fn get_tile_layout(&self) -> Result<TileLayout, ToolError> {
+    ///
+    /// Returns a flat structure with lists of canvases and dashboards:
+    /// - canvasCount: number of canvases
+    /// - canvases: array of { commandId, nodeCount, nodes }
+    /// - dashboardCount: number of dashboards
+    /// - dashboards: array of { commandId, chartCount, charts }
+    pub async fn get_tile_layout(&self) -> Result<serde_json::Value, ToolError> {
         let bridge = self.bridge()?;
         let result = bridge
             .call_tool(
@@ -269,28 +262,32 @@ impl TabsTools {
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
-        serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
+        Ok(result)
     }
 
-    /// Get the content of a specific tile.
-    pub async fn get_tile_content(
+    /// Get full content details for a specific command.
+    ///
+    /// Returns detailed content information for canvas or dashboard commands:
+    /// - Canvas: All nodes with full data (nodeId, nodeType, x, y, data)
+    /// - Dashboard: All charts with full config (chartId, context, groupBy, filterBy)
+    pub async fn get_command_content(
         &self,
-        params: GetTileContentParams,
-    ) -> Result<TileContent, ToolError> {
+        params: GetCommandContentParams,
+    ) -> Result<serde_json::Value, ToolError> {
         let bridge = self.bridge()?;
         let result = bridge
             .call_tool(
                 &self.agent_id,
                 &self.space_id,
                 &self.room_id,
-                "tabs.getTileContent",
+                "tabs.getCommandContent",
                 serde_json::to_value(&params)
                     .map_err(|e| ToolError::InvalidParams(e.to_string()))?,
             )
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
-        serde_json::from_value(result).map_err(|e| ToolError::ExecutionFailed(e.to_string()))
+        Ok(result)
     }
 }
 
@@ -364,12 +361,12 @@ mod tests {
     }
 
     #[test]
-    fn test_get_tile_content_params() {
+    fn test_get_command_content_params() {
         let json = json!({
-            "tileId": "tile-123"
+            "commandId": "cmd-123"
         });
 
-        let params: GetTileContentParams = serde_json::from_value(json).unwrap();
-        assert_eq!(params.tile_id, "tile-123");
+        let params: GetCommandContentParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.command_id, "cmd-123");
     }
 }
