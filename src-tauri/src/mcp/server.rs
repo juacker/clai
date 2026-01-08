@@ -67,10 +67,10 @@ pub use super::tools::canvas::{
     AddChartNodeParams, AddEdgeParams, AddMarkdownNodeParams, AddStatusBadgeParams,
     ClearCanvasParams, RemoveEdgeParams, RemoveNodeParams, UpdateNodeParams,
 };
+pub use super::tools::chat::SendMessageParams;
 pub use super::tools::dashboard::{
     AddChartParams, ClearChartsParams, RemoveChartParams, SetTimeRangeParams,
 };
-pub use super::tools::chat::SendMessageParams;
 pub use super::tools::netdata::NetdataQueryParams;
 pub use super::tools::tabs::{GetCommandContentParams, RemoveTileParams, SplitTileParams};
 
