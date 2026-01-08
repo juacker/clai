@@ -70,7 +70,7 @@ const MainLayout = () => {
                 ) : (
                   <div className={styles.mainLayout}>
                     {/* Fixed chat panel on right side (full height) */}
-                    <DesktopChatPanel />
+                    <DesktopChatPanel userInfo={userInfo} />
 
                     {/* Fixed TerminalEmulator at bottom */}
                     <TerminalEmulatorWrapper userInfo={userInfo} />

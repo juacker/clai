@@ -1,6 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAgentActivity } from '../../contexts/AgentActivityContext';
+import { getAiProvider } from '../../api/client';
 import MarkdownMessage from '../Chat/MarkdownMessage';
+import UserAvatar from '../UserAvatar';
 import styles from './AgentChat.module.css';
 
 /**
@@ -17,9 +19,23 @@ import styles from './AgentChat.module.css';
  * This component subscribes to agent activity via AgentActivityContext
  * and updates in real-time as SSE events are processed.
  */
-const AgentChat = ({ tabId, onClose }) => {
-  const { getActivity, ensureTabTracked } = useAgentActivity();
+const AgentChat = ({ tabId, onClose, userInfo }) => {
+  const { getActivity, ensureTabTracked, clearActivity } = useAgentActivity();
   const messagesEndRef = useRef(null);
+  const [aiProvider, setAiProvider] = useState(null);
+
+  // Fetch AI provider on mount
+  useEffect(() => {
+    const fetchProvider = async () => {
+      try {
+        const provider = await getAiProvider();
+        setAiProvider(provider);
+      } catch (err) {
+        console.error('[AgentChat] Failed to get AI provider:', err);
+      }
+    };
+    fetchProvider();
+  }, []);
 
   // Ensure we're tracking this tab
   useEffect(() => {
@@ -54,14 +70,30 @@ const AgentChat = ({ tabId, onClose }) => {
     );
   }
 
+  const handleClear = () => {
+    if (tabId) {
+      clearActivity(tabId);
+    }
+  };
+
   return (
     <div className={styles.agentChat}>
-      <Header status={status} onClose={onClose} />
+      <Header
+        status={status}
+        onClose={onClose}
+        onClear={handleClear}
+        hasMessages={streamingMessages.length > 0}
+      />
 
       <div className={styles.activityList}>
         {/* Render all messages */}
         {streamingMessages.map((message) => (
-          <MessageBlock key={message.id} message={message} />
+          <MessageBlock
+            key={message.id}
+            message={message}
+            userInfo={userInfo}
+            aiProvider={aiProvider}
+          />
         ))}
 
         {/* Running Indicator - show when starting with no messages yet */}
@@ -92,10 +124,80 @@ const AgentChat = ({ tabId, onClose }) => {
 };
 
 /**
+ * Get provider icon based on AI provider type
+ */
+const getProviderIcon = (aiProvider) => {
+  const providerType = aiProvider?.provider?.type || aiProvider?.provider;
+
+  if (providerType === 'claude' || providerType === 'Claude') {
+    return (
+      <img
+        src="/icons/claude.svg"
+        alt="Claude"
+        className={styles.providerIcon}
+        onError={(e) => { e.target.style.display = 'none'; }}
+      />
+    );
+  }
+
+  if (providerType === 'gemini' || providerType === 'Gemini') {
+    return (
+      <img
+        src="/icons/gemini.svg"
+        alt="Gemini"
+        className={styles.providerIcon}
+        onError={(e) => { e.target.style.display = 'none'; }}
+      />
+    );
+  }
+
+  if (providerType === 'openai' || providerType === 'OpenAI') {
+    return (
+      <img
+        src="/icons/openai.svg"
+        alt="OpenAI"
+        className={styles.providerIcon}
+        onError={(e) => { e.target.style.display = 'none'; }}
+      />
+    );
+  }
+
+  // Default Clai icon
+  return (
+    <img
+      src="/icon.svg"
+      alt="Clai"
+      className={styles.providerIcon}
+    />
+  );
+};
+
+/**
+ * Netdata icon component
+ */
+const NetdataIcon = () => (
+  <img
+    src="/icons/netdata.svg"
+    alt="Netdata"
+    className={styles.providerIcon}
+    onError={(e) => { e.target.style.display = 'none'; }}
+  />
+);
+
+/**
+ * Format timestamp for display
+ */
+const formatTimestamp = (timestamp) => {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+/**
  * MessageBlock - Renders a single message (user or assistant) with its content blocks
  */
-const MessageBlock = ({ message }) => {
-  const { role, contentBlocks = [], isStreaming } = message;
+const MessageBlock = ({ message, userInfo, aiProvider }) => {
+  const { role, contentBlocks = [], isStreaming, timestamp } = message;
 
   // Build a map of tool results by ID for quick lookup
   const toolResultsMap = {};
@@ -105,7 +207,7 @@ const MessageBlock = ({ message }) => {
     }
   });
 
-  // For user messages, just render the text content
+  // For user messages, check if it's a [@clai] message (agent-initiated query)
   if (role === 'user') {
     const textContent = contentBlocks
       .filter(b => b.type === 'text')
@@ -114,18 +216,49 @@ const MessageBlock = ({ message }) => {
 
     if (!textContent) return null;
 
+    // Check if message starts with [@clai] - this is an agent-initiated query
+    const isAgentQuery = textContent.startsWith('[@clai]');
+    const displayText = isAgentQuery ? textContent.replace(/^\[@clai\]\s*/, '') : textContent;
+
+    if (isAgentQuery) {
+      // Show as message from AI provider (Claude/Gemini querying Netdata)
+      return (
+        <div className={styles.agentQueryMessage}>
+          <div className={styles.messageHeader}>
+            {getProviderIcon(aiProvider)}
+            <span className={styles.messageRoleText}>{aiProvider?.name || 'AI Agent'}</span>
+            {timestamp && <span className={styles.messageTimestamp}>{formatTimestamp(timestamp)}</span>}
+          </div>
+          <div className={styles.messageContent}>{displayText}</div>
+        </div>
+      );
+    }
+
+    // Regular user message - show avatar
     return (
       <div className={styles.userMessage}>
-        <div className={styles.messageRole}>You</div>
+        <div className={styles.messageHeader}>
+          <UserAvatar
+            avatarUrl={userInfo?.avatarURL}
+            userName={userInfo?.name || userInfo?.email}
+            size="small"
+          />
+          <span className={styles.messageRoleText}>{userInfo?.name || 'You'}</span>
+          {timestamp && <span className={styles.messageTimestamp}>{formatTimestamp(timestamp)}</span>}
+        </div>
         <div className={styles.messageContent}>{textContent}</div>
       </div>
     );
   }
 
-  // For assistant messages, render text and tool blocks
+  // For assistant messages (netdata.query responses), show Netdata branding
   return (
     <div className={styles.assistantMessage}>
-      <div className={styles.messageRole}>Clai</div>
+      <div className={styles.messageHeader}>
+        <NetdataIcon />
+        <span className={styles.messageRoleText}>Netdata</span>
+        {timestamp && <span className={styles.messageTimestamp}>{formatTimestamp(timestamp)}</span>}
+      </div>
       <div className={styles.messageContent}>
         {contentBlocks.map((block, idx) => {
           if (block.type === 'text') {
@@ -161,10 +294,26 @@ const MessageBlock = ({ message }) => {
 };
 
 /**
+ * Get tool icon based on tool name
+ */
+const getToolIcon = (toolName) => {
+  // Netdata tools
+  if (toolName?.includes('netdata') || toolName?.includes('metric') ||
+      toolName?.includes('alert') || toolName === 'search_metrics' ||
+      toolName === 'get_alerts' || toolName === 'get_metric_data') {
+    return <NetdataIcon />;
+  }
+
+  // Default gear icon
+  return <span className={styles.toolIconEmoji}>⚙</span>;
+};
+
+/**
  * ToolBlock - Renders a tool use with its result
+ * Collapsed by default to reduce visual clutter
  */
 const ToolBlock = ({ toolUse, toolResult, isStreaming }) => {
-  const [isExpanded, setIsExpanded] = React.useState(true);
+  const [isExpanded, setIsExpanded] = React.useState(false); // Collapsed by default
   const { name, input } = toolUse;
 
   // Determine status based on whether we have a result
@@ -177,7 +326,7 @@ const ToolBlock = ({ toolUse, toolResult, isStreaming }) => {
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className={styles.toolHeaderLeft}>
-          <span className={styles.toolIcon}>⚙</span>
+          {getToolIcon(name)}
           <span className={styles.toolName}>{name}</span>
           <StatusIndicator status={status} />
         </div>
@@ -257,7 +406,7 @@ const StatusIndicator = ({ status }) => {
 /**
  * Header component for AgentChat
  */
-const Header = ({ status, onClose }) => {
+const Header = ({ status, onClose, onClear, hasMessages }) => {
   const isRunning = status === 'running';
 
   return (
@@ -271,6 +420,16 @@ const Header = ({ status, onClose }) => {
         <span className={styles.headerTitle}>Tab Chat</span>
       </div>
       <div className={styles.headerRight}>
+        {hasMessages && onClear && (
+          <button
+            className={styles.clearButton}
+            onClick={onClear}
+            title="Clear history"
+            disabled={isRunning}
+          >
+            Clear
+          </button>
+        )}
         {onClose && (
           <button className={styles.closeButton} onClick={onClose} title="Close">
             ×

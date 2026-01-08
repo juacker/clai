@@ -18,7 +18,7 @@ import styles from './DesktopChatPanel.module.css';
  * - Shows AgentChat for the active tab
  * - Integrates with ChatManagerContext for open/close state
  */
-const DesktopChatPanel = () => {
+const DesktopChatPanel = ({ userInfo }) => {
   const { isCurrentChatOpen, closeChat } = useChatManager();
   const { activeTabId } = useTabManager();
 
@@ -34,7 +34,7 @@ const DesktopChatPanel = () => {
       aria-hidden={!isOpen}
     >
       <div className={styles.chatContainer}>
-        <AgentChat tabId={activeTabId} onClose={closeChat} />
+        <AgentChat tabId={activeTabId} onClose={closeChat} userInfo={userInfo} />
       </div>
     </div>
   );

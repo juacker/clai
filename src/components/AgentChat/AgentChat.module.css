@@ -76,6 +76,28 @@
   gap: 8px;
 }
 
+.clearButton {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.clearButton:hover:not(:disabled) {
+  background: var(--color-overlay-08);
+  color: var(--color-text-secondary);
+  border-color: var(--color-text-tertiary);
+}
+
+.clearButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .closeButton {
   width: 28px;
   height: 28px;
@@ -164,19 +186,56 @@
   animation: slideIn var(--transition-base) ease-out;
 }
 
-.messageRole {
+/* Agent Query Message - when agent initiates a query with [@clai] */
+.agentQueryMessage {
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(99, 102, 241, 0.12) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  animation: slideIn var(--transition-base) ease-out;
+}
+
+.messageHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.messageRoleText {
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-accent);
+  color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  margin-bottom: 6px;
+}
+
+.messageTimestamp {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-left: auto;
+  font-weight: 400;
+}
+
+.userMessage .messageRoleText {
+  color: var(--color-accent);
+}
+
+.agentQueryMessage .messageRoleText {
+  color: var(--color-primary);
+}
+
+.providerIcon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: contain;
 }
 
 .messageContent {
-  font-size: 14px;
+  /* Let MarkdownMessage handle its own styling */
   color: var(--color-text-primary);
-  line-height: 1.6;
 }
 
 /* Running State */
@@ -295,6 +354,11 @@
 }
 
 .toolIcon {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.toolIconEmoji {
   font-size: 14px;
   opacity: 0.7;
 }

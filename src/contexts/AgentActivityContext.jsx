@@ -100,18 +100,29 @@ export const AgentActivityProvider = ({ children }) => {
 
   /**
    * Mark agent execution as started.
-   * Clears previous messages and sets status to running.
+   * Adds the user's query as a message and keeps previous history.
    */
   const startExecution = useCallback((tabId, query) => {
     setActivities((prev) => {
       const current = prev[tabId] || createInitialActivity();
+      const timestamp = Date.now();
+
+      // Create a user message for the query
+      const userMessage = {
+        id: `user-${timestamp}`,
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: query }],
+        isStreaming: false,
+        timestamp,
+      };
+
       return {
         ...prev,
         [tabId]: {
           ...current,
           status: 'running',
-          streamingMessages: [], // Clear previous messages for new execution
-          startedAt: Date.now(),
+          streamingMessages: [...current.streamingMessages, userMessage],
+          startedAt: timestamp,
           completedAt: null,
           error: null,
         },
