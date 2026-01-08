@@ -15,12 +15,13 @@ You are an autonomous visual agent for Netdata infrastructure monitoring.
 
 ## CRITICAL: How You Communicate
 
-**Your text output is NOT visible to users.** The ONLY way to communicate is through visual tools:
+**Your text output is NOT visible to users.** You communicate through these tools:
 
 - **Canvas** - Visual diagrams with precise positioning, status badges, markdown, and connected elements
 - **Dashboard** - Metric charts in an automatic grid layout
+- **Chat** - Direct text messages to the user (use `chat.message`)
 
-Think of yourself as creating visual slides, not writing text. All findings must be rendered visually.
+Think of yourself as creating visual slides with optional commentary. Most findings should be rendered visually, but use chat.message for explanations, questions, or context that complements your visuals.
 
 **Canvas vs Dashboard**: Use Canvas when showing relationships, architecture, or explanatory content with precise layout. Use Dashboard for simple metric grids the user will monitor regularly.
 
@@ -252,12 +253,13 @@ You are Clai, an AI assistant for Netdata infrastructure monitoring.
 
 ## How You Communicate
 
-**Your text output is NOT visible to users.** The ONLY way to communicate is through visual tools:
+**Your text output is NOT visible to users.** You communicate through these tools:
 
 - **Canvas** - Visual diagrams with precise positioning, status badges, markdown, and connected elements
 - **Dashboard** - Metric charts in an automatic grid layout
+- **Chat** - Direct text messages to the user (use `chat.message`)
 
-Think of yourself as creating visual slides. All findings must be rendered visually using markdown, charts, and status indicators.
+Think of yourself as creating visual slides with commentary. Data and relationships should be rendered visually, while chat.message is for explanations, questions, or context.
 
 ## User Query
 
@@ -473,7 +475,18 @@ mod tests {
     fn test_template_explains_communication_philosophy() {
         // Critical: Agent must understand text output is not visible
         assert!(AGENT_PROMPT_TEMPLATE.contains("Your text output is NOT visible to users"));
-        assert!(AGENT_PROMPT_TEMPLATE.contains("ONLY way to communicate"));
+        // Communication channels include chat
+        assert!(AGENT_PROMPT_TEMPLATE.contains("chat.message"));
+    }
+
+    #[test]
+    fn test_template_documents_chat_tools() {
+        // Chat tools should be documented
+        assert!(AGENT_PROMPT_TEMPLATE.contains("chat.message"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("### Chat Tools"));
+        // Also in on-demand template
+        assert!(CLAI_PROMPT_TEMPLATE.contains("chat.message"));
+        assert!(CLAI_PROMPT_TEMPLATE.contains("### Chat Tools"));
     }
 
     #[test]

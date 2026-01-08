@@ -35,6 +35,7 @@ import { emit as emitActivity } from './activityBus';
 
 // Event name for tool requests (must match Rust EVENT_TOOL_REQUEST)
 const EVENT_TOOL_REQUEST = 'agent:tool:request';
+const EVENT_TOOL_STREAM = 'agent:tool:stream';
 
 // Track registered tool handlers
 const toolHandlers = new Map();
@@ -325,11 +326,58 @@ const handleToolRequest = async (request) => {
   }
 };
 
-// Event listener cleanup function
+// Event listener cleanup functions
 let unlistenFn = null;
+let unlistenStreamFn = null;
 
 // Synchronous flag to prevent async race condition during initialization
 let isInitializing = false;
+
+// Stream event callback registry
+let streamCallback = null;
+
+/**
+ * Set the callback for streaming events.
+ *
+ * The callback receives stream events from Rust when processing SSE.
+ * This is typically set by AgentActivityContext to update streaming content.
+ *
+ * @param {function} callback - Function called with (tabId, toolCallId, eventType, payload)
+ */
+export const setStreamCallback = (callback) => {
+  streamCallback = callback;
+};
+
+/**
+ * Handle a streaming event from Rust.
+ *
+ * Routes the event to the appropriate tab via the stream callback.
+ */
+const handleStreamEvent = (event) => {
+  const { toolCallId, agentId, spaceId, roomId, tool, eventType, payload } = event;
+
+  // Look up tab ID from agent context
+  const tabId = getAgentTabId(agentId, spaceId, roomId);
+  if (!tabId) {
+    console.warn('[AgentBridge] Stream event for unknown agent context:', { agentId, spaceId, roomId });
+    return;
+  }
+
+  // Emit to activity bus
+  emitActivity(tabId, {
+    type: 'tool:stream',
+    id: toolCallId,
+    tool,
+    eventType,
+    payload,
+    timestamp: Date.now(),
+  });
+
+  // Also call the stream callback if set
+  if (streamCallback) {
+    streamCallback(tabId, toolCallId, eventType, payload);
+  }
+};
 
 /**
  * Initialize the agent bridge
@@ -355,7 +403,12 @@ export const initAgentBridge = async () => {
       handleToolRequest(event.payload);
     });
 
-    console.log('[AgentBridge] Initialized, listening for tool requests');
+    // Listen for stream events from Rust
+    unlistenStreamFn = await listen(EVENT_TOOL_STREAM, (event) => {
+      handleStreamEvent(event.payload);
+    });
+
+    console.log('[AgentBridge] Initialized, listening for tool requests and streams');
   } catch (err) {
     console.error('[AgentBridge] Failed to initialize:', err);
     isInitializing = false; // Reset on failure
@@ -371,8 +424,14 @@ export const cleanupAgentBridge = () => {
   if (unlistenFn) {
     unlistenFn();
     unlistenFn = null;
-    console.log('[AgentBridge] Cleaned up');
   }
+
+  if (unlistenStreamFn) {
+    unlistenStreamFn();
+    unlistenStreamFn = null;
+  }
+
+  console.log('[AgentBridge] Cleaned up');
 
   // Reset initialization flag
   isInitializing = false;
@@ -381,6 +440,7 @@ export const cleanupAgentBridge = () => {
   toolHandlers.clear();
   agentTabs.clear();
   tabCreationLocks.clear();
+  streamCallback = null;
 };
 
 export default {
@@ -393,4 +453,5 @@ export default {
   getAgentTab,
   getAgentTabId,
   clearAgentTab,
+  setStreamCallback,
 };

@@ -13,30 +13,35 @@ import { subscribe } from '../agents/activityBus';
  * AgentActivityContext
  *
  * Manages agent activity state per tab. Each tab has its own activity stream
- * that tracks messages, tool calls, their status, and results.
+ * that tracks messages (user and assistant) with their content blocks.
  *
- * This context subscribes to the activity bus and updates state accordingly.
+ * This context subscribes to the activity bus and processes SSE stream events.
  * AgentChat components use this context to display agent activity.
+ *
+ * The data model follows the SSE stream format:
+ * - Messages contain contentBlocks (text, tool_use, tool_result)
+ * - Tool_use and tool_result share the same ID for pairing
+ * - Content builds up incrementally via deltas
  *
  * Activity state per tab:
  * {
  *   status: 'idle' | 'running' | 'completed' | 'error',
- *   messages: [{ type: 'user', content: string, timestamp: number }],
+ *   streamingMessages: [
+ *     {
+ *       id: string,
+ *       role: 'user' | 'assistant',
+ *       contentBlocks: [
+ *         { type: 'text', text: string } |
+ *         { type: 'tool_use', id: string, name: string, input: object, partialInput: string } |
+ *         { type: 'tool_result', id: string, text: string }
+ *       ],
+ *       isStreaming: boolean,
+ *       timestamp: number,
+ *     }
+ *   ],
  *   startedAt: number | null,
  *   completedAt: number | null,
  *   error: string | null,
- *   toolCalls: [
- *     {
- *       id: string,
- *       tool: string,
- *       params: object,
- *       status: 'pending' | 'success' | 'error',
- *       result: object | null,
- *       error: string | null,
- *       timestamp: number,
- *       streamingContent: string | null,
- *     }
- *   ]
  * }
  */
 
@@ -57,11 +62,10 @@ export const useAgentActivity = () => {
  */
 const createInitialActivity = () => ({
   status: 'idle',
-  messages: [], // Array of { type: 'user', content: string, timestamp: number }
+  streamingMessages: [], // SSE-style messages with contentBlocks
   startedAt: null,
   completedAt: null,
   error: null,
-  toolCalls: [],
 });
 
 export const AgentActivityProvider = ({ children }) => {
@@ -96,98 +100,20 @@ export const AgentActivityProvider = ({ children }) => {
 
   /**
    * Mark agent execution as started.
-   * Adds the query to messages array and keeps previous tool calls as history.
+   * Clears previous messages and sets status to running.
    */
   const startExecution = useCallback((tabId, query) => {
     setActivities((prev) => {
       const current = prev[tabId] || createInitialActivity();
-      const newMessage = {
-        type: 'user',
-        content: query,
-        timestamp: Date.now(),
-      };
-      // Handle backward compatibility: migrate query to messages if needed
-      const existingMessages = current.messages || [];
       return {
         ...prev,
         [tabId]: {
           ...current,
           status: 'running',
-          messages: [...existingMessages, newMessage],
+          streamingMessages: [], // Clear previous messages for new execution
           startedAt: Date.now(),
           completedAt: null,
           error: null,
-          // Keep existing tool calls as history
-        },
-      };
-    });
-  }, []);
-
-  /**
-   * Add a new tool call (pending status).
-   */
-  const addToolCall = useCallback((tabId, toolCall) => {
-    setActivities((prev) => {
-      const current = prev[tabId] || createInitialActivity();
-      return {
-        ...prev,
-        [tabId]: {
-          ...current,
-          toolCalls: [
-            ...current.toolCalls,
-            {
-              ...toolCall,
-              status: toolCall.status || 'pending',
-              result: null,
-              error: null,
-              streamingContent: null,
-            },
-          ],
-        },
-      };
-    });
-  }, []);
-
-  /**
-   * Update an existing tool call.
-   */
-  const updateToolCall = useCallback((tabId, toolId, updates) => {
-    setActivities((prev) => {
-      const current = prev[tabId];
-      if (!current) return prev;
-
-      return {
-        ...prev,
-        [tabId]: {
-          ...current,
-          toolCalls: current.toolCalls.map((tc) =>
-            tc.id === toolId ? { ...tc, ...updates } : tc
-          ),
-        },
-      };
-    });
-  }, []);
-
-  /**
-   * Append streaming content to a tool call (for SSE responses).
-   */
-  const appendStreamingContent = useCallback((tabId, toolId, chunk) => {
-    setActivities((prev) => {
-      const current = prev[tabId];
-      if (!current) return prev;
-
-      return {
-        ...prev,
-        [tabId]: {
-          ...current,
-          toolCalls: current.toolCalls.map((tc) =>
-            tc.id === toolId
-              ? {
-                  ...tc,
-                  streamingContent: (tc.streamingContent || '') + chunk,
-                }
-              : tc
-          ),
         },
       };
     });
@@ -224,6 +150,152 @@ export const AgentActivityProvider = ({ children }) => {
   }, []);
 
   /**
+   * Handle SSE stream events - properly processes all SSE event types
+   * to build up messages with content blocks (text, tool_use, tool_result).
+   *
+   * The payload structure can vary:
+   * - Direct SSE: { type, message, content_block, delta, index }
+   * - Wrapped: { message: {...}, content_block: {...}, delta: {...}, index }
+   */
+  const handleSSEStreamEvent = useCallback((tabId, event) => {
+    const { eventType, payload } = event;
+
+    // Handle both wrapped and direct payload structures
+    const data = payload || {};
+
+    setActivities((prev) => {
+      const current = prev[tabId] || createInitialActivity();
+      let streamingMessages = [...current.streamingMessages];
+
+      switch (eventType) {
+        case 'message_start': {
+          // New message started (user or assistant)
+          const message = data.message || data;
+          if (message && message.id) {
+            streamingMessages.push({
+              id: message.id,
+              role: message.role || 'assistant',
+              contentBlocks: [],
+              isStreaming: message.role === 'assistant',
+              timestamp: Date.now(),
+            });
+          }
+          break;
+        }
+
+        case 'content_block_start': {
+          // New content block started within current message
+          const contentBlock = data.content_block || data;
+          const blockIndex = data.index;
+
+          if (contentBlock && contentBlock.type && streamingMessages.length > 0) {
+            const lastMsg = { ...streamingMessages[streamingMessages.length - 1] };
+            lastMsg.contentBlocks = [...(lastMsg.contentBlocks || [])];
+
+            const idx = blockIndex !== undefined ? blockIndex : lastMsg.contentBlocks.length;
+
+            if (contentBlock.type === 'tool_use') {
+              lastMsg.contentBlocks[idx] = {
+                type: 'tool_use',
+                id: contentBlock.id,
+                name: contentBlock.name,
+                input: contentBlock.input || {},
+                partialInput: '',
+              };
+            } else if (contentBlock.type === 'tool_result') {
+              lastMsg.contentBlocks[idx] = {
+                type: 'tool_result',
+                id: contentBlock.id,
+                text: '',
+              };
+            } else if (contentBlock.type === 'text') {
+              lastMsg.contentBlocks[idx] = {
+                type: 'text',
+                text: contentBlock.text || '',
+              };
+            }
+
+            streamingMessages[streamingMessages.length - 1] = lastMsg;
+          }
+          break;
+        }
+
+        case 'content_block_delta': {
+          // Incremental content received
+          const delta = data.delta || data;
+          const blockIndex = data.index;
+
+          if (streamingMessages.length > 0) {
+            const lastMsg = { ...streamingMessages[streamingMessages.length - 1] };
+            lastMsg.contentBlocks = [...(lastMsg.contentBlocks || [])];
+
+            const idx = blockIndex !== undefined ? blockIndex : 0;
+
+            if (delta?.type === 'text_delta' && delta.text) {
+              // Text content delta
+              if (!lastMsg.contentBlocks[idx]) {
+                lastMsg.contentBlocks[idx] = { type: 'text', text: '' };
+              } else {
+                lastMsg.contentBlocks[idx] = { ...lastMsg.contentBlocks[idx] };
+              }
+              lastMsg.contentBlocks[idx].text =
+                (lastMsg.contentBlocks[idx].text || '') + delta.text;
+            } else if (delta?.type === 'input_json_delta') {
+              // Tool input JSON delta
+              const partialJson = delta.partial_json || '';
+              if (lastMsg.contentBlocks[idx]) {
+                lastMsg.contentBlocks[idx] = { ...lastMsg.contentBlocks[idx] };
+                const block = lastMsg.contentBlocks[idx];
+                block.partialInput = (block.partialInput || '') + partialJson;
+
+                // Try to parse the accumulated JSON
+                if (partialJson) {
+                  try {
+                    block.input = JSON.parse(block.partialInput);
+                  } catch (e) {
+                    // JSON not complete yet, keep accumulating
+                  }
+                }
+              }
+            }
+
+            streamingMessages[streamingMessages.length - 1] = lastMsg;
+          }
+          break;
+        }
+
+        case 'content_block_stop': {
+          // Content block complete - no action needed, block is already built
+          break;
+        }
+
+        case 'message_stop': {
+          // Message complete
+          if (streamingMessages.length > 0) {
+            const lastMsg = { ...streamingMessages[streamingMessages.length - 1] };
+            lastMsg.isStreaming = false;
+            streamingMessages[streamingMessages.length - 1] = lastMsg;
+          }
+          break;
+        }
+
+        default:
+          // Unknown event type, ignore
+          break;
+      }
+
+      return {
+        ...prev,
+        [tabId]: {
+          ...current,
+          streamingMessages,
+          status: 'running',
+        },
+      };
+    });
+  }, []);
+
+  /**
    * Remove activity tracking for a tab (when tab is closed).
    */
   const removeActivity = useCallback((tabId) => {
@@ -243,6 +315,7 @@ export const AgentActivityProvider = ({ children }) => {
 
   /**
    * Subscribe to activity bus events for a tab.
+   * Handles SSE stream events to build up messages with content blocks.
    */
   const subscribeToTab = useCallback(
     (tabId) => {
@@ -252,43 +325,16 @@ export const AgentActivityProvider = ({ children }) => {
       }
 
       const unsubscribe = subscribe(tabId, (event) => {
-        switch (event.type) {
-          case 'tool:start':
-            addToolCall(tabId, {
-              id: event.id,
-              tool: event.tool,
-              params: event.params,
-              status: 'pending',
-              timestamp: event.timestamp,
-            });
-            break;
-
-          case 'tool:complete':
-            updateToolCall(tabId, event.id, {
-              status: 'success',
-              result: event.result,
-            });
-            break;
-
-          case 'tool:error':
-            updateToolCall(tabId, event.id, {
-              status: 'error',
-              error: event.error,
-            });
-            break;
-
-          case 'tool:stream':
-            appendStreamingContent(tabId, event.id, event.chunk);
-            break;
-
-          default:
-            console.warn('[AgentActivityContext] Unknown event type:', event.type);
+        if (event.type === 'tool:stream') {
+          // Process SSE events to build up messages
+          handleSSEStreamEvent(tabId, event);
         }
+        // Ignore other event types - SSE is the primary data source
       });
 
       subscriptionsRef.current.set(tabId, unsubscribe);
     },
-    [addToolCall, updateToolCall, appendStreamingContent]
+    [handleSSEStreamEvent]
   );
 
   /**
@@ -316,9 +362,6 @@ export const AgentActivityProvider = ({ children }) => {
       getActivity,
       initializeActivity,
       startExecution,
-      addToolCall,
-      updateToolCall,
-      appendStreamingContent,
       completeExecution,
       clearActivity,
       removeActivity,
@@ -329,9 +372,6 @@ export const AgentActivityProvider = ({ children }) => {
       getActivity,
       initializeActivity,
       startExecution,
-      addToolCall,
-      updateToolCall,
-      appendStreamingContent,
       completeExecution,
       clearActivity,
       removeActivity,

@@ -60,7 +60,7 @@ use tokio_util::sync::CancellationToken;
 use crate::api::netdata::NetdataApi;
 
 use super::bridge::JsBridge;
-use super::tools::{CanvasTools, DashboardTools, NetdataTools, TabsTools};
+use super::tools::{CanvasTools, ChatTools, DashboardTools, NetdataTools, TabsTools};
 
 // Re-export parameter types from tool modules (single source of truth)
 pub use super::tools::canvas::{
@@ -70,6 +70,7 @@ pub use super::tools::canvas::{
 pub use super::tools::dashboard::{
     AddChartParams, ClearChartsParams, RemoveChartParams, SetTimeRangeParams,
 };
+pub use super::tools::chat::SendMessageParams;
 pub use super::tools::netdata::NetdataQueryParams;
 pub use super::tools::tabs::{GetCommandContentParams, RemoveTileParams, SplitTileParams};
 
@@ -257,6 +258,8 @@ pub struct McpToolServer {
     tabs: TabsTools,
     /// Canvas tools (JS-bridge).
     canvas: CanvasTools,
+    /// Chat tools (JS-bridge).
+    chat: ChatTools,
     /// Allowed tools filter. If None, all tools are allowed.
     allowed_tools: Option<Vec<String>>,
 }
@@ -280,12 +283,16 @@ impl McpToolServer {
             netdata: NetdataTools::new(api, space_id.clone(), room_id.clone()),
             dashboard: DashboardTools::new(agent_id.clone(), space_id.clone(), room_id.clone()),
             tabs: TabsTools::new(agent_id.clone(), space_id.clone(), room_id.clone()),
-            canvas: CanvasTools::new(agent_id, space_id, room_id),
+            canvas: CanvasTools::new(agent_id.clone(), space_id.clone(), room_id.clone()),
+            chat: ChatTools::new(agent_id, space_id, room_id),
             allowed_tools: None,
         }
     }
 
     /// Create a new MCP tool server with JS bridge for actual execution.
+    ///
+    /// When the bridge is provided, NetdataTools will emit SSE streaming events
+    /// so the frontend can display real-time query progress.
     pub fn with_bridge(
         api: Arc<NetdataApi>,
         agent_id: String,
@@ -294,7 +301,14 @@ impl McpToolServer {
         bridge: JsBridge,
     ) -> Self {
         Self {
-            netdata: NetdataTools::new(api, space_id.clone(), room_id.clone()),
+            // Pass bridge to NetdataTools for SSE streaming
+            netdata: NetdataTools::with_bridge(
+                api,
+                agent_id.clone(),
+                space_id.clone(),
+                room_id.clone(),
+                bridge.clone(),
+            ),
             dashboard: DashboardTools::with_bridge(
                 agent_id.clone(),
                 space_id.clone(),
@@ -307,7 +321,13 @@ impl McpToolServer {
                 room_id.clone(),
                 bridge.clone(),
             ),
-            canvas: CanvasTools::with_bridge(agent_id, space_id, room_id, bridge),
+            canvas: CanvasTools::with_bridge(
+                agent_id.clone(),
+                space_id.clone(),
+                room_id.clone(),
+                bridge.clone(),
+            ),
+            chat: ChatTools::with_bridge(agent_id, space_id, room_id, bridge),
             allowed_tools: None,
         }
     }
@@ -816,6 +836,32 @@ impl McpToolServer {
             serde_json::to_string(&result).unwrap_or_default(),
         )]))
     }
+
+    // -------------------------------------------------------------------------
+    // Chat Tools (JS-bridge)
+    // -------------------------------------------------------------------------
+
+    /// Send a text message to the user in the AgentChat.
+    #[tool(
+        name = "chat.message",
+        description = "Send a text message to the user. Use this to communicate findings, ask questions, or provide updates. Supports markdown formatting."
+    )]
+    async fn chat_send_message(
+        &self,
+        params: Parameters<SendMessageParams>,
+    ) -> Result<CallToolResult, McpError> {
+        tracing::debug!(message_len = %params.0.message.len(), message_type = ?params.0.message_type, "chat.message called");
+
+        let result = self.chat.send_message(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "chat.message error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        tracing::debug!(result = ?result, "chat.message success");
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
 }
 
 // =============================================================================
@@ -984,8 +1030,9 @@ mod tests {
         // (removed redundant: dashboard.getCharts, dashboard.getChartsDetailed, tabs.getTileContent,
         //  canvas.getNodes, canvas.getNodeDetails, canvas.getNodesDetailed)
         // (added: tabs.getCommandContent as unified content query tool)
+        // (added: chat.message for agent-to-user communication)
         let all_tools: Vec<_> = (McpToolServer::tool_router)().into_iter().collect();
-        assert_eq!(all_tools.len(), 17);
+        assert_eq!(all_tools.len(), 18);
 
         let tool_names: Vec<_> = all_tools.iter().map(|r| r.name()).collect();
         // Netdata tools (1)
@@ -1000,7 +1047,7 @@ mod tests {
         assert!(tool_names.contains(&"tabs.removeTile"));
         assert!(tool_names.contains(&"tabs.getTileLayout"));
         assert!(tool_names.contains(&"tabs.getCommandContent"));
-        // Canvas tools (7)
+        // Canvas tools (8)
         assert!(tool_names.contains(&"canvas.addChart"));
         assert!(tool_names.contains(&"canvas.addStatusBadge"));
         assert!(tool_names.contains(&"canvas.addMarkdown"));
@@ -1009,6 +1056,8 @@ mod tests {
         assert!(tool_names.contains(&"canvas.removeEdge"));
         assert!(tool_names.contains(&"canvas.clearCanvas"));
         assert!(tool_names.contains(&"canvas.updateNode"));
+        // Chat tools (1)
+        assert!(tool_names.contains(&"chat.message"));
     }
 
     #[tokio::test]

@@ -39,6 +39,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::api::netdata::NetdataApi;
+use crate::mcp::bridge::JsBridge;
 
 pub use canvas::CanvasTools;
 pub use chat::ChatTools;
@@ -146,6 +147,31 @@ impl NetdataTools {
     pub fn new(api: Arc<NetdataApi>, space_id: String, room_id: String) -> Self {
         Self {
             query: NetdataQueryTool::new(api, space_id.clone(), room_id.clone()),
+            space_id,
+            room_id,
+        }
+    }
+
+    /// Create tools with a JS bridge for streaming events.
+    ///
+    /// When the bridge is provided, SSE chunks from Netdata queries will be
+    /// emitted as streaming events to the frontend, allowing real-time display
+    /// in the AgentChat.
+    pub fn with_bridge(
+        api: Arc<NetdataApi>,
+        agent_id: String,
+        space_id: String,
+        room_id: String,
+        bridge: JsBridge,
+    ) -> Self {
+        Self {
+            query: NetdataQueryTool::with_bridge(
+                api,
+                agent_id,
+                space_id.clone(),
+                room_id.clone(),
+                bridge,
+            ),
             space_id,
             room_id,
         }

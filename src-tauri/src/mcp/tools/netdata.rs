@@ -16,12 +16,18 @@
 //!
 //! Returns plain text responses. The agent AI (Claude, Gemini, Codex) can
 //! parse and understand text responses perfectly.
+//!
+//! # Streaming Support
+//!
+//! When created with a JS bridge, SSE chunks from Netdata are emitted as
+//! events to the frontend for real-time display in AgentChat.
 
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
 
 use crate::api::netdata::{ChatCompletionRequest, ChatTool, NetdataApi};
+use crate::mcp::bridge::{JsBridge, ToolStreamEvent};
 
 use super::ToolError;
 
@@ -89,11 +95,17 @@ pub struct NetdataQueryTool {
     /// The Netdata API client.
     api: Arc<NetdataApi>,
 
+    /// Agent ID for streaming events.
+    agent_id: Option<String>,
+
     /// Space ID - bound at creation time.
     space_id: String,
 
     /// Room ID - bound at creation time.
     room_id: String,
+
+    /// JS bridge for streaming events (optional).
+    bridge: Option<JsBridge>,
 
     /// Conversation state (created on first query, updated after each query).
     /// Uses Mutex for interior mutability since execute takes &self.
@@ -106,6 +118,8 @@ pub struct NetdataQueryTool {
 struct ConversationState {
     /// Conversation ID - created on first query, reused for subsequent queries.
     conversation_id: Option<String>,
+    /// Current tool call ID for streaming.
+    tool_call_id: Option<String>,
 }
 
 impl Clone for NetdataQueryTool {
@@ -114,8 +128,10 @@ impl Clone for NetdataQueryTool {
         // The cloned tool will start a new conversation.
         Self {
             api: self.api.clone(),
+            agent_id: self.agent_id.clone(),
             space_id: self.space_id.clone(),
             room_id: self.room_id.clone(),
+            bridge: self.bridge.clone(),
             state: Mutex::new(self.state.lock().unwrap().clone()),
         }
     }
@@ -137,8 +153,32 @@ impl NetdataQueryTool {
     pub fn new(api: Arc<NetdataApi>, space_id: String, room_id: String) -> Self {
         Self {
             api,
+            agent_id: None,
             space_id,
             room_id,
+            bridge: None,
+            state: Mutex::new(ConversationState::default()),
+        }
+    }
+
+    /// Create a new tool with JS bridge for streaming events.
+    ///
+    /// When the bridge is provided, SSE chunks from Netdata queries will be
+    /// emitted as streaming events to the frontend, allowing real-time display
+    /// in the AgentChat.
+    pub fn with_bridge(
+        api: Arc<NetdataApi>,
+        agent_id: String,
+        space_id: String,
+        room_id: String,
+        bridge: JsBridge,
+    ) -> Self {
+        Self {
+            api,
+            agent_id: Some(agent_id),
+            space_id,
+            room_id,
+            bridge: Some(bridge),
             state: Mutex::new(ConversationState::default()),
         }
     }
@@ -225,14 +265,61 @@ impl NetdataQueryTool {
             parent_message_id,
         };
 
+        // Generate tool call ID for streaming correlation
+        let tool_call_id = uuid::Uuid::new_v4().to_string();
+
+        // Store tool call ID in state
+        {
+            let mut state = self.state.lock().unwrap();
+            state.tool_call_id = Some(tool_call_id.clone());
+        }
+
+        // Clone values for closure (if streaming is enabled)
+        let bridge_for_stream = self.bridge.clone();
+        let agent_id_for_stream = self.agent_id.clone();
+        let space_id_for_stream = self.space_id.clone();
+        let room_id_for_stream = self.room_id.clone();
+        let tool_call_id_for_stream = tool_call_id.clone();
+
         self.api
             .create_chat_completion(
                 &self.space_id,
                 &self.room_id,
                 &conversation_id,
                 request,
-                |_chunk| {
-                    // We ignore SSE chunks - we'll fetch the complete response after
+                move |chunk| {
+                    // Emit streaming event if bridge is available
+                    if let Some(ref bridge) = bridge_for_stream {
+                        if let Some(ref agent_id) = agent_id_for_stream {
+                            // Extract event type from chunk
+                            let event_type = chunk
+                                .get("type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+
+                            // Only emit content-related events
+                            if event_type == "content_block_delta"
+                                || event_type == "content_block_start"
+                                || event_type == "content_block_stop"
+                                || event_type == "message_start"
+                                || event_type == "message_stop"
+                            {
+                                let event = ToolStreamEvent {
+                                    tool_call_id: tool_call_id_for_stream.clone(),
+                                    agent_id: agent_id.clone(),
+                                    space_id: space_id_for_stream.clone(),
+                                    room_id: room_id_for_stream.clone(),
+                                    tool: "netdata.query".to_string(),
+                                    event_type,
+                                    payload: chunk.clone(),
+                                };
+
+                                // Best-effort emit - don't fail the query if emit fails
+                                let _ = bridge.emit_stream_event(event);
+                            }
+                        }
+                    }
                 },
             )
             .await
