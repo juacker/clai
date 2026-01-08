@@ -96,17 +96,24 @@ export const AgentActivityProvider = ({ children }) => {
 
   /**
    * Mark agent execution as started.
+   * Keeps previous tool calls as history.
    */
   const startExecution = useCallback((tabId, query) => {
-    setActivities((prev) => ({
-      ...prev,
-      [tabId]: {
-        ...createInitialActivity(),
-        status: 'running',
-        query,
-        startedAt: Date.now(),
-      },
-    }));
+    setActivities((prev) => {
+      const current = prev[tabId] || createInitialActivity();
+      return {
+        ...prev,
+        [tabId]: {
+          ...current,
+          status: 'running',
+          query,
+          startedAt: Date.now(),
+          completedAt: null,
+          error: null,
+          // Keep existing tool calls as history
+        },
+      };
+    });
   }, []);
 
   /**

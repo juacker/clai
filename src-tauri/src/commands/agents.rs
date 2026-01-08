@@ -1,12 +1,16 @@
 //! Agent management Tauri commands.
 //!
 //! These commands handle CRUD operations for user-defined agents
-//! and their room assignments.
+//! and their room assignments, plus on-demand agent execution.
 
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
+use crate::agents::{cli_runner, template};
+use crate::api::netdata::NetdataApi;
 use crate::config::{AgentConfig, SpaceRoomPair};
+use crate::mcp::bridge::JsBridge;
 use crate::AppState;
 
 // =============================================================================
@@ -417,5 +421,172 @@ pub async fn toggle_agents_for_room(
         enabled,
         affected_count,
         total_agents,
+    })
+}
+
+// =============================================================================
+// On-Demand Agent Execution
+// =============================================================================
+
+/// Default timeout for on-demand agent execution (in seconds).
+const ON_DEMAND_TIMEOUT_SECS: u64 = 5 * 60; // 5 minutes
+
+/// Payload for agent execution start event.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OnDemandStartPayload {
+    tab_id: String,
+    query: String,
+}
+
+/// Payload for agent execution end event.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OnDemandEndPayload {
+    tab_id: String,
+    success: bool,
+    error: Option<String>,
+}
+
+/// Result of running an on-demand agent.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunOnDemandResult {
+    pub success: bool,
+    pub tab_id: String,
+    pub error: Option<String>,
+}
+
+/// Runs an on-demand agent with the user's query.
+///
+/// This command is called from the terminal when the user types a natural language
+/// query (not a command). It:
+/// 1. Gets the AI provider from config
+/// 2. Generates a Clai prompt with the user's query
+/// 3. Sets up the agent tab for the bridge
+/// 4. Runs the AI CLI
+/// 5. Emits execution events for the UI
+///
+/// # Arguments
+/// * `query` - The user's question or request
+/// * `space_id` - The Netdata space ID for context
+/// * `room_id` - The Netdata room ID for context
+/// * `tab_id` - The tab ID where the agent's output should appear
+#[tauri::command]
+pub async fn run_on_demand_agent(
+    query: String,
+    space_id: String,
+    room_id: String,
+    tab_id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<RunOnDemandResult, String> {
+    tracing::info!(
+        query = %query,
+        space_id = %space_id,
+        room_id = %room_id,
+        tab_id = %tab_id,
+        "Starting on-demand agent"
+    );
+
+    // Get token
+    let token = state
+        .token_storage
+        .get_token()
+        .ok()
+        .flatten()
+        .ok_or_else(|| "Not authenticated. Please log in first.".to_string())?;
+
+    // Get AI provider from config
+    let provider = {
+        let config = state.config_manager.lock().unwrap();
+        config.get().ai_provider.clone()
+    }
+    .ok_or_else(|| "No AI provider configured. Set a provider in Settings first.".to_string())?;
+
+    // Get base URL
+    let base_url = {
+        let url = state.base_url.lock().unwrap();
+        url.clone()
+    };
+
+    // Emit execution start event
+    let _ = app.emit(
+        "agent:execution:start",
+        OnDemandStartPayload {
+            tab_id: tab_id.clone(),
+            query: query.clone(),
+        },
+    );
+
+    // Create API client
+    let client = Client::new();
+    let api = std::sync::Arc::new(NetdataApi::new(client, base_url, token));
+
+    // Create JS bridge for UI tools
+    let bridge = JsBridge::new(app.clone());
+
+    // Set the tab for this agent (uses "clai" as agent_id)
+    // This is different from scheduled agents - we use the provided tab_id directly
+    bridge
+        .set_agent_tab("clai", "Clai", &space_id, &room_id, &tab_id)
+        .await
+        .map_err(|e| format!("Failed to set agent tab: {}", e))?;
+
+    // Generate Clai prompt with user's query
+    let prompt = template::generate_clai_prompt(&query, &space_id, &room_id);
+
+    tracing::debug!(provider = ?provider, "Starting CLI for on-demand agent");
+
+    // Run the AI CLI
+    let result = cli_runner::run_ai_cli(
+        &provider,
+        &prompt,
+        api,
+        "clai", // agent_id is always "clai" for on-demand
+        &space_id,
+        &room_id,
+        Some(bridge),
+        ON_DEMAND_TIMEOUT_SECS,
+    )
+    .await;
+
+    // Process result
+    let (success, error) = match &result {
+        Ok(run_result) => {
+            if run_result.success {
+                tracing::info!(tab_id = %tab_id, "On-demand agent completed successfully");
+                (true, None)
+            } else {
+                let err_msg = if !run_result.stderr.is_empty() {
+                    run_result.stderr.clone()
+                } else {
+                    format!("Agent exited with code {:?}", run_result.exit_code)
+                };
+                tracing::warn!(tab_id = %tab_id, error = %err_msg, "On-demand agent failed");
+                (false, Some(err_msg))
+            }
+        }
+        Err(e) => {
+            let err_msg = e.to_string();
+            tracing::error!(tab_id = %tab_id, error = %err_msg, "On-demand agent execution error");
+            (false, Some(err_msg))
+        }
+    };
+
+    // Emit execution end event
+    let _ = app.emit(
+        "agent:execution:end",
+        OnDemandEndPayload {
+            tab_id: tab_id.clone(),
+            success,
+            error: error.clone(),
+        },
+    );
+
+    Ok(RunOnDemandResult {
+        success,
+        tab_id,
+        error,
     })
 }

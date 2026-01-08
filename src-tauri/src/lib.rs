@@ -169,6 +169,7 @@ pub fn run() {
             commands::agents::disable_agent_for_room,
             commands::agents::get_agents_for_room,
             commands::agents::toggle_agents_for_room,
+            commands::agents::run_on_demand_agent,
             // Provider commands
             commands::provider::get_ai_provider,
             commands::provider::set_ai_provider,

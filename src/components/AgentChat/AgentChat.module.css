@@ -46,8 +46,21 @@
   gap: 10px;
 }
 
-.headerIcon {
-  font-size: 18px;
+.claiIcon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  transition: all var(--transition-fast);
+}
+
+.claiIcon.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .headerTitle {
@@ -81,53 +94,6 @@
 .closeButton:hover {
   background: var(--color-overlay-08);
   color: var(--color-text-secondary);
-}
-
-/* Status Badges */
-.statusBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.statusRunning {
-  background: var(--color-primary-alpha-10);
-  color: var(--color-primary);
-}
-
-.statusDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.5;
-    transform: scale(0.9);
-  }
-}
-
-.statusCompleted {
-  background: var(--color-accent-alpha-10);
-  color: var(--color-accent);
-}
-
-.statusError {
-  background: var(--color-critical-bg);
-  color: var(--color-critical);
 }
 
 /* Activity List */
@@ -168,27 +134,21 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  gap: 12px;
+  gap: 8px;
   padding: 20px;
   text-align: center;
 }
 
-.emptyIcon {
-  font-size: 48px;
-  opacity: 0.4;
-}
-
 .emptyTitle {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
   margin: 0;
-  letter-spacing: -0.01em;
 }
 
 .emptyDescription {
   font-size: 13px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
   max-width: 280px;
   margin: 0;
   line-height: 1.5;
@@ -237,42 +197,6 @@
   border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Completion Status */
-.completionStatus {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 14px 16px;
-  background: var(--color-accent-alpha-10);
-  border: 1px solid rgba(0, 171, 148, 0.2);
-  border-radius: var(--radius-md);
-  animation: slideIn var(--transition-base) ease-out;
-}
-
-.completionIcon {
-  font-size: 16px;
-  color: var(--color-accent);
-}
-
-.completionText {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-accent);
-}
-
-.completionDuration {
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-  margin-left: 4px;
 }
 
 /* Error Message */

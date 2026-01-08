@@ -270,11 +270,20 @@ export const useAgentBridge = () => {
     initAgentBridge();
 
     // Register agent setup handler (called BEFORE CLI starts)
+    // For scheduled agents: creates a new tab
+    // For on-demand agents: uses an existing tabId passed in params
     registerToolHandler('agent.setup', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
-      const { agentName } = params;
+      const { agentName, tabId: existingTabId } = params;
 
-      // Setup the agent's tab
+      // If tabId is provided (on-demand agent), just register the mapping
+      if (existingTabId) {
+        setAgentTab(agentId, spaceId, roomId, existingTabId, agentName || 'Clai');
+        console.log(`[AgentBridge] Agent tab set for on-demand: ${existingTabId}`);
+        return { tabId: existingTabId };
+      }
+
+      // Otherwise, setup the agent's tab normally (scheduled agents)
       const result = setupAgentTab(agentId, agentName, spaceId, roomId);
 
       console.log(`[AgentBridge] Agent tab setup complete: ${result.tabId}`);

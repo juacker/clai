@@ -264,6 +264,56 @@ impl JsBridge {
             .ok_or_else(|| BridgeError::ToolFailed("Missing tabId in response".to_string()))
     }
 
+    /// Set an agent's tab mapping for on-demand agents.
+    ///
+    /// Unlike `setup_agent_tab`, this uses an existing tab ID instead of
+    /// creating a new one. Used by on-demand agents where the user is already
+    /// viewing a specific tab.
+    ///
+    /// # Arguments
+    ///
+    /// * `agent_id` - Agent type identifier (e.g., "clai")
+    /// * `agent_name` - Human-readable agent name
+    /// * `space_id` - Netdata space ID
+    /// * `room_id` - Netdata room ID
+    /// * `tab_id` - The existing tab ID to use
+    ///
+    /// # Returns
+    ///
+    /// The tab ID (same as input, for consistency).
+    ///
+    /// # Errors
+    ///
+    /// Same as `call_tool`.
+    pub async fn set_agent_tab(
+        &self,
+        agent_id: &str,
+        agent_name: &str,
+        space_id: &str,
+        room_id: &str,
+        tab_id: &str,
+    ) -> Result<String, BridgeError> {
+        let result = self
+            .call_tool(
+                agent_id,
+                space_id,
+                room_id,
+                "agent.setup",
+                serde_json::json!({
+                    "agentName": agent_name,
+                    "tabId": tab_id,
+                }),
+            )
+            .await?;
+
+        // Extract tab ID from result
+        result
+            .get("tabId")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| BridgeError::ToolFailed("Missing tabId in response".to_string()))
+    }
+
     /// Call a JS tool and wait for the response.
     ///
     /// This method:

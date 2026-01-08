@@ -24,21 +24,7 @@ const AgentBridgeInitializer = ({ children }) => {
 const MainLayout = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [messageForChat, setMessageForChat] = useState(null);
-
-  // Wrapper function to add unique ID to each message
-  const handleSendToChat = (text) => {
-    setMessageForChat({
-      text,
-      id: Date.now(), // Unique identifier to ensure consecutive identical messages are processed
-    });
-  };
   const navigate = useNavigate();
-
-  // Callback to handle when chat has processed the message
-  const handleMessageProcessed = () => {
-    setMessageForChat(null);
-  };
 
   useEffect(() => {
     const fetchUserInfo = async () => {
@@ -84,16 +70,10 @@ const MainLayout = () => {
                 ) : (
                   <div className={styles.mainLayout}>
                     {/* Fixed chat panel on right side (full height) */}
-                    <DesktopChatPanel
-                      message={messageForChat}
-                      onMessageProcessed={handleMessageProcessed}
-                    />
+                    <DesktopChatPanel />
 
                     {/* Fixed TerminalEmulator at bottom */}
-                    <TerminalEmulatorWrapper
-                      userInfo={userInfo}
-                      onSendToChat={handleSendToChat}
-                    />
+                    <TerminalEmulatorWrapper userInfo={userInfo} />
 
                     {/* Content area - takes remaining flex space */}
                     <div className={styles.contentArea}>

@@ -26,30 +26,15 @@ const AgentChat = ({ tabId, onClose }) => {
 
   const activity = getActivity(tabId);
 
-  // Calculate duration if execution has started
-  const getDuration = () => {
-    if (!activity.startedAt) return null;
-    const endTime = activity.completedAt || Date.now();
-    const durationMs = endTime - activity.startedAt;
-    const seconds = Math.floor(durationMs / 1000);
-    if (seconds < 60) {
-      return `${seconds}s`;
-    }
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}m ${remainingSeconds}s`;
-  };
-
   // Empty state
   if (activity.status === 'idle' && activity.toolCalls.length === 0) {
     return (
       <div className={styles.agentChat}>
         <Header status={activity.status} onClose={onClose} />
         <div className={styles.emptyState}>
-          <div className={styles.emptyIcon}>🤖</div>
-          <div className={styles.emptyTitle}>No agent activity</div>
+          <div className={styles.emptyTitle}>No activity yet</div>
           <div className={styles.emptyDescription}>
-            Type a message in the terminal to start an agent, or wait for a scheduled agent to run.
+            Type a message in the terminal to start a conversation.
           </div>
         </div>
       </div>
@@ -69,17 +54,12 @@ const AgentChat = ({ tabId, onClose }) => {
           <ToolCallBlock key={toolCall.id} toolCall={toolCall} />
         ))}
 
-        {/* Running Indicator */}
+        {/* Running Indicator - only show when starting with no tool calls yet */}
         {activity.status === 'running' && activity.toolCalls.length === 0 && (
           <div className={styles.runningState}>
             <span className={styles.spinner}></span>
-            <span>Agent is starting...</span>
+            <span>Starting...</span>
           </div>
-        )}
-
-        {/* Completion Status */}
-        {activity.status === 'completed' && (
-          <CompletionStatus duration={getDuration()} />
         )}
 
         {/* Error Status */}
@@ -95,38 +75,17 @@ const AgentChat = ({ tabId, onClose }) => {
  * Header component for AgentChat
  */
 const Header = ({ status, onClose }) => {
-  const getStatusBadge = () => {
-    switch (status) {
-      case 'running':
-        return (
-          <span className={`${styles.statusBadge} ${styles.statusRunning}`}>
-            <span className={styles.statusDot}></span>
-            Running
-          </span>
-        );
-      case 'completed':
-        return (
-          <span className={`${styles.statusBadge} ${styles.statusCompleted}`}>
-            Completed
-          </span>
-        );
-      case 'error':
-        return (
-          <span className={`${styles.statusBadge} ${styles.statusError}`}>
-            Error
-          </span>
-        );
-      default:
-        return null;
-    }
-  };
+  const isRunning = status === 'running';
 
   return (
     <div className={styles.header}>
       <div className={styles.headerLeft}>
-        <span className={styles.headerIcon}>🤖</span>
-        <span className={styles.headerTitle}>Agent Activity</span>
-        {getStatusBadge()}
+        <img
+          src="/icon.svg"
+          alt="Clai"
+          className={`${styles.claiIcon} ${isRunning ? styles.spinning : ''}`}
+        />
+        <span className={styles.headerTitle}>Tab Chat</span>
       </div>
       <div className={styles.headerRight}>
         {onClose && (
@@ -147,19 +106,6 @@ const UserMessage = ({ text }) => {
     <div className={styles.userMessage}>
       <div className={styles.messageRole}>You</div>
       <div className={styles.messageContent}>{text}</div>
-    </div>
-  );
-};
-
-/**
- * CompletionStatus component - shows when agent has finished
- */
-const CompletionStatus = ({ duration }) => {
-  return (
-    <div className={styles.completionStatus}>
-      <span className={styles.completionIcon}>✓</span>
-      <span className={styles.completionText}>Agent completed</span>
-      {duration && <span className={styles.completionDuration}>{duration}</span>}
     </div>
   );
 };

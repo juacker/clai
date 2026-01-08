@@ -18,3 +18,5 @@ export {
 } from './bridge';
 
 export { useAgentBridge } from './useAgentBridge';
+
+export { useOnDemandAgent } from './useOnDemandAgent';
