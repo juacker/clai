@@ -190,6 +190,14 @@ impl NetdataQueryTool {
                     .create_conversation(&self.space_id, &self.room_id)
                     .await
                     .map_err(|e| ToolError::ApiError(e.to_string()))?;
+
+                // Create a title for the conversation using the query
+                // We ignore errors here since the title is not critical
+                let _ = self
+                    .api
+                    .create_conversation_title(&self.space_id, &self.room_id, &conv.id, query)
+                    .await;
+
                 conv.id
             }
         };
