@@ -8,6 +8,7 @@ import { CommandProvider } from '../contexts/CommandContext';
 import { TabManagerProvider } from '../contexts/TabManagerContext';
 import { CommandMessagingProvider } from '../contexts/CommandMessagingContext';
 import { ChatManagerProvider } from '../contexts/ChatManagerContext';
+import { AgentActivityProvider } from '../contexts/AgentActivityContext';
 import { useAgentBridge } from '../agents';
 import styles from './MainLayout.module.css';
 
@@ -70,9 +71,10 @@ const MainLayout = () => {
     <CommandProvider>
       <SharedSpaceRoomDataProvider>
         <TabManagerProvider>
-          <AgentBridgeInitializer>
-            <CommandMessagingProvider>
-              <ChatManagerProvider>
+          <AgentActivityProvider>
+            <AgentBridgeInitializer>
+              <CommandMessagingProvider>
+                <ChatManagerProvider>
                 {loading ? (
                   <div className={styles.mainLayout}>
                     <div className={styles.loadingContainer}>
@@ -99,9 +101,10 @@ const MainLayout = () => {
                     </div>
                   </div>
                 )}
-              </ChatManagerProvider>
-            </CommandMessagingProvider>
-          </AgentBridgeInitializer>
+                </ChatManagerProvider>
+              </CommandMessagingProvider>
+            </AgentBridgeInitializer>
+          </AgentActivityProvider>
         </TabManagerProvider>
       </SharedSpaceRoomDataProvider>
     </CommandProvider>

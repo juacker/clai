@@ -31,6 +31,7 @@
 
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { emit as emitActivity } from './activityBus';
 
 // Event name for tool requests (must match Rust EVENT_TOOL_REQUEST)
 const EVENT_TOOL_REQUEST = 'agent:tool:request';
@@ -176,6 +177,19 @@ export const clearTabCreationLock = (agentId, spaceId, roomId) => {
 };
 
 /**
+ * Get the tab ID for an agent (convenience function)
+ *
+ * @param {string} agentId - Agent type identifier
+ * @param {string} spaceId - Netdata space ID
+ * @param {string} roomId - Netdata room ID
+ * @returns {string|null} Tab ID or null if not found
+ */
+export const getAgentTabId = (agentId, spaceId, roomId) => {
+  const tabInfo = getAgentTab(agentId, spaceId, roomId);
+  return tabInfo?.tabId || null;
+};
+
+/**
  * Send a tool response back to Rust
  *
  * @param {string} requestId - Request ID from the original request
@@ -246,6 +260,20 @@ const handleToolRequest = async (request) => {
 
   console.log(`[AgentBridge] Tool request: ${tool}`, { agentId, spaceId, roomId, params });
 
+  // Get the tab ID for this agent (may be null if agent.setup hasn't run yet)
+  const tabId = getAgentTabId(agentId, spaceId, roomId);
+
+  // Emit tool:start event to activity bus (for AgentChat UI)
+  if (tabId) {
+    emitActivity(tabId, {
+      type: 'tool:start',
+      id: requestId,
+      tool,
+      params,
+      timestamp: Date.now(),
+    });
+  }
+
   try {
     // Find the handler for this tool
     let handler = toolHandlers.get(tool);
@@ -263,14 +291,36 @@ const handleToolRequest = async (request) => {
     // Execute the handler (pass agentId as part of request for handlers)
     const result = await handler({ ...request, agentId });
 
-    // Send success response
+    // Emit tool:complete event to activity bus
+    if (tabId) {
+      emitActivity(tabId, {
+        type: 'tool:complete',
+        id: requestId,
+        tool,
+        result,
+        timestamp: Date.now(),
+      });
+    }
+
+    // Send success response back to Rust
     await sendResponse(requestId, true, result);
 
     console.log(`[AgentBridge] Tool success: ${tool}`, result);
   } catch (err) {
     console.error(`[AgentBridge] Tool error: ${tool}`, err);
 
-    // Send error response
+    // Emit tool:error event to activity bus
+    if (tabId) {
+      emitActivity(tabId, {
+        type: 'tool:error',
+        id: requestId,
+        tool,
+        error: err.message || 'Unknown error',
+        timestamp: Date.now(),
+      });
+    }
+
+    // Send error response back to Rust
     await sendResponse(requestId, false, null, err.message || 'Unknown error');
   }
 };
@@ -341,5 +391,6 @@ export default {
   getRegisteredTools,
   setAgentTab,
   getAgentTab,
+  getAgentTabId,
   clearAgentTab,
 };
