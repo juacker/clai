@@ -133,7 +133,7 @@ export const useAgentBridge = () => {
     // Store the mapping (with agent name for future recreation)
     setAgentTab(agentId, spaceId, roomId, newTab.id, agentName);
 
-    return { tabId: newTab.id };
+    return { tabId: newTab.id, rootTileId: newTab.rootTile?.id || null };
   };
 
   /**
@@ -271,20 +271,39 @@ export const useAgentBridge = () => {
 
     // Register agent setup handler (called BEFORE CLI starts)
     // For scheduled agents: creates a new tab
-    // For on-demand agents: uses an existing tabId passed in params
+    // For on-demand agents: uses an existing tabId if it has valid tile structure
     registerToolHandler('agent.setup', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
       const { agentName, tabId: existingTabId } = params;
 
-      // If tabId is provided (on-demand agent), just register the mapping
+      // If tabId is provided (on-demand agent), check if it has a valid tile structure
       if (existingTabId) {
-        setAgentTab(agentId, spaceId, roomId, existingTabId, agentName || 'Clai');
-        console.log(`[AgentBridge] Agent tab set for on-demand: ${existingTabId}`);
-        return { tabId: existingTabId };
+        const existingTab = tabManagerRef.current.tabs.find(t => t.id === existingTabId);
+
+        // Validate the tile structure is complete:
+        // - rootTile exists
+        // - rootTile has an id
+        // - rootTile has a valid type ('leaf' or 'split')
+        const hasValidTileStructure = existingTab?.rootTile?.id &&
+          (existingTab.rootTile.type === 'leaf' || existingTab.rootTile.type === 'split');
+
+        if (hasValidTileStructure) {
+          setAgentTab(agentId, spaceId, roomId, existingTabId, agentName || 'Clai');
+          console.log(`[AgentBridge] Agent tab set for on-demand: ${existingTabId}, rootTile: ${existingTab.rootTile.id}`);
+          return { tabId: existingTabId, rootTileId: existingTab.rootTile.id };
+        }
+
+        // Tab doesn't have valid tile structure - log details for debugging
+        console.warn(`[AgentBridge] Tab ${existingTabId} has invalid tile structure:`, {
+          hasTab: !!existingTab,
+          hasRootTile: !!existingTab?.rootTile,
+          rootTileId: existingTab?.rootTile?.id,
+          rootTileType: existingTab?.rootTile?.type,
+        });
       }
 
-      // Otherwise, setup the agent's tab normally (scheduled agents)
-      const result = setupAgentTab(agentId, agentName, spaceId, roomId);
+      // Create a new tab for the agent (scheduled agents or tabs without valid tiles)
+      const result = setupAgentTab(agentId, agentName || 'Clai', spaceId, roomId);
 
       console.log(`[AgentBridge] Agent tab setup complete: ${result.tabId}`);
       return result;
@@ -392,19 +411,31 @@ export const useAgentBridge = () => {
       // Use ensureAgentTab to recreate tab if user closed it
       const tabId = ensureAgentTab(agentId, spaceId, roomId);
 
-      // Get the parent tile ID - use the root tile if not specified
+      // Get the parent tile ID - use the root tile if not specified or if "root" is passed
       let parentTileId = params.parentTileId;
+      const tab = tabManagerRef.current.tabs.find(t => t.id === tabId);
 
-      if (!parentTileId) {
-        // Get the root tile of the tab
-        const tab = tabManagerRef.current.tabs.find(t => t.id === tabId);
-        if (tab) {
-          parentTileId = tab.rootTile.id;
+      if (!tab) {
+        throw new Error(`Tab not found: ${tabId}`);
+      }
+
+      // Handle special cases: no parentTileId, or "root" as a keyword
+      if (!parentTileId || parentTileId === 'root') {
+        // Get the root tile of the tab - validate it exists and has a valid structure
+        if (!tab.rootTile?.id) {
+          throw new Error(`Tab ${tabId} has no valid rootTile. Structure: ${JSON.stringify({
+            hasRootTile: !!tab.rootTile,
+            rootTileId: tab.rootTile?.id,
+            rootTileType: tab.rootTile?.type,
+          })}`);
         }
+        parentTileId = tab.rootTile.id;
+        console.log(`[AgentBridge] Using rootTile as parent: ${parentTileId}`);
       }
 
       // Split the tile in the agent's tab
       // 'vertical' = side by side, 'horizontal' = stacked
+      console.log(`[AgentBridge] Splitting tile: tabId=${tabId}, parentTileId=${parentTileId}, splitType=${params.splitType}`);
       const result = tabManagerRef.current.splitTileInTab(
         tabId,
         parentTileId,
@@ -412,7 +443,16 @@ export const useAgentBridge = () => {
       );
 
       if (!result.success) {
-        throw new Error(result.message);
+        // Add more context to the error for debugging
+        console.error(`[AgentBridge] splitTile failed:`, {
+          tabId,
+          parentTileId,
+          splitType: params.splitType,
+          rootTileId: tab.rootTile?.id,
+          rootTileType: tab.rootTile?.type,
+          errorMessage: result.message,
+        });
+        throw new Error(`${result.message}. Tab: ${tabId}, Tile: ${parentTileId}`);
       }
 
       const response = { tileId: result.newTileId };
@@ -563,9 +603,10 @@ export const useAgentBridge = () => {
 
       const available = collectCommands(root);
 
-      // Return flat lists only - agent doesn't need tree structure
-      // The agent just needs to know what canvases/dashboards exist and what's in them
+      // Return flat lists with rootTileId for splitting
+      // The agent needs rootTileId to call tabs.splitTile
       return {
+        rootTileId: tab.rootTile?.id || null,
         canvasCount: available.canvases.length,
         canvases: available.canvases,
         dashboardCount: available.dashboards.length,

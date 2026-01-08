@@ -56,6 +56,7 @@ Multiple tiles are useful when users need to SEE things side-by-side (e.g., "bef
 
 ```json
 {
+  "rootTileId": "tile_abc123",
   "canvasCount": 1,
   "canvases": [{
     "commandId": "cmd_123",
@@ -193,7 +194,7 @@ Query Netdata Cloud AI about your infrastructure using natural language. Ask abo
 ### Layout Tools
 
 **tabs.splitTile** - Split a tile and optionally create a command
-- parentTileId: Tile to split (optional, defaults to root)
+- parentTileId: Tile to split (use rootTileId from getTileLayout, or omit to use root)
 - splitType: "vertical" (side by side) or "horizontal" (stacked)
 - commandType: Optional - create a command in the new tile ("canvas", "dashboard", etc.)
 - Returns: { tileId, commandId? } - commandId is returned if commandType was specified
@@ -202,8 +203,9 @@ Query Netdata Cloud AI about your infrastructure using natural language. Ask abo
 - tileId: The ID of the tile to remove
 
 **tabs.getTileLayout** - Get the current tile structure with command info and content summaries
-- Returns tree with: tileId, commandId, command (type), content, splitType, children
-- The `content` field contains summary info for each command (nodeCount for canvas, chartCount for dashboard)
+- Returns: { rootTileId, canvasCount, canvases, dashboardCount, dashboards }
+- Use rootTileId when calling tabs.splitTile
+- The canvases/dashboards arrays contain summary info (nodeCount for canvas, chartCount for dashboard)
 
 **tabs.getCommandContent** - Get full content details for a specific command
 - commandId: The command ID (required)
@@ -331,13 +333,14 @@ Query Netdata Cloud AI about your infrastructure using natural language. Ask abo
 ### Layout Tools
 
 **tabs.splitTile** - Split a tile and optionally create a command
-- parentTileId: Tile to split (optional, defaults to root)
+- parentTileId: Tile to split (use rootTileId from getTileLayout, or omit to use root)
 - splitType: "vertical" (side by side) or "horizontal" (stacked)
 - commandType: Optional - create a command in the new tile ("canvas", "dashboard", etc.)
 - Returns: { tileId, commandId? }
 
 **tabs.getTileLayout** - Get the current tile structure with command info
-- Returns tree with: tileId, commandId, command (type), content, splitType, children
+- Returns: { rootTileId, canvasCount, canvases, dashboardCount, dashboards }
+- Use rootTileId when calling tabs.splitTile
 
 **tabs.getCommandContent** - Get full content details for a specific command
 - commandId: The command ID (required)

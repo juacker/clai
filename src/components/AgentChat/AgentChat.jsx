@@ -7,9 +7,12 @@ import styles from './AgentChat.module.css';
  * AgentChat Component
  *
  * Displays agent activity for a specific tab. Shows:
- * - User's query (if triggered by on-demand agent)
+ * - User messages (queries) in chronological order
  * - Tool calls with their status, params, and results
  * - Overall execution status
+ *
+ * Messages and tool calls are interleaved by timestamp to show
+ * the conversation flow correctly.
  *
  * This component subscribes to agent activity via AgentActivityContext
  * and updates in real-time as tools are executed.
@@ -26,8 +29,36 @@ const AgentChat = ({ tabId, onClose }) => {
 
   const activity = getActivity(tabId);
 
+  // Combine messages and tool calls, sorted by timestamp
+  const timelineItems = React.useMemo(() => {
+    const items = [];
+
+    // Add messages
+    (activity.messages || []).forEach((msg) => {
+      items.push({
+        type: 'message',
+        timestamp: msg.timestamp,
+        data: msg,
+      });
+    });
+
+    // Add tool calls
+    (activity.toolCalls || []).forEach((tc) => {
+      items.push({
+        type: 'toolCall',
+        timestamp: tc.timestamp,
+        data: tc,
+      });
+    });
+
+    // Sort by timestamp
+    items.sort((a, b) => a.timestamp - b.timestamp);
+
+    return items;
+  }, [activity.messages, activity.toolCalls]);
+
   // Empty state
-  if (activity.status === 'idle' && activity.toolCalls.length === 0) {
+  if (activity.status === 'idle' && timelineItems.length === 0) {
     return (
       <div className={styles.agentChat}>
         <Header status={activity.status} onClose={onClose} />
@@ -46,13 +77,13 @@ const AgentChat = ({ tabId, onClose }) => {
       <Header status={activity.status} onClose={onClose} />
 
       <div className={styles.activityList}>
-        {/* User Query */}
-        {activity.query && <UserMessage text={activity.query} />}
-
-        {/* Tool Calls */}
-        {activity.toolCalls.map((toolCall) => (
-          <ToolCallBlock key={toolCall.id} toolCall={toolCall} />
-        ))}
+        {/* Timeline: Messages and Tool Calls interleaved */}
+        {timelineItems.map((item, index) => {
+          if (item.type === 'message') {
+            return <UserMessage key={`msg-${item.timestamp}-${index}`} text={item.data.content} />;
+          }
+          return <ToolCallBlock key={item.data.id} toolCall={item.data} />;
+        })}
 
         {/* Running Indicator - only show when starting with no tool calls yet */}
         {activity.status === 'running' && activity.toolCalls.length === 0 && (

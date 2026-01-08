@@ -13,7 +13,7 @@ import { subscribe } from '../agents/activityBus';
  * AgentActivityContext
  *
  * Manages agent activity state per tab. Each tab has its own activity stream
- * that tracks tool calls, their status, and results.
+ * that tracks messages, tool calls, their status, and results.
  *
  * This context subscribes to the activity bus and updates state accordingly.
  * AgentChat components use this context to display agent activity.
@@ -21,7 +21,7 @@ import { subscribe } from '../agents/activityBus';
  * Activity state per tab:
  * {
  *   status: 'idle' | 'running' | 'completed' | 'error',
- *   query: string | null,
+ *   messages: [{ type: 'user', content: string, timestamp: number }],
  *   startedAt: number | null,
  *   completedAt: number | null,
  *   error: string | null,
@@ -57,7 +57,7 @@ export const useAgentActivity = () => {
  */
 const createInitialActivity = () => ({
   status: 'idle',
-  query: null,
+  messages: [], // Array of { type: 'user', content: string, timestamp: number }
   startedAt: null,
   completedAt: null,
   error: null,
@@ -96,17 +96,24 @@ export const AgentActivityProvider = ({ children }) => {
 
   /**
    * Mark agent execution as started.
-   * Keeps previous tool calls as history.
+   * Adds the query to messages array and keeps previous tool calls as history.
    */
   const startExecution = useCallback((tabId, query) => {
     setActivities((prev) => {
       const current = prev[tabId] || createInitialActivity();
+      const newMessage = {
+        type: 'user',
+        content: query,
+        timestamp: Date.now(),
+      };
+      // Handle backward compatibility: migrate query to messages if needed
+      const existingMessages = current.messages || [];
       return {
         ...prev,
         [tabId]: {
           ...current,
           status: 'running',
-          query,
+          messages: [...existingMessages, newMessage],
           startedAt: Date.now(),
           completedAt: null,
           error: null,

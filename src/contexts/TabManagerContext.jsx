@@ -363,12 +363,25 @@ export const TabManagerProvider = ({ children }) => {
       if (savedTabs) {
         const parsed = JSON.parse(savedTabs);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Migrate old tabs to new structure with context field
+          // Migrate old tabs to new structure with context field and rootTile
           const migratedTabs = parsed.map(tab => {
-            // If tab doesn't have context field, add it with old global context
-            if (!tab.context) {
-              return {
-                ...tab,
+            let migratedTab = { ...tab };
+
+            // Migration 1: Add rootTile if missing (pre-tiling system tabs)
+            if (!migratedTab.rootTile) {
+              console.log(`[TabManagerContext] Migrating tab ${tab.id} - adding rootTile`);
+              migratedTab.rootTile = createTile(null);
+            }
+            // Also ensure rootTile has required fields (partial migration)
+            else if (!migratedTab.rootTile.id || !migratedTab.rootTile.type) {
+              console.log(`[TabManagerContext] Migrating tab ${tab.id} - fixing invalid rootTile`);
+              migratedTab.rootTile = createTile(migratedTab.rootTile.commandId || null);
+            }
+
+            // Migration 2: Add context if missing
+            if (!migratedTab.context) {
+              migratedTab = {
+                ...migratedTab,
                 context: {
                   spaceRoom: {
                     selectedSpaceId: oldSelectedSpaceId || null,
@@ -379,11 +392,11 @@ export const TabManagerProvider = ({ children }) => {
               };
             }
             // If tab has context but missing spaceRoom, add it with old global context
-            if (!tab.context.spaceRoom) {
-              return {
-                ...tab,
+            else if (!migratedTab.context.spaceRoom) {
+              migratedTab = {
+                ...migratedTab,
                 context: {
-                  ...tab.context,
+                  ...migratedTab.context,
                   spaceRoom: {
                     selectedSpaceId: oldSelectedSpaceId || null,
                     selectedRoomId: oldSelectedRoomId || null,
@@ -392,11 +405,11 @@ export const TabManagerProvider = ({ children }) => {
               };
             }
             // If tab has spaceRoom but no selection, use old global context
-            if (!tab.context.spaceRoom.selectedSpaceId && oldSelectedSpaceId) {
-              return {
-                ...tab,
+            else if (!migratedTab.context.spaceRoom.selectedSpaceId && oldSelectedSpaceId) {
+              migratedTab = {
+                ...migratedTab,
                 context: {
-                  ...tab.context,
+                  ...migratedTab.context,
                   spaceRoom: {
                     selectedSpaceId: oldSelectedSpaceId,
                     selectedRoomId: oldSelectedRoomId,
@@ -404,7 +417,8 @@ export const TabManagerProvider = ({ children }) => {
                 },
               };
             }
-            return tab;
+
+            return migratedTab;
           });
 
           setTabs(migratedTabs);
