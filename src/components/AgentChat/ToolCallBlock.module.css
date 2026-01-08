@@ -301,3 +301,81 @@
     transform: translateY(0);
   }
 }
+
+/* ==========================================================================
+   Agent Message Block (chat.message)
+   ========================================================================== */
+
+.agentMessage {
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(99, 102, 241, 0.10) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  animation: slideIn var(--transition-base) ease-out;
+}
+
+.agentMessageHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.agentMessageIcon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.agentMessageRole {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.agentMessageContent {
+  font-size: 14px;
+  color: var(--color-text-primary);
+  line-height: 1.6;
+}
+
+.agentMessageContent :global(p) {
+  margin: 0 0 0.5em 0;
+}
+
+.agentMessageContent :global(p:last-child) {
+  margin-bottom: 0;
+}
+
+/* Message type variants */
+.messageType_question {
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.06) 0%, rgba(234, 179, 8, 0.10) 100%);
+  border-color: rgba(234, 179, 8, 0.2);
+  border-left-color: #EAB308;
+}
+
+.messageType_question .agentMessageRole {
+  color: #EAB308;
+}
+
+.messageType_result {
+  background: linear-gradient(135deg, rgba(0, 171, 148, 0.06) 0%, rgba(0, 171, 148, 0.10) 100%);
+  border-color: rgba(0, 171, 148, 0.2);
+  border-left-color: var(--color-accent);
+}
+
+.messageType_result .agentMessageRole {
+  color: var(--color-accent);
+}
+
+.messageType_error {
+  background: var(--color-critical-bg);
+  border-color: var(--color-critical-border);
+  border-left-color: var(--color-critical);
+}
+
+.messageType_error .agentMessageRole {
+  color: var(--color-critical);
+}

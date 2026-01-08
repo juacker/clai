@@ -6,6 +6,7 @@ import styles from './ToolCallBlock.module.css';
  * ToolCallBlock Component
  *
  * Displays a single tool call from an agent. Renders differently based on tool type:
+ * - chat.message: Agent text message to user
  * - netdata.query: Shows query params and streaming/final response
  * - canvas.*: Shows what was added to canvas
  * - dashboard.*: Shows what was added to dashboard
@@ -16,6 +17,8 @@ const ToolCallBlock = ({ toolCall }) => {
 
   // Route to specific block type
   switch (tool) {
+    case 'chat.message':
+      return <ChatMessageBlock toolCall={toolCall} />;
     case 'netdata.query':
       return <NetdataQueryBlock toolCall={toolCall} />;
     case 'canvas.addChart':
@@ -38,6 +41,47 @@ const ToolCallBlock = ({ toolCall }) => {
     default:
       return <GenericToolBlock toolCall={toolCall} />;
   }
+};
+
+/**
+ * ChatMessageBlock - Displays agent text messages
+ *
+ * This is used when the agent calls chat.message to communicate
+ * directly with the user. Renders as a distinct message block.
+ */
+const ChatMessageBlock = ({ toolCall }) => {
+  const { params, status, result } = toolCall;
+  // Message content comes from params (during call) or result (after completion)
+  const message = params?.message || result?.message || '';
+  const messageType = params?.messageType || result?.messageType || 'info';
+
+  // Get icon based on message type
+  const getIcon = () => {
+    switch (messageType) {
+      case 'question':
+        return '❓';
+      case 'result':
+        return '✨';
+      case 'error':
+        return '⚠️';
+      case 'info':
+      default:
+        return '💬';
+    }
+  };
+
+  return (
+    <div className={`${styles.agentMessage} ${styles[`messageType_${messageType}`] || ''}`}>
+      <div className={styles.agentMessageHeader}>
+        <span className={styles.agentMessageIcon}>{getIcon()}</span>
+        <span className={styles.agentMessageRole}>Clai</span>
+        {status === 'pending' && <span className={styles.compactSpinner}></span>}
+      </div>
+      <div className={styles.agentMessageContent}>
+        <MarkdownMessage content={message} isStreaming={status === 'pending'} />
+      </div>
+    </div>
+  );
 };
 
 /**

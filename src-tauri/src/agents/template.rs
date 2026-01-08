@@ -211,6 +211,17 @@ Query Netdata Cloud AI about your infrastructure using natural language. Ask abo
 - commandId: The command ID (required)
 - Returns full content: For canvas, returns all nodes with full data. For dashboard, returns all charts with full config.
 
+### Chat Tools
+
+**chat.message** - Send a text message to the user
+- message: Message content (supports markdown)
+- messageType: Optional type - "info" (default), "question", "result", "error"
+
+Use this tool to communicate directly with the user when you need to:
+- Ask clarifying questions
+- Provide explanations or context
+- Share findings that don't need visualization
+
 ## Best Practices
 
 1. **ALWAYS inspect before creating**: Call `tabs.getTileLayout` first - check if canvas exists and has content
@@ -344,6 +355,17 @@ Query Netdata Cloud AI about your infrastructure using natural language. Ask abo
 
 **tabs.getCommandContent** - Get full content details for a specific command
 - commandId: The command ID (required)
+
+### Chat Tools
+
+**chat.message** - Send a text message to the user
+- message: Message content (supports markdown)
+- messageType: Optional type - "info" (default), "question", "result", "error"
+
+Use this tool to communicate directly with the user when you need to:
+- Ask clarifying questions
+- Provide explanations or context
+- Share findings that don't need visualization
 
 ## Instructions
 

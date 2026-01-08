@@ -2,13 +2,14 @@
  * useAgentBridge Hook
  *
  * This hook initializes the agent bridge and registers tool handlers
- * that interact with the TabManager, Dashboard, and Canvas.
+ * that interact with the TabManager, Dashboard, Canvas, and Chat.
  *
  * Tool Categories:
  * - agent.* - Agent lifecycle (setup)
  * - dashboard.* - Chart management (addChart, removeChart, etc.)
  * - tabs.* - Tile layout management (splitTile, removeTile, etc.)
  * - canvas.* - Node-based canvas (addChart, addStatusBadge, addText, addEdge, etc.)
+ * - chat.* - Agent text communication (message)
  *
  * Usage:
  * ```jsx
@@ -787,6 +788,38 @@ export const useAgentBridge = () => {
       };
     });
 
+    // ==========================================================================
+    // Chat Tools - Agent text communication
+    // ==========================================================================
+
+    /**
+     * chat.message - Send a text message to the user
+     *
+     * This tool allows agents to communicate text directly to the user.
+     * Messages appear in the AgentChat UI as a distinct "agent message" block.
+     *
+     * @param {string} message - Message content (supports markdown)
+     * @param {string} [messageType] - Type: info, question, result, error
+     * @returns {{ success: boolean }} Result
+     */
+    registerToolHandler('chat.message', async (request) => {
+      const { params } = request;
+      const { message, messageType = 'info' } = params;
+
+      if (!message) {
+        throw new Error('Message content is required');
+      }
+
+      // The message is automatically captured by the activity bus through
+      // the bridge's event emission. We just need to return success.
+      // The AgentChat component will display it based on the tool call.
+      return {
+        success: true,
+        message,
+        messageType,
+      };
+    });
+
     // Cleanup on unmount
     return () => {
       // Reset the ref so handlers can be re-registered on next mount
@@ -811,6 +844,8 @@ export const useAgentBridge = () => {
       unregisterToolHandler('canvas.removeEdge');
       unregisterToolHandler('canvas.updateNode');
       unregisterToolHandler('canvas.clearCanvas');
+      // Chat handlers
+      unregisterToolHandler('chat.message');
 
       // Note: We don't call cleanupAgentBridge here because
       // other components might still be using it. It should be
