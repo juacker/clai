@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::config::AiProvider;
-use crate::providers::{get_available_providers, validate_provider, AvailableProvider};
+use crate::providers::{
+    get_available_providers, get_models_for_provider, validate_provider, AvailableProvider,
+    ModelInfo,
+};
 use crate::AppState;
 
 // =============================================================================
@@ -104,4 +107,12 @@ pub fn get_available_ai_providers() -> Vec<AvailableProvider> {
 #[tauri::command]
 pub fn validate_ai_provider(provider: AiProvider) -> Result<AvailableProvider, String> {
     validate_provider(&provider)
+}
+
+/// Gets available models for a provider type.
+///
+/// Provider type should be one of: "claude", "gemini", "codex"
+#[tauri::command]
+pub fn get_provider_models(provider_type: String) -> Vec<ModelInfo> {
+    get_models_for_provider(&provider_type)
 }

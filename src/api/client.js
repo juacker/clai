@@ -444,6 +444,23 @@ export const validateAiProvider = async (provider) => {
   }
 };
 
+/**
+ * Get available models for a provider type
+ * @param {string} providerType - Provider type ('claude', 'gemini', 'codex')
+ * @returns {Promise<Array>} Array of model info objects
+ * @property {string} id - Model identifier to pass to CLI
+ * @property {string} name - Human-readable model name
+ * @property {string} description - Brief model description
+ * @property {boolean} recommended - Whether this is the recommended model
+ */
+export const getProviderModels = async (providerType) => {
+  try {
+    return await invoke('get_provider_models', { providerType });
+  } catch (error) {
+    handleApiError(error, 'Failed to get provider models');
+  }
+};
+
 // ============================================================================
 // Agent Management
 // ============================================================================

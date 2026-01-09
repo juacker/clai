@@ -179,6 +179,7 @@ pub fn run() {
             commands::provider::clear_ai_provider,
             commands::provider::get_available_ai_providers,
             commands::provider::validate_ai_provider,
+            commands::provider::get_provider_models,
             // Agent tool bridge commands
             commands::bridge::agent_tool_result,
         ])

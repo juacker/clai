@@ -159,7 +159,11 @@ pub fn check_provider(provider: &AiProvider) -> AvailableProvider {
 pub fn get_available_providers() -> Vec<AvailableProvider> {
     use std::thread;
 
-    let known_providers = vec![AiProvider::Claude, AiProvider::Gemini, AiProvider::Codex];
+    let known_providers = vec![
+        AiProvider::Claude { model: None },
+        AiProvider::Gemini { model: None },
+        AiProvider::Codex { model: None },
+    ];
 
     // Check providers in parallel using threads
     let handles: Vec<_> = known_providers
@@ -173,7 +177,7 @@ pub fn get_available_providers() -> Vec<AvailableProvider> {
         .map(|h| {
             h.join().unwrap_or_else(|_| {
                 AvailableProvider::unavailable(
-                    AiProvider::Claude, // fallback
+                    AiProvider::Claude { model: None }, // fallback
                     "Failed to check provider".to_string(),
                 )
             })
@@ -194,6 +198,98 @@ pub fn validate_provider(provider: &AiProvider) -> Result<AvailableProvider, Str
 }
 
 // =============================================================================
+// Model Information
+// =============================================================================
+
+/// Information about an available model.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    /// Model identifier (what to pass to the CLI)
+    pub id: String,
+
+    /// Human-readable name
+    pub name: String,
+
+    /// Brief description
+    pub description: String,
+
+    /// Whether this is the recommended/default model
+    #[serde(default)]
+    pub recommended: bool,
+}
+
+/// Returns the available models for a provider.
+///
+/// These are hardcoded since the CLIs don't provide a way to list models dynamically.
+/// Uses short aliases where possible for stability (avoids version-specific IDs).
+pub fn get_models_for_provider(provider_type: &str) -> Vec<ModelInfo> {
+    match provider_type {
+        // Claude Code supports short aliases: sonnet, opus, haiku
+        // These map to the latest version of each model family
+        // See: https://code.claude.com/docs/en/model-config
+        "claude" => vec![
+            ModelInfo {
+                id: "sonnet".to_string(),
+                name: "Sonnet".to_string(),
+                description: "Fast and capable, recommended for most tasks".to_string(),
+                recommended: true,
+            },
+            ModelInfo {
+                id: "opus".to_string(),
+                name: "Opus".to_string(),
+                description: "Most powerful, best for complex reasoning".to_string(),
+                recommended: false,
+            },
+            ModelInfo {
+                id: "haiku".to_string(),
+                name: "Haiku".to_string(),
+                description: "Fastest, good for simple tasks".to_string(),
+                recommended: false,
+            },
+        ],
+        // Gemini CLI uses model names like gemini-2.5-flash, gemini-2.5-pro
+        // Set via GEMINI_MODEL environment variable
+        "gemini" => vec![
+            ModelInfo {
+                id: "gemini-2.5-flash".to_string(),
+                name: "Gemini 2.5 Flash".to_string(),
+                description: "Fast and efficient, recommended for most tasks".to_string(),
+                recommended: true,
+            },
+            ModelInfo {
+                id: "gemini-2.5-pro".to_string(),
+                name: "Gemini 2.5 Pro".to_string(),
+                description: "Most capable, best for complex tasks".to_string(),
+                recommended: false,
+            },
+        ],
+        // Codex CLI uses --model flag with model names
+        // Common models: o4-mini, gpt-4o, gpt-4o-mini
+        "codex" => vec![
+            ModelInfo {
+                id: "o4-mini".to_string(),
+                name: "O4 Mini".to_string(),
+                description: "Fast reasoning model for coding tasks".to_string(),
+                recommended: true,
+            },
+            ModelInfo {
+                id: "gpt-4o".to_string(),
+                name: "GPT-4o".to_string(),
+                description: "Most capable, best for complex tasks".to_string(),
+                recommended: false,
+            },
+            ModelInfo {
+                id: "gpt-4o-mini".to_string(),
+                name: "GPT-4o Mini".to_string(),
+                description: "Faster and more cost-effective".to_string(),
+                recommended: false,
+            },
+        ],
+        _ => vec![],
+    }
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -210,7 +306,7 @@ mod tests {
 
     #[test]
     fn test_available_provider_creation() {
-        let provider = AiProvider::Claude;
+        let provider = AiProvider::Claude { model: None };
 
         // Version is now optional (skipped for performance)
         let available = AvailableProvider::available(provider.clone(), None);
@@ -241,13 +337,14 @@ mod tests {
 
     #[test]
     fn test_ai_provider_methods() {
-        assert_eq!(AiProvider::Claude.command(), "claude");
-        assert_eq!(AiProvider::Gemini.command(), "gemini");
-        assert_eq!(AiProvider::Codex.command(), "codex");
+        assert_eq!(AiProvider::Claude { model: None }.command(), "claude");
+        assert_eq!(AiProvider::Gemini { model: None }.command(), "gemini");
+        assert_eq!(AiProvider::Codex { model: None }.command(), "codex");
 
         let custom = AiProvider::Custom {
             command: "my-ai".to_string(),
             args: vec![],
+            model: None,
         };
         assert_eq!(custom.command(), "my-ai");
     }

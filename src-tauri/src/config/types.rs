@@ -18,13 +18,28 @@ use std::collections::HashMap;
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum AiProvider {
     /// Claude Code CLI (claude)
-    Claude,
+    Claude {
+        /// Optional model to use (e.g., "claude-sonnet-4-5-20250514")
+        /// If None, uses the CLI's default model.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+    },
 
     /// Gemini CLI (gemini)
-    Gemini,
+    Gemini {
+        /// Optional model to use (e.g., "gemini-2.5-flash")
+        /// If None, uses the CLI's default model.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+    },
 
     /// OpenAI Codex CLI (codex)
-    Codex,
+    Codex {
+        /// Optional model to use
+        /// If None, uses the CLI's default model.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+    },
 
     /// Custom CLI command
     Custom {
@@ -34,6 +49,10 @@ pub enum AiProvider {
         /// Additional arguments to pass before the prompt
         #[serde(default)]
         args: Vec<String>,
+
+        /// Optional model to use
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
     },
 }
 
@@ -41,9 +60,9 @@ impl AiProvider {
     /// Returns the CLI command for this provider.
     pub fn command(&self) -> &str {
         match self {
-            AiProvider::Claude => "claude",
-            AiProvider::Gemini => "gemini",
-            AiProvider::Codex => "codex",
+            AiProvider::Claude { .. } => "claude",
+            AiProvider::Gemini { .. } => "gemini",
+            AiProvider::Codex { .. } => "codex",
             AiProvider::Custom { command, .. } => command,
         }
     }
@@ -51,10 +70,44 @@ impl AiProvider {
     /// Returns a human-readable name for this provider.
     pub fn display_name(&self) -> &str {
         match self {
-            AiProvider::Claude => "Claude Code",
-            AiProvider::Gemini => "Gemini CLI",
-            AiProvider::Codex => "OpenAI Codex",
+            AiProvider::Claude { .. } => "Claude Code",
+            AiProvider::Gemini { .. } => "Gemini CLI",
+            AiProvider::Codex { .. } => "OpenAI Codex",
             AiProvider::Custom { command, .. } => command,
+        }
+    }
+
+    /// Returns the selected model (if any).
+    pub fn model(&self) -> Option<&str> {
+        match self {
+            AiProvider::Claude { model } => model.as_deref(),
+            AiProvider::Gemini { model } => model.as_deref(),
+            AiProvider::Codex { model } => model.as_deref(),
+            AiProvider::Custom { model, .. } => model.as_deref(),
+        }
+    }
+
+    /// Returns a new provider with the specified model.
+    pub fn with_model(self, model: Option<String>) -> Self {
+        match self {
+            AiProvider::Claude { .. } => AiProvider::Claude { model },
+            AiProvider::Gemini { .. } => AiProvider::Gemini { model },
+            AiProvider::Codex { .. } => AiProvider::Codex { model },
+            AiProvider::Custom { command, args, .. } => AiProvider::Custom {
+                command,
+                args,
+                model,
+            },
+        }
+    }
+
+    /// Returns the provider type as a string (for comparison without model).
+    pub fn provider_type(&self) -> &str {
+        match self {
+            AiProvider::Claude { .. } => "claude",
+            AiProvider::Gemini { .. } => "gemini",
+            AiProvider::Codex { .. } => "codex",
+            AiProvider::Custom { .. } => "custom",
         }
     }
 }
@@ -527,7 +580,7 @@ mod tests {
         let provider = ProviderInfo {
             configured: true,
             name: Some("Claude Code".to_string()),
-            provider: Some(AiProvider::Claude),
+            provider: Some(AiProvider::Claude { model: None }),
         };
         let agents = AgentInfo::new(2, 1); // 2 total, 1 enabled
 
@@ -560,7 +613,7 @@ mod tests {
 
     #[test]
     fn test_provider_info_from_provider() {
-        let info = ProviderInfo::from_provider(Some(&AiProvider::Claude));
+        let info = ProviderInfo::from_provider(Some(&AiProvider::Claude { model: None }));
         assert!(info.configured);
         assert_eq!(info.name, Some("Claude Code".to_string()));
 

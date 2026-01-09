@@ -1,7 +1,7 @@
 /**
  * ProviderSettings Component
  *
- * Displays and allows selection of AI providers for auto-pilot.
+ * Displays and allows selection of AI providers and models for auto-pilot.
  * Extracted from AutoPilotBadge for use in Settings modal.
  */
 
@@ -10,6 +10,7 @@ import {
   getAvailableAiProviders,
   setAiProvider,
   getAiProvider,
+  getProviderModels,
 } from '../../api/client';
 import styles from './ProviderSettings.module.css';
 
@@ -44,12 +45,15 @@ const WarningIcon = () => (
 );
 
 /**
- * ProviderSettings - AI Provider selection interface
+ * ProviderSettings - AI Provider and Model selection interface
  */
 const ProviderSettings = () => {
   const [providers, setProviders] = useState([]);
   const [currentProvider, setCurrentProvider] = useState(null);
+  const [models, setModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingModels, setLoadingModels] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -68,6 +72,15 @@ const ProviderSettings = () => {
 
         setProviders(providersResult);
         setCurrentProvider(currentResult);
+
+        // If a provider is already selected, fetch its models
+        if (currentResult?.provider?.type) {
+          const providerType = currentResult.provider.type;
+          const modelsResult = await getProviderModels(providerType);
+          setModels(modelsResult);
+          // Set the currently selected model
+          setSelectedModel(currentResult.provider.model || null);
+        }
       } catch (err) {
         console.error('[ProviderSettings] Failed to fetch providers:', err);
         setError('Failed to load providers. Please try again.');
@@ -87,12 +100,45 @@ const ProviderSettings = () => {
     setError(null);
 
     try {
-      await setAiProvider(providerInfo.provider);
-      // Store as ProviderInfo-like structure for consistent comparison
-      setCurrentProvider({ provider: providerInfo.provider, is_configured: true });
+      // When selecting a new provider, don't set a model yet
+      const providerWithNoModel = { ...providerInfo.provider, model: null };
+      await setAiProvider(providerWithNoModel);
+      setCurrentProvider({ provider: providerWithNoModel, is_configured: true });
+
+      // Fetch models for the newly selected provider
+      setLoadingModels(true);
+      const providerType = providerInfo.provider.type;
+      const modelsResult = await getProviderModels(providerType);
+      setModels(modelsResult);
+      setSelectedModel(null); // Reset model selection
     } catch (err) {
       console.error('[ProviderSettings] Failed to set provider:', err);
       setError('Failed to save provider. Please try again.');
+    } finally {
+      setSaving(false);
+      setLoadingModels(false);
+    }
+  };
+
+  // Handle model selection
+  const handleModelChange = async (modelId) => {
+    if (saving || !currentProvider?.provider) return;
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      // Create provider with selected model (or null for default)
+      const providerWithModel = {
+        ...currentProvider.provider,
+        model: modelId || null,
+      };
+      await setAiProvider(providerWithModel);
+      setCurrentProvider({ provider: providerWithModel, is_configured: true });
+      setSelectedModel(modelId || null);
+    } catch (err) {
+      console.error('[ProviderSettings] Failed to set model:', err);
+      setError('Failed to save model. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -190,6 +236,47 @@ const ProviderSettings = () => {
           );
         })}
       </div>
+
+      {/* Model Selection - Only show when a provider is selected */}
+      {currentProvider?.provider && models.length > 0 && (
+        <div className={styles.modelSection}>
+          <div className={styles.sectionHeader}>
+            <h3 className={styles.sectionTitle}>Model</h3>
+            <p className={styles.sectionDescription}>
+              Select which model to use. Faster models reduce response time.
+            </p>
+          </div>
+
+          {loadingModels ? (
+            <div className={styles.loadingState}>
+              <LoadingIcon />
+              <span>Loading models...</span>
+            </div>
+          ) : (
+            <div className={styles.modelSelect}>
+              <select
+                value={selectedModel || ''}
+                onChange={(e) => handleModelChange(e.target.value)}
+                disabled={saving}
+                className={styles.select}
+              >
+                <option value="">Default (CLI decides)</option>
+                {models.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                    {model.recommended ? ' (Recommended)' : ''}
+                  </option>
+                ))}
+              </select>
+              {selectedModel && (
+                <p className={styles.modelDescription}>
+                  {models.find(m => m.id === selectedModel)?.description}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className={styles.hint}>
         <p>
