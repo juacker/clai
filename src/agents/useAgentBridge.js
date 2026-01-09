@@ -35,7 +35,9 @@ import {
   getTabCreationLock,
   setTabCreationLock,
   clearTabCreationLock,
+  getAgentTabId,
 } from './bridge';
+import { emit as emitActivity } from './activityBus';
 
 /**
  * Generate a unique chart ID
@@ -803,16 +805,78 @@ export const useAgentBridge = () => {
      * @returns {{ success: boolean }} Result
      */
     registerToolHandler('chat.message', async (request) => {
-      const { params } = request;
+      const { params, agentId, spaceId, roomId } = request;
       const { message, messageType = 'info' } = params;
 
       if (!message) {
         throw new Error('Message content is required');
       }
 
-      // The message is automatically captured by the activity bus through
-      // the bridge's event emission. We just need to return success.
-      // The AgentChat component will display it based on the tool call.
+      // Get the tab ID for this agent
+      const tabId = getAgentTabId(agentId, spaceId, roomId);
+      if (!tabId) {
+        console.warn('[chat.message] No tab found for agent:', { agentId, spaceId, roomId });
+        return { success: true, message, messageType };
+      }
+
+      // Generate unique IDs for this message
+      const messageId = `chat_msg_${Date.now()}`;
+      const toolCallId = `chat_${Date.now()}`;
+
+      // Emit tool:stream events to display the message in AgentChat
+      // These events simulate an SSE stream response with a text content block
+
+      // 1. Start the message
+      emitActivity(tabId, {
+        type: 'tool:stream',
+        id: toolCallId,
+        tool: 'chat.message',
+        eventType: 'message_start',
+        payload: {
+          message: {
+            id: messageId,
+            role: 'assistant',
+          },
+        },
+        timestamp: Date.now(),
+      });
+
+      // 2. Start the text content block
+      emitActivity(tabId, {
+        type: 'tool:stream',
+        id: toolCallId,
+        tool: 'chat.message',
+        eventType: 'content_block_start',
+        payload: {
+          index: 0,
+          content_block: {
+            type: 'text',
+            text: message,
+          },
+        },
+        timestamp: Date.now(),
+      });
+
+      // 3. Stop the content block
+      emitActivity(tabId, {
+        type: 'tool:stream',
+        id: toolCallId,
+        tool: 'chat.message',
+        eventType: 'content_block_stop',
+        payload: { index: 0 },
+        timestamp: Date.now(),
+      });
+
+      // 4. Stop the message
+      emitActivity(tabId, {
+        type: 'tool:stream',
+        id: toolCallId,
+        tool: 'chat.message',
+        eventType: 'message_stop',
+        payload: {},
+        timestamp: Date.now(),
+      });
+
       return {
         success: true,
         message,

@@ -143,6 +143,12 @@
   color: var(--color-primary);
 }
 
+.queryArrow {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  margin: 0 2px;
+}
+
 .providerIcon {
   width: 18px;
   height: 18px;

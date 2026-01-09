@@ -199,12 +199,16 @@ const MessageBlock = ({ message, userInfo, aiProvider }) => {
     const displayText = isAgentQuery ? textContent.replace(/^\[@clai\]\s*/, '') : textContent;
 
     if (isAgentQuery) {
-      // Show as message from AI provider (Claude/Gemini querying Netdata)
+      // Show as internal communication: AI provider querying Netdata (white background)
+      // e.g., "Gemini → Netdata" - same styling as Netdata responses
       return (
-        <div className={styles.agentQueryMessage}>
+        <div className={styles.assistantMessage}>
           <div className={styles.messageHeader}>
             {getProviderIcon(aiProvider)}
             <span className={styles.messageRoleText}>{aiProvider?.name || 'AI Agent'}</span>
+            <span className={styles.queryArrow}>→</span>
+            <NetdataIcon />
+            <span className={styles.messageRoleText}>Netdata</span>
             {timestamp && <span className={styles.messageTimestamp}>{formatTimestamp(timestamp)}</span>}
           </div>
           <div className={styles.messageContent}>{displayText}</div>
@@ -229,12 +233,20 @@ const MessageBlock = ({ message, userInfo, aiProvider }) => {
     );
   }
 
-  // For assistant messages (netdata.query responses), show Netdata branding
+  // Check if this is a chat.message (agent's direct message) vs netdata.query response
+  // chat.message IDs start with "chat_msg_"
+  const isChatMessage = message.id?.startsWith('chat_msg_');
+
+  // For assistant messages, show appropriate branding and styling
+  // - chat.message: AI provider with purple background (agent talking to user)
+  // - netdata.query: Netdata with white background (data response)
   return (
-    <div className={styles.assistantMessage}>
+    <div className={isChatMessage ? styles.agentQueryMessage : styles.assistantMessage}>
       <div className={styles.messageHeader}>
-        <NetdataIcon />
-        <span className={styles.messageRoleText}>Netdata</span>
+        {isChatMessage ? getProviderIcon(aiProvider) : <NetdataIcon />}
+        <span className={styles.messageRoleText}>
+          {isChatMessage ? (aiProvider?.name || 'AI Agent') : 'Netdata'}
+        </span>
         {timestamp && <span className={styles.messageTimestamp}>{formatTimestamp(timestamp)}</span>}
       </div>
       <div className={styles.messageContent}>
