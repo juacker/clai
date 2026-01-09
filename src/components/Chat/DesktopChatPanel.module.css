@@ -33,9 +33,9 @@
     /* Display and positioning */
     display: block;
     position: fixed;
-    top: 41px; /* Below tab bar */
+    top: 45px; /* Below tab bar */
     right: 0;
-    bottom: 132px; /* Stop above terminal (context panel ~44px + input area ~52px + margin) */
+    bottom: 131px; /* Stop above terminal */
 
     /* Dimensions */
     width: 0;
@@ -44,7 +44,6 @@
     /* Tinted glass background */
     background: var(--glass-bg-tinted);
     border-left: 1px solid var(--glass-border-tinted);
-    border-bottom: 1px solid var(--glass-border-tinted); /* Connect to terminal */
 
     /* Layering */
     z-index: 101;
@@ -101,22 +100,6 @@
   }
 }
 
-/* ============================================================================
-   8. DARK MODE SUPPORT (Optional - for future implementation)
-   ============================================================================ */
-
-@media (prefers-color-scheme: dark) {
-  @media (min-width: 769px) and (pointer: fine) {
-    .desktopChatPanel {
-      background: rgba(30, 30, 30, 0.95);
-      border-left-color: rgba(255, 255, 255, 0.12);
-    }
-
-    .desktopChatPanel.open {
-      box-shadow: -4px 0 12px rgba(0, 0, 0, 0.2);
-    }
-  }
-}
 
 /* ============================================================================
    9. REDUCED MOTION SUPPORT - Respect user preferences

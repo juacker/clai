@@ -19,8 +19,8 @@ import styles from './AgentChat.module.css';
  * This component subscribes to agent activity via AgentActivityContext
  * and updates in real-time as SSE events are processed.
  */
-const AgentChat = ({ tabId, onClose, userInfo }) => {
-  const { getActivity, ensureTabTracked, clearActivity } = useAgentActivity();
+const AgentChat = ({ tabId, userInfo }) => {
+  const { getActivity, ensureTabTracked } = useAgentActivity();
   const messagesEndRef = useRef(null);
   const [aiProvider, setAiProvider] = useState(null);
 
@@ -52,14 +52,10 @@ const AgentChat = ({ tabId, onClose, userInfo }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [streamingMessages]);
 
-  // Check if any message is currently streaming
-  const isStreaming = streamingMessages.some(msg => msg.isStreaming);
-
   // Empty state
   if (status === 'idle' && streamingMessages.length === 0) {
     return (
       <div className={styles.agentChat}>
-        <Header status={status} onClose={onClose} />
         <div className={styles.emptyState}>
           <div className={styles.emptyTitle}>No activity yet</div>
           <div className={styles.emptyDescription}>
@@ -70,21 +66,8 @@ const AgentChat = ({ tabId, onClose, userInfo }) => {
     );
   }
 
-  const handleClear = () => {
-    if (tabId) {
-      clearActivity(tabId);
-    }
-  };
-
   return (
     <div className={styles.agentChat}>
-      <Header
-        status={status}
-        onClose={onClose}
-        onClear={handleClear}
-        hasMessages={streamingMessages.length > 0}
-      />
-
       <div className={styles.activityList}>
         {/* Render all messages */}
         {streamingMessages.map((message) => (
@@ -96,19 +79,14 @@ const AgentChat = ({ tabId, onClose, userInfo }) => {
           />
         ))}
 
-        {/* Running Indicator - show when starting with no messages yet */}
-        {status === 'running' && streamingMessages.length === 0 && (
-          <div className={styles.runningState}>
-            <span className={styles.spinner}></span>
-            <span>Starting...</span>
-          </div>
-        )}
-
-        {/* Streaming indicator */}
-        {isStreaming && (
-          <div className={styles.runningState}>
-            <span className={styles.spinner}></span>
-            <span>Processing...</span>
+        {/* Running Indicator - show at bottom when agent is running */}
+        {status === 'running' && (
+          <div className={styles.runningIndicator}>
+            <img
+              src="/icon.svg"
+              alt="Clai"
+              className={styles.runningIcon}
+            />
           </div>
         )}
 
@@ -401,43 +379,6 @@ const StatusIndicator = ({ status }) => {
     default:
       return null;
   }
-};
-
-/**
- * Header component for AgentChat
- */
-const Header = ({ status, onClose, onClear, hasMessages }) => {
-  const isRunning = status === 'running';
-
-  return (
-    <div className={styles.header}>
-      <div className={styles.headerLeft}>
-        <img
-          src="/icon.svg"
-          alt="Clai"
-          className={`${styles.claiIcon} ${isRunning ? styles.spinning : ''}`}
-        />
-        <span className={styles.headerTitle}>Tab Chat</span>
-      </div>
-      <div className={styles.headerRight}>
-        {hasMessages && onClear && (
-          <button
-            className={styles.clearButton}
-            onClick={onClear}
-            title="Clear history"
-            disabled={isRunning}
-          >
-            Clear
-          </button>
-        )}
-        {onClose && (
-          <button className={styles.closeButton} onClick={onClose} title="Close">
-            ×
-          </button>
-        )}
-      </div>
-    </div>
-  );
 };
 
 /**
