@@ -86,6 +86,9 @@ pub fn run() {
 
     tracing::info!("CLAI starting up...");
 
+    // Clear temp directory from previous runs (MCP configs, etc)
+    agents::clear_tmp_dir();
+
     // Initialize token storage (uses OS keychain)
     // If this fails, the app cannot function, so we panic.
     let token_storage = TokenStorage::new().expect(

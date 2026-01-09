@@ -46,3 +46,6 @@ pub use scheduler::{create_shared_scheduler, SchedulerState, SharedScheduler};
 
 // Runner export (used by lib.rs)
 pub use runner::start_agent_runner;
+
+// CLI runner exports (cleanup on startup)
+pub use cli_runner::clear_tmp_dir;

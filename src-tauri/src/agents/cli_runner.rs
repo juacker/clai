@@ -23,9 +23,9 @@
 //!
 //! Each AI CLI is configured differently:
 //!
-//! - **Claude Code**: Uses `--mcp-server` flag or MCP_SERVERS env var
-//! - **Gemini CLI**: Uses `--mcp-server` flag
-//! - **Codex**: Uses config file or env var
+//! - **Claude Code**: Uses `--mcp-config` flag with inline JSON
+//! - **Gemini CLI**: Uses `.gemini/settings.json` file (no CLI flag support)
+//! - **Codex**: Uses MCP_SERVERS env var
 //!
 //! For simplicity and portability, we use command line arguments when possible.
 
@@ -349,21 +349,82 @@ fn configure_claude_command(cmd: &mut Command, mcp_server_url: &str) {
     cmd.arg("mcp__netdata__*,WebSearch,WebFetch");
 }
 
+/// Gets the clai temp directory for ephemeral files (MCP configs, etc).
+///
+/// Structure:
+/// - Linux: `~/.config/clai/tmp/`
+/// - macOS: `~/Library/Application Support/clai/tmp/`
+/// - Windows: `%APPDATA%/clai/tmp/`
+///
+/// This directory is cleared on application startup.
+fn get_clai_tmp_dir() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("clai").join("tmp"))
+}
+
+/// Clears the clai temp directory.
+///
+/// Call this on application startup to clean up ephemeral files from previous runs
+/// (MCP config files, etc). Safe to call even if the directory doesn't exist.
+pub fn clear_tmp_dir() {
+    if let Some(tmp_dir) = get_clai_tmp_dir() {
+        if tmp_dir.exists() {
+            match std::fs::remove_dir_all(&tmp_dir) {
+                Ok(_) => tracing::debug!(path = %tmp_dir.display(), "Cleared clai tmp directory"),
+                Err(e) => tracing::warn!(error = %e, path = %tmp_dir.display(), "Failed to clear clai tmp directory"),
+            }
+        }
+    }
+}
+
 /// Configure command for Gemini CLI.
 ///
 /// Gemini CLI supports:
-/// - `--mcp-server <name>=<url>` for inline server config
+/// - MCP servers via `settings.json` file (NOT command-line args)
 /// - `-y` or `--yolo` to auto-approve all tools
 /// - `--allowed-mcp-server-names` to whitelist MCP servers
 /// - Built-in `google_web_search` tool (auto-enabled)
 /// - Prompt via stdin or as argument
 ///
-/// See: https://geminicli.com/docs/cli/headless/
+/// MCP Configuration:
+/// Gemini CLI requires MCP servers to be configured in a settings.json file.
+/// We create a config file at `~/.config/clai/tmp/gemini-<id>.json` and
+/// pass it via the `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` environment variable.
+///
+/// See: https://geminicli.com/docs/tools/mcp-server/
 /// Web search: https://geminicli.com/docs/tools/web-search/
 fn configure_gemini_command(cmd: &mut Command, mcp_server_url: &str) {
-    // Add MCP server
-    cmd.arg("--mcp-server");
-    cmd.arg(format!("netdata={}", mcp_server_url));
+    // Get the clai tmp directory, fallback to system temp if unavailable
+    let base_dir = get_clai_tmp_dir().unwrap_or_else(std::env::temp_dir);
+
+    // Ensure the directory exists
+    if let Err(e) = std::fs::create_dir_all(&base_dir) {
+        tracing::error!(error = %e, path = %base_dir.display(), "Failed to create MCP servers directory");
+    }
+
+    // Create unique config file per request since multiple MCP servers can run concurrently
+    let unique_id = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let config_path = base_dir.join(format!("gemini-{}-{}.json", std::process::id(), unique_id));
+
+    // Write settings.json with MCP server config
+    let settings = serde_json::json!({
+        "mcpServers": {
+            "netdata": {
+                "httpUrl": mcp_server_url,
+                "trust": true
+            }
+        }
+    });
+
+    if let Err(e) = std::fs::write(&config_path, settings.to_string()) {
+        tracing::error!(error = %e, path = %config_path.display(), "Failed to write Gemini config");
+    } else {
+        tracing::debug!(path = %config_path.display(), "Created Gemini MCP config");
+        // Pass config via GEMINI_CLI_SYSTEM_DEFAULTS_PATH environment variable
+        cmd.env("GEMINI_CLI_SYSTEM_DEFAULTS_PATH", &config_path);
+    }
 
     // Auto-approve all tool executions (YOLO mode)
     // Includes: MCP tools, google_web_search, file ops, shell commands
