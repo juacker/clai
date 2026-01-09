@@ -260,11 +260,21 @@ const Canvas = ({ command }) => {
        */
       addNode: (nodeType, position, data) => {
         const nodeId = generateNodeId(nodeType);
+
+        // Default dimensions per node type
+        const defaultDimensions = {
+          chart: { width: data?.width || 450, height: data?.height || 350 },
+          markdown: { width: data?.width || 400, height: data?.height || 200 },
+          statusBadge: { width: data?.width || 200, height: data?.height || 120 },
+        };
+        const dims = defaultDimensions[nodeType] || { width: 300, height: 200 };
+
         const node = {
           id: nodeId,
           type: nodeType,
           position,
           data,
+          style: { width: dims.width, height: dims.height },
         };
         setNodes((prev) => [...prev, node]);
         return nodeId;
@@ -363,6 +373,9 @@ const Canvas = ({ command }) => {
         fitView
         minZoom={0.1}
         maxZoom={2}
+        deleteKeyCode={['Backspace', 'Delete']}
+        selectionKeyCode={['Shift']}
+        multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
         defaultEdgeOptions={{
           type: 'smoothstep',
           animated: true,

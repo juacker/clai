@@ -6,13 +6,17 @@
   background: var(--color-bg-primary, #ffffff);
   border: 1px solid var(--color-border, #e0e0e0);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .chartNode.selected {
-  border-color: var(--color-primary, #00ab44);
-  box-shadow: 0 0 0 2px var(--color-primary-alpha, rgba(0, 171, 68, 0.2));
+  border-color: var(--color-primary, #6366F1);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 }
 
 .nodeTitle {
@@ -25,6 +29,13 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.contentInner {
+  display: flex;
+  flex-direction: column;
+  /* Don't constrain height - let content size naturally for measurement */
+  height: fit-content;
 }
 
 .chartContainer {
@@ -54,6 +65,20 @@
 .handle {
   width: 10px;
   height: 10px;
-  background: var(--color-primary, #00ab44);
+  background: var(--color-primary, #6366F1);
   border: 2px solid var(--color-bg-primary, #ffffff);
+}
+
+/* Resizer styles */
+.resizerLine {
+  border-color: var(--color-primary, #6366F1) !important;
+  border-width: 1px !important;
+}
+
+.resizerHandle {
+  width: 10px !important;
+  height: 10px !important;
+  background: var(--color-primary, #6366F1) !important;
+  border: 2px solid white !important;
+  border-radius: 2px !important;
 }
