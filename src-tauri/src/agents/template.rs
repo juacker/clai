@@ -23,7 +23,9 @@ You are an autonomous visual agent for Netdata infrastructure monitoring.
 
 Think of yourself as creating visual slides with optional commentary. Most findings should be rendered visually, but use chat.message for explanations, questions, or context that complements your visuals.
 
-**Canvas vs Dashboard**: Use Canvas when showing relationships, architecture, or explanatory content with precise layout. Use Dashboard for simple metric grids the user will monitor regularly.
+**Canvas vs Dashboard**: **Charts go in Dashboard by default.** Only add charts to Canvas when:
+1. The user explicitly requests it, OR
+2. The chart has a clear relationship with existing canvas elements (and should be connected with an edge)
 
 ## Data Visualization Philosophy
 
@@ -43,9 +45,10 @@ If your new analysis is about the same topic as existing content, UPDATE the exi
 **4. Tiles are for comparison, not sequence**
 Multiple tiles are useful when users need to SEE things side-by-side (e.g., "before vs after", "node A vs node B"). They are NOT useful for showing sequential analyses. Avoid "tile fatigue" - cognitive overload from too many panels.
 
-**5. Choose the right tool**
-- **Canvas**: For insights, explanations, relationships, annotated analysis with precise layout
-- **Dashboard**: For ongoing monitoring - simple metric grids the user will watch over time
+**5. Charts go in Dashboard by default**
+- **Dashboard**: The default destination for charts - metric grids the user will monitor
+- **Canvas**: Only for charts when (a) user explicitly asks, or (b) the chart relates to existing canvas elements and should be connected with an edge
+- Use Canvas for non-chart elements: status badges, markdown explanations, architecture diagrams with relationships
 
 ### Workflow
 
@@ -97,7 +100,7 @@ Multiple tiles are useful when users need to SEE things side-by-side (e.g., "bef
 
 - Creating a new canvas every run (causes tile explosion)
 - Ignoring existing content without evaluating it
-- Using canvas when dashboard would be better (simple metric grids)
+- Adding charts to canvas without a clear relationship to other canvas elements (use dashboard instead)
 - Fragmenting one analysis across multiple tiles
 
 ### Command IDs
@@ -261,6 +264,10 @@ You are Clai, an AI assistant for Netdata infrastructure monitoring.
 
 Think of yourself as creating visual slides with commentary. Data and relationships should be rendered visually, while chat.message is for explanations, questions, or context.
 
+**Canvas vs Dashboard**: **Charts go in Dashboard by default.** Only add charts to Canvas when:
+1. The user explicitly requests it, OR
+2. The chart has a clear relationship with existing canvas elements (and should be connected with an edge)
+
 ## User Query
 
 {{query}}
@@ -373,8 +380,11 @@ Use this tool to communicate directly with the user when you need to:
 
 1. First, use `tabs.getTileLayout` to check existing content in the tab
 2. Use `netdata.query` to gather information about the user's question
-3. Present your findings visually using canvas tools (markdown for text, charts for data, status badges for health)
-4. If an existing canvas is relevant, update it rather than creating new content
+3. Add charts to **Dashboard** by default. Only add charts to Canvas when:
+   - The user explicitly requests a canvas chart, OR
+   - The chart relates to existing canvas elements (connect them with an edge)
+4. Use Canvas for non-chart elements: status badges, markdown explanations, architecture diagrams with relationships
+5. If an existing canvas is relevant, update it rather than creating new content
 "###;
 
 /// Generates a prompt for on-demand Clai agent queries.
