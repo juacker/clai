@@ -72,9 +72,7 @@
 
 /* Filter Panel */
 .filterPanel {
-  border: 1px solid var(--chart-grid);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.5);
+  border-bottom: 1px solid var(--chart-grid);
   overflow: hidden;
   contain: layout;
 }
@@ -90,7 +88,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 0;
   background: none;
   border: none;
   cursor: pointer;
@@ -103,7 +101,6 @@
 }
 
 .filterPanelToggle:hover {
-  background: rgba(0, 0, 0, 0.03);
   color: var(--color-text-primary);
 }
 
@@ -139,8 +136,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--color-border-light);
+  padding: 8px 0;
   max-height: 120px;
   overflow-y: auto;
   contain: layout style;
@@ -227,8 +223,7 @@
 }
 
 .filterPanelContent {
-  padding: 12px;
-  border-top: 1px solid var(--chart-grid);
+  padding: 12px 0;
   animation: slideDown 0.2s ease-out;
   will-change: max-height, opacity;
   contain: layout style paint;
@@ -615,17 +610,24 @@
 .tooltipLabel {
   color: var(--color-text-secondary);
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .tooltipValue {
   color: var(--color-text-primary);
   font-weight: 600;
-  margin-left: auto;
   font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  text-align: right;
+  flex-shrink: 0;
+  min-width: 60px;
 }
 
 .tooltipRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
   align-items: center;
   gap: 8px;
   margin: 4px 0;

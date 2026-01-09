@@ -1156,8 +1156,17 @@ const ContextChart = ({
           }
 
           rafId = requestAnimationFrame(() => {
-            // Get mouse coordinates relative to the g element (not the overlay)
-            const [mouseX] = d3.pointer(event, g.node());
+            // Get mouse coordinates accounting for CSS transforms (React Flow zoom)
+            // Use getBoundingClientRect which gives screen coordinates, then convert to element coordinates
+            const svgNode = svgRef.current;
+            const rect = svgNode.getBoundingClientRect();
+
+            // Calculate scale factor from CSS transforms (rect dimensions vs SVG dimensions)
+            const scaleX = rect.width / dimensions.width;
+
+            // Convert screen position to element position
+            const screenX = event.clientX - rect.left;
+            const mouseX = (screenX / scaleX) - margin.left;
 
             // Clamp mouseX to the chart bounds
             const clampedX = Math.max(0, Math.min(width, mouseX));

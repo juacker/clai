@@ -9,22 +9,17 @@
  * - Dynamic resize: Node height adjusts when filter panel expands/collapses
  */
 
-import React, { memo, useContext, useCallback, useRef, useEffect, useState } from 'react';
-import { Handle, Position, useStore, useReactFlow } from '@xyflow/react';
+import React, { memo, useContext } from 'react';
+import { Handle, Position, useStore } from '@xyflow/react';
 import TabContext from '../../../contexts/TabContext';
 import ContextChart from '../../ChartsView/ContextChart';
 import styles from './ChartNode.module.css';
 
 const ChartNode = ({ id, data, selected }) => {
   const { selectedSpace, selectedRoom } = useContext(TabContext);
-  const { setNodes } = useReactFlow();
 
   // Get zoom level from React Flow store for crisp rendering
   const zoom = useStore((state) => state.transform[2]);
-
-  // Track content height for dynamic resize
-  const contentRef = useRef(null);
-  const [contentHeight, setContentHeight] = useState(null);
 
   const {
     context,
@@ -35,9 +30,6 @@ const ChartNode = ({ id, data, selected }) => {
     width = 400,
     height = 300,
   } = data;
-
-  // Calculate effective height (use content height if larger than default)
-  const effectiveHeight = contentHeight && contentHeight > height ? contentHeight : height;
 
   // Calculate time range
   const getTimeRange = () => {
@@ -62,44 +54,6 @@ const ChartNode = ({ id, data, selected }) => {
 
   const { after, before } = getTimeRange();
 
-  // Observe content height changes for dynamic resize
-  useEffect(() => {
-    if (!contentRef.current) return;
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const newHeight = entry.target.scrollHeight;
-        // Only update if height changed significantly (>10px) to avoid loops
-        if (Math.abs(newHeight - (contentHeight || height)) > 10) {
-          setContentHeight(newHeight);
-        }
-      }
-    });
-
-    resizeObserver.observe(contentRef.current);
-    return () => resizeObserver.disconnect();
-  }, [contentHeight, height]);
-
-  // Update React Flow node dimensions when content height changes
-  useEffect(() => {
-    if (contentHeight && contentHeight > height) {
-      setNodes((nodes) =>
-        nodes.map((node) => {
-          if (node.id === id) {
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                height: contentHeight,
-              },
-            };
-          }
-          return node;
-        })
-      );
-    }
-  }, [contentHeight, height, id, setNodes]);
-
   if (!context) {
     return (
       <div
@@ -118,9 +72,8 @@ const ChartNode = ({ id, data, selected }) => {
 
   return (
     <div
-      ref={contentRef}
       className={`${styles.chartNode} ${selected ? styles.selected : ''}`}
-      style={{ width, height: effectiveHeight }}
+      style={{ width, minHeight: height }}
     >
       <Handle type="target" position={Position.Left} className={styles.handle} />
 
