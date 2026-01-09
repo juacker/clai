@@ -166,93 +166,6 @@ export const getSpaceBillingPlan = async (spaceId) => {
 };
 
 /**
- * Create a new conversation in Netdata Cloud
- * @param {string} spaceId - Space ID
- * @param {string} roomId - Room ID
- * @returns {Promise<Object>} Created conversation information
- * @throws {Error} If the request fails
- */
-export const createConversation = async (spaceId, roomId) => {
-  try {
-    return await invoke('api_create_conversation', { spaceId, roomId });
-  } catch (error) {
-    handleApiError(error, 'Failed to create conversation');
-  }
-};
-
-/**
- * Get a specific conversation from Netdata Cloud
- * @param {string} spaceId - Space ID
- * @param {string} roomId - Room ID
- * @param {string} conversationId - Conversation ID
- * @returns {Promise<Object>} Conversation information
- * @throws {Error} If the request fails
- */
-export const getConversation = async (spaceId, roomId, conversationId) => {
-  try {
-    return await invoke('api_get_conversation', { spaceId, roomId, conversationId });
-  } catch (error) {
-    handleApiError(error, 'Failed to get conversation');
-  }
-};
-
-/**
- * List all conversations from a specific room in Netdata Cloud
- * @param {string} spaceId - Space ID
- * @param {string} roomId - Room ID
- * @returns {Promise<Array>} List of conversations
- * @throws {Error} If the request fails
- */
-export const listConversations = async (spaceId, roomId) => {
-  try {
-    return await invoke('api_list_conversations', { spaceId, roomId });
-  } catch (error) {
-    handleApiError(error, 'Failed to list conversations');
-  }
-};
-
-/**
- * Delete a specific conversation from Netdata Cloud
- * @param {string} spaceId - Space ID
- * @param {string} roomId - Room ID
- * @param {string} conversationId - Conversation ID
- * @returns {Promise<Object>} Deletion confirmation
- * @throws {Error} If the request fails
- */
-export const deleteConversation = async (spaceId, roomId, conversationId) => {
-  try {
-    return await invoke('api_delete_conversation', { spaceId, roomId, conversationId });
-  } catch (error) {
-    handleApiError(error, 'Failed to delete conversation');
-  }
-};
-
-/**
- * Create a title for a conversation based on message content
- * @param {string} spaceId - Space ID
- * @param {string} roomId - Room ID
- * @param {string} conversationId - Conversation ID
- * @param {string} messageContent - The message content to generate a title from
- * @returns {Promise<Object>} Object containing the generated title
- * @throws {Error} If the request fails
- */
-export const createConversationTitle = async (spaceId, roomId, conversationId, messageContent) => {
-  try {
-    if (!messageContent || messageContent.trim() === '') {
-      throw new Error('message_content is required and must not be empty');
-    }
-    return await invoke('api_create_conversation_title', {
-      spaceId,
-      roomId,
-      conversationId,
-      messageContent
-    });
-  } catch (error) {
-    handleApiError(error, 'Failed to create conversation title');
-  }
-};
-
-/**
  * Create a chat completion in a conversation with SSE streaming support
  *
  * This function uses Tauri events for streaming. The Rust backend emits
@@ -680,11 +593,6 @@ export const getUserInfoCompat = async (token) => getUserInfo();
 export const getSpacesCompat = async (token) => getSpaces();
 export const getRoomsCompat = async (token, spaceId) => getRooms(spaceId);
 export const getSpaceBillingPlanCompat = async (token, spaceId) => getSpaceBillingPlan(spaceId);
-export const createConversationCompat = async (token, spaceId, roomId) => createConversation(spaceId, roomId);
-export const getConversationCompat = async (token, spaceId, roomId, conversationId) => getConversation(spaceId, roomId, conversationId);
-export const listConversationsCompat = async (token, spaceId, roomId) => listConversations(spaceId, roomId);
-export const deleteConversationCompat = async (token, spaceId, roomId, conversationId) => deleteConversation(spaceId, roomId, conversationId);
-export const createConversationTitleCompat = async (token, spaceId, roomId, conversationId, messageContent) => createConversationTitle(spaceId, roomId, conversationId, messageContent);
 export const createChatCompletionCompat = async (token, spaceId, roomId, conversationId, message, onChunk, parentMessageId) => createChatCompletion(spaceId, roomId, conversationId, message, onChunk, parentMessageId);
 export const getDataCompat = async (token, spaceId, roomId, params) => getData(spaceId, roomId, params);
 export const getContextsCompat = async (token, spaceId, roomId, params) => getContexts(spaceId, roomId, params);
