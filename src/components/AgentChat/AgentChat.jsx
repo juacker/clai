@@ -107,6 +107,17 @@ const AgentChat = ({ tabId, userInfo }) => {
 const getProviderIcon = (aiProvider) => {
   const providerType = aiProvider?.provider?.type || aiProvider?.provider;
 
+  if (providerType === 'opencode' || providerType === 'OpenCode') {
+    return (
+      <img
+        src="/icons/opencode.svg"
+        alt="OpenCode"
+        className={styles.providerIcon}
+        onError={(e) => { e.target.style.display = 'none'; }}
+      />
+    );
+  }
+
   if (providerType === 'claude' || providerType === 'Claude') {
     return (
       <img

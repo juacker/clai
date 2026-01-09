@@ -160,6 +160,7 @@ pub fn get_available_providers() -> Vec<AvailableProvider> {
     use std::thread;
 
     let known_providers = vec![
+        AiProvider::OpenCode { model: None },
         AiProvider::Claude { model: None },
         AiProvider::Gemini { model: None },
         AiProvider::Codex { model: None },
@@ -224,6 +225,35 @@ pub struct ModelInfo {
 /// Uses short aliases where possible for stability (avoids version-specific IDs).
 pub fn get_models_for_provider(provider_type: &str) -> Vec<ModelInfo> {
     match provider_type {
+        // OpenCode supports 75+ LLM providers via Models.dev
+        // Model format: provider/model (e.g., "anthropic/claude-sonnet-4-5")
+        // See: https://opencode.ai/docs/models/
+        "opencode" => vec![
+            ModelInfo {
+                id: "anthropic/claude-sonnet-4-5".to_string(),
+                name: "Claude Sonnet 4.5".to_string(),
+                description: "Fast and capable, recommended for most tasks".to_string(),
+                recommended: true,
+            },
+            ModelInfo {
+                id: "anthropic/claude-opus-4".to_string(),
+                name: "Claude Opus 4".to_string(),
+                description: "Most powerful, best for complex reasoning".to_string(),
+                recommended: false,
+            },
+            ModelInfo {
+                id: "openai/gpt-4o".to_string(),
+                name: "GPT-4o".to_string(),
+                description: "OpenAI's most capable model".to_string(),
+                recommended: false,
+            },
+            ModelInfo {
+                id: "google/gemini-2.5-pro".to_string(),
+                name: "Gemini 2.5 Pro".to_string(),
+                description: "Google's most capable model".to_string(),
+                recommended: false,
+            },
+        ],
         // Claude Code supports short aliases: sonnet, opus, haiku
         // These map to the latest version of each model family
         // See: https://code.claude.com/docs/en/model-config
@@ -325,8 +355,8 @@ mod tests {
         // In CI, they likely won't be installed, which is fine
         let providers = get_available_providers();
 
-        // Should always return 3 providers (available or not)
-        assert_eq!(providers.len(), 3);
+        // Should always return 4 providers (available or not)
+        assert_eq!(providers.len(), 4);
 
         // Each should have a name and command
         for p in providers {
@@ -337,6 +367,7 @@ mod tests {
 
     #[test]
     fn test_ai_provider_methods() {
+        assert_eq!(AiProvider::OpenCode { model: None }.command(), "opencode");
         assert_eq!(AiProvider::Claude { model: None }.command(), "claude");
         assert_eq!(AiProvider::Gemini { model: None }.command(), "gemini");
         assert_eq!(AiProvider::Codex { model: None }.command(), "codex");

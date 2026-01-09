@@ -17,6 +17,14 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum AiProvider {
+    /// OpenCode CLI (opencode) - open source AI coding agent
+    OpenCode {
+        /// Optional model to use (e.g., "anthropic/claude-sonnet-4-5")
+        /// If None, uses the CLI's default model.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+    },
+
     /// Claude Code CLI (claude)
     Claude {
         /// Optional model to use (e.g., "claude-sonnet-4-5-20250514")
@@ -60,6 +68,7 @@ impl AiProvider {
     /// Returns the CLI command for this provider.
     pub fn command(&self) -> &str {
         match self {
+            AiProvider::OpenCode { .. } => "opencode",
             AiProvider::Claude { .. } => "claude",
             AiProvider::Gemini { .. } => "gemini",
             AiProvider::Codex { .. } => "codex",
@@ -70,6 +79,7 @@ impl AiProvider {
     /// Returns a human-readable name for this provider.
     pub fn display_name(&self) -> &str {
         match self {
+            AiProvider::OpenCode { .. } => "OpenCode",
             AiProvider::Claude { .. } => "Claude Code",
             AiProvider::Gemini { .. } => "Gemini CLI",
             AiProvider::Codex { .. } => "OpenAI Codex",
@@ -80,6 +90,7 @@ impl AiProvider {
     /// Returns the selected model (if any).
     pub fn model(&self) -> Option<&str> {
         match self {
+            AiProvider::OpenCode { model } => model.as_deref(),
             AiProvider::Claude { model } => model.as_deref(),
             AiProvider::Gemini { model } => model.as_deref(),
             AiProvider::Codex { model } => model.as_deref(),
@@ -90,6 +101,7 @@ impl AiProvider {
     /// Returns a new provider with the specified model.
     pub fn with_model(self, model: Option<String>) -> Self {
         match self {
+            AiProvider::OpenCode { .. } => AiProvider::OpenCode { model },
             AiProvider::Claude { .. } => AiProvider::Claude { model },
             AiProvider::Gemini { .. } => AiProvider::Gemini { model },
             AiProvider::Codex { .. } => AiProvider::Codex { model },
@@ -104,6 +116,7 @@ impl AiProvider {
     /// Returns the provider type as a string (for comparison without model).
     pub fn provider_type(&self) -> &str {
         match self {
+            AiProvider::OpenCode { .. } => "opencode",
             AiProvider::Claude { .. } => "claude",
             AiProvider::Gemini { .. } => "gemini",
             AiProvider::Codex { .. } => "codex",

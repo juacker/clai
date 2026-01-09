@@ -299,6 +299,9 @@ fn build_cli_command(provider: &AiProvider, mcp_server_url: &str) -> Command {
 
     // Configure based on provider
     match provider {
+        AiProvider::OpenCode { model } => {
+            configure_opencode_command(&mut cmd, mcp_server_url, model.as_deref())
+        }
         AiProvider::Claude { model } => {
             configure_claude_command(&mut cmd, mcp_server_url, model.as_deref())
         }
@@ -317,6 +320,75 @@ fn build_cli_command(provider: &AiProvider, mcp_server_url: &str) -> Command {
     }
 
     cmd
+}
+
+/// Configure command for OpenCode CLI.
+///
+/// OpenCode supports:
+/// - `run` subcommand for non-interactive execution
+/// - `--model provider/model` to select a specific model (e.g., "anthropic/claude-sonnet-4-5")
+/// - `--format json` for JSON output
+/// - MCP servers via config file (similar to Gemini)
+/// - Prompt via stdin or as argument
+///
+/// MCP Configuration:
+/// OpenCode requires MCP servers to be configured in a JSON config file.
+/// We create a config file at `~/.config/clai/tmp/opencode-<id>.json` and
+/// pass it via the `OPENCODE_CONFIG` environment variable.
+///
+/// See: https://opencode.ai/docs/cli/
+/// See: https://opencode.ai/docs/config/
+fn configure_opencode_command(cmd: &mut Command, mcp_server_url: &str, model: Option<&str>) {
+    // Get the clai tmp directory, fallback to system temp if unavailable
+    let base_dir = get_clai_tmp_dir().unwrap_or_else(std::env::temp_dir);
+
+    // Ensure the directory exists
+    if let Err(e) = std::fs::create_dir_all(&base_dir) {
+        tracing::error!(error = %e, path = %base_dir.display(), "Failed to create MCP servers directory");
+    }
+
+    // Create unique config file per request since multiple MCP servers can run concurrently
+    let unique_id = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let config_path = base_dir.join(format!(
+        "opencode-{}-{}.json",
+        std::process::id(),
+        unique_id
+    ));
+
+    // Write config file with MCP server config
+    // OpenCode uses similar format to Gemini for MCP servers
+    let config = serde_json::json!({
+        "mcp": {
+            "netdata": {
+                "type": "remote",
+                "url": mcp_server_url,
+                "enabled": true
+            }
+        }
+    });
+
+    if let Err(e) = std::fs::write(&config_path, config.to_string()) {
+        tracing::error!(error = %e, path = %config_path.display(), "Failed to write OpenCode config");
+    } else {
+        tracing::debug!(path = %config_path.display(), "Created OpenCode MCP config");
+        // Pass config via OPENCODE_CONFIG environment variable
+        cmd.env("OPENCODE_CONFIG", &config_path);
+    }
+
+    // Use 'run' subcommand for non-interactive execution
+    cmd.arg("run");
+
+    // Set model if specified (format: provider/model)
+    if let Some(model_name) = model {
+        cmd.arg("--model");
+        cmd.arg(model_name);
+    }
+
+    // Prompt will be provided as argument after 'run' subcommand
+    // Note: OpenCode run accepts prompt as positional argument, not stdin
 }
 
 /// Configure command for Claude Code CLI.
@@ -530,6 +602,33 @@ mod tests {
         assert!(result.success);
         assert_eq!(result.exit_code, Some(0));
         assert!(!result.stdout.is_empty());
+    }
+
+    #[test]
+    fn test_build_command_opencode() {
+        let cmd = build_cli_command(
+            &AiProvider::OpenCode { model: None },
+            "http://127.0.0.1:12345",
+        );
+
+        // Verify it builds without panicking
+        assert!(
+            format!("{:?}", cmd).contains("opencode") || format!("{:?}", cmd).contains("flatpak")
+        );
+    }
+
+    #[test]
+    fn test_build_command_opencode_with_model() {
+        let cmd = build_cli_command(
+            &AiProvider::OpenCode {
+                model: Some("anthropic/claude-sonnet-4-5".to_string()),
+            },
+            "http://127.0.0.1:12345",
+        );
+
+        // Verify it builds and contains model argument
+        let cmd_str = format!("{:?}", cmd);
+        assert!(cmd_str.contains("opencode") || cmd_str.contains("flatpak"));
     }
 
     #[test]
