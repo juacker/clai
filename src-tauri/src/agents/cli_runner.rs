@@ -367,16 +367,18 @@ fn build_cli_command(provider: &AiProvider, mcp_server_url: &str) -> Command {
 /// - `run` subcommand for non-interactive execution
 /// - `--model provider/model` to select a specific model (e.g., "anthropic/claude-sonnet-4-5")
 /// - `--format json` for JSON output
-/// - MCP servers via config file (similar to Gemini)
-/// - Prompt via stdin or as argument
+/// - MCP servers via config file
+/// - Built-in `webfetch` tool for fetching web pages
+/// - Prompt as positional argument
 ///
 /// MCP Configuration:
 /// OpenCode requires MCP servers to be configured in a JSON config file.
 /// We create a config file at `~/.config/clai/tmp/opencode-<id>.json` and
 /// pass it via the `OPENCODE_CONFIG` environment variable.
+/// The `permission` field auto-approves specific tools.
 ///
 /// See: https://opencode.ai/docs/cli/
-/// See: https://opencode.ai/docs/config/
+/// See: https://opencode.ai/docs/tools/
 fn configure_opencode_command(mcp_server_url: &str, model: Option<&str>) -> CliConfig {
     let mut cfg = CliConfig::new();
 
@@ -399,8 +401,7 @@ fn configure_opencode_command(mcp_server_url: &str, model: Option<&str>) -> CliC
         unique_id
     ));
 
-    // Write config file with MCP server config
-    // OpenCode uses similar format to Gemini for MCP servers
+    // Write config file with MCP server config and tool permissions
     let config = serde_json::json!({
         "mcp": {
             "netdata": {
@@ -408,6 +409,9 @@ fn configure_opencode_command(mcp_server_url: &str, model: Option<&str>) -> CliC
                 "url": mcp_server_url,
                 "enabled": true
             }
+        },
+        "permission": {
+            "webfetch": "allow"
         }
     });
 
@@ -516,14 +520,14 @@ pub fn clear_tmp_dir() {
 /// - MCP servers via `settings.json` file (NOT command-line args)
 /// - `--allowed-mcp-server-names` to whitelist MCP servers
 /// - `--model` or GEMINI_MODEL env var to select model
-/// - Built-in `google_web_search` tool (auto-enabled)
+/// - Built-in `googleWebSearch` tool (enabled via config)
 /// - Prompt via stdin or as argument
 ///
 /// MCP Configuration:
 /// Gemini CLI requires MCP servers to be configured in a settings.json file.
 /// We create a config file at `~/.config/clai/tmp/gemini-<id>.json` and
 /// pass it via the `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` environment variable.
-/// Setting `"trust": true` auto-approves tools from that MCP server.
+/// Setting `"trust": true` auto-approves tools from MCP servers and web search.
 ///
 /// Note: We do NOT use --yolo as it auto-approves ALL tools (shell, files, etc.)
 ///
@@ -547,11 +551,17 @@ fn configure_gemini_command(mcp_server_url: &str, model: Option<&str>) -> CliCon
         .unwrap_or(0);
     let config_path = base_dir.join(format!("gemini-{}-{}.json", std::process::id(), unique_id));
 
-    // Write settings.json with MCP server config
+    // Write settings.json with MCP server config and web search enabled
     let settings = serde_json::json!({
         "mcpServers": {
             "netdata": {
                 "httpUrl": mcp_server_url,
+                "trust": true
+            }
+        },
+        "tools": {
+            "googleWebSearch": {
+                "enabled": true,
                 "trust": true
             }
         }
