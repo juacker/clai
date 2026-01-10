@@ -280,6 +280,32 @@ async fn spawn_and_wait_cli(
     }
 }
 
+/// Configuration returned by provider-specific configure functions.
+/// Contains environment variables and command-line arguments.
+struct CliConfig {
+    /// Environment variables to set
+    env_vars: Vec<(String, String)>,
+    /// Command-line arguments
+    args: Vec<String>,
+}
+
+impl CliConfig {
+    fn new() -> Self {
+        Self {
+            env_vars: Vec::new(),
+            args: Vec::new(),
+        }
+    }
+
+    fn env(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.env_vars.push((key.into(), value.into()));
+    }
+
+    fn arg(&mut self, arg: impl Into<String>) {
+        self.args.push(arg.into());
+    }
+}
+
 /// Builds the command for the AI CLI with MCP configuration.
 ///
 /// Note: The prompt is passed via stdin, not as a command argument.
@@ -291,35 +317,51 @@ fn build_cli_command(provider: &AiProvider, mcp_server_url: &str) -> Command {
     // Resolve the full path to the command (checks PATH + user directories)
     let cmd_path = resolve_command_path(provider.command());
 
+    // Get provider-specific configuration (env vars and args)
+    let config = match provider {
+        AiProvider::OpenCode { model } => {
+            configure_opencode_command(mcp_server_url, model.as_deref())
+        }
+        AiProvider::Claude { model } => {
+            configure_claude_command(mcp_server_url, model.as_deref())
+        }
+        AiProvider::Gemini { model } => {
+            configure_gemini_command(mcp_server_url, model.as_deref())
+        }
+        AiProvider::Codex { model } => {
+            configure_codex_command(mcp_server_url, model.as_deref())
+        }
+        AiProvider::Custom { args, .. } => {
+            let mut config = CliConfig::new();
+            for arg in args {
+                config.arg(arg);
+            }
+            config
+        }
+    };
+
+    // Build the command, handling Flatpak env var passing
     let mut cmd = if in_flatpak {
         let mut c = Command::new("flatpak-spawn");
         c.arg("--host");
+        // For flatpak-spawn, env vars must be passed as --env=KEY=VALUE BEFORE the command
+        for (key, value) in &config.env_vars {
+            c.arg(format!("--env={}={}", key, value));
+        }
         c.arg(&cmd_path);
         c
     } else {
-        Command::new(&cmd_path)
+        let mut c = Command::new(&cmd_path);
+        // For direct execution, use standard env vars
+        for (key, value) in &config.env_vars {
+            c.env(key, value);
+        }
+        c
     };
 
-    // Configure based on provider
-    match provider {
-        AiProvider::OpenCode { model } => {
-            configure_opencode_command(&mut cmd, mcp_server_url, model.as_deref())
-        }
-        AiProvider::Claude { model } => {
-            configure_claude_command(&mut cmd, mcp_server_url, model.as_deref())
-        }
-        AiProvider::Gemini { model } => {
-            configure_gemini_command(&mut cmd, mcp_server_url, model.as_deref())
-        }
-        AiProvider::Codex { model } => {
-            configure_codex_command(&mut cmd, mcp_server_url, model.as_deref())
-        }
-        AiProvider::Custom { args, .. } => {
-            // For custom providers, just add the args (prompt via stdin)
-            for arg in args {
-                cmd.arg(arg);
-            }
-        }
+    // Add command-line arguments
+    for arg in &config.args {
+        cmd.arg(arg);
     }
 
     cmd
@@ -341,7 +383,9 @@ fn build_cli_command(provider: &AiProvider, mcp_server_url: &str) -> Command {
 ///
 /// See: https://opencode.ai/docs/cli/
 /// See: https://opencode.ai/docs/config/
-fn configure_opencode_command(cmd: &mut Command, mcp_server_url: &str, model: Option<&str>) {
+fn configure_opencode_command(mcp_server_url: &str, model: Option<&str>) -> CliConfig {
+    let mut cfg = CliConfig::new();
+
     // Get the clai tmp directory, fallback to system temp if unavailable
     let base_dir = get_clai_tmp_dir().unwrap_or_else(std::env::temp_dir);
 
@@ -378,20 +422,22 @@ fn configure_opencode_command(cmd: &mut Command, mcp_server_url: &str, model: Op
     } else {
         tracing::debug!(path = %config_path.display(), "Created OpenCode MCP config");
         // Pass config via OPENCODE_CONFIG environment variable
-        cmd.env("OPENCODE_CONFIG", &config_path);
+        cfg.env("OPENCODE_CONFIG", config_path.to_string_lossy());
     }
 
     // Use 'run' subcommand for non-interactive execution
-    cmd.arg("run");
+    cfg.arg("run");
 
     // Set model if specified (format: provider/model)
     if let Some(model_name) = model {
-        cmd.arg("--model");
-        cmd.arg(model_name);
+        cfg.arg("--model");
+        cfg.arg(model_name);
     }
 
     // Prompt will be provided as argument after 'run' subcommand
     // Note: OpenCode run accepts prompt as positional argument, not stdin
+
+    cfg
 }
 
 /// Configure command for Claude Code CLI.
@@ -405,15 +451,17 @@ fn configure_opencode_command(cmd: &mut Command, mcp_server_url: &str, model: Op
 ///
 /// For MCP servers, we pass the config via JSON file or inline JSON.
 /// See: https://code.claude.com/docs/en/mcp
-fn configure_claude_command(cmd: &mut Command, mcp_server_url: &str, model: Option<&str>) {
+fn configure_claude_command(mcp_server_url: &str, model: Option<&str>) -> CliConfig {
+    let mut cfg = CliConfig::new();
+
     // Non-interactive mode (required for headless operation)
     // Prompt will be provided via stdin
-    cmd.arg("--print");
+    cfg.arg("--print");
 
     // Set model if specified
     if let Some(model_name) = model {
-        cmd.arg("--model");
-        cmd.arg(model_name);
+        cfg.arg("--model");
+        cfg.arg(model_name);
     }
 
     // Add MCP server config via JSON
@@ -426,15 +474,17 @@ fn configure_claude_command(cmd: &mut Command, mcp_server_url: &str, model: Opti
             }
         }
     });
-    cmd.arg("--mcp-config");
-    cmd.arg(mcp_config.to_string());
+    cfg.arg("--mcp-config");
+    cfg.arg(mcp_config.to_string());
 
     // Auto-approve tools without prompting:
     // - mcp__netdata__* : All tools from our MCP server (netdata.query, canvas.*, tabs.*)
     // - WebSearch: Search the web for documentation, solutions, etc.
     // - WebFetch: Fetch content from specific URLs
-    cmd.arg("--allowedTools");
-    cmd.arg("mcp__netdata__*,WebSearch,WebFetch");
+    cfg.arg("--allowedTools");
+    cfg.arg("mcp__netdata__*,WebSearch,WebFetch");
+
+    cfg
 }
 
 /// Gets the clai temp directory for ephemeral files (MCP configs, etc).
@@ -470,7 +520,6 @@ pub fn clear_tmp_dir() {
 ///
 /// Gemini CLI supports:
 /// - MCP servers via `settings.json` file (NOT command-line args)
-/// - `-y` or `--yolo` to auto-approve all tools
 /// - `--allowed-mcp-server-names` to whitelist MCP servers
 /// - `--model` or GEMINI_MODEL env var to select model
 /// - Built-in `google_web_search` tool (auto-enabled)
@@ -480,10 +529,15 @@ pub fn clear_tmp_dir() {
 /// Gemini CLI requires MCP servers to be configured in a settings.json file.
 /// We create a config file at `~/.config/clai/tmp/gemini-<id>.json` and
 /// pass it via the `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` environment variable.
+/// Setting `"trust": true` auto-approves tools from that MCP server.
+///
+/// Note: We do NOT use --yolo as it auto-approves ALL tools (shell, files, etc.)
 ///
 /// See: https://geminicli.com/docs/tools/mcp-server/
 /// Web search: https://geminicli.com/docs/tools/web-search/
-fn configure_gemini_command(cmd: &mut Command, mcp_server_url: &str, model: Option<&str>) {
+fn configure_gemini_command(mcp_server_url: &str, model: Option<&str>) -> CliConfig {
+    let mut cfg = CliConfig::new();
+
     // Get the clai tmp directory, fallback to system temp if unavailable
     let base_dir = get_clai_tmp_dir().unwrap_or_else(std::env::temp_dir);
 
@@ -514,23 +568,25 @@ fn configure_gemini_command(cmd: &mut Command, mcp_server_url: &str, model: Opti
     } else {
         tracing::debug!(path = %config_path.display(), "Created Gemini MCP config");
         // Pass config via GEMINI_CLI_SYSTEM_DEFAULTS_PATH environment variable
-        cmd.env("GEMINI_CLI_SYSTEM_DEFAULTS_PATH", &config_path);
+        cfg.env("GEMINI_CLI_SYSTEM_DEFAULTS_PATH", config_path.to_string_lossy());
     }
 
     // Set model via environment variable (more reliable than --model flag)
     if let Some(model_name) = model {
-        cmd.env("GEMINI_MODEL", model_name);
+        cfg.env("GEMINI_MODEL", model_name);
     }
 
-    // Auto-approve all tool executions (YOLO mode)
-    // Includes: MCP tools, google_web_search, file ops, shell commands
-    cmd.arg("--yolo");
+    // Whitelist our MCP server (trust: true in config auto-approves its tools)
+    cfg.arg("--allowed-mcp-server-names");
+    cfg.arg("netdata");
 
-    // Whitelist our MCP server
-    cmd.arg("--allowed-mcp-server-names");
-    cmd.arg("netdata");
+    // Note: We intentionally do NOT use --yolo as it auto-approves ALL tools
+    // including shell commands, file operations, etc. The "trust": true in the
+    // MCP config above should auto-approve just our netdata MCP tools.
 
     // Prompt will be provided via stdin
+
+    cfg
 }
 
 /// Configure command for Codex CLI.
@@ -544,7 +600,9 @@ fn configure_gemini_command(cmd: &mut Command, mcp_server_url: &str, model: Opti
 /// - Prompt via stdin or as argument
 ///
 /// See: https://developers.openai.com/codex/cli/reference/
-fn configure_codex_command(cmd: &mut Command, mcp_server_url: &str, model: Option<&str>) {
+fn configure_codex_command(mcp_server_url: &str, model: Option<&str>) -> CliConfig {
+    let mut cfg = CliConfig::new();
+
     // Set MCP servers via environment variable
     // Format: JSON object { "netdata": { "url": "http://...", "transport": "http" } }
     let mcp_config = serde_json::json!({
@@ -553,24 +611,26 @@ fn configure_codex_command(cmd: &mut Command, mcp_server_url: &str, model: Optio
             "transport": "http"
         }
     });
-    cmd.env("MCP_SERVERS", mcp_config.to_string());
+    cfg.env("MCP_SERVERS", mcp_config.to_string());
 
     // Set model if specified
     if let Some(model_name) = model {
-        cmd.arg("--model");
-        cmd.arg(model_name);
+        cfg.arg("--model");
+        cfg.arg(model_name);
     }
 
     // Disable approval prompts for tool execution
     // Our tools are safe: netdata.query (read-only), canvas.* (UI), tabs.* (UI)
-    cmd.arg("--ask-for-approval");
-    cmd.arg("never");
+    cfg.arg("--ask-for-approval");
+    cfg.arg("never");
 
     // Enable web search for looking up documentation, solutions, etc.
     // See: https://github.com/openai/codex/issues/3139
-    cmd.arg("--search");
+    cfg.arg("--search");
 
     // Prompt will be provided via stdin
+
+    cfg
 }
 
 // =============================================================================
