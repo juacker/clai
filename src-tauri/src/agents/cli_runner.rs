@@ -38,7 +38,7 @@ use crate::api::netdata::NetdataApi;
 use crate::config::AiProvider;
 use crate::mcp::bridge::JsBridge;
 use crate::mcp::server::{McpServerError, McpToolServer};
-use crate::providers::is_flatpak;
+use crate::providers::{is_flatpak, resolve_command_path};
 
 // =============================================================================
 // Error Types
@@ -288,13 +288,16 @@ fn build_cli_command(provider: &AiProvider, mcp_server_url: &str) -> Command {
     // Handle Flatpak sandboxing
     let in_flatpak = is_flatpak();
 
+    // Resolve the full path to the command (checks PATH + user directories)
+    let cmd_path = resolve_command_path(provider.command());
+
     let mut cmd = if in_flatpak {
         let mut c = Command::new("flatpak-spawn");
         c.arg("--host");
-        c.arg(provider.command());
+        c.arg(&cmd_path);
         c
     } else {
-        Command::new(provider.command())
+        Command::new(&cmd_path)
     };
 
     // Configure based on provider
