@@ -35,7 +35,7 @@
     position: fixed;
     top: 45px; /* Below tab bar */
     right: 0;
-    bottom: 131px; /* Stop above terminal */
+    bottom: var(--terminal-height, 131px); /* Dynamically stop above terminal */
 
     /* Dimensions */
     width: 0;

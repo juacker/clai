@@ -25,6 +25,7 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const inputRef = useRef(null);
   const outputRef = useRef(null);
+  const terminalRef = useRef(null);
   const autoCollapseTimerRef = useRef(null);
   // CHANGED: Ref for the wrapper element instead of display to handle scrolling
   const inputWrapperRef = useRef(null);
@@ -37,18 +38,34 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
   // Auto-collapse delay in milliseconds
   const AUTO_COLLAPSE_DELAY = 5000; // 10 seconds
 
-  // UPDATED: Function to scroll the wrapper to keep cursor visible
-  const scrollToCursor = useCallback(() => {
-    if (inputWrapperRef.current) {
-      // Scroll to the far right to show the cursor
-      inputWrapperRef.current.scrollLeft = inputWrapperRef.current.scrollWidth;
+  // Auto-resize textarea to fit content
+  const adjustTextareaHeight = useCallback(() => {
+    const textarea = inputRef.current;
+    if (textarea) {
+      // Reset height to measure content
+      textarea.style.height = '20px';
+      // Only grow if content exceeds single line
+      const scrollHeight = textarea.scrollHeight;
+      const lineHeight = 20;
+      const maxHeight = 150; // ~6 lines
+      if (scrollHeight > lineHeight) {
+        textarea.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
+      }
     }
   }, []);
 
-  // UPDATED: Effect to scroll when input value changes
+  // Adjust height when input value changes
   useEffect(() => {
-    scrollToCursor();
-  }, [inputValue, scrollToCursor]);
+    adjustTextareaHeight();
+  }, [inputValue, adjustTextareaHeight]);
+
+  // Reset textarea height to single line
+  const resetTextareaHeight = useCallback(() => {
+    const textarea = inputRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+    }
+  }, []);
 
   // Reset auto-collapse timer - memoized to avoid recreating on every render
   const resetAutoCollapseTimer = useCallback(() => {
@@ -124,9 +141,10 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
     const trimmed = input.trim();
     if (!trimmed) return;
 
-    // Clear input immediately
+    // Clear input immediately and reset textarea height
     setInputValue('');
     setHistoryIndex(-1);
+    resetTextareaHeight();
 
     // Check if input starts with "/" - it's a command
     const isSlashCommand = trimmed.startsWith('/');
@@ -190,12 +208,14 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
 
   // Handle keyboard events
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
+    // Enter sends message (Shift+Enter for newline)
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleCommandExecution(inputValue);
-    } else if (e.key === 'ArrowUp') {
+    }
+    // Ctrl+P: Navigate command history backwards (like bash)
+    else if (e.ctrlKey && e.key === 'p') {
       e.preventDefault();
-      // Navigate command history backwards
       if (commandHistory.length > 0) {
         const newIndex = historyIndex === -1
           ? commandHistory.length - 1
@@ -203,9 +223,10 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
         setHistoryIndex(newIndex);
         setInputValue(commandHistory[newIndex]?.raw || '');
       }
-    } else if (e.key === 'ArrowDown') {
+    }
+    // Ctrl+N: Navigate command history forwards (like bash)
+    else if (e.ctrlKey && e.key === 'n') {
       e.preventDefault();
-      // Navigate command history forwards
       if (historyIndex !== -1) {
         const newIndex = historyIndex + 1;
         if (newIndex >= commandHistory.length) {
@@ -216,8 +237,9 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
           setInputValue(commandHistory[newIndex]?.raw || '');
         }
       }
-    } else if (e.key === 'Escape') {
-      // Clear output on Escape
+    }
+    // Escape: Clear output
+    else if (e.key === 'Escape') {
       setOutputMessages([]);
     }
   };
@@ -250,6 +272,21 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
     };
   }, []);
 
+  // Update CSS variable when terminal height changes (for chat panel positioning)
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      // Use offsetHeight to include padding and borders
+      const height = terminal.offsetHeight;
+      document.documentElement.style.setProperty('--terminal-height', `${height}px`);
+    });
+
+    resizeObserver.observe(terminal);
+    return () => resizeObserver.disconnect();
+  }, []);
+
   const handleTerminalClick = () => {
     if (inputRef.current) {
       inputRef.current.focus();
@@ -262,7 +299,7 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
   };
 
   return (
-    <div className={`${styles.terminal} ${isChatOpen ? styles.chatOpen : ''}`} onClick={handleTerminalClick}>
+    <div ref={terminalRef} className={`${styles.terminal} ${isChatOpen ? styles.chatOpen : ''}`} onClick={handleTerminalClick}>
       {/* Context Panel - shows space/room badges */}
       <div className={styles.contextPanelWrapper}>
         <ContextPanel />
@@ -284,11 +321,11 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
         {/* Terminal Prompt Symbol */}
         <span className={styles.terminalPrompt}>%</span>
 
-        {/* Terminal Input - SIMPLIFIED: Just the input, no display span */}
+        {/* Terminal Input - Auto-growing textarea */}
         <div className={styles.terminalInputWrapper} ref={inputWrapperRef}>
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
+            rows={1}
             className={styles.terminalInput}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
