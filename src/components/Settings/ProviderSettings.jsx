@@ -181,7 +181,7 @@ const ProviderSettings = () => {
       <div className={styles.sectionHeader}>
         <h3 className={styles.sectionTitle}>AI Provider</h3>
         <p className={styles.sectionDescription}>
-          Select which AI CLI to use for auto-pilot agents.
+          Select which AI CLI to use for chat and auto-pilot agents.
           {availableCount === 0 && (
             <span className={styles.noProviders}>
               {' '}No providers available. Install an AI CLI to get started.
