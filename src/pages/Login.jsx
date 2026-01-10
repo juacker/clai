@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { setToken, setBaseUrl } from '../api/client';
 import styles from './Login.module.css';
@@ -9,6 +9,13 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+
+  // Hide splash screen when login page mounts
+  useEffect(() => {
+    if (window.hideSplashScreen) {
+      window.hideSplashScreen();
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

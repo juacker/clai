@@ -11,6 +11,69 @@
   </head>
 
   <body>
+    <!-- Splash Screen - Shows immediately before React loads -->
+    <div id="splash-screen" style="
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #FDFCFB;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 99999;
+      transition: opacity 0.3s ease-out;
+    ">
+      <!-- CLAI Icon -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="width: 80px; height: 80px; margin-bottom: 24px;">
+        <defs>
+          <linearGradient id="splash-indigo" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#818CF8"/>
+            <stop offset="100%" style="stop-color:#6366F1"/>
+          </linearGradient>
+          <linearGradient id="splash-green" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#00C49A"/>
+            <stop offset="100%" style="stop-color:#00AB94"/>
+          </linearGradient>
+        </defs>
+        <path d="M380 95 C200 70 70 140 70 256 C70 372 200 442 380 417"
+              fill="none" stroke="url(#splash-indigo)" stroke-width="52" stroke-linecap="round"/>
+        <circle cx="256" cy="256" r="70" fill="url(#splash-green)"/>
+        <circle cx="235" cy="235" r="12" fill="#fff" opacity="0.9"/>
+      </svg>
+
+      <!-- Spinner -->
+      <div style="
+        width: 32px;
+        height: 32px;
+        border: 3px solid rgba(99, 102, 241, 0.2);
+        border-top-color: #6366F1;
+        border-radius: 50%;
+        animation: splash-spin 0.8s linear infinite;
+      "></div>
+
+      <style>
+        @keyframes splash-spin {
+          to { transform: rotate(360deg); }
+        }
+      </style>
+    </div>
+
+    <script>
+      // Global function to hide splash screen
+      window.hideSplashScreen = function() {
+        var splash = document.getElementById('splash-screen');
+        if (splash) {
+          splash.style.opacity = '0';
+          setTimeout(function() {
+            splash.remove();
+          }, 300);
+        }
+      };
+    </script>
+
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

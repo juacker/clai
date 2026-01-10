@@ -33,6 +33,7 @@ const MainLayout = () => {
         const isAuthenticated = await hasToken();
 
         if (!isAuthenticated) {
+          // Don't hide splash here - let Login page handle it
           navigate('/login');
           return;
         }
@@ -40,11 +41,15 @@ const MainLayout = () => {
         // Token is handled by Rust backend, no need to pass it
         const info = await getUserInfo();
         setUserInfo(info);
+        setLoading(false);
+        // Hide splash screen only on successful auth
+        if (window.hideSplashScreen) {
+          window.hideSplashScreen();
+        }
       } catch (err) {
         console.error('Error fetching user info:', err);
+        // Don't hide splash here - let Login page handle it
         navigate('/login');
-      } finally {
-        setLoading(false);
       }
     };
 
