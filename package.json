@@ -1,7 +1,7 @@
 {
   "name": "clai",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Command Line AI Interface for Netdata",
   "author": "juacker",
   "license": "MIT",
