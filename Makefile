@@ -63,20 +63,15 @@ release-beta: ## Create a beta release from current version
 
 _release:
 	@echo "Creating $(TYPE) release..."
-	@# Bump version in package.json
-	npm version $(TYPE) --no-git-tag-version
-	@# Get new version
-	$(eval NEW_VERSION := $(shell node -p "require('./package.json').version"))
-	@# Update tauri.conf.json version
-	sed -i 's/"version": "$(VERSION)"/"version": "$(NEW_VERSION)"/' src-tauri/tauri.conf.json
-	@# Update Cargo.toml version
-	sed -i 's/^version = "$(VERSION)"/version = "$(NEW_VERSION)"/' src-tauri/Cargo.toml
-	@# Commit and tag
-	git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
-	git commit -m "Release v$(NEW_VERSION)"
-	git tag "v$(NEW_VERSION)"
-	git push && git push --tags
-	@echo "✓ Released v$(NEW_VERSION)"
+	@npm version $(TYPE) --no-git-tag-version && \
+	NEW_VERSION=$$(node -p "require('./package.json').version") && \
+	sed -i 's/"version": "$(VERSION)"/"version": "'$$NEW_VERSION'"/' src-tauri/tauri.conf.json && \
+	sed -i 's/^version = "$(VERSION)"/version = "'$$NEW_VERSION'"/' src-tauri/Cargo.toml && \
+	git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml && \
+	git commit -m "Release v$$NEW_VERSION" && \
+	git tag "v$$NEW_VERSION" && \
+	git push && git push --tags && \
+	echo "✓ Released v$$NEW_VERSION"
 
 tag-delete: ## Delete a tag locally and remotely (usage: make tag-delete TAG=v0.1.0)
 	@if [ -z "$(TAG)" ]; then echo "Usage: make tag-delete TAG=v0.1.0"; exit 1; fi
