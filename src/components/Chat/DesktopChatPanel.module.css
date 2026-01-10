@@ -59,8 +59,8 @@
   .desktopChatPanel.open {
     width: 420px;
     box-shadow:
-      -4px 0 16px rgba(99, 102, 241, 0.06),
-      -8px 0 32px rgba(99, 102, 241, 0.04);
+      -3px 0 6px -3px rgba(139, 92, 246, 0.25),
+      -8px 0 12px -6px rgba(139, 92, 246, 0.15);
   }
 
   /* Chat container fills the panel with proper flex layout */
