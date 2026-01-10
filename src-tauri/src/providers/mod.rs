@@ -99,13 +99,13 @@ fn get_host_command(cmd: &str) -> Command {
 /// Common user-local binary paths to search when command isn't in PATH.
 /// These are relative to the user's home directory.
 const USER_BIN_PATHS: &[&str] = &[
-    ".local/bin",           // Standard XDG user binaries
-    ".bun/bin",             // Bun global installs
-    ".npm-global/bin",      // npm global installs (custom prefix)
-    ".npm/bin",             // npm global installs (alternative)
-    ".cargo/bin",           // Rust/Cargo tools
-    "go/bin",               // Go binaries
-    ".deno/bin",            // Deno
+    ".local/bin",      // Standard XDG user binaries
+    ".bun/bin",        // Bun global installs
+    ".npm-global/bin", // npm global installs (custom prefix)
+    ".npm/bin",        // npm global installs (alternative)
+    ".cargo/bin",      // Rust/Cargo tools
+    "go/bin",          // Go binaries
+    ".deno/bin",       // Deno
 ];
 
 /// Gets the user's home directory, even from within Flatpak.
@@ -132,7 +132,10 @@ fn command_exists_at_path(path: &str) -> bool {
         // Use flatpak-spawn to check file existence on host
         let mut command = Command::new("flatpak-spawn");
         command.args(["--host", "test", "-x", path]);
-        command.output().map(|o| o.status.success()).unwrap_or(false)
+        command
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
     } else {
         std::path::Path::new(path).is_file()
     }

@@ -322,15 +322,9 @@ fn build_cli_command(provider: &AiProvider, mcp_server_url: &str) -> Command {
         AiProvider::OpenCode { model } => {
             configure_opencode_command(mcp_server_url, model.as_deref())
         }
-        AiProvider::Claude { model } => {
-            configure_claude_command(mcp_server_url, model.as_deref())
-        }
-        AiProvider::Gemini { model } => {
-            configure_gemini_command(mcp_server_url, model.as_deref())
-        }
-        AiProvider::Codex { model } => {
-            configure_codex_command(mcp_server_url, model.as_deref())
-        }
+        AiProvider::Claude { model } => configure_claude_command(mcp_server_url, model.as_deref()),
+        AiProvider::Gemini { model } => configure_gemini_command(mcp_server_url, model.as_deref()),
+        AiProvider::Codex { model } => configure_codex_command(mcp_server_url, model.as_deref()),
         AiProvider::Custom { args, .. } => {
             let mut config = CliConfig::new();
             for arg in args {
@@ -568,7 +562,10 @@ fn configure_gemini_command(mcp_server_url: &str, model: Option<&str>) -> CliCon
     } else {
         tracing::debug!(path = %config_path.display(), "Created Gemini MCP config");
         // Pass config via GEMINI_CLI_SYSTEM_DEFAULTS_PATH environment variable
-        cfg.env("GEMINI_CLI_SYSTEM_DEFAULTS_PATH", config_path.to_string_lossy());
+        cfg.env(
+            "GEMINI_CLI_SYSTEM_DEFAULTS_PATH",
+            config_path.to_string_lossy(),
+        );
     }
 
     // Set model via environment variable (more reliable than --model flag)
