@@ -363,13 +363,15 @@ const handleStreamEvent = (event) => {
     return;
   }
 
-  // Emit to activity bus
+  // Emit to activity bus (include spaceId/roomId for chart components)
   emitActivity(tabId, {
     type: 'tool:stream',
     id: toolCallId,
     tool,
     eventType,
     payload,
+    spaceId,
+    roomId,
     timestamp: Date.now(),
   });
 

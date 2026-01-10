@@ -2,6 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAgentActivity } from '../../contexts/AgentActivityContext';
 import { getAiProvider } from '../../api/client';
 import MarkdownMessage from '../Chat/MarkdownMessage';
+import LoadChartBlock from '../Chat/LoadChartBlock';
+import TimeSeriesChartBlock from '../Chat/TimeSeriesChartBlock';
+import BarChartBlock from '../Chat/BarChartBlock';
+import BubbleChartBlock from '../Chat/BubbleChartBlock';
 import UserAvatar from '../UserAvatar';
 import styles from './AgentChat.module.css';
 
@@ -57,7 +61,7 @@ const AgentChat = ({ tabId, userInfo }) => {
   }, [tabId, ensureTabTracked]);
 
   const activity = getActivity(tabId);
-  const { streamingMessages = [], status, error } = activity;
+  const { streamingMessages = [], status, error, spaceId, roomId } = activity;
 
   // Auto-scroll to bottom when new content arrives
   useEffect(() => {
@@ -88,6 +92,8 @@ const AgentChat = ({ tabId, userInfo }) => {
             message={message}
             userInfo={userInfo}
             aiProvider={aiProvider}
+            spaceId={spaceId}
+            roomId={roomId}
           />
         ))}
 
@@ -197,7 +203,7 @@ const formatTimestamp = (timestamp) => {
 /**
  * MessageBlock - Renders a single message (user or assistant) with its content blocks
  */
-const MessageBlock = ({ message, userInfo, aiProvider: globalProvider }) => {
+const MessageBlock = ({ message, userInfo, aiProvider: globalProvider, spaceId, roomId }) => {
   const { role, contentBlocks = [], isStreaming, timestamp, provider: messageProvider } = message;
 
   // Use message's stored provider if available, fall back to global provider
@@ -277,6 +283,9 @@ const MessageBlock = ({ message, userInfo, aiProvider: globalProvider }) => {
       </div>
       <div className={styles.messageContent}>
         {contentBlocks.map((block, idx) => {
+          // Skip undefined/null blocks (can happen with index-based insertion)
+          if (!block) return null;
+
           if (block.type === 'text') {
             return (
               <MarkdownMessage
@@ -291,6 +300,50 @@ const MessageBlock = ({ message, userInfo, aiProvider: globalProvider }) => {
             // Find matching tool result
             const toolResult = toolResultsMap[block.id];
 
+            // Render specialized chart components for chart tool uses
+            if (block.name === 'load_chart_block') {
+              return (
+                <LoadChartBlock
+                  key={`chart-${block.id}`}
+                  toolInput={block.input}
+                  toolResult={toolResult}
+                  space={spaceId ? { id: spaceId } : null}
+                  room={roomId ? { id: roomId } : null}
+                />
+              );
+            }
+
+            if (block.name === 'custom_timeseries_chart_block') {
+              return (
+                <TimeSeriesChartBlock
+                  key={`chart-${block.id}`}
+                  toolInput={block.input}
+                  toolResult={toolResult}
+                />
+              );
+            }
+
+            if (block.name === 'custom_bar_chart_block') {
+              return (
+                <BarChartBlock
+                  key={`chart-${block.id}`}
+                  toolInput={block.input}
+                  toolResult={toolResult}
+                />
+              );
+            }
+
+            if (block.name === 'custom_bubble_chart_block') {
+              return (
+                <BubbleChartBlock
+                  key={`chart-${block.id}`}
+                  toolInput={block.input}
+                  toolResult={toolResult}
+                />
+              );
+            }
+
+            // Default: render generic ToolBlock for other tools
             return (
               <ToolBlock
                 key={`tool-${block.id}`}

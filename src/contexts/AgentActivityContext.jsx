@@ -69,6 +69,8 @@ const createInitialActivity = () => ({
   completedAt: null,
   error: null,
   currentProvider: null, // Provider for current execution
+  spaceId: null, // Agent's space ID (from SSE stream envelope)
+  roomId: null, // Agent's room ID (from SSE stream envelope)
 });
 
 export const AgentActivityProvider = ({ children }) => {
@@ -177,7 +179,7 @@ export const AgentActivityProvider = ({ children }) => {
    * - Wrapped: { message: {...}, content_block: {...}, delta: {...}, index }
    */
   const handleSSEStreamEvent = useCallback((tabId, event) => {
-    const { eventType, payload } = event;
+    const { eventType, payload, spaceId, roomId } = event;
 
     // Handle both wrapped and direct payload structures
     const data = payload || {};
@@ -185,6 +187,10 @@ export const AgentActivityProvider = ({ children }) => {
     setActivities((prev) => {
       const current = prev[tabId] || createInitialActivity();
       let streamingMessages = [...current.streamingMessages];
+
+      // Store spaceId/roomId from envelope (constant per agent session)
+      const updatedSpaceId = spaceId || current.spaceId;
+      const updatedRoomId = roomId || current.roomId;
 
       switch (eventType) {
         case 'message_start': {
@@ -314,6 +320,8 @@ export const AgentActivityProvider = ({ children }) => {
           ...current,
           streamingMessages,
           status: 'running',
+          spaceId: updatedSpaceId,
+          roomId: updatedRoomId,
         },
       };
     });
