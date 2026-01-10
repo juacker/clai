@@ -270,21 +270,6 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
 
       {/* Input Line - Now at the top for better UX */}
       <div className={styles.terminalContent}>
-        {/* Chat Toggle Button - Positioned at the left for always-visible access */}
-        <button
-          className={styles.chatToggleButtonInline}
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleChat();
-          }}
-          aria-label="Toggle chat"
-          title="Toggle chat"
-        >
-          <span className={styles.chatToggleIconInline}>
-            💬
-          </span>
-        </button>
-
         {/* User Avatar - positioned at the left */}
         <div className={styles.terminalAvatar}>
           <UserAvatar
@@ -316,6 +301,20 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
             autoCapitalize="off"
           />
         </div>
+
+        {/* Keyboard shortcut badge for toggling chat */}
+        <button
+          className={styles.shortcutBadge}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleChat();
+          }}
+          title="Toggle chat panel"
+        >
+          <span className={styles.shortcutKey}>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}</span>
+          <span className={styles.shortcutKey}>⇧</span>
+          <span className={styles.shortcutKey}>C</span>
+        </button>
       </div>
 
       {/* Output Messages Area - Now BELOW the input for better UX */}
