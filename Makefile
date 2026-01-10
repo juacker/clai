@@ -58,8 +58,8 @@ release-beta: ## Create a beta release (v0.3.1-beta.1, v0.3.1-beta.2, etc.)
 		echo "Stable v$$CURRENT_VERSION exists, bumping patch version..."; \
 		npm version patch --no-git-tag-version && \
 		NEW_VERSION=$$(node -p "require('./package.json').version") && \
-		sed -i 's/"version": "'$$CURRENT_VERSION'"/"version": "'$$NEW_VERSION'"/' src-tauri/tauri.conf.json && \
-		sed -i 's/^version = "'$$CURRENT_VERSION'"/version = "'$$NEW_VERSION'"/' src-tauri/Cargo.toml; \
+		sed -i 's/"version": "[^"]*"/"version": "'$$NEW_VERSION'"/' src-tauri/tauri.conf.json && \
+		sed -i 's/^version = "[^"]*"/version = "'$$NEW_VERSION'"/' src-tauri/Cargo.toml; \
 	else \
 		echo "No stable v$$CURRENT_VERSION yet, reusing version..."; \
 		NEW_VERSION="$$CURRENT_VERSION"; \
@@ -78,8 +78,8 @@ _release:
 	@echo "Creating $(TYPE) release..."
 	@npm version $(TYPE) --no-git-tag-version && \
 	NEW_VERSION=$$(node -p "require('./package.json').version") && \
-	sed -i 's/"version": "$(VERSION)"/"version": "'$$NEW_VERSION'"/' src-tauri/tauri.conf.json && \
-	sed -i 's/^version = "$(VERSION)"/version = "'$$NEW_VERSION'"/' src-tauri/Cargo.toml && \
+	sed -i 's/"version": "[^"]*"/"version": "'$$NEW_VERSION'"/' src-tauri/tauri.conf.json && \
+	sed -i 's/^version = "[^"]*"/version = "'$$NEW_VERSION'"/' src-tauri/Cargo.toml && \
 	git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml && \
 	git commit -m "Release v$$NEW_VERSION" && \
 	git tag "v$$NEW_VERSION" && \
