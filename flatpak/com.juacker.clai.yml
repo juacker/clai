@@ -12,8 +12,13 @@ finish-args:
   - --share=network
   - --socket=fallback-x11
   - --socket=wayland
+  - --socket=session-bus
   - --device=dri
   - --filesystem=home
+  # Required for flatpak-spawn --host to access host CLI tools (claude, opencode, etc.)
+  - --talk-name=org.freedesktop.Flatpak
+  # Required for secret storage (API keys, etc.)
+  - --talk-name=org.freedesktop.secrets
 
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin

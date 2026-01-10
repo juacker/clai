@@ -78,8 +78,10 @@ jobs:
             --share=network \
             --socket=fallback-x11 \
             --socket=wayland \
+            --socket=session-bus \
             --device=dri \
             --filesystem=home \
+            --talk-name=org.freedesktop.Flatpak \
             --talk-name=org.freedesktop.secrets
 
           # Export and bundle
