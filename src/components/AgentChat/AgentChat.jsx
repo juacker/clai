@@ -197,8 +197,11 @@ const formatTimestamp = (timestamp) => {
 /**
  * MessageBlock - Renders a single message (user or assistant) with its content blocks
  */
-const MessageBlock = ({ message, userInfo, aiProvider }) => {
-  const { role, contentBlocks = [], isStreaming, timestamp } = message;
+const MessageBlock = ({ message, userInfo, aiProvider: globalProvider }) => {
+  const { role, contentBlocks = [], isStreaming, timestamp, provider: messageProvider } = message;
+
+  // Use message's stored provider if available, fall back to global provider
+  const aiProvider = messageProvider || globalProvider;
 
   // Build a map of tool results by ID for quick lookup
   const toolResultsMap = {};

@@ -37,11 +37,13 @@ import { subscribe } from '../agents/activityBus';
  *       ],
  *       isStreaming: boolean,
  *       timestamp: number,
+ *       provider: object | null,  // AI provider that generated this message (for assistant messages)
  *     }
  *   ],
  *   startedAt: number | null,
  *   completedAt: number | null,
  *   error: string | null,
+ *   currentProvider: object | null,  // Provider for current/last execution
  * }
  */
 
@@ -66,6 +68,7 @@ const createInitialActivity = () => ({
   startedAt: null,
   completedAt: null,
   error: null,
+  currentProvider: null, // Provider for current execution
 });
 
 export const AgentActivityProvider = ({ children }) => {
@@ -101,8 +104,11 @@ export const AgentActivityProvider = ({ children }) => {
   /**
    * Mark agent execution as started.
    * Adds the user's query as a message and keeps previous history.
+   * @param {string} tabId - The tab ID
+   * @param {string} query - The user's query
+   * @param {object} provider - The AI provider being used for this execution
    */
-  const startExecution = useCallback((tabId, query) => {
+  const startExecution = useCallback((tabId, query, provider = null) => {
     setActivities((prev) => {
       const current = prev[tabId] || createInitialActivity();
       const timestamp = Date.now();
@@ -114,6 +120,7 @@ export const AgentActivityProvider = ({ children }) => {
         contentBlocks: [{ type: 'text', text: query }],
         isStreaming: false,
         timestamp,
+        provider: null, // User messages don't have a provider
       };
 
       return {
@@ -125,6 +132,7 @@ export const AgentActivityProvider = ({ children }) => {
           startedAt: timestamp,
           completedAt: null,
           error: null,
+          currentProvider: provider, // Store the provider for this execution
         },
       };
     });
@@ -181,14 +189,19 @@ export const AgentActivityProvider = ({ children }) => {
       switch (eventType) {
         case 'message_start': {
           // New message started (user or assistant)
+          // All messages from the SSE stream are part of the agent session,
+          // so they all get the current provider (for icon display)
           const message = data.message || data;
           if (message && message.id) {
+            const isAssistant = (message.role || 'assistant') === 'assistant';
             streamingMessages.push({
               id: message.id,
               role: message.role || 'assistant',
               contentBlocks: [],
-              isStreaming: message.role === 'assistant',
+              isStreaming: isAssistant,
               timestamp: Date.now(),
+              // Store the current provider for all SSE messages (they're all from the agent)
+              provider: current.currentProvider,
             });
           }
           break;

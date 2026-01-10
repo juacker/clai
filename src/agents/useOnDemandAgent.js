@@ -10,6 +10,7 @@
 import { useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAgentActivity } from '../contexts/AgentActivityContext';
+import { getAiProvider } from '../api/client';
 
 /**
  * Hook for running on-demand agent queries.
@@ -50,8 +51,16 @@ export const useOnDemandAgent = () => {
       // Ensure the tab is being tracked for activity
       ensureTabTracked(tabId);
 
-      // Start tracking execution in the context
-      startExecution(tabId, query);
+      // Get the current AI provider to store with messages
+      let provider = null;
+      try {
+        provider = await getAiProvider();
+      } catch (err) {
+        console.warn('[useOnDemandAgent] Could not get AI provider:', err);
+      }
+
+      // Start tracking execution in the context with the provider
+      startExecution(tabId, query, provider);
 
       try {
         console.log('[useOnDemandAgent] Starting agent:', {
