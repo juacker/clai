@@ -18,7 +18,7 @@
 
 - **AI Chat** - Query your infrastructure using natural language. Ask about anomalies, alerts, performance, and get instant analysis.
 
-- **AI Workers (Auto-pilot)** - Autonomous AI agents that continuously monitor your infrastructure. Workers use Claude Code, Gemini CLI, or Codex to analyze metrics, detect issues, and visualize findings on a canvas - all without manual intervention.
+- **AI Workers (Auto-pilot)** - Autonomous AI agents that continuously monitor your infrastructure. Workers use OpenCode, Claude Code, Gemini CLI, or Codex to analyze metrics, detect issues, and visualize findings on a canvas - all without manual intervention.
 
 - **Interactive Canvas** - Workers display charts and visualizations automatically. Review what the AI found, add charts to your dashboard, and explore the data.
 
@@ -39,13 +39,14 @@ Download the latest release for your platform from the [Releases page](https://g
 1. **Login** - Enter your Netdata Cloud API token
 2. **Select Context** - Choose a space and room to monitor
 3. **Chat** - Type questions directly to chat with the AI
-4. **Enable Auto-pilot** - Configure an AI provider (Claude Code, Gemini CLI, or Codex) and enable auto-pilot to let AI workers monitor for you
+4. **Enable Auto-pilot** - Configure an AI provider (OpenCode, Claude Code, Gemini CLI, or Codex) and enable auto-pilot to let AI workers monitor for you
 
 ## AI Workers Setup
 
 To use AI Workers, you need one of these CLI tools installed:
 
-- **[Claude Code](https://claude.ai/code)** - `claude` CLI (recommended)
+- **[OpenCode](https://opencode.ai)** - `opencode` CLI
+- **[Claude Code](https://claude.ai/code)** - `claude` CLI
 - **[Gemini CLI](https://github.com/google-gemini/gemini-cli)** - `gemini` CLI
 - **[Codex](https://github.com/openai/codex)** - `codex` CLI
 
