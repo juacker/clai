@@ -24,7 +24,7 @@ const AgentChat = ({ tabId, userInfo }) => {
   const messagesEndRef = useRef(null);
   const [aiProvider, setAiProvider] = useState(null);
 
-  // Fetch AI provider on mount
+  // Fetch AI provider on mount and when it changes
   useEffect(() => {
     const fetchProvider = async () => {
       try {
@@ -34,7 +34,19 @@ const AgentChat = ({ tabId, userInfo }) => {
         console.error('[AgentChat] Failed to get AI provider:', err);
       }
     };
+
+    // Fetch on mount
     fetchProvider();
+
+    // Listen for provider changes from settings
+    const handleProviderChange = () => {
+      fetchProvider();
+    };
+    window.addEventListener('ai-provider-changed', handleProviderChange);
+
+    return () => {
+      window.removeEventListener('ai-provider-changed', handleProviderChange);
+    };
   }, []);
 
   // Ensure we're tracking this tab

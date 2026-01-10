@@ -105,6 +105,9 @@ const ProviderSettings = () => {
       await setAiProvider(providerWithNoModel);
       setCurrentProvider({ provider: providerWithNoModel, is_configured: true });
 
+      // Notify other components that the provider changed
+      window.dispatchEvent(new CustomEvent('ai-provider-changed'));
+
       // Fetch models for the newly selected provider
       setLoadingModels(true);
       const providerType = providerInfo.provider.type;
@@ -136,6 +139,9 @@ const ProviderSettings = () => {
       await setAiProvider(providerWithModel);
       setCurrentProvider({ provider: providerWithModel, is_configured: true });
       setSelectedModel(modelId || null);
+
+      // Notify other components that the provider changed
+      window.dispatchEvent(new CustomEvent('ai-provider-changed'));
     } catch (err) {
       console.error('[ProviderSettings] Failed to set model:', err);
       setError('Failed to save model. Please try again.');
