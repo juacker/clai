@@ -52,14 +52,27 @@ release-minor: ## Create a minor release (0.x.0)
 release-major: ## Create a major release (x.0.0)
 	@$(MAKE) _release TYPE=major
 
-release-beta: ## Create a beta release from current version
-	@NEW_TAG="v$(VERSION)-beta"; \
-	echo "Creating beta release $$NEW_TAG..."; \
-	git tag -d $$NEW_TAG 2>/dev/null || true; \
-	git push origin :$$NEW_TAG 2>/dev/null || true; \
-	git tag $$NEW_TAG; \
-	git push --tags; \
-	echo "✓ Tag $$NEW_TAG created and pushed"
+release-beta: ## Create a beta release (v0.3.1-beta.1, v0.3.1-beta.2, etc.)
+	@CURRENT_VERSION="$(VERSION)"; \
+	if git rev-parse "v$$CURRENT_VERSION" >/dev/null 2>&1; then \
+		echo "Stable v$$CURRENT_VERSION exists, bumping patch version..."; \
+		npm version patch --no-git-tag-version && \
+		NEW_VERSION=$$(node -p "require('./package.json').version") && \
+		sed -i 's/"version": "'$$CURRENT_VERSION'"/"version": "'$$NEW_VERSION'"/' src-tauri/tauri.conf.json && \
+		sed -i 's/^version = "'$$CURRENT_VERSION'"/version = "'$$NEW_VERSION'"/' src-tauri/Cargo.toml; \
+	else \
+		echo "No stable v$$CURRENT_VERSION yet, reusing version..."; \
+		NEW_VERSION="$$CURRENT_VERSION"; \
+	fi && \
+	LAST_BETA=$$(git tag -l "v$$NEW_VERSION-beta.*" | sort -V | tail -1 | grep -oE '[0-9]+$$' || echo 0) && \
+	NEXT_BETA=$$((LAST_BETA + 1)) && \
+	NEW_TAG="v$$NEW_VERSION-beta.$$NEXT_BETA" && \
+	echo "Creating beta release $$NEW_TAG..." && \
+	git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml 2>/dev/null || true && \
+	git diff --cached --quiet || git commit -m "Beta $$NEW_TAG" && \
+	git tag $$NEW_TAG && \
+	git push && git push --tags && \
+	echo "✓ Beta $$NEW_TAG created and pushed"
 
 _release:
 	@echo "Creating $(TYPE) release..."

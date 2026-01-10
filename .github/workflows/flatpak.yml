@@ -94,6 +94,23 @@ jobs:
           script: |
             const fs = require('fs');
             const releaseId = JSON.parse('${{ steps.release.outputs.result }}').id;
+
+            // Check if asset already exists and delete it
+            const assets = await github.rest.repos.listReleaseAssets({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId
+            });
+            const existingAsset = assets.data.find(a => a.name === 'clai.flatpak');
+            if (existingAsset) {
+              console.log('Deleting existing clai.flatpak asset...');
+              await github.rest.repos.deleteReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                asset_id: existingAsset.id
+              });
+            }
+
             await github.rest.repos.uploadReleaseAsset({
               owner: context.repo.owner,
               repo: context.repo.repo,
