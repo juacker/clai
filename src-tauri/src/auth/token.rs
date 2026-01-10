@@ -103,7 +103,7 @@ impl TokenStorage {
         let entry = self.token_entry.lock().unwrap();
         match entry.get_password() {
             Ok(token) => Ok(Some(token)),
-            Err(keyring::Error::NoEntry) => Ok(None), // Not an error, just no token
+            Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => Err(e),
         }
     }

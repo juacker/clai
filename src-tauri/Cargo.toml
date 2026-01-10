@@ -36,9 +36,11 @@ reqwest = { version = "0.12", features = ["json", "stream", "gzip"] }
 # The "full" feature enables all async utilities
 tokio = { version = "1", features = ["full"] }
 
-# Secure token storage using OS keychain
-# Linux: libsecret, macOS: Keychain, Windows: Credential Manager
-keyring = "3"
+# Keyring for secure token storage
+# - linux-native-sync-persistent: Combines keyutils + Secret Service for persistent storage across restarts
+# - apple-native: Uses macOS Keychain
+# - windows-native: Uses Windows Credential Manager
+keyring = { version = "3", features = ["linux-native-sync-persistent", "apple-native", "windows-native"] }
 
 # Ergonomic error handling with derive macro
 thiserror = "2"
