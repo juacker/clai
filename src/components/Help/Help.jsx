@@ -33,7 +33,7 @@ const Help = () => {
             <div className={styles.commandRow}><code>/canvas</code> <span>Whiteboard</span></div>
             <div className={styles.commandRow}><code>/reset-all</code> <span>Reset layout</span></div>
             <div className={styles.commandRow}><code>/tab</code> <span>New tab</span></div>
-            <div className={styles.commandRow}><code>/tab close</code> / <code>next</code> / <code>prev</code> / <code>list</code></div>
+            <div className={styles.commandRow}><code>/tab close</code> / <code>rename</code> / <code>next</code> / <code>prev</code> / <code>list</code></div>
             <div className={styles.commandRow}><code>/tile split-v</code> <span>left|right</span></div>
             <div className={styles.commandRow}><code>/tile split-h</code> <span>top/bottom</span></div>
             <div className={styles.commandRow}><code>/tile close</code> / <code>next</code> / <code>prev</code></div>
