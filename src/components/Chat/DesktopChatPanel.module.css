@@ -33,7 +33,7 @@
     /* Display and positioning */
     display: block;
     position: fixed;
-    top: 45px; /* Below tab bar */
+    top: 44px; /* Below tab bar */
     right: 0;
     bottom: var(--terminal-height, 131px); /* Dynamically stop above terminal */
 
