@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { useAgentActivity } from '../../contexts/AgentActivityContext';
 import { getAiProvider } from '../../api/client';
 import MarkdownMessage from '../Chat/MarkdownMessage';
@@ -63,10 +63,44 @@ const AgentChat = ({ tabId, userInfo }) => {
   const activity = getActivity(tabId);
   const { streamingMessages = [], status, error, spaceId, roomId } = activity;
 
-  // Auto-scroll to bottom when new content arrives
+  // Track scroll state for "sticky scroll" behavior
+  const containerRef = useRef(null);
+  const isNearBottomRef = useRef(true);
+  const prevMessageCountRef = useRef(0);
+
+  // Check if user is near bottom of scroll container
+  const checkIfNearBottom = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return true;
+    const threshold = 150; // pixels from bottom to consider "near bottom"
+    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+  }, []);
+
+  // Update near-bottom state on scroll
+  const handleScroll = useCallback(() => {
+    isNearBottomRef.current = checkIfNearBottom();
+  }, [checkIfNearBottom]);
+
+  // Auto-scroll with "sticky" behavior:
+  // - Always scroll when new messages are added
+  // - During streaming, only scroll if user is near bottom (not reading history)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [streamingMessages]);
+    const currentCount = streamingMessages.length;
+    const isNewMessage = currentCount > prevMessageCountRef.current;
+    prevMessageCountRef.current = currentCount;
+
+    // Always scroll for new messages
+    if (isNewMessage) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      isNearBottomRef.current = true;
+      return;
+    }
+
+    // During streaming, scroll if user is near bottom
+    if (status === 'running' && isNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [streamingMessages, status]);
 
   // Empty state
   if (status === 'idle' && streamingMessages.length === 0) {
@@ -84,7 +118,11 @@ const AgentChat = ({ tabId, userInfo }) => {
 
   return (
     <div className={styles.agentChat}>
-      <div className={styles.activityList}>
+      <div
+        ref={containerRef}
+        className={styles.activityList}
+        onScroll={handleScroll}
+      >
         {/* Render all messages */}
         {streamingMessages.map((message) => (
           <MessageBlock
@@ -202,8 +240,9 @@ const formatTimestamp = (timestamp) => {
 
 /**
  * MessageBlock - Renders a single message (user or assistant) with its content blocks
+ * Memoized with custom comparison to prevent re-renders when message content hasn't changed
  */
-const MessageBlock = ({ message, userInfo, aiProvider: globalProvider, spaceId, roomId }) => {
+const MessageBlock = memo(({ message, userInfo, aiProvider: globalProvider, spaceId, roomId }) => {
   const { role, contentBlocks = [], isStreaming, timestamp, provider: messageProvider } = message;
 
   // Use message's stored provider if available, fall back to global provider
@@ -372,7 +411,7 @@ const MessageBlock = ({ message, userInfo, aiProvider: globalProvider, spaceId, 
       </div>
     </div>
   );
-};
+});
 
 /**
  * Get tool icon based on tool name
@@ -392,19 +431,25 @@ const getToolIcon = (toolName) => {
 /**
  * ToolBlock - Renders a tool use with its result
  * Collapsed by default to reduce visual clutter
+ * Memoized to prevent re-renders when other messages update
  */
-const ToolBlock = ({ toolUse, toolResult, isStreaming }) => {
-  const [isExpanded, setIsExpanded] = React.useState(false); // Collapsed by default
+const ToolBlock = memo(({ toolUse, toolResult, isStreaming }) => {
+  const [isExpanded, setIsExpanded] = useState(false); // Collapsed by default
   const { name, input } = toolUse;
 
   // Determine status based on whether we have a result
   const status = toolResult ? 'success' : (isStreaming ? 'pending' : 'pending');
 
+  // Memoize toggle handler to prevent recreation on each render
+  const handleToggle = useCallback(() => {
+    setIsExpanded(prev => !prev);
+  }, []);
+
   return (
     <div className={styles.toolBlock}>
       <div
         className={styles.toolHeader}
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={handleToggle}
       >
         <div className={styles.toolHeaderLeft}>
           {getToolIcon(name)}
@@ -451,12 +496,13 @@ const ToolBlock = ({ toolUse, toolResult, isStreaming }) => {
       )}
     </div>
   );
-};
+});
 
 /**
  * StatusIndicator - Shows pending/success/error status
+ * Memoized since it only depends on status prop
  */
-const StatusIndicator = ({ status }) => {
+const StatusIndicator = memo(({ status }) => {
   switch (status) {
     case 'pending':
       return (
@@ -482,7 +528,7 @@ const StatusIndicator = ({ status }) => {
     default:
       return null;
   }
-};
+});
 
 /**
  * MalformedBlockWarning component - shows when AI provider sent invalid tool data
