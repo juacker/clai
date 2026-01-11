@@ -91,7 +91,7 @@ export const createEdge = (sourceId, targetId, options = {}) => ({
   source: sourceId,
   target: targetId,
   type: options.type || 'smoothstep',
-  animated: options.animated !== false,
+  animated: options.animated === true,
   label: options.label,
   style: options.style,
 });

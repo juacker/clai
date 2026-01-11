@@ -62,29 +62,14 @@ const ChartNode = ({ id, data, selected }) => {
       }
     };
 
-    // Debounced update to ensure we measure after layout
-    const debouncedUpdate = () => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(updateNodeSize);
-      });
-    };
-
-    // ResizeObserver for direct size changes
-    const resizeObserver = new ResizeObserver(debouncedUpdate);
-    resizeObserver.observe(contentRef.current);
-
-    // MutationObserver for DOM changes (filter panel expand/collapse)
-    const mutationObserver = new MutationObserver(debouncedUpdate);
-    mutationObserver.observe(contentRef.current, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['class', 'style'],
+    // ResizeObserver for size changes
+    const resizeObserver = new ResizeObserver(() => {
+      requestAnimationFrame(updateNodeSize);
     });
+    resizeObserver.observe(contentRef.current);
 
     return () => {
       resizeObserver.disconnect();
-      mutationObserver.disconnect();
     };
   }, [id, setNodes]);
 

@@ -19,7 +19,6 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import {
   ReactFlow,
   Background,
-  MiniMap,
   Panel,
   useNodesState,
   useEdgesState,
@@ -184,10 +183,20 @@ const loadCanvasState = (commandId) => {
     const saved = localStorage.getItem(getStorageKey(commandId));
     if (saved) {
       const parsed = JSON.parse(saved);
-      return {
-        nodes: parsed.nodes || [],
-        edges: parsed.edges || [],
-      };
+      // Migrate: disable animations on all existing edges for performance
+      const edges = (parsed.edges || []).map((edge) => ({
+        ...edge,
+        animated: false,
+      }));
+      // Migrate: reset markdown node dimensions to allow auto-sizing
+      const nodes = (parsed.nodes || []).map((node) => {
+        if (node.type === 'markdown') {
+          const { width, height, ...restStyle } = node.style || {};
+          return { ...node, style: restStyle };
+        }
+        return node;
+      });
+      return { nodes, edges };
     }
   } catch (e) {
     console.error('[Canvas] Failed to load state:', e);
@@ -316,7 +325,7 @@ const Canvas = ({ command }) => {
           source: sourceId,
           target: targetId,
           type: 'smoothstep',
-          animated: options.animated !== false,
+          animated: options.animated === true,
           label: options.label || undefined,
         };
         setEdges((prev) => [...prev, edge]);
@@ -378,17 +387,10 @@ const Canvas = ({ command }) => {
         multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
         defaultEdgeOptions={{
           type: 'smoothstep',
-          animated: true,
+          animated: false,
         }}
       >
         <CanvasControls nodes={nodes} edges={edges} setNodes={setNodes} containerRef={containerRef} />
-        <MiniMap
-          nodeStrokeColor="#00ab44"
-          nodeColor="#f0f0f0"
-          nodeBorderRadius={4}
-          maskColor="rgba(0, 0, 0, 0.1)"
-          className={styles.minimap}
-        />
         <Background variant="dots" gap={12} size={1} color="#ddd" />
       </ReactFlow>
     </div>

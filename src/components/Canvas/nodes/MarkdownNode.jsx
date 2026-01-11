@@ -3,6 +3,7 @@
  *
  * Renders markdown content (tables, code blocks, lists, headings, etc.)
  * in a canvas node using the same renderer as chat messages.
+ * Auto-sizes to fit content via CSS (no fixed dimensions).
  */
 
 import React, { memo } from 'react';

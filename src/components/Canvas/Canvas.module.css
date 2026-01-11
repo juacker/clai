@@ -26,13 +26,6 @@
   font-size: 14px;
 }
 
-/* MiniMap styling */
-.minimap {
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 4px;
-  border: 1px solid var(--color-border, #e0e0e0);
-}
-
 /* Custom controls panel */
 .controlsPanel {
   bottom: 10px !important;
@@ -77,4 +70,14 @@
 
 .controlButton:active {
   background: #ddd;
+}
+
+/* Disable all edge animations for performance */
+.canvasWrapper :global(.react-flow__edge-path) {
+  animation: none !important;
+}
+
+.canvasWrapper :global(.react-flow__edge.animated path) {
+  animation: none !important;
+  stroke-dashoffset: 0 !important;
 }
