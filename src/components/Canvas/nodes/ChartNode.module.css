@@ -69,16 +69,3 @@
   border: 2px solid var(--color-bg-primary, #ffffff);
 }
 
-/* Resizer styles */
-.resizerLine {
-  border-color: var(--color-primary, #6366F1) !important;
-  border-width: 1px !important;
-}
-
-.resizerHandle {
-  width: 10px !important;
-  height: 10px !important;
-  background: var(--color-primary, #6366F1) !important;
-  border: 2px solid white !important;
-  border-radius: 2px !important;
-}

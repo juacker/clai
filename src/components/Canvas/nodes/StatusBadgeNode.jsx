@@ -6,7 +6,7 @@
  */
 
 import React, { memo } from 'react';
-import { Handle, Position, NodeResizer } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react';
 import styles from './StatusBadgeNode.module.css';
 
 const STATUS_CONFIG = {
@@ -55,13 +55,6 @@ const StatusBadgeNode = ({ data, selected }) => {
         backgroundColor: config.bgColor,
       }}
     >
-      <NodeResizer
-        minWidth={150}
-        minHeight={80}
-        isVisible={selected}
-        lineClassName={styles.resizerLine}
-        handleClassName={styles.resizerHandle}
-      />
       <Handle type="target" position={Position.Left} className={styles.handle} />
 
       <div className={styles.header}>

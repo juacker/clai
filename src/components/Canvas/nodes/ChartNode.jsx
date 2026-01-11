@@ -10,7 +10,7 @@
  */
 
 import React, { memo, useContext, useRef, useEffect } from 'react';
-import { Handle, Position, useStore, NodeResizer, useReactFlow } from '@xyflow/react';
+import { Handle, Position, useStore, useReactFlow } from '@xyflow/react';
 import TabContext from '../../../contexts/TabContext';
 import ContextChart from '../../ChartsView/ContextChart';
 import styles from './ChartNode.module.css';
@@ -43,7 +43,7 @@ const ChartNode = ({ id, data, selected }) => {
               const currentHeight = node.style?.height || 0;
               // Only update if size actually changed significantly
               if (Math.abs(currentHeight - height) > 5 || Math.abs(currentWidth - width) > 5) {
-                // Use content size but respect minimum dimensions from NodeResizer
+                // Use content size but respect minimum dimensions
                 const minWidth = 300;
                 const minHeight = 250;
                 return {
@@ -124,13 +124,6 @@ const ChartNode = ({ id, data, selected }) => {
   if (!context) {
     return (
       <div className={`${styles.chartNode} ${selected ? styles.selected : ''}`}>
-        <NodeResizer
-          minWidth={300}
-          minHeight={200}
-          isVisible={selected}
-          lineClassName={styles.resizerLine}
-          handleClassName={styles.resizerHandle}
-        />
         <Handle type="target" position={Position.Left} className={styles.handle} />
         <div ref={contentRef} className={styles.contentInner}>
           <div className={styles.placeholder}>
@@ -145,13 +138,6 @@ const ChartNode = ({ id, data, selected }) => {
 
   return (
     <div className={`${styles.chartNode} ${selected ? styles.selected : ''}`}>
-      <NodeResizer
-        minWidth={300}
-        minHeight={250}
-        isVisible={selected}
-        lineClassName={styles.resizerLine}
-        handleClassName={styles.resizerHandle}
-      />
       <Handle type="target" position={Position.Left} className={styles.handle} />
 
       <div ref={contentRef} className={styles.contentInner}>

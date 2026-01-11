@@ -6,7 +6,7 @@
  */
 
 import React, { memo } from 'react';
-import { Handle, Position, NodeResizer } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react';
 import MarkdownMessage from '../../Chat/MarkdownMessage';
 import styles from './MarkdownNode.module.css';
 
@@ -18,13 +18,6 @@ const MarkdownNode = ({ data, selected }) => {
 
   return (
     <div className={`${styles.markdownNode} ${selected ? styles.selected : ''}`}>
-      <NodeResizer
-        minWidth={200}
-        minHeight={100}
-        isVisible={selected}
-        lineClassName={styles.resizerLine}
-        handleClassName={styles.resizerHandle}
-      />
       {showHandles && (
         <Handle type="target" position={Position.Left} className={styles.handle} />
       )}
