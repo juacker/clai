@@ -212,6 +212,8 @@ const MessageBlock = ({ message, userInfo, aiProvider: globalProvider, spaceId, 
   // Build a map of tool results by ID for quick lookup
   const toolResultsMap = {};
   contentBlocks.forEach(block => {
+    // Skip undefined/null blocks (can happen with sparse arrays from index-based insertion)
+    if (!block) return;
     if (block.type === 'tool_result' && block.id) {
       toolResultsMap[block.id] = block;
     }
@@ -285,6 +287,16 @@ const MessageBlock = ({ message, userInfo, aiProvider: globalProvider, spaceId, 
         {contentBlocks.map((block, idx) => {
           // Skip undefined/null blocks (can happen with index-based insertion)
           if (!block) return null;
+
+          // Handle malformed blocks (missing type or explicitly marked as malformed/unknown)
+          if (!block.type || block.type === 'malformed' || block.type === 'unknown') {
+            return (
+              <MalformedBlockWarning
+                key={`malformed-${idx}`}
+                block={block}
+              />
+            );
+          }
 
           if (block.type === 'text') {
             return (
@@ -470,6 +482,42 @@ const StatusIndicator = ({ status }) => {
     default:
       return null;
   }
+};
+
+/**
+ * MalformedBlockWarning component - shows when AI provider sent invalid tool data
+ * This helps identify when less capable models misuse tools
+ */
+const MalformedBlockWarning = ({ block }) => {
+  // Determine the error message based on block structure
+  const errorMessage = block?.error ||
+    (block?.type === 'unknown'
+      ? `Unknown block type: "${block.originalType}"`
+      : 'The AI model returned an invalid response block (missing type property).');
+
+  // Get raw data for debugging (either from rawData property or the block itself)
+  const debugData = block?.rawData || block;
+
+  return (
+    <div className={styles.malformedBlock}>
+      <span className={styles.warningIcon}>⚠</span>
+      <div className={styles.malformedContent}>
+        <div className={styles.malformedTitle}>Malformed tool response</div>
+        <div className={styles.malformedText}>
+          {errorMessage}
+          {' '}This may indicate the model doesn&apos;t fully support tool use.
+        </div>
+        {debugData && Object.keys(debugData).length > 0 && (
+          <details className={styles.malformedDetails}>
+            <summary>Debug data</summary>
+            <pre className={styles.jsonDisplay}>
+              <code>{JSON.stringify(debugData, null, 2)}</code>
+            </pre>
+          </details>
+        )}
+      </div>
+    </div>
+  );
 };
 
 /**

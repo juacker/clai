@@ -218,11 +218,29 @@ export const AgentActivityProvider = ({ children }) => {
           const contentBlock = data.content_block || data;
           const blockIndex = data.index;
 
-          if (contentBlock && contentBlock.type && streamingMessages.length > 0) {
+          if (streamingMessages.length > 0) {
             const lastMsg = { ...streamingMessages[streamingMessages.length - 1] };
             lastMsg.contentBlocks = [...(lastMsg.contentBlocks || [])];
 
             const idx = blockIndex !== undefined ? blockIndex : lastMsg.contentBlocks.length;
+
+            // Validate content block has required type property
+            if (!contentBlock || !contentBlock.type) {
+              // AI provider sent malformed block - log warning and create error placeholder
+              console.warn('[AgentActivityContext] Received content_block_start without type property:', {
+                contentBlock,
+                blockIndex,
+                hint: 'This may indicate the AI model does not fully support tool use.',
+              });
+              // Create a malformed block placeholder so UI can display a warning
+              lastMsg.contentBlocks[idx] = {
+                type: 'malformed',
+                error: 'AI model returned invalid block (missing type property)',
+                rawData: contentBlock,
+              };
+              streamingMessages[streamingMessages.length - 1] = lastMsg;
+              break;
+            }
 
             if (contentBlock.type === 'tool_use') {
               lastMsg.contentBlocks[idx] = {
@@ -242,6 +260,14 @@ export const AgentActivityProvider = ({ children }) => {
               lastMsg.contentBlocks[idx] = {
                 type: 'text',
                 text: contentBlock.text || '',
+              };
+            } else {
+              // Unknown block type - create placeholder with original data
+              console.warn('[AgentActivityContext] Received content_block_start with unknown type:', contentBlock.type);
+              lastMsg.contentBlocks[idx] = {
+                type: 'unknown',
+                originalType: contentBlock.type,
+                rawData: contentBlock,
               };
             }
 
