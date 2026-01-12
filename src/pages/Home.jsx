@@ -57,14 +57,14 @@ const Home = () => {
     // Ctrl/Cmd+Shift+V: Vim-style vertical split (side by side)
     onSplitVertical: () => {
       if (activeTileId) {
-        splitTile(activeTileId, 'horizontal'); // horizontal direction = side by side
+        splitTile(activeTileId, 'vertical'); // vertical divider = side by side
       }
     },
 
     // Ctrl/Cmd+-: Vim-style horizontal split (stacked)
     onSplitHorizontal: () => {
       if (activeTileId) {
-        splitTile(activeTileId, 'vertical'); // vertical direction = stacked
+        splitTile(activeTileId, 'horizontal'); // horizontal divider = stacked
       }
     },
 
