@@ -64,6 +64,7 @@ const IntervalSelect = ({ value, onChange, disabled, id }) => {
   const [dropdownStyle, setDropdownStyle] = useState({});
   const containerRef = useRef(null);
   const triggerRef = useRef(null);
+  const dropdownRef = useRef(null);
 
   // Find the label for current value
   const selectedOption = INTERVAL_OPTIONS.find(opt => opt.value === value) || INTERVAL_OPTIONS[2];
@@ -93,7 +94,9 @@ const IntervalSelect = ({ value, onChange, disabled, id }) => {
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target)) {
+      const isOutsideContainer = containerRef.current && !containerRef.current.contains(event.target);
+      const isOutsideDropdown = dropdownRef.current && !dropdownRef.current.contains(event.target);
+      if (isOutsideContainer && isOutsideDropdown) {
         setIsOpen(false);
       }
     };
@@ -175,7 +178,7 @@ const IntervalSelect = ({ value, onChange, disabled, id }) => {
       </button>
 
       {isOpen && ReactDOM.createPortal(
-        <div className={styles.dropdown} style={dropdownStyle} role="listbox">
+        <div ref={dropdownRef} className={styles.dropdown} style={dropdownStyle} role="listbox">
           {INTERVAL_OPTIONS.map((option) => (
             <button
               key={option.value}
