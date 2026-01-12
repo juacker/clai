@@ -275,6 +275,7 @@ const saveDashboardState = (commandId, elements, timeRange) => {
 const generateElementId = () =>
   `el_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+
 /**
  * Dashboard Component
  */
@@ -296,6 +297,40 @@ const Dashboard = ({ command }) => {
   // Initialize on first render
   useEffect(() => {
     isInitializedRef.current = true;
+  }, []);
+
+  // Process pending charts from command args (when dashboard is created with initial charts)
+  // Uses deterministic IDs (based on position) to naturally dedupe on StrictMode remount or tile split
+  useEffect(() => {
+    const pendingCharts = command?.args?.pendingCharts;
+    if (!pendingCharts || !Array.isArray(pendingCharts) || pendingCharts.length === 0) return;
+
+    // Create elements with deterministic IDs based on position
+    const newElements = pendingCharts.map((config, index) => {
+      const element = {
+        id: `pending_${commandId}_${index}`,
+        type: 'context-chart',
+        config,
+      };
+      // Validate before adding
+      const validation = validateDashboardElement(element);
+      if (!validation.valid) {
+        console.error('[Dashboard] Invalid pending chart:', validation.error);
+        return null;
+      }
+      return element;
+    }).filter(Boolean);
+
+    if (newElements.length > 0) {
+      setElements(prev => {
+        // Dedupe: only add elements that don't already exist
+        const existingIds = new Set(prev.map(el => el.id));
+        const toAdd = newElements.filter(el => !existingIds.has(el.id));
+        return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+      });
+    }
+    // Only run once on mount - command.args won't change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Find the initial time interval from saved state

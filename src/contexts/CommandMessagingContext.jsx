@@ -16,7 +16,6 @@
 
 import React, { createContext, useContext, useCallback, useMemo } from 'react';
 import { useTabManager } from './TabManagerContext';
-import { useCommand } from './CommandContext';
 import { validateDashboardElement } from '../utils/dashboardElementValidator';
 
 const CommandMessagingContext = createContext(null);
@@ -45,9 +44,9 @@ export const CommandMessagingProvider = ({ children }) => {
     getLeafTiles,
     setActiveTile,
     getCommandsByType,
+    createCommand,
+    assignCommandToTile,
   } = useTabManager();
-
-  const { executeCommand } = useCommand();
 
   /**
    * Get all dashboard commands from the current tab
@@ -177,32 +176,26 @@ export const CommandMessagingProvider = ({ children }) => {
         return { success: false, message: 'No active tile' };
       }
 
-      // Execute dashboard command first to get the command ID
-      const dashboardCommand = executeCommand('dashboard');
-      if (!dashboardCommand || !dashboardCommand.id) {
-        return { success: false, message: 'Failed to create dashboard command' };
-      }
-
-      // Split the current tile horizontally (side by side: left | right)
-      const splitResult = splitTile(activeTileId, 'horizontal', dashboardCommand.id);
+      // Split the current tile first (no command yet)
+      // This preserves the current tile's command (e.g., anomalies)
+      const splitResult = splitTile(activeTileId, 'horizontal');
       if (!splitResult.success) {
         return { success: false, message: `Failed to split tile: ${splitResult.message}` };
       }
 
-      // Get the newly created dashboard
-      const newDashboards = getDashboards();
-      const dashboard = newDashboards.length > 0 ? newDashboards[0] : null;
-
-      if (!dashboard?.api?.addChart) {
-        return { success: false, message: 'Dashboard not ready yet, please try again' };
+      // Create dashboard command directly in the registry (not via executeCommand)
+      // Pass the initial chart as pendingCharts - Dashboard will process on mount
+      // This avoids timing issues where we try to add chart before component mounts
+      const commandId = createCommand('dashboard', { pendingCharts: [config] });
+      if (!commandId) {
+        return { success: false, message: 'Failed to create dashboard command' };
       }
 
-      const elementId = dashboard.api.addChart(config);
-      if (!elementId) {
-        return { success: false, message: 'Failed to add chart to dashboard' };
-      }
+      // Assign the command to the new tile
+      assignCommandToTile(commandId, splitResult.newTileId);
 
-      return { success: true, message: 'Chart sent to dashboard', elementId };
+      // Return success - the chart will be added when Dashboard mounts
+      return { success: true, message: 'Dashboard created with chart', elementId: 'pending' };
     }
 
     // If multiple dashboards exist, return selection needed
@@ -229,7 +222,7 @@ export const CommandMessagingProvider = ({ children }) => {
     }
 
     return { success: true, message: 'Chart sent to dashboard', elementId };
-  }, [activeTabId, activeTileId, getDashboards, splitTile, executeCommand]);
+  }, [activeTabId, activeTileId, getDashboards, splitTile, createCommand, assignCommandToTile]);
 
   /**
    * Remove an element from dashboard

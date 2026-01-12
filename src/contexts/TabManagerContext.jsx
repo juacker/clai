@@ -602,6 +602,13 @@ export const TabManagerProvider = ({ children }) => {
         // For content commands, create registry entry
         if (isContentCommand(currentCommand)) {
           const registry = getRegistry(activeTabId);
+
+          // Delete existing command in this tile before creating new one
+          const existingCommand = registry.getByTile(activeTileId);
+          if (existingCommand) {
+            registry.delete(existingCommand.id);
+          }
+
           const commandId = registry.create(currentCommand.type, currentCommand.args || {});
           registry.assignToTile(commandId, activeTileId);
 
@@ -1081,6 +1088,13 @@ export const TabManagerProvider = ({ children }) => {
       return { success: false, message: 'Cannot close root tile' };
     }
 
+    // Delete the command in this tile from the registry before closing
+    const registry = getRegistry(activeTabId);
+    const existingCommand = registry.getByTile(tileId);
+    if (existingCommand) {
+      registry.delete(existingCommand.id);
+    }
+
     // Remove the tile from its parent
     const updatedParent = removeTileFromSplit(parent, tileId);
 
@@ -1132,7 +1146,7 @@ export const TabManagerProvider = ({ children }) => {
     }
 
     return { success: true, message: 'Tile closed' };
-  }, [activeTabId, activeTileId, tabs]);
+  }, [activeTabId, activeTileId, tabs, getRegistry]);
 
   /**
    * Resize a tile in the active tab
@@ -1436,6 +1450,7 @@ export const TabManagerProvider = ({ children }) => {
 
   /**
    * Assign a command to a tile
+   * Updates both the registry and the tile's commandId in state
    * @param {string} commandId - Command ID
    * @param {string} tileId - Tile ID
    */
@@ -1443,6 +1458,26 @@ export const TabManagerProvider = ({ children }) => {
     if (!activeTabId) return;
     const registry = getRegistry(activeTabId);
     registry.assignToTile(commandId, tileId);
+
+    // Also update the tile's commandId in the tab structure
+    setTabs(prev => prev.map(tab => {
+      if (tab.id !== activeTabId) return tab;
+
+      const updateTileCommandId = (tile) => {
+        if (tile.id === tileId) {
+          return { ...tile, commandId };
+        }
+        if (tile.children) {
+          return { ...tile, children: tile.children.map(updateTileCommandId) };
+        }
+        return tile;
+      };
+
+      return {
+        ...tab,
+        rootTile: updateTileCommandId(tab.rootTile),
+      };
+    }));
   }, [activeTabId, getRegistry]);
 
   /**
