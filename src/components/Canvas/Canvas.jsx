@@ -5,9 +5,9 @@
  * Agents can create nodes (charts, status badges, markdown) and
  * connect them with edges to visualize relationships.
  *
- * State is owned by this component and persisted to localStorage
- * using the commandId. The component registers an API with the
- * CommandRegistry so agents can manipulate it.
+ * State is owned by this component and persisted to Zustand store
+ * (backed by SQLite) using the commandId. The component registers
+ * an API with the CommandRegistry so agents can manipulate it.
  *
  * Custom Node Types:
  * - chart: Netdata chart visualization (see ChartNode)
@@ -36,6 +36,7 @@ import {
   forceY,
 } from 'd3-force';
 import { useCommandRegistration } from '../../hooks/useCommandRegistration';
+import { useCommandStateManager } from '../../hooks/useWorkspaceSelectors';
 import { nodeTypes } from './nodes';
 import styles from './Canvas.module.css';
 
@@ -165,71 +166,48 @@ const generateEdgeId = (sourceId, targetId) =>
   `edge_${sourceId}_${targetId}_${Date.now()}`;
 
 /**
- * Get the localStorage key for a canvas
- * @param {string} commandId - Command ID
- * @returns {string} localStorage key
+ * Default canvas state
  */
-const getStorageKey = (commandId) => `canvas_${commandId}`;
+const DEFAULT_CANVAS_STATE = { nodes: [], edges: [] };
 
 /**
- * Load canvas state from localStorage
- * @param {string} commandId - Command ID
- * @returns {{ nodes: Array, edges: Array }} Canvas state
+ * Migrate persisted state (apply migrations for backwards compatibility)
+ * @param {object} state - Persisted state from Zustand
+ * @returns {{ nodes: Array, edges: Array }} Migrated state
  */
-const loadCanvasState = (commandId) => {
-  if (!commandId) return { nodes: [], edges: [] };
+const migratePersistedState = (state) => {
+  if (!state) return DEFAULT_CANVAS_STATE;
 
-  try {
-    const saved = localStorage.getItem(getStorageKey(commandId));
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      // Migrate: disable animations on all existing edges for performance
-      const edges = (parsed.edges || []).map((edge) => ({
-        ...edge,
-        animated: false,
-      }));
-      // Migrate: reset markdown node dimensions to allow auto-sizing
-      const nodes = (parsed.nodes || []).map((node) => {
-        if (node.type === 'markdown') {
-          const { width, height, ...restStyle } = node.style || {};
-          return { ...node, style: restStyle };
-        }
-        return node;
-      });
-      return { nodes, edges };
+  // Migrate: disable animations on all existing edges for performance
+  const edges = (state.edges || []).map((edge) => ({
+    ...edge,
+    animated: false,
+  }));
+
+  // Migrate: reset markdown node dimensions to allow auto-sizing
+  const nodes = (state.nodes || []).map((node) => {
+    if (node.type === 'markdown') {
+      const { width, height, ...restStyle } = node.style || {};
+      return { ...node, style: restStyle };
     }
-  } catch (e) {
-    console.error('[Canvas] Failed to load state:', e);
-  }
+    return node;
+  });
 
-  return { nodes: [], edges: [] };
-};
-
-/**
- * Save canvas state to localStorage
- * @param {string} commandId - Command ID
- * @param {Array} nodes - React Flow nodes
- * @param {Array} edges - React Flow edges
- */
-const saveCanvasState = (commandId, nodes, edges) => {
-  if (!commandId) return;
-
-  try {
-    localStorage.setItem(getStorageKey(commandId), JSON.stringify({ nodes, edges }));
-  } catch (e) {
-    console.error('[Canvas] Failed to save state:', e);
-  }
+  return { nodes, edges };
 };
 
 const Canvas = ({ command }) => {
   const commandId = command?.id;
 
-  // Load initial state from localStorage
-  const initialState = useRef(loadCanvasState(commandId));
+  // Use Zustand store for persistent state (backed by SQLite)
+  const [persistedState, updatePersistedState] = useCommandStateManager(commandId);
+
+  // Apply migrations to persisted state
+  const migratedState = migratePersistedState(persistedState);
 
   // React Flow state - owned by this component
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialState.current.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialState.current.edges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(migratedState.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(migratedState.edges);
 
   // Ref for container dimensions
   const containerRef = useRef(null);
@@ -237,21 +215,27 @@ const Canvas = ({ command }) => {
   // Track if initialized (for save debouncing)
   const isInitializedRef = useRef(false);
 
-  // Initialize on first render
+  // Sync from persisted state on mount (handles restore from SQLite)
   useEffect(() => {
+    if (persistedState?.nodes && !isInitializedRef.current) {
+      const migrated = migratePersistedState(persistedState);
+      setNodes(migrated.nodes);
+      setEdges(migrated.edges);
+    }
     isInitializedRef.current = true;
-  }, []);
+  }, [persistedState, setNodes, setEdges]);
 
-  // Save state to localStorage when it changes (debounced)
+  // Save state to Zustand store when it changes (debounced)
+  // Zustand handles further debounced persistence to SQLite
   useEffect(() => {
     if (!commandId || !isInitializedRef.current) return;
 
     const timeoutId = setTimeout(() => {
-      saveCanvasState(commandId, nodes, edges);
+      updatePersistedState({ nodes, edges });
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [commandId, nodes, edges]);
+  }, [commandId, nodes, edges, updatePersistedState]);
 
   // Register API with CommandRegistry
   // This allows agents to manipulate the canvas

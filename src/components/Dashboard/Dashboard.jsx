@@ -2,14 +2,14 @@
  * Dashboard Component
  *
  * Displays charts for metrics in a responsive grid layout.
- * State is owned by this component and persisted to localStorage
- * using the commandId. The component registers an API with the
- * CommandRegistry so other commands can add/remove charts.
+ * State is owned by this component and persisted to Zustand store
+ * (backed by SQLite) using the commandId. The component registers
+ * an API with the CommandRegistry so other commands can add/remove charts.
  *
  * Features:
  * - Owns its own state (elements array)
  * - Registers API via useCommandRegistration
- * - Persists to localStorage using commandId
+ * - Persists to Zustand store via useCommandStateManager
  * - Supports time range selection
  * - Global filtering and grouping options
  * - Allows removing individual metrics or clearing all
@@ -18,6 +18,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useTabContext } from '../../contexts/TabContext';
 import { useCommandRegistration } from '../../hooks/useCommandRegistration';
+import { useCommandStateManager } from '../../hooks/useWorkspaceSelectors';
 import { useDebounce } from '../../hooks/useDebounce';
 import { validateDashboardElement } from '../../utils/dashboardElementValidator';
 import ContextChart from '../ChartsView/ContextChart';
@@ -230,44 +231,9 @@ const FilterModalContent = React.memo(({
 });
 
 /**
- * Get the localStorage key for a dashboard
+ * Default dashboard state
  */
-const getStorageKey = (commandId) => `dashboard_${commandId}`;
-
-/**
- * Load dashboard state from localStorage
- */
-const loadDashboardState = (commandId) => {
-  if (!commandId) return { elements: [], timeRange: '1h' };
-
-  try {
-    const saved = localStorage.getItem(getStorageKey(commandId));
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return {
-        elements: parsed.elements || [],
-        timeRange: parsed.timeRange || '1h',
-      };
-    }
-  } catch (e) {
-    console.error('[Dashboard] Failed to load state:', e);
-  }
-
-  return { elements: [], timeRange: '1h' };
-};
-
-/**
- * Save dashboard state to localStorage
- */
-const saveDashboardState = (commandId, elements, timeRange) => {
-  if (!commandId) return;
-
-  try {
-    localStorage.setItem(getStorageKey(commandId), JSON.stringify({ elements, timeRange }));
-  } catch (e) {
-    console.error('[Dashboard] Failed to save state:', e);
-  }
-};
+const DEFAULT_DASHBOARD_STATE = { elements: [], timeRange: '1h' };
 
 /**
  * Generate a unique element ID
@@ -285,19 +251,22 @@ const Dashboard = ({ command }) => {
   // Get tab context for space/room (used for data fetching)
   const { selectedSpace, selectedRoom } = useTabContext();
 
-  // Load initial state from localStorage
-  const initialState = useRef(loadDashboardState(commandId));
+  // Use Zustand store for persistent state (backed by SQLite)
+  const [persistedState, updatePersistedState] = useCommandStateManager(commandId);
 
-  // Dashboard owns its elements array
-  const [elements, setElements] = useState(initialState.current.elements);
+  // Local state derived from persisted state
+  const [elements, setElements] = useState(() => persistedState?.elements ?? DEFAULT_DASHBOARD_STATE.elements);
 
-  // Track if initialized (for save debouncing)
+  // Track if initialized (to prevent initial save)
   const isInitializedRef = useRef(false);
 
-  // Initialize on first render
+  // Sync from persisted state on mount (handles restore from SQLite)
   useEffect(() => {
+    if (persistedState?.elements && !isInitializedRef.current) {
+      setElements(persistedState.elements);
+    }
     isInitializedRef.current = true;
-  }, []);
+  }, [persistedState?.elements]);
 
   // Process pending charts from command args (when dashboard is created with initial charts)
   // Uses deterministic IDs (based on position) to naturally dedupe on StrictMode remount or tile split
@@ -333,9 +302,9 @@ const Dashboard = ({ command }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Find the initial time interval from saved state
+  // Find the initial time interval from persisted state
   const initialInterval = TIME_INTERVALS.find(
-    i => i.label === initialState.current.timeRange
+    i => i.label === (persistedState?.timeRange ?? DEFAULT_DASHBOARD_STATE.timeRange)
   ) || TIME_INTERVALS[3];
 
   // Selected time interval
@@ -358,16 +327,17 @@ const Dashboard = ({ command }) => {
   // Generate unique instance ID for keys
   const instanceId = useRef(`dashboard_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
 
-  // Save state to localStorage when it changes (debounced)
+  // Save state to Zustand store when it changes (debounced)
+  // Zustand handles further debounced persistence to SQLite
   useEffect(() => {
     if (!commandId || !isInitializedRef.current) return;
 
     const timeoutId = setTimeout(() => {
-      saveDashboardState(commandId, elements, selectedInterval.label);
+      updatePersistedState({ elements, timeRange: selectedInterval.label });
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [commandId, elements, selectedInterval]);
+  }, [commandId, elements, selectedInterval, updatePersistedState]);
 
   // Get valid dashboard elements
   const dashboardElements = useMemo(() => {

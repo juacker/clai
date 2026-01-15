@@ -13,6 +13,7 @@ import { handleTabCommand } from '../utils/tabCommandHandler';
 import { handleTileCommand } from '../utils/tileCommandHandler';
 import { CommandRegistry } from '../commands/CommandRegistry';
 import { isContentCommand, isLayoutCommand } from '../utils/commandTypes';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
 const TabManagerContext = createContext(null);
 
@@ -344,100 +345,151 @@ export const TabManagerProvider = ({ children }) => {
     registriesRef.current.delete(tabId);
   }, []);
 
+  // Get Zustand store state and actions
+  const workspaceState = useWorkspaceStore((state) => ({
+    storedTabs: state.tabs,
+    storedCommands: state.commands,
+    storedActiveTabId: state.activeTabId,
+  }));
+
+  // Get Zustand store actions for syncing
+  const zustandActions = useWorkspaceStore((state) => ({
+    zustandCreateTab: state.createTab,
+    zustandCloseTab: state.closeTab,
+    zustandSetActiveTab: state.setActiveTab,
+    zustandUpdateTabRootTile: state.updateTabRootTile,
+    zustandUpdateTabContext: state.updateTabContext,
+    zustandRenameTab: state.renameTab,
+    zustandCreateCommand: state.createCommand,
+    zustandRemoveCommand: state.removeCommand,
+  }));
+
   /**
-   * Load tabs from localStorage on mount
-   * Includes migration for old tabs without context field
-   * If no tabs exist, creates initial tab with /help command
+   * Load tabs from Zustand store (backed by SQLite) on mount
+   * Falls back to localStorage for migration, then to /help command
    */
   useEffect(() => {
     let tabsLoaded = false;
 
-    try {
-      const savedTabs = localStorage.getItem('netdata_tabs');
-      const savedActiveTabId = localStorage.getItem('netdata_active_tab_id');
+    // First, try to load from Zustand store (populated from SQLite)
+    const { storedTabs, storedActiveTabId, storedCommands } = workspaceState;
+    const tabsFromStore = Object.values(storedTabs);
 
-      // Check for old global space/room selection from SpaceRoomContext
-      const oldSelectedSpaceId = localStorage.getItem('netdata_selected_space');
-      const oldSelectedRoomId = localStorage.getItem('netdata_selected_room');
+    if (tabsFromStore.length > 0) {
+      console.log('[TabManagerContext] Loading tabs from Zustand store');
 
-      if (savedTabs) {
-        const parsed = JSON.parse(savedTabs);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Migrate old tabs to new structure with context field and rootTile
-          const migratedTabs = parsed.map(tab => {
-            let migratedTab = { ...tab };
+      // Restore tabs from store
+      setTabs(tabsFromStore);
+      setActiveTabId(storedActiveTabId || tabsFromStore[0].id);
 
-            // Migration 1: Add rootTile if missing (pre-tiling system tabs)
-            if (!migratedTab.rootTile) {
-              console.log(`[TabManagerContext] Migrating tab ${tab.id} - adding rootTile`);
-              migratedTab.rootTile = createTile(null);
-            }
-            // Also ensure rootTile has required fields (partial migration)
-            else if (!migratedTab.rootTile.id || !migratedTab.rootTile.type) {
-              console.log(`[TabManagerContext] Migrating tab ${tab.id} - fixing invalid rootTile`);
-              migratedTab.rootTile = createTile(migratedTab.rootTile.commandId || null);
-            }
-
-            // Migration 2: Add context if missing
-            if (!migratedTab.context) {
-              migratedTab = {
-                ...migratedTab,
-                context: {
-                  spaceRoom: {
-                    selectedSpaceId: oldSelectedSpaceId || null,
-                    selectedRoomId: oldSelectedRoomId || null,
-                  },
-                  customContext: {},
-                },
-              };
-            }
-            // If tab has context but missing spaceRoom, add it with old global context
-            else if (!migratedTab.context.spaceRoom) {
-              migratedTab = {
-                ...migratedTab,
-                context: {
-                  ...migratedTab.context,
-                  spaceRoom: {
-                    selectedSpaceId: oldSelectedSpaceId || null,
-                    selectedRoomId: oldSelectedRoomId || null,
-                  },
-                },
-              };
-            }
-            // If tab has spaceRoom but no selection, use old global context
-            else if (!migratedTab.context.spaceRoom.selectedSpaceId && oldSelectedSpaceId) {
-              migratedTab = {
-                ...migratedTab,
-                context: {
-                  ...migratedTab.context,
-                  spaceRoom: {
-                    selectedSpaceId: oldSelectedSpaceId,
-                    selectedRoomId: oldSelectedRoomId,
-                  },
-                },
-              };
-            }
-
-            return migratedTab;
-          });
-
-          setTabs(migratedTabs);
-          setActiveTabId(savedActiveTabId || migratedTabs[0].id);
-
-          // Set active tile to the root tile of active tab
-          const activeTab = migratedTabs.find(t => t.id === (savedActiveTabId || migratedTabs[0].id));
-          if (activeTab) {
-            setActiveTileId(activeTab.rootTile.id);
-          }
-
-          tabsLoaded = true;
-        }
+      // Set active tile to the root tile of active tab
+      const activeTab = tabsFromStore.find(t => t.id === (storedActiveTabId || tabsFromStore[0].id));
+      if (activeTab) {
+        setActiveTileId(activeTab.rootTile.id);
       }
-    } catch (err) {
-      console.error('Error loading tabs from localStorage:', err);
-      // If there's an error, clear localStorage and start fresh
-      localStorage.removeItem('netdata_tabs');
-      localStorage.removeItem('netdata_active_tab_id');
+
+      // Rebuild CommandRegistries from stored commands
+      Object.values(storedCommands).forEach(cmd => {
+        const registry = getRegistry(cmd.tabId);
+        // Restore command entry (api gets registered when component mounts, state is in Zustand)
+        registry.restoreCommand(cmd.id, cmd.type, cmd.args, cmd.tileId, cmd.createdAt);
+      });
+
+      tabsLoaded = true;
+    }
+
+    // Fallback: try localStorage for migration
+    if (!tabsLoaded) {
+      try {
+        const savedTabs = localStorage.getItem('netdata_tabs');
+        const savedActiveTabId = localStorage.getItem('netdata_active_tab_id');
+
+        // Check for old global space/room selection from SpaceRoomContext
+        const oldSelectedSpaceId = localStorage.getItem('netdata_selected_space');
+        const oldSelectedRoomId = localStorage.getItem('netdata_selected_room');
+
+        if (savedTabs) {
+          const parsed = JSON.parse(savedTabs);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            console.log('[TabManagerContext] Migrating tabs from localStorage');
+
+            // Migrate old tabs to new structure with context field and rootTile
+            const migratedTabs = parsed.map(tab => {
+              let migratedTab = { ...tab };
+
+              // Migration 1: Add rootTile if missing (pre-tiling system tabs)
+              if (!migratedTab.rootTile) {
+                migratedTab.rootTile = createTile(null);
+              }
+              // Also ensure rootTile has required fields (partial migration)
+              else if (!migratedTab.rootTile.id || !migratedTab.rootTile.type) {
+                migratedTab.rootTile = createTile(migratedTab.rootTile.commandId || null);
+              }
+
+              // Migration 2: Add context if missing
+              if (!migratedTab.context) {
+                migratedTab = {
+                  ...migratedTab,
+                  context: {
+                    spaceRoom: {
+                      selectedSpaceId: oldSelectedSpaceId || null,
+                      selectedRoomId: oldSelectedRoomId || null,
+                    },
+                    customContext: {},
+                  },
+                };
+              }
+              // If tab has context but missing spaceRoom, add it with old global context
+              else if (!migratedTab.context.spaceRoom) {
+                migratedTab = {
+                  ...migratedTab,
+                  context: {
+                    ...migratedTab.context,
+                    spaceRoom: {
+                      selectedSpaceId: oldSelectedSpaceId || null,
+                      selectedRoomId: oldSelectedRoomId || null,
+                    },
+                  },
+                };
+              }
+              // If tab has spaceRoom but no selection, use old global context
+              else if (!migratedTab.context.spaceRoom.selectedSpaceId && oldSelectedSpaceId) {
+                migratedTab = {
+                  ...migratedTab,
+                  context: {
+                    ...migratedTab.context,
+                    spaceRoom: {
+                      selectedSpaceId: oldSelectedSpaceId,
+                      selectedRoomId: oldSelectedRoomId,
+                    },
+                  },
+                };
+              }
+
+              return migratedTab;
+            });
+
+            setTabs(migratedTabs);
+            setActiveTabId(savedActiveTabId || migratedTabs[0].id);
+
+            // Set active tile to the root tile of active tab
+            const activeTab = migratedTabs.find(t => t.id === (savedActiveTabId || migratedTabs[0].id));
+            if (activeTab) {
+              setActiveTileId(activeTab.rootTile.id);
+            }
+
+            // Clear localStorage after successful migration (data is now in Zustand/SQLite)
+            localStorage.removeItem('netdata_tabs');
+            localStorage.removeItem('netdata_active_tab_id');
+
+            tabsLoaded = true;
+          }
+        }
+      } catch (err) {
+        console.error('Error loading tabs from localStorage:', err);
+        localStorage.removeItem('netdata_tabs');
+        localStorage.removeItem('netdata_active_tab_id');
+      }
     }
 
     // If no tabs were loaded, create initial tab with /help command
@@ -447,24 +499,92 @@ export const TabManagerProvider = ({ children }) => {
         executeCommand('help'); // Pass as string so parseCommand generates proper id
       }, 0);
     }
-  }, [executeCommand]);
+  }, [executeCommand, getRegistry]); // Note: workspaceState excluded to run only once
 
   /**
-   * Save tabs to localStorage whenever they change
+   * Sync tabs to Zustand store whenever they change.
+   * Zustand handles debounced persistence to SQLite.
    */
   useEffect(() => {
-    try {
-      if (tabs.length > 0) {
-        localStorage.setItem('netdata_tabs', JSON.stringify(tabs));
-        if (activeTabId) {
-          localStorage.setItem('netdata_active_tab_id', activeTabId);
-        }
+    // Skip initial render and when loading from store
+    if (tabs.length === 0) return;
+
+    // Get direct access to Zustand store for bulk updates
+    const store = useWorkspaceStore.getState();
+
+    // Sync each tab to the store
+    tabs.forEach(tab => {
+      const existingTab = store.tabs[tab.id];
+      if (!existingTab) {
+        // Tab doesn't exist in store - this is a new tab created locally
+        // We need to update the store directly since we're managing IDs locally
+        useWorkspaceStore.setState((state) => {
+          state.tabs[tab.id] = {
+            id: tab.id,
+            title: tab.title,
+            createdAt: tab.createdAt,
+            rootTile: tab.rootTile,
+            context: tab.context,
+          };
+        });
       } else {
-        localStorage.removeItem('netdata_tabs');
-        localStorage.removeItem('netdata_active_tab_id');
+        // Tab exists - update it if changed
+        if (JSON.stringify(existingTab.rootTile) !== JSON.stringify(tab.rootTile)) {
+          store.updateTabRootTile(tab.id, tab.rootTile);
+        }
+        if (existingTab.title !== tab.title) {
+          store.renameTab(tab.id, tab.title);
+        }
+        if (JSON.stringify(existingTab.context) !== JSON.stringify(tab.context)) {
+          store.updateTabContext(tab.id, tab.context);
+        }
       }
-    } catch (err) {
-      console.error('Error saving tabs to localStorage:', err);
+
+      // Sync commands for this tab from the registry
+      const registry = registriesRef.current.get(tab.id);
+      if (registry) {
+        const registryCommands = registry.getAll();
+        const registryCommandIds = new Set(registryCommands.map(c => c.id));
+
+        // Add/update commands
+        registryCommands.forEach(cmd => {
+          const existingCmd = store.commands[cmd.id];
+          if (!existingCmd) {
+            // Create command in store
+            useWorkspaceStore.setState((state) => {
+              state.commands[cmd.id] = {
+                id: cmd.id,
+                type: cmd.type,
+                args: cmd.args,
+                tabId: tab.id,
+                tileId: cmd.tileId,
+                createdAt: cmd.createdAt,
+                state: {}, // Component state starts empty, updated by components
+              };
+            });
+          } else if (existingCmd.tileId !== cmd.tileId) {
+            // Update tileId if changed
+            store.moveCommand(cmd.id, cmd.tileId);
+          }
+        });
+
+        // Remove commands from store that no longer exist in registry
+        Object.values(store.commands)
+          .filter(cmd => cmd.tabId === tab.id && !registryCommandIds.has(cmd.id))
+          .forEach(cmd => store.removeCommand(cmd.id));
+      }
+    });
+
+    // Remove tabs from store that no longer exist locally
+    Object.keys(store.tabs).forEach(tabId => {
+      if (!tabs.find(t => t.id === tabId)) {
+        store.closeTab(tabId);
+      }
+    });
+
+    // Sync active tab
+    if (activeTabId && store.activeTabId !== activeTabId) {
+      store.setActiveTab(activeTabId);
     }
   }, [tabs, activeTabId]);
 

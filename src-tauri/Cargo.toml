@@ -80,6 +80,9 @@ axum = "0.8"
 tower = "0.5"
 tokio-util = { version = "0.7", features = ["rt"] }
 
+# SQLite database for workspace state persistence
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+
 [dev-dependencies]
 # Temporary directories for testing
 tempfile = "3"

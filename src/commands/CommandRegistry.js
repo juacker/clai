@@ -200,6 +200,28 @@ export class CommandRegistry {
   clear() {
     this.commands.clear();
   }
+
+  /**
+   * Restore a command from persisted state (Zustand/SQLite)
+   * Called when loading workspace state on app startup.
+   * Note: Component state is managed by Zustand, not stored here.
+   * @param {string} id - Command ID
+   * @param {string} type - Command type (canvas, dashboard, etc.)
+   * @param {object} args - Command arguments
+   * @param {string|null} tileId - Tile ID this command is assigned to
+   * @param {number} [createdAt] - Original creation timestamp
+   */
+  restoreCommand(id, type, args, tileId, createdAt = Date.now()) {
+    const entry = {
+      id,
+      type,
+      args,
+      tileId,
+      api: null, // API will be registered when component mounts
+      createdAt,
+    };
+    this.commands.set(id, entry);
+  }
 }
 
 /**

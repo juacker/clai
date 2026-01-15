@@ -34,6 +34,7 @@ mod api;
 mod auth;
 mod commands;
 mod config;
+mod db;
 mod mcp;
 mod providers;
 
@@ -45,6 +46,7 @@ use std::sync::Mutex;
 use agents::SharedScheduler;
 use auth::TokenStorage;
 use config::ConfigManager;
+use tauri::Manager;
 
 /// Shared application state accessible from all commands.
 ///
@@ -130,6 +132,21 @@ pub fn run() {
         .manage(state)
         // Setup hook - runs after app is built, gives us AppHandle
         .setup(move |app| {
+            // Initialize database for workspace state persistence
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match db::init_db().await {
+                    Ok(pool) => {
+                        tracing::info!("Database initialized successfully");
+                        app_handle.manage(pool);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to initialize database: {}", e);
+                        // Database is optional - app can still work without persistence
+                    }
+                }
+            });
+
             // Start the agent runner background task
             let app_handle = app.handle().clone();
             agents::start_agent_runner(app_handle, runner_scheduler);
@@ -182,6 +199,9 @@ pub fn run() {
             commands::provider::get_provider_models,
             // Agent tool bridge commands
             commands::bridge::agent_tool_result,
+            // Workspace state persistence commands
+            commands::workspace::load_workspace_state,
+            commands::workspace::save_workspace_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
