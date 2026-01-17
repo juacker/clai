@@ -74,6 +74,19 @@ pub struct WorkspaceState {
     pub commands: HashMap<String, Command>,
 }
 
+// Type aliases for SQLite query results to satisfy clippy::type_complexity
+type TabRow = (String, String, String, String, Option<i64>, i64, i64);
+type CommandRow = (
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    i64,
+    i64,
+);
+
 /// Load workspace state from SQLite
 #[tauri::command]
 pub async fn load_workspace_state(pool: State<'_, DbPool>) -> Result<WorkspaceState, String> {
@@ -87,7 +100,7 @@ pub async fn load_workspace_state(pool: State<'_, DbPool>) -> Result<WorkspaceSt
             .map_err(|e| format!("Failed to load active tab ID: {}", e))?;
 
     // Load all tabs
-    let tab_rows: Vec<(String, String, String, String, Option<i64>, i64, i64)> = sqlx::query_as(
+    let tab_rows: Vec<TabRow> = sqlx::query_as(
         "SELECT id, title, root_tile, context, position, created_at, updated_at FROM tabs ORDER BY position",
     )
     .fetch_all(pool.inner())
@@ -114,16 +127,7 @@ pub async fn load_workspace_state(pool: State<'_, DbPool>) -> Result<WorkspaceSt
     }
 
     // Load all commands
-    let cmd_rows: Vec<(
-        String,
-        String,
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        i64,
-        i64,
-    )> = sqlx::query_as(
+    let cmd_rows: Vec<CommandRow> = sqlx::query_as(
         "SELECT id, tab_id, tile_id, type, args, state, created_at, updated_at FROM commands",
     )
     .fetch_all(pool.inner())
