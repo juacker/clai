@@ -2,12 +2,15 @@
  * Workspace Selector Hooks
  *
  * Efficient selectors for accessing workspace state.
- * Uses shallow comparison to prevent unnecessary re-renders.
+ * Uses useShallow for proper snapshot caching (Zustand v5).
  */
 
-import { useCallback } from 'react';
-import { shallow } from 'zustand/shallow';
+import { useCallback, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+
+// Stable empty object reference to avoid creating new objects
+const EMPTY_STATE = {};
 
 /**
  * Select a specific command's state. Only re-renders when THIS command's state changes.
@@ -15,10 +18,9 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
  * @returns {Object}
  */
 export const useCommandState = (commandId) => {
-  return useWorkspaceStore(
-    useCallback((state) => state.commands[commandId]?.state ?? {}, [commandId]),
-    shallow
-  );
+  const state = useWorkspaceStore((s) => s.commands[commandId]?.state);
+  // Return stable empty object if no state exists
+  return state ?? EMPTY_STATE;
 };
 
 /**
@@ -42,7 +44,7 @@ export const useUpdateCommandState = (commandId) => {
 export const useCommandStateManager = (commandId) => {
   const state = useCommandState(commandId);
   const updateState = useUpdateCommandState(commandId);
-  return [state, updateState];
+  return useMemo(() => [state, updateState], [state, updateState]);
 };
 
 /**
@@ -51,17 +53,13 @@ export const useCommandStateManager = (commandId) => {
  * @returns {Object|null}
  */
 export const useCommandMeta = (commandId) => {
-  return useWorkspaceStore(
-    useCallback(
-      (state) => {
-        const cmd = state.commands[commandId];
-        if (!cmd) return null;
-        return { id: cmd.id, type: cmd.type, args: cmd.args, tileId: cmd.tileId };
-      },
-      [commandId]
-    ),
-    shallow
-  );
+  // Select the command directly - the reference is stable if the command hasn't changed
+  const command = useWorkspaceStore((state) => state.commands[commandId]);
+  // Memoize the derived object
+  return useMemo(() => {
+    if (!command) return null;
+    return { id: command.id, type: command.type, args: command.args, tileId: command.tileId };
+  }, [command]);
 };
 
 /**
@@ -70,12 +68,11 @@ export const useCommandMeta = (commandId) => {
  * @returns {Object[]}
  */
 export const useTabCommands = (tabId) => {
-  return useWorkspaceStore(
-    useCallback(
-      (state) => Object.values(state.commands).filter((cmd) => cmd.tabId === tabId),
-      [tabId]
-    ),
-    shallow
+  const commands = useWorkspaceStore((state) => state.commands);
+  // Memoize the filtered array
+  return useMemo(
+    () => Object.values(commands).filter((cmd) => cmd.tabId === tabId),
+    [commands, tabId]
   );
 };
 
@@ -85,10 +82,7 @@ export const useTabCommands = (tabId) => {
  * @returns {Object|null}
  */
 export const useTabContext = (tabId) => {
-  return useWorkspaceStore(
-    useCallback((state) => state.tabs[tabId]?.context ?? null, [tabId]),
-    shallow
-  );
+  return useWorkspaceStore((state) => state.tabs[tabId]?.context ?? null);
 };
 
 /**
@@ -96,9 +90,8 @@ export const useTabContext = (tabId) => {
  * @returns {Object|null}
  */
 export const useActiveTab = () => {
-  return useWorkspaceStore(
-    (state) => (state.activeTabId ? state.tabs[state.activeTabId] : null),
-    shallow
+  return useWorkspaceStore((state) =>
+    state.activeTabId ? state.tabs[state.activeTabId] : null
   );
 };
 
@@ -107,7 +100,7 @@ export const useActiveTab = () => {
  * @returns {Object}
  */
 export const useTabs = () => {
-  return useWorkspaceStore((state) => state.tabs, shallow);
+  return useWorkspaceStore((state) => state.tabs);
 };
 
 /**
@@ -117,16 +110,12 @@ export const useTabs = () => {
  * @returns {Object|null}
  */
 export const useCommandByTile = (tabId, tileId) => {
-  return useWorkspaceStore(
-    useCallback(
-      (state) => {
-        const commands = Object.values(state.commands);
-        return commands.find((cmd) => cmd.tabId === tabId && cmd.tileId === tileId) ?? null;
-      },
-      [tabId, tileId]
-    ),
-    shallow
-  );
+  const commands = useWorkspaceStore((state) => state.commands);
+  // Memoize the find operation
+  return useMemo(() => {
+    const commandList = Object.values(commands);
+    return commandList.find((cmd) => cmd.tabId === tabId && cmd.tileId === tileId) ?? null;
+  }, [commands, tabId, tileId]);
 };
 
 /**
@@ -139,11 +128,12 @@ export const useActiveTabId = () => {
 
 /**
  * Get workspace store actions (for components that need to dispatch actions directly)
+ * Actions are stable references in Zustand, so we use useShallow for the object.
  * @returns {Object}
  */
 export const useWorkspaceActions = () => {
   return useWorkspaceStore(
-    (state) => ({
+    useShallow((state) => ({
       createTab: state.createTab,
       closeTab: state.closeTab,
       setActiveTab: state.setActiveTab,
@@ -156,7 +146,6 @@ export const useWorkspaceActions = () => {
       updateCommandArgs: state.updateCommandArgs,
       moveCommand: state.moveCommand,
       initialize: state.initialize,
-    }),
-    shallow
+    }))
   );
 };

@@ -14,6 +14,7 @@ import { handleTileCommand } from '../utils/tileCommandHandler';
 import { CommandRegistry } from '../commands/CommandRegistry';
 import { isContentCommand, isLayoutCommand } from '../utils/commandTypes';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useShallow } from 'zustand/react/shallow';
 
 const TabManagerContext = createContext(null);
 
@@ -345,24 +346,14 @@ export const TabManagerProvider = ({ children }) => {
     registriesRef.current.delete(tabId);
   }, []);
 
-  // Get Zustand store state and actions
-  const workspaceState = useWorkspaceStore((state) => ({
-    storedTabs: state.tabs,
-    storedCommands: state.commands,
-    storedActiveTabId: state.activeTabId,
-  }));
-
-  // Get Zustand store actions for syncing
-  const zustandActions = useWorkspaceStore((state) => ({
-    zustandCreateTab: state.createTab,
-    zustandCloseTab: state.closeTab,
-    zustandSetActiveTab: state.setActiveTab,
-    zustandUpdateTabRootTile: state.updateTabRootTile,
-    zustandUpdateTabContext: state.updateTabContext,
-    zustandRenameTab: state.renameTab,
-    zustandCreateCommand: state.createCommand,
-    zustandRemoveCommand: state.removeCommand,
-  }));
+  // Get Zustand store state using useShallow for proper snapshot caching
+  const workspaceState = useWorkspaceStore(
+    useShallow((state) => ({
+      storedTabs: state.tabs,
+      storedCommands: state.commands,
+      storedActiveTabId: state.activeTabId,
+    }))
+  );
 
   /**
    * Load tabs from Zustand store (backed by SQLite) on mount
