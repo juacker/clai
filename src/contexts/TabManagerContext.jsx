@@ -350,6 +350,7 @@ export const TabManagerProvider = ({ children }) => {
   const workspaceState = useWorkspaceStore(
     useShallow((state) => ({
       storedTabs: state.tabs,
+      storedTabOrder: state.tabOrder,
       storedCommands: state.commands,
       storedActiveTabId: state.activeTabId,
       initialized: state.initialized,
@@ -381,8 +382,19 @@ export const TabManagerProvider = ({ children }) => {
     let tabsLoaded = false;
 
     // First, try to load from Zustand store (populated from SQLite)
-    const { storedTabs, storedActiveTabId, storedCommands } = workspaceState;
-    const tabsFromStore = Object.values(storedTabs);
+    const { storedTabs, storedTabOrder, storedActiveTabId, storedCommands } = workspaceState;
+
+    // Build tabs array in the correct order using tabOrder
+    let tabsFromStore;
+    if (storedTabOrder && storedTabOrder.length > 0) {
+      // Use tabOrder to maintain the correct order
+      tabsFromStore = storedTabOrder
+        .map(id => storedTabs[id])
+        .filter(Boolean); // Filter out any undefined (in case of stale IDs)
+    } else {
+      // Fallback to Object.values if no tabOrder (migration case)
+      tabsFromStore = Object.values(storedTabs);
+    }
 
     if (tabsFromStore.length > 0) {
       console.log('[TabManagerContext] Loading tabs from Zustand store');
@@ -545,6 +557,10 @@ export const TabManagerProvider = ({ children }) => {
             rootTile: tab.rootTile,
             context: tab.context,
           };
+          // Also add to tabOrder if not already present
+          if (!state.tabOrder.includes(tab.id)) {
+            state.tabOrder.push(tab.id);
+          }
         });
       } else {
         // Tab exists - update it if changed
@@ -605,6 +621,18 @@ export const TabManagerProvider = ({ children }) => {
     if (activeTabId && store.activeTabId !== activeTabId) {
       store.setActiveTab(activeTabId);
     }
+
+    // Sync tab order to match local tabs array order
+    const localTabOrder = tabs.map(t => t.id);
+    const storeTabOrder = useWorkspaceStore.getState().tabOrder;
+    if (JSON.stringify(localTabOrder) !== JSON.stringify(storeTabOrder)) {
+      useWorkspaceStore.setState((state) => {
+        state.tabOrder = localTabOrder;
+      });
+    }
+
+    // Trigger save for any direct state modifications made above
+    useWorkspaceStore.getState().triggerSave();
   }, [tabs, activeTabId]);
 
   /**
@@ -969,6 +997,8 @@ export const TabManagerProvider = ({ children }) => {
       newTabs.splice(toIndex, 0, movedTab);
       return newTabs;
     });
+    // Sync with workspace store for persistence
+    useWorkspaceStore.getState().reorderTabs(fromIndex, toIndex);
   }, []);
 
   /**

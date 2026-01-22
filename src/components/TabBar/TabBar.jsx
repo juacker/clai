@@ -20,6 +20,7 @@ const TabBar = () => {
     closeTab,
     createTab,
     renameTab,
+    moveTab,
   } = useTabManager();
 
   const tabBarRef = useRef(null);
@@ -27,6 +28,8 @@ const TabBar = () => {
   const [editingTabId, setEditingTabId] = useState(null);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef(null);
+  const [draggedIndex, setDraggedIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
 
   // Scroll active tab into view when it changes
   useEffect(() => {
@@ -91,21 +94,63 @@ const TabBar = () => {
     createTab();
   };
 
+  // Drag and drop handlers
+  const handleDragStart = (e, index) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    // Set a custom drag image (optional - uses default)
+    e.dataTransfer.setData('text/plain', index.toString());
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggedIndex !== null && index !== draggedIndex) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e, index) => {
+    e.preventDefault();
+    if (draggedIndex !== null && index !== draggedIndex) {
+      moveTab(draggedIndex, index);
+    }
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
   return (
     <div className={styles.tabBar} ref={tabBarRef}>
       <div className={styles.tabList}>
-        {tabs.map((tab) => {
+        {tabs.map((tab, index) => {
           const isActive = tab.id === activeTabId;
+          const isDragging = draggedIndex === index;
+          const isDragOver = dragOverIndex === index;
 
           return (
             <div
               key={tab.id}
               ref={isActive ? activeTabRef : null}
-              className={`${styles.tab} ${isActive ? styles.tabActive : ''}`}
+              className={`${styles.tab} ${isActive ? styles.tabActive : ''} ${isDragging ? styles.tabDragging : ''} ${isDragOver ? styles.tabDragOver : ''}`}
               onClick={() => handleTabClick(tab.id)}
               role="tab"
               aria-selected={isActive}
               tabIndex={isActive ? 0 : -1}
+              draggable={editingTabId !== tab.id}
+              onDragStart={(e) => handleDragStart(e, index)}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, index)}
+              onDragEnd={handleDragEnd}
             >
               {editingTabId === tab.id ? (
                 <input

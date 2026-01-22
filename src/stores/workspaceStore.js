@@ -13,6 +13,7 @@ import { invoke } from '@tauri-apps/api/core';
 /**
  * @typedef {Object} WorkspaceState
  * @property {string|null} activeTabId
+ * @property {string[]} tabOrder - Array of tab IDs in display order
  * @property {Object.<string, Tab>} tabs - Tabs keyed by ID
  * @property {Object.<string, Command>} commands - Commands keyed by ID
  */
@@ -98,6 +99,7 @@ const debouncedSave = debounce(async (state) => {
     await invoke('save_workspace_state', {
       workspaceState: {
         activeTabId: state.activeTabId,
+        tabOrder: state.tabOrder,
         tabs: state.tabs,
         commands: state.commands,
       },
@@ -122,6 +124,7 @@ export const saveWorkspaceStateNow = async (state) => {
     await invoke('save_workspace_state', {
       workspaceState: {
         activeTabId: state.activeTabId,
+        tabOrder: state.tabOrder,
         tabs: state.tabs,
         commands: state.commands,
       },
@@ -137,6 +140,7 @@ export const useWorkspaceStore = create(
     immer((set, get) => ({
       // Initial state
       activeTabId: null,
+      tabOrder: [], // Array of tab IDs in display order
       tabs: {},
       commands: {},
       initialized: false, // Track whether store has loaded from SQLite
@@ -146,8 +150,13 @@ export const useWorkspaceStore = create(
         try {
           const state = await invoke('load_workspace_state');
           if (state && Object.keys(state.tabs).length > 0) {
+            // Use tabOrder from state, or derive from tabs if not present (migration)
+            const tabOrder = state.tabOrder && state.tabOrder.length > 0
+              ? state.tabOrder
+              : Object.keys(state.tabs);
             set({
               activeTabId: state.activeTabId,
+              tabOrder,
               tabs: state.tabs,
               commands: state.commands,
               initialized: true,
@@ -185,6 +194,7 @@ export const useWorkspaceStore = create(
             },
             context: { ...DEFAULT_CONTEXT },
           };
+          state.tabOrder.push(id);
           state.activeTabId = id;
         });
 
@@ -201,13 +211,18 @@ export const useWorkspaceStore = create(
             }
           });
 
+          // Remove tab from order
+          const orderIndex = state.tabOrder.indexOf(tabId);
+          if (orderIndex !== -1) {
+            state.tabOrder.splice(orderIndex, 1);
+          }
+
           // Remove tab
           delete state.tabs[tabId];
 
           // Update active tab if needed
           if (state.activeTabId === tabId) {
-            const remainingIds = Object.keys(state.tabs);
-            state.activeTabId = remainingIds.length > 0 ? remainingIds[0] : null;
+            state.activeTabId = state.tabOrder.length > 0 ? state.tabOrder[0] : null;
           }
         });
 
@@ -248,6 +263,23 @@ export const useWorkspaceStore = create(
             state.tabs[tabId].title = title;
           }
         });
+        debouncedSave(get());
+      },
+
+      reorderTabs: (fromIndex, toIndex) => {
+        set((state) => {
+          if (fromIndex < 0 || fromIndex >= state.tabOrder.length) return;
+          if (toIndex < 0 || toIndex >= state.tabOrder.length) return;
+          if (fromIndex === toIndex) return;
+
+          const [movedId] = state.tabOrder.splice(fromIndex, 1);
+          state.tabOrder.splice(toIndex, 0, movedId);
+        });
+        debouncedSave(get());
+      },
+
+      // Trigger a save (for external state modifications)
+      triggerSave: () => {
         debouncedSave(get());
       },
 

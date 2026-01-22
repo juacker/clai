@@ -70,6 +70,8 @@ pub struct Command {
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceState {
     pub active_tab_id: Option<String>,
+    #[serde(default)]
+    pub tab_order: Vec<String>, // Array of tab IDs in display order
     pub tabs: HashMap<String, Tab>,
     pub commands: HashMap<String, Command>,
 }
@@ -99,7 +101,7 @@ pub async fn load_workspace_state(pool: State<'_, DbPool>) -> Result<WorkspaceSt
             .await
             .map_err(|e| format!("Failed to load active tab ID: {}", e))?;
 
-    // Load all tabs
+    // Load all tabs ordered by position
     let tab_rows: Vec<TabRow> = sqlx::query_as(
         "SELECT id, title, root_tile, context, position, created_at, updated_at FROM tabs ORDER BY position",
     )
@@ -108,12 +110,14 @@ pub async fn load_workspace_state(pool: State<'_, DbPool>) -> Result<WorkspaceSt
     .map_err(|e| format!("Failed to load tabs: {}", e))?;
 
     let mut tabs = HashMap::new();
+    let mut tab_order = Vec::new();
     for (id, title, root_tile_json, context_json, _position, created_at, _updated_at) in tab_rows {
         let root_tile: TileNode = serde_json::from_str(&root_tile_json)
             .map_err(|e| format!("Failed to parse root_tile for tab {}: {}", id, e))?;
         let context: TabContext = serde_json::from_str(&context_json)
             .map_err(|e| format!("Failed to parse context for tab {}: {}", id, e))?;
 
+        tab_order.push(id.clone());
         tabs.insert(
             id.clone(),
             Tab {
@@ -171,6 +175,7 @@ pub async fn load_workspace_state(pool: State<'_, DbPool>) -> Result<WorkspaceSt
 
     Ok(WorkspaceState {
         active_tab_id,
+        tab_order,
         tabs,
         commands,
     })
@@ -231,8 +236,19 @@ pub async fn save_workspace_state(
         }
     }
 
-    // Upsert tabs
-    for (position, (id, tab)) in workspace_state.tabs.iter().enumerate() {
+    // Upsert tabs using tab_order for position (fall back to HashMap iteration if tab_order is empty)
+    let tab_ids: Vec<&String> = if workspace_state.tab_order.is_empty() {
+        workspace_state.tabs.keys().collect()
+    } else {
+        workspace_state.tab_order.iter().collect()
+    };
+
+    for (position, id) in tab_ids.iter().enumerate() {
+        let tab = match workspace_state.tabs.get(*id) {
+            Some(t) => t,
+            None => continue, // Skip if tab_order contains an ID not in tabs
+        };
+
         let root_tile_json = serde_json::to_string(&tab.root_tile)
             .map_err(|e| format!("Failed to serialize root_tile: {}", e))?;
         let context_json = serde_json::to_string(&tab.context)
@@ -250,7 +266,7 @@ pub async fn save_workspace_state(
                 updated_at = excluded.updated_at
             "#,
         )
-        .bind(id)
+        .bind(*id)
         .bind(&tab.title)
         .bind(&root_tile_json)
         .bind(&context_json)
