@@ -352,14 +352,29 @@ export const TabManagerProvider = ({ children }) => {
       storedTabs: state.tabs,
       storedCommands: state.commands,
       storedActiveTabId: state.activeTabId,
+      initialized: state.initialized,
     }))
   );
+
+  // Track if we've already loaded tabs to prevent re-running
+  const hasLoadedTabs = useRef(false);
 
   /**
    * Load tabs from Zustand store (backed by SQLite) on mount
    * Falls back to localStorage for migration, then to /help command
    */
   useEffect(() => {
+    // Wait for Zustand store to be initialized from SQLite
+    if (!workspaceState.initialized) {
+      return;
+    }
+
+    // Only load once
+    if (hasLoadedTabs.current) {
+      return;
+    }
+    hasLoadedTabs.current = true;
+
     let tabsLoaded = false;
 
     // First, try to load from Zustand store (populated from SQLite)
@@ -490,7 +505,7 @@ export const TabManagerProvider = ({ children }) => {
         executeCommand('help'); // Pass as string so parseCommand generates proper id
       }, 0);
     }
-  }, [executeCommand, getRegistry]); // Note: workspaceState excluded to run only once
+  }, [executeCommand, getRegistry, workspaceState.initialized]); // Runs when initialized becomes true
 
   /**
    * Sync tabs to Zustand store whenever they change.

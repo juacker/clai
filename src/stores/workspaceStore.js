@@ -139,6 +139,7 @@ export const useWorkspaceStore = create(
       activeTabId: null,
       tabs: {},
       commands: {},
+      initialized: false, // Track whether store has loaded from SQLite
 
       // Initialize from SQLite
       initialize: async () => {
@@ -149,14 +150,19 @@ export const useWorkspaceStore = create(
               activeTabId: state.activeTabId,
               tabs: state.tabs,
               commands: state.commands,
+              initialized: true,
             });
             console.debug('Workspace state loaded:', Object.keys(state.tabs).length, 'tabs');
+          } else {
+            set({ initialized: true });
+            console.debug('Workspace state initialized (no saved tabs)');
           }
           dbReady = true;
         } catch (error) {
           console.error('Failed to load workspace state:', error);
           // Database might not be initialized yet, mark as ready anyway
           // so future saves work once DB is available
+          set({ initialized: true });
           dbReady = true;
         }
       },
