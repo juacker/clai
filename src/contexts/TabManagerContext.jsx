@@ -359,6 +359,9 @@ export const TabManagerProvider = ({ children }) => {
   // Track if we've already loaded tabs to prevent re-running
   const hasLoadedTabs = useRef(false);
 
+  // Track if we should skip the next sync (to prevent race condition during initial load)
+  const skipNextSync = useRef(false);
+
   /**
    * Load tabs from Zustand store (backed by SQLite) on mount
    * Falls back to localStorage for migration, then to /help command
@@ -383,6 +386,9 @@ export const TabManagerProvider = ({ children }) => {
 
     if (tabsFromStore.length > 0) {
       console.log('[TabManagerContext] Loading tabs from Zustand store');
+
+      // Skip the next sync to prevent race condition - commands being restored to registry
+      skipNextSync.current = true;
 
       // Restore tabs from store
       setTabs(tabsFromStore);
@@ -514,6 +520,13 @@ export const TabManagerProvider = ({ children }) => {
   useEffect(() => {
     // Skip initial render and when loading from store
     if (tabs.length === 0) return;
+
+    // Skip sync during initial load from store - commands are being restored to registry
+    // This prevents the sync from removing commands before they're fully restored
+    if (skipNextSync.current) {
+      skipNextSync.current = false;
+      return;
+    }
 
     // Get direct access to Zustand store for bulk updates
     const store = useWorkspaceStore.getState();
