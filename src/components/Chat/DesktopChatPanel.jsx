@@ -1,28 +1,27 @@
 import React from 'react';
 import { useChatManager } from '../../contexts/ChatManagerContext';
 import { useTabManager } from '../../contexts/TabManagerContext';
+import { useAssistantStore } from '../../assistant';
 import AgentChat from '../AgentChat/AgentChat';
+import AssistantChat from '../AssistantChat/AssistantChat';
 import styles from './DesktopChatPanel.module.css';
 
 /**
- * DesktopChatPanel - Agent activity panel container
+ * DesktopChatPanel - Chat panel container
  *
  * This component provides a full-height, fixed-position panel
  * that appears on the right side of the screen.
- * It shows agent activity for the current tab.
  *
- * Features:
- * - Full viewport height (0 to 100vh)
- * - Fixed positioning on right side
- * - Smooth expand/collapse animations
- * - Shows AgentChat for the active tab
- * - Integrates with ChatManagerContext for open/close state
+ * Renders AssistantChat when an assistant session is active for the tab,
+ * otherwise falls back to AgentChat (legacy agent path).
  */
 const DesktopChatPanel = ({ userInfo }) => {
   const { isCurrentChatOpen } = useChatManager();
   const { activeTabId } = useTabManager();
+  const assistantSessionId = useAssistantStore(
+    (state) => state.activeSessionByTab[activeTabId]
+  );
 
-  // Determine if panel should be visible
   const isOpen = isCurrentChatOpen();
 
   return (
@@ -30,11 +29,15 @@ const DesktopChatPanel = ({ userInfo }) => {
       id="desktop-chat-panel"
       className={`${styles.desktopChatPanel} ${isOpen ? styles.open : ''}`}
       role="complementary"
-      aria-label="Agent activity panel"
+      aria-label="Chat panel"
       aria-hidden={!isOpen}
     >
       <div className={styles.chatContainer}>
-        <AgentChat tabId={activeTabId} userInfo={userInfo} />
+        {assistantSessionId ? (
+          <AssistantChat tabId={activeTabId} userInfo={userInfo} />
+        ) : (
+          <AgentChat tabId={activeTabId} userInfo={userInfo} />
+        )}
       </div>
     </div>
   );

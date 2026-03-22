@@ -49,7 +49,7 @@ fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
 }
 
-fn to_json_string<T: Serialize>(value: &T) -> Result<String, String> {
+fn to_json_string<T: Serialize + ?Sized>(value: &T) -> Result<String, String> {
     serde_json::to_string(value).map_err(|e| format!("Failed to serialize JSON: {}", e))
 }
 
@@ -472,6 +472,125 @@ pub async fn delete_provider_session(pool: &DbPool, provider_id: &str) -> Result
         .map_err(|e| format!("Failed to delete provider session: {}", e))?;
 
     Ok(result.rows_affected() > 0)
+}
+
+pub async fn update_run_status(
+    pool: &DbPool,
+    run_id: &str,
+    status: RunStatus,
+    error: Option<&str>,
+) -> Result<AssistantRun, String> {
+    let is_terminal = matches!(
+        status,
+        RunStatus::Completed | RunStatus::Failed | RunStatus::Cancelled
+    );
+    let completed_at = if is_terminal { Some(now_ms()) } else { None };
+
+    sqlx::query(
+        r#"
+        UPDATE assistant_runs
+        SET status = ?, error = ?, completed_at = COALESCE(?, completed_at)
+        WHERE id = ?
+        "#,
+    )
+    .bind(to_json_string(&status)?)
+    .bind(error)
+    .bind(completed_at)
+    .bind(run_id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to update run status: {}", e))?;
+
+    let row = sqlx::query(
+        r#"
+        SELECT id, session_id, status, trigger, provider_id, model_id, usage_json, error, started_at, completed_at
+        FROM assistant_runs
+        WHERE id = ?
+        "#,
+    )
+    .bind(run_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("Failed to load updated run: {}", e))?;
+
+    let run = map_run_row(&row)?;
+    touch_session(pool, &run.session_id).await?;
+    Ok(run)
+}
+
+pub async fn complete_run(
+    pool: &DbPool,
+    run_id: &str,
+    status: RunStatus,
+    usage: Option<&RunUsage>,
+    error: Option<&str>,
+) -> Result<AssistantRun, String> {
+    let completed_at = now_ms();
+
+    sqlx::query(
+        r#"
+        UPDATE assistant_runs
+        SET status = ?, usage_json = COALESCE(?, usage_json), error = ?, completed_at = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(to_json_string(&status)?)
+    .bind(usage.map(to_json_string).transpose()?)
+    .bind(error)
+    .bind(completed_at)
+    .bind(run_id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to complete run: {}", e))?;
+
+    let row = sqlx::query(
+        r#"
+        SELECT id, session_id, status, trigger, provider_id, model_id, usage_json, error, started_at, completed_at
+        FROM assistant_runs
+        WHERE id = ?
+        "#,
+    )
+    .bind(run_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("Failed to load completed run: {}", e))?;
+
+    let run = map_run_row(&row)?;
+    touch_session(pool, &run.session_id).await?;
+    Ok(run)
+}
+
+pub async fn update_message_content(
+    pool: &DbPool,
+    message_id: &str,
+    content: &[ContentPart],
+) -> Result<AssistantMessage, String> {
+    sqlx::query(
+        r#"
+        UPDATE assistant_messages
+        SET content_json = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(to_json_string(content)?)
+    .bind(message_id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to update message content: {}", e))?;
+
+    let row = sqlx::query(
+        r#"
+        SELECT id, session_id, role, content_json, provider_metadata_json, created_at
+        FROM assistant_messages
+        WHERE id = ?
+        "#,
+    )
+    .bind(message_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("Failed to load updated message: {}", e))?;
+
+    map_message_row(&row)
 }
 
 async fn touch_session(pool: &DbPool, session_id: &str) -> Result<(), String> {

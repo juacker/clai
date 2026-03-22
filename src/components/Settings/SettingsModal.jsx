@@ -9,6 +9,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import ProviderSettings from './ProviderSettings';
 import AgentsSettings from './AgentsSettings';
+import AssistantProviderSettings from './AssistantProviderSettings';
 import styles from './SettingsModal.module.css';
 
 /**
@@ -105,7 +106,7 @@ const SettingsModal = ({ isOpen, onClose, initialTab = TABS.PROVIDER }) => {
   const renderContent = () => {
     switch (activeTab) {
       case TABS.PROVIDER:
-        return <ProviderSettings />;
+        return <AssistantProviderSettings />;
       case TABS.AGENTS:
         return <AgentsSettings />;
       default:

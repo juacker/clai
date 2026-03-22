@@ -15,6 +15,8 @@ import { TabContextProvider } from '../../contexts/TabContext';
 import { useChatManager } from '../../contexts/ChatManagerContext';
 import { useAgentActivity } from '../../contexts/AgentActivityContext';
 import { useOnDemandAgent } from '../../agents';
+import { useAssistantSession, assistantClient } from '../../assistant';
+import { getStoredModel } from '../Settings/AssistantProviderSettings';
 import TerminalEmulator from './TerminalEmulator';
 
 const TerminalEmulatorWrapper = ({ userInfo }) => {
@@ -22,6 +24,7 @@ const TerminalEmulatorWrapper = ({ userInfo }) => {
   const { openChat } = useChatManager();
   const { startExecution, completeExecution, ensureTabTracked } = useAgentActivity();
   const { runAgent } = useOnDemandAgent();
+  const { ensureSession } = useAssistantSession(activeTabId);
 
   // Track if agent is running for this wrapper instance
   const isRunningRef = useRef(false);
@@ -37,8 +40,21 @@ const TerminalEmulatorWrapper = ({ userInfo }) => {
   };
 
   /**
-   * Handle sending a query to the on-demand agent.
-   * Gets the space/room context from the active tab and runs the agent.
+   * Check if a provider session is configured.
+   * Always fetches fresh — the invoke is fast and the user may have
+   * connected/disconnected a provider since the last check.
+   */
+  const getProviderSession = useCallback(async () => {
+    try {
+      const sessions = await assistantClient.listProviderSessions();
+      return sessions.length > 0 ? sessions[0] : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /**
+   * Handle sending a query — routes to assistant engine or legacy agent path.
    */
   const handleSendToAgent = useCallback(
     async (query) => {
@@ -47,7 +63,29 @@ const TerminalEmulatorWrapper = ({ userInfo }) => {
         return;
       }
 
-      // Check if agent is already running
+      // Check if we should use the assistant engine path
+      const providerSession = await getProviderSession();
+
+      if (providerSession) {
+        // Assistant engine path
+        openChat();
+        try {
+          const model = getStoredModel() || 'gpt-4o-mini';
+          const sessionId = await ensureSession(
+            providerSession.providerId,
+            model,
+            {}
+          );
+          // Use client directly instead of the hook's sendMessage,
+          // because the hook's ref won't have the new sessionId until next render.
+          await assistantClient.sendMessage(sessionId, query);
+        } catch (err) {
+          console.error('[TerminalEmulatorWrapper] Assistant error:', err);
+        }
+        return;
+      }
+
+      // Legacy agent path
       if (isRunningRef.current) {
         console.warn('[TerminalEmulatorWrapper] Agent already running');
         openChat();
@@ -57,29 +95,25 @@ const TerminalEmulatorWrapper = ({ userInfo }) => {
       const spaceId = activeTab.context?.spaceRoom?.selectedSpaceId;
       const roomId = activeTab.context?.spaceRoom?.selectedRoomId;
 
-      // Ensure tab is tracked so we can show messages
       ensureTabTracked(activeTab.id);
 
       if (!spaceId || !roomId) {
-        // Show error in chat UI
         startExecution(activeTab.id, query);
         openChat();
         completeExecution(activeTab.id, 'Please select a space and room from the context menu before asking questions. Use the space/room selector in the terminal to set your context.');
         return;
       }
 
-      // Open the chat panel to show agent activity
       openChat();
       isRunningRef.current = true;
 
       try {
-        // Run the on-demand agent
         await runAgent(query, activeTab.id, spaceId, roomId);
       } finally {
         isRunningRef.current = false;
       }
     },
-    [activeTab, openChat, runAgent, ensureTabTracked, startExecution, completeExecution]
+    [activeTab, openChat, runAgent, ensureTabTracked, startExecution, completeExecution, getProviderSession, ensureSession]
   );
 
   // If no active tab, render terminal without context

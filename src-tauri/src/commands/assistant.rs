@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
+use crate::assistant::engine::{self, AssistantDeps, RunTurnInput};
 use crate::assistant::events::{emit_event, AssistantUiEvent};
 use crate::assistant::repository;
 use crate::assistant::repository::{CreateMessageParams, CreateRunParams, CreateSessionParams};
@@ -163,6 +164,27 @@ pub async fn assistant_send_message(
         Some(&run.id),
         AssistantUiEvent::RunQueued { run: run.clone() },
     )?;
+
+    // Spawn the engine to execute the run asynchronously
+    let pool_clone = pool.inner().clone();
+    let app_clone = app.clone();
+    let session_id = session.id.clone();
+    let run_id = run.id.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let deps = AssistantDeps {
+            pool: pool_clone,
+            app: app_clone,
+        };
+        let input = RunTurnInput {
+            session_id,
+            run_id: Some(run_id.clone()),
+            trigger: RunTrigger::UserMessage,
+        };
+        if let Err(e) = engine::run_session_turn(&deps, input).await {
+            tracing::error!("Assistant engine error for run {}: {}", run_id, e);
+        }
+    });
 
     Ok(AssistantSendMessageResult {
         session,

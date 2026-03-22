@@ -10,6 +10,7 @@ import { CommandMessagingProvider } from '../contexts/CommandMessagingContext';
 import { ChatManagerProvider } from '../contexts/ChatManagerContext';
 import { AgentActivityProvider } from '../contexts/AgentActivityContext';
 import { useAgentBridge } from '../agents';
+import { useAssistantEvents } from '../assistant';
 import styles from './MainLayout.module.css';
 
 /**
@@ -18,6 +19,15 @@ import styles from './MainLayout.module.css';
  */
 const AgentBridgeInitializer = ({ children }) => {
   useAgentBridge();
+  return children;
+};
+
+/**
+ * Component that subscribes to assistant engine events.
+ * Dispatches events to the assistant Zustand store.
+ */
+const AssistantEventListener = ({ children }) => {
+  useAssistantEvents();
   return children;
 };
 
@@ -64,6 +74,7 @@ const MainLayout = () => {
         <TabManagerProvider>
           <AgentActivityProvider>
             <AgentBridgeInitializer>
+              <AssistantEventListener>
               <CommandMessagingProvider>
                 <ChatManagerProvider>
                 {loading ? (
@@ -88,6 +99,7 @@ const MainLayout = () => {
                 )}
                 </ChatManagerProvider>
               </CommandMessagingProvider>
+              </AssistantEventListener>
             </AgentBridgeInitializer>
           </AgentActivityProvider>
         </TabManagerProvider>
