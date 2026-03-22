@@ -11,7 +11,7 @@ type Bytes = axum::body::Bytes;
 use crate::assistant::auth::secrets::ProviderSecretStorage;
 use crate::assistant::types::{
     AuthMode, CompletionRequest, ContentPart, MessageRole, ModelInfo, ProtocolFamily,
-    ProviderDescriptor, ProviderEvent, ProviderSession, RunUsage,
+    ProviderDescriptor, ProviderEvent, ProviderSession, RunUsage, ToolInvocationDraft,
 };
 
 use super::types::{ProviderAdapter, ProviderError};
@@ -141,11 +141,6 @@ fn get_api_key(session: &ProviderSession) -> Result<String, ProviderError> {
         .ok_or(ProviderError::NotConfigured)
 }
 
-/// Build the full chat completions endpoint URL.
-/// Handles both conventions:
-///   - base_url = "https://api.openai.com"      → appends "/v1/chat/completions"
-///   - base_url = "https://api.openai.com/v1"    → appends "/chat/completions"
-///   - base_url = "http://localhost:8000/v1"      → appends "/chat/completions"
 fn completions_url(session: &ProviderSession) -> String {
     let base = session
         .base_url
@@ -160,33 +155,15 @@ fn completions_url(session: &ProviderSession) -> String {
     }
 }
 
+// =============================================================================
+// Request Building
+// =============================================================================
+
 fn build_request_body(request: &CompletionRequest) -> serde_json::Value {
     let messages: Vec<serde_json::Value> = request
         .messages
         .iter()
-        .map(|msg| {
-            let role = match msg.role {
-                MessageRole::System => "system",
-                MessageRole::User => "user",
-                MessageRole::Assistant => "assistant",
-                MessageRole::Tool => "tool",
-            };
-
-            let content = msg
-                .content
-                .iter()
-                .filter_map(|part| match part {
-                    ContentPart::Text { text } => Some(text.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("");
-
-            json!({
-                "role": role,
-                "content": content,
-            })
-        })
+        .map(|msg| build_message(msg))
         .collect();
 
     let mut body = json!({
@@ -195,6 +172,25 @@ fn build_request_body(request: &CompletionRequest) -> serde_json::Value {
         "stream": true,
         "stream_options": { "include_usage": true },
     });
+
+    // Add tools if present
+    if !request.tools.is_empty() {
+        let tools: Vec<serde_json::Value> = request
+            .tools
+            .iter()
+            .map(|t| {
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.input_schema,
+                    }
+                })
+            })
+            .collect();
+        body["tools"] = json!(tools);
+    }
 
     if let Some(temp) = request.temperature {
         body["temperature"] = json!(temp);
@@ -207,71 +203,186 @@ fn build_request_body(request: &CompletionRequest) -> serde_json::Value {
     body
 }
 
-/// Transforms a reqwest response bytes stream into a stream of ProviderEvent values
-/// by parsing OpenAI SSE format.
+/// Build a single OpenAI message from a ProviderInputMessage.
+/// Handles text, tool_use (assistant with tool_calls), and tool_result (role: tool).
+fn build_message(msg: &crate::assistant::types::ProviderInputMessage) -> serde_json::Value {
+    let role = match msg.role {
+        MessageRole::System => "system",
+        MessageRole::User => "user",
+        MessageRole::Assistant => "assistant",
+        MessageRole::Tool => "tool",
+    };
+
+    // Check if this message contains tool uses (assistant calling tools)
+    let tool_uses: Vec<&ContentPart> = msg
+        .content
+        .iter()
+        .filter(|p| matches!(p, ContentPart::ToolUse { .. }))
+        .collect();
+
+    // Check if this is a tool result message
+    if let Some(ContentPart::ToolResult {
+        tool_call_id,
+        payload,
+    }) = msg.content.first()
+    {
+        if msg.role == MessageRole::Tool {
+            return json!({
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": payload.to_string(),
+            });
+        }
+    }
+
+    // If assistant message has tool calls, format with tool_calls array
+    if msg.role == MessageRole::Assistant && !tool_uses.is_empty() {
+        let text_content: String = msg
+            .content
+            .iter()
+            .filter_map(|p| match p {
+                ContentPart::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
+
+        let tool_calls: Vec<serde_json::Value> = tool_uses
+            .iter()
+            .map(|p| match p {
+                ContentPart::ToolUse {
+                    tool_call_id,
+                    tool_name,
+                } => json!({
+                    "id": tool_call_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": "{}", // The actual arguments were in the original call
+                    }
+                }),
+                _ => json!(null),
+            })
+            .collect();
+
+        let mut message = json!({
+            "role": "assistant",
+            "tool_calls": tool_calls,
+        });
+        if !text_content.is_empty() {
+            message["content"] = json!(text_content);
+        }
+        return message;
+    }
+
+    // Default: text content
+    let content = msg
+        .content
+        .iter()
+        .filter_map(|part| match part {
+            ContentPart::Text { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    json!({
+        "role": role,
+        "content": content,
+    })
+}
+
+// =============================================================================
+// SSE Stream Parsing
+// =============================================================================
+
+/// State for accumulating partial tool calls across SSE frames.
+#[derive(Default, Clone)]
+struct PartialToolCall {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
+/// Full state carried through the SSE stream unfold.
+struct SseState {
+    stream: Pin<Box<dyn Stream<Item = reqwest::Result<Bytes>> + Send>>,
+    buf: String,
+    is_first: bool,
+    tool_calls: Vec<PartialToolCall>,
+}
+
 fn sse_to_provider_events(
     byte_stream: impl Stream<Item = reqwest::Result<Bytes>> + Send + 'static,
 ) -> impl Stream<Item = Result<ProviderEvent, ProviderError>> + Send {
-    futures::stream::unfold(
-        (byte_stream.boxed(), String::new(), true),
-        |(mut stream, mut buf, mut first)| async move {
-            loop {
-                // Check if we have a complete SSE frame in the buffer
-                if let Some(pos) = buf.find("\n\n") {
-                    let frame = buf[..pos].to_string();
-                    buf = buf[pos + 2..].to_string();
+    let state = SseState {
+        stream: byte_stream.boxed(),
+        buf: String::new(),
+        is_first: true,
+        tool_calls: Vec::new(),
+    };
 
-                    let events = parse_sse_frame(&frame, &mut first);
-                    if !events.is_empty() {
-                        return Some((events, (stream, buf, first)));
-                    }
-                    continue;
+    futures::stream::unfold(state, |mut state| async move {
+        loop {
+            // Check if we have a complete SSE frame in the buffer
+            if let Some(pos) = state.buf.find("\n\n") {
+                let frame = state.buf[..pos].to_string();
+                state.buf = state.buf[pos + 2..].to_string();
+
+                let events =
+                    parse_sse_frame(&frame, &mut state.is_first, &mut state.tool_calls);
+                if !events.is_empty() {
+                    return Some((events, state));
                 }
+                continue;
+            }
 
-                // Need more data
-                match stream.next().await {
-                    Some(Ok(bytes)) => {
-                        match String::from_utf8(bytes.to_vec()) {
-                            Ok(text) => buf.push_str(&text),
-                            Err(e) => {
-                                return Some((
-                                    vec![Err(ProviderError::RequestFailed(format!(
-                                        "Invalid UTF-8 in stream: {}",
-                                        e
-                                    )))],
-                                    (stream, buf, first),
-                                ));
-                            }
-                        }
-                    }
-                    Some(Err(e)) => {
+            // Need more data
+            match state.stream.next().await {
+                Some(Ok(bytes)) => match String::from_utf8(bytes.to_vec()) {
+                    Ok(text) => state.buf.push_str(&text),
+                    Err(e) => {
                         return Some((
-                            vec![Err(ProviderError::RequestFailed(e.to_string()))],
-                            (stream, buf, first),
+                            vec![Err(ProviderError::RequestFailed(format!(
+                                "Invalid UTF-8 in stream: {}",
+                                e
+                            )))],
+                            state,
                         ));
                     }
-                    None => {
-                        // Stream ended. Parse any remaining buffer.
-                        if !buf.trim().is_empty() {
-                            let events = parse_sse_frame(buf.trim(), &mut first);
-                            buf.clear();
-                            if !events.is_empty() {
-                                return Some((events, (stream, buf, first)));
-                            }
+                },
+                Some(Err(e)) => {
+                    return Some((
+                        vec![Err(ProviderError::RequestFailed(e.to_string()))],
+                        state,
+                    ));
+                }
+                None => {
+                    // Stream ended. Parse any remaining buffer.
+                    if !state.buf.trim().is_empty() {
+                        let events = parse_sse_frame(
+                            state.buf.trim(),
+                            &mut state.is_first,
+                            &mut state.tool_calls,
+                        );
+                        state.buf.clear();
+                        if !events.is_empty() {
+                            return Some((events, state));
                         }
-                        return None;
                     }
+                    return None;
                 }
             }
-        },
-    )
+        }
+    })
     .flat_map(|events| futures::stream::iter(events))
 }
 
-/// Parse a single SSE frame (one or more `data:` lines) into ProviderEvent values.
+/// Parse a single SSE frame into ProviderEvent values.
 fn parse_sse_frame(
     frame: &str,
     is_first: &mut bool,
+    tool_calls_buf: &mut Vec<PartialToolCall>,
 ) -> Vec<Result<ProviderEvent, ProviderError>> {
     let mut events = Vec::new();
 
@@ -289,6 +400,8 @@ fn parse_sse_frame(
         }
 
         if data == "[DONE]" {
+            // Flush any accumulated tool calls before completing
+            flush_tool_calls(tool_calls_buf, &mut events);
             events.push(Ok(ProviderEvent::MessageComplete));
             continue;
         }
@@ -300,18 +413,64 @@ fn parse_sse_frame(
                     events.push(Ok(ProviderEvent::MessageStart));
                 }
 
-                // Extract text delta from choices[0].delta.content
-                if let Some(content) = json
-                    .get("choices")
-                    .and_then(|c| c.get(0))
-                    .and_then(|c| c.get("delta"))
-                    .and_then(|d| d.get("content"))
-                    .and_then(|c| c.as_str())
+                let choice = json.get("choices").and_then(|c| c.get(0));
+
+                // Check finish_reason for tool_calls
+                if let Some(reason) = choice
+                    .and_then(|c| c.get("finish_reason"))
+                    .and_then(|r| r.as_str())
+                {
+                    if reason == "tool_calls" {
+                        flush_tool_calls(tool_calls_buf, &mut events);
+                    }
+                }
+
+                let delta = choice.and_then(|c| c.get("delta"));
+
+                // Extract text delta
+                if let Some(content) = delta.and_then(|d| d.get("content")).and_then(|c| c.as_str())
                 {
                     if !content.is_empty() {
                         events.push(Ok(ProviderEvent::TextDelta {
                             text: content.to_string(),
                         }));
+                    }
+                }
+
+                // Extract tool_calls deltas
+                if let Some(tool_calls) =
+                    delta.and_then(|d| d.get("tool_calls")).and_then(|t| t.as_array())
+                {
+                    for tc in tool_calls {
+                        let index = tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
+
+                        // Ensure buffer is large enough
+                        while tool_calls_buf.len() <= index {
+                            tool_calls_buf.push(PartialToolCall::default());
+                        }
+
+                        // Accumulate id
+                        if let Some(id) = tc.get("id").and_then(|i| i.as_str()) {
+                            tool_calls_buf[index].id = id.to_string();
+                        }
+
+                        // Accumulate function name
+                        if let Some(name) = tc
+                            .get("function")
+                            .and_then(|f| f.get("name"))
+                            .and_then(|n| n.as_str())
+                        {
+                            tool_calls_buf[index].name = name.to_string();
+                        }
+
+                        // Accumulate function arguments (streamed as partial JSON)
+                        if let Some(args) = tc
+                            .get("function")
+                            .and_then(|f| f.get("arguments"))
+                            .and_then(|a| a.as_str())
+                        {
+                            tool_calls_buf[index].arguments.push_str(args);
+                        }
                     }
                 }
 
@@ -344,4 +503,26 @@ fn parse_sse_frame(
     }
 
     events
+}
+
+/// Flush accumulated tool calls as ToolCallReady events.
+fn flush_tool_calls(
+    tool_calls_buf: &mut Vec<PartialToolCall>,
+    events: &mut Vec<Result<ProviderEvent, ProviderError>>,
+) {
+    for tc in tool_calls_buf.drain(..) {
+        if tc.id.is_empty() {
+            continue;
+        }
+        let params = serde_json::from_str::<serde_json::Value>(&tc.arguments)
+            .unwrap_or(serde_json::json!({}));
+
+        events.push(Ok(ProviderEvent::ToolCallReady {
+            tool_call: ToolInvocationDraft {
+                tool_call_id: tc.id,
+                tool_name: tc.name,
+                params,
+            },
+        }));
+    }
 }

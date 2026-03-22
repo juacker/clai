@@ -8,4 +8,5 @@ pub mod engine;
 pub mod events;
 pub mod providers;
 pub mod repository;
+pub mod tools;
 pub mod types;

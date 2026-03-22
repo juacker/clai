@@ -15,7 +15,7 @@ import { TabContextProvider } from '../../contexts/TabContext';
 import { useChatManager } from '../../contexts/ChatManagerContext';
 import { useAgentActivity } from '../../contexts/AgentActivityContext';
 import { useOnDemandAgent } from '../../agents';
-import { useAssistantSession, assistantClient } from '../../assistant';
+import { useAssistantSession, useAssistantStore, assistantClient } from '../../assistant';
 import { getStoredModel } from '../Settings/AssistantProviderSettings';
 import TerminalEmulator from './TerminalEmulator';
 
@@ -71,14 +71,18 @@ const TerminalEmulatorWrapper = ({ userInfo }) => {
         openChat();
         try {
           const model = getStoredModel() || 'gpt-4o-mini';
+          const spaceId = activeTab.context?.spaceRoom?.selectedSpaceId || null;
+          const roomId = activeTab.context?.spaceRoom?.selectedRoomId || null;
           const sessionId = await ensureSession(
             providerSession.providerId,
             model,
-            {}
+            { spaceId, roomId }
           );
-          // Use client directly instead of the hook's sendMessage,
-          // because the hook's ref won't have the new sessionId until next render.
-          await assistantClient.sendMessage(sessionId, query);
+          // Use client directly and add user message to store immediately
+          // for instant display (don't wait for async Tauri event).
+          const result = await assistantClient.sendMessage(sessionId, query);
+          const store = useAssistantStore.getState();
+          store.addMessage(sessionId, result.message);
         } catch (err) {
           console.error('[TerminalEmulatorWrapper] Assistant error:', err);
         }

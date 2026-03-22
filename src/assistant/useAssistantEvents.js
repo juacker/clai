@@ -51,7 +51,8 @@ export function useAssistantEvents() {
           break;
 
         case 'assistant_delta':
-          store.appendDelta(sessionId, payload.messageId, payload.text);
+          // Rust field name is snake_case: message_id (not camelCase)
+          store.appendDelta(sessionId, payload.message_id, payload.text);
           break;
 
         case 'assistant_message_completed':
@@ -61,7 +62,8 @@ export function useAssistantEvents() {
         case 'tool_call_started':
         case 'tool_call_completed':
         case 'tool_call_failed':
-          // Phase 3: tool execution events
+          // Rust field name is snake_case: tool_call (not camelCase)
+          store.setToolCall(sessionId, payload.tool_call);
           break;
 
         default:

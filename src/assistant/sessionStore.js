@@ -13,6 +13,7 @@ const createInitialSessionState = (session) => ({
   session,
   messages: [],
   runs: [],
+  toolCalls: [],
   streamingTextByMessageId: {},
   isStreaming: false,
 });
@@ -94,6 +95,18 @@ const useAssistantStore = create(
           if (['completed', 'failed', 'cancelled'].includes(run.status)) {
             s.isStreaming = false;
             s.streamingTextByMessageId = {};
+          }
+        }),
+
+      setToolCall: (sessionId, toolCall) =>
+        set((state) => {
+          const s = state.sessions[sessionId];
+          if (!s) return;
+          const idx = s.toolCalls.findIndex((tc) => tc.id === toolCall.id);
+          if (idx >= 0) {
+            s.toolCalls[idx] = toolCall;
+          } else {
+            s.toolCalls.push(toolCall);
           }
         }),
 

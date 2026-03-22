@@ -6,7 +6,8 @@ use uuid::Uuid;
 
 use crate::assistant::types::{
     AssistantMessage, AssistantRun, AssistantSession, AuthMode, ContentPart, MessageRole,
-    ProviderSession, RunStatus, RunTrigger, RunUsage, SessionContext, SessionKind,
+    ProviderSession, RunStatus, RunTrigger, RunUsage, SessionContext, SessionKind, ToolCallStatus,
+    ToolInvocation,
 };
 use crate::db::DbPool;
 
@@ -34,6 +35,14 @@ pub struct CreateRunParams {
     pub model_id: String,
     pub usage: Option<RunUsage>,
     pub error: Option<String>,
+}
+
+pub struct CreateToolCallParams {
+    pub run_id: String,
+    pub session_id: String,
+    pub tool_name: String,
+    pub params: serde_json::Value,
+    pub status: ToolCallStatus,
 }
 
 pub struct UpsertProviderSessionParams {
@@ -591,6 +600,106 @@ pub async fn update_message_content(
     .map_err(|e| format!("Failed to load updated message: {}", e))?;
 
     map_message_row(&row)
+}
+
+fn map_tool_call_row(row: &sqlx::sqlite::SqliteRow) -> Result<ToolInvocation, String> {
+    Ok(ToolInvocation {
+        id: row.get("id"),
+        run_id: row.get("run_id"),
+        session_id: row.get("session_id"),
+        tool_name: row.get("tool_name"),
+        params: parse_json(&row.get::<String, _>("params_json"), "tool call params")?,
+        status: parse_json::<ToolCallStatus>(
+            &row.get::<String, _>("status"),
+            "tool call status",
+        )?,
+        result: parse_optional_json(row.get("result_json"), "tool call result")?,
+        error: row.get("error"),
+        started_at: row.get("started_at"),
+        completed_at: row.get("completed_at"),
+    })
+}
+
+pub async fn create_tool_call(
+    pool: &DbPool,
+    params: CreateToolCallParams,
+) -> Result<ToolInvocation, String> {
+    let tc = ToolInvocation {
+        id: Uuid::new_v4().to_string(),
+        run_id: params.run_id,
+        session_id: params.session_id,
+        tool_name: params.tool_name,
+        params: params.params,
+        status: params.status,
+        result: None,
+        error: None,
+        started_at: now_ms(),
+        completed_at: None,
+    };
+
+    sqlx::query(
+        r#"
+        INSERT INTO assistant_tool_calls
+            (id, run_id, session_id, tool_name, params_json, status, result_json, error, started_at, completed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(&tc.id)
+    .bind(&tc.run_id)
+    .bind(&tc.session_id)
+    .bind(&tc.tool_name)
+    .bind(to_json_string(&tc.params)?)
+    .bind(to_json_string(&tc.status)?)
+    .bind::<Option<String>>(None)
+    .bind::<Option<String>>(None)
+    .bind(tc.started_at)
+    .bind::<Option<i64>>(None)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create tool call: {}", e))?;
+
+    Ok(tc)
+}
+
+pub async fn update_tool_call(
+    pool: &DbPool,
+    id: &str,
+    status: ToolCallStatus,
+    result: Option<&serde_json::Value>,
+    error: Option<&str>,
+) -> Result<ToolInvocation, String> {
+    let is_terminal = matches!(status, ToolCallStatus::Completed | ToolCallStatus::Failed);
+    let completed_at = if is_terminal { Some(now_ms()) } else { None };
+
+    sqlx::query(
+        r#"
+        UPDATE assistant_tool_calls
+        SET status = ?, result_json = ?, error = ?, completed_at = COALESCE(?, completed_at)
+        WHERE id = ?
+        "#,
+    )
+    .bind(to_json_string(&status)?)
+    .bind(result.map(to_json_string).transpose()?)
+    .bind(error)
+    .bind(completed_at)
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to update tool call: {}", e))?;
+
+    let row = sqlx::query(
+        r#"
+        SELECT id, run_id, session_id, tool_name, params_json, status, result_json, error, started_at, completed_at
+        FROM assistant_tool_calls
+        WHERE id = ?
+        "#,
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("Failed to load updated tool call: {}", e))?;
+
+    map_tool_call_row(&row)
 }
 
 async fn touch_session(pool: &DbPool, session_id: &str) -> Result<(), String> {

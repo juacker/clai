@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useCallback, memo } from 'react';
+import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { useAssistantSession } from '../../assistant';
+import useAssistantStore from '../../assistant/sessionStore';
 import MarkdownMessage from '../Chat/MarkdownMessage';
 import UserAvatar from '../UserAvatar';
 import styles from '../AgentChat/AgentChat.module.css';
@@ -12,7 +13,10 @@ import styles from '../AgentChat/AgentChat.module.css';
  * Coexists with AgentChat during migration.
  */
 const AssistantChat = ({ tabId, userInfo }) => {
-  const { messages, streamingText, isStreaming } = useAssistantSession(tabId);
+  const { messages, streamingText, isStreaming, sessionId } = useAssistantSession(tabId);
+  const toolCalls = useAssistantStore((state) =>
+    sessionId ? state.sessions[sessionId]?.toolCalls || [] : []
+  );
   const messagesEndRef = useRef(null);
   const containerRef = useRef(null);
   const isNearBottomRef = useRef(true);
@@ -44,7 +48,7 @@ const AssistantChat = ({ tabId, userInfo }) => {
     if (isStreaming && isNearBottomRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages, isStreaming, streamingText]);
+  }, [messages, isStreaming, streamingText, toolCalls]);
 
   // Empty state
   if (messages.length === 0) {
@@ -60,6 +64,12 @@ const AssistantChat = ({ tabId, userInfo }) => {
     );
   }
 
+  // Build a tool call lookup by tool_call_id for matching with content parts
+  const toolCallMap = {};
+  toolCalls.forEach((tc) => {
+    toolCallMap[tc.toolName] = tc;
+  });
+
   return (
     <div className={styles.agentChat}>
       <div
@@ -73,6 +83,7 @@ const AssistantChat = ({ tabId, userInfo }) => {
             message={message}
             userInfo={userInfo}
             streamingText={streamingText[message.id]}
+            toolCalls={toolCalls}
           />
         ))}
 
@@ -109,7 +120,15 @@ const getTextContent = (message) => {
     .join('');
 };
 
-const MessageBlock = memo(({ message, userInfo, streamingText }) => {
+/**
+ * Get tool_use content parts from a message.
+ */
+const getToolUses = (message) => {
+  if (!message.content || !Array.isArray(message.content)) return [];
+  return message.content.filter((part) => part.type === 'tool_use');
+};
+
+const MessageBlock = memo(({ message, userInfo, streamingText, toolCalls }) => {
   const { role, createdAt } = message;
 
   if (role === 'user') {
@@ -133,9 +152,9 @@ const MessageBlock = memo(({ message, userInfo, streamingText }) => {
   }
 
   if (role === 'assistant') {
-    // Use streaming text if available, otherwise use persisted content
     const textContent = streamingText || getTextContent(message);
     const isCurrentlyStreaming = !!streamingText;
+    const toolUses = getToolUses(message);
 
     return (
       <div className={styles.assistantMessage}>
@@ -149,16 +168,129 @@ const MessageBlock = memo(({ message, userInfo, streamingText }) => {
           {createdAt && <span className={styles.messageTimestamp}>{formatTimestamp(createdAt)}</span>}
         </div>
         <div className={styles.messageContent}>
-          <MarkdownMessage
-            content={textContent || ''}
-            isStreaming={isCurrentlyStreaming}
-          />
+          {textContent && (
+            <MarkdownMessage
+              content={textContent}
+              isStreaming={isCurrentlyStreaming}
+            />
+          )}
+          {toolUses.map((tu) => {
+            // ContentPart::ToolUse fields are snake_case (from Rust serde)
+            const toolCallId = tu.tool_call_id;
+            const toolName = tu.tool_name;
+            // ToolInvocation fields are camelCase (from Rust serde)
+            const tc = toolCalls.find((t) => t.toolName === toolName);
+            return (
+              <ToolCallBlock
+                key={toolCallId}
+                toolName={toolName}
+                status={tc?.status || 'running'}
+                result={tc?.result}
+                error={tc?.error}
+              />
+            );
+          })}
         </div>
       </div>
     );
   }
 
+  // Skip tool result messages — they're shown inline with tool calls
+  if (role === 'tool') {
+    return null;
+  }
+
   return null;
+});
+
+/**
+ * ToolCallBlock — renders a tool call with status and result
+ */
+const ToolCallBlock = memo(({ toolName, status, result, error }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const handleToggle = useCallback(() => {
+    setIsExpanded((prev) => !prev);
+  }, []);
+
+  const statusDisplay = status === 'completed' ? 'complete' : status === 'failed' ? 'error' : 'pending';
+
+  return (
+    <div className={styles.toolBlock}>
+      <div className={styles.toolHeader} onClick={handleToggle}>
+        <div className={styles.toolHeaderLeft}>
+          <span className={styles.toolIconEmoji}>
+            {status === 'completed' ? '✓' : status === 'failed' ? '✗' : '⚙'}
+          </span>
+          <span className={styles.toolName}>{toolName}</span>
+          <StatusIndicator status={statusDisplay} />
+        </div>
+        <div className={styles.toolHeaderRight}>
+          <span className={`${styles.expandIcon} ${isExpanded ? styles.expanded : ''}`}>
+            ▼
+          </span>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className={styles.toolContent}>
+          {result && (
+            <div className={styles.toolSection}>
+              <div className={styles.toolSectionTitle}>Result</div>
+              <div className={styles.toolResult}>
+                <MarkdownMessage
+                  content={typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
+                  isStreaming={false}
+                />
+              </div>
+            </div>
+          )}
+          {error && (
+            <div className={styles.toolSection}>
+              <div className={styles.toolSectionTitle}>Error</div>
+              <div className={styles.toolResult}>
+                <span style={{ color: 'var(--color-critical)' }}>{error}</span>
+              </div>
+            </div>
+          )}
+          {!result && !error && status === 'running' && (
+            <div className={styles.loadingState}>
+              <span className={styles.spinner}></span>
+              <span>Executing...</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+const StatusIndicator = memo(({ status }) => {
+  switch (status) {
+    case 'pending':
+      return (
+        <span className={styles.statusPending}>
+          <span className={styles.spinner}></span>
+          Running...
+        </span>
+      );
+    case 'complete':
+      return (
+        <span className={styles.statusSuccess}>
+          <span className={styles.successIcon}>✓</span>
+          Complete
+        </span>
+      );
+    case 'error':
+      return (
+        <span className={styles.statusError}>
+          <span className={styles.errorIcon}>✗</span>
+          Failed
+        </span>
+      );
+    default:
+      return null;
+  }
 });
 
 export default AssistantChat;
