@@ -1,7 +1,8 @@
 //! Database module for workspace state persistence.
 //!
 //! Uses SQLite via SQLx to store tabs and commands state.
-//! This enables full workspace restoration on app restart.
+//! This enables full workspace restoration on app restart and stores
+//! assistant session state for the app-owned assistant runtime.
 
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::path::PathBuf;
@@ -104,6 +105,144 @@ async fn run_migrations(pool: &DbPool) -> Result<(), String> {
     .execute(pool)
     .await
     .map_err(|e| format!("Failed to create workspace_meta table: {}", e))?;
+
+    // Create assistant sessions table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS assistant_sessions (
+            id TEXT PRIMARY KEY,
+            tab_id TEXT REFERENCES tabs(id) ON DELETE SET NULL,
+            kind TEXT NOT NULL,
+            title TEXT,
+            provider_id TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            context_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create assistant_sessions table: {}", e))?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_assistant_sessions_tab
+        ON assistant_sessions(tab_id)
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create assistant_sessions tab index: {}", e))?;
+
+    // Create assistant messages table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS assistant_messages (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES assistant_sessions(id) ON DELETE CASCADE,
+            role TEXT NOT NULL,
+            content_json TEXT NOT NULL,
+            provider_metadata_json TEXT,
+            created_at INTEGER NOT NULL
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create assistant_messages table: {}", e))?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_assistant_messages_session
+        ON assistant_messages(session_id, created_at)
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create assistant_messages index: {}", e))?;
+
+    // Create assistant runs table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS assistant_runs (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES assistant_sessions(id) ON DELETE CASCADE,
+            status TEXT NOT NULL,
+            trigger TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            usage_json TEXT,
+            error TEXT,
+            started_at INTEGER NOT NULL,
+            completed_at INTEGER
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create assistant_runs table: {}", e))?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_assistant_runs_session
+        ON assistant_runs(session_id, started_at)
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create assistant_runs index: {}", e))?;
+
+    // Create assistant tool calls table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS assistant_tool_calls (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES assistant_runs(id) ON DELETE CASCADE,
+            session_id TEXT NOT NULL REFERENCES assistant_sessions(id) ON DELETE CASCADE,
+            tool_name TEXT NOT NULL,
+            params_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            result_json TEXT,
+            error TEXT,
+            started_at INTEGER NOT NULL,
+            completed_at INTEGER
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create assistant_tool_calls table: {}", e))?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_assistant_tool_calls_run
+        ON assistant_tool_calls(run_id, started_at)
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create assistant_tool_calls index: {}", e))?;
+
+    // Create provider sessions table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS provider_sessions (
+            provider_id TEXT PRIMARY KEY,
+            auth_mode TEXT NOT NULL,
+            base_url TEXT,
+            secret_ref TEXT NOT NULL,
+            account_label TEXT,
+            expires_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create provider_sessions table: {}", e))?;
 
     // Enable foreign keys
     sqlx::query("PRAGMA foreign_keys = ON")

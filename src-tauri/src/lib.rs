@@ -31,6 +31,7 @@
 // Declare our modules
 mod agents;
 mod api;
+mod assistant;
 mod auth;
 mod commands;
 mod config;
@@ -175,6 +176,15 @@ pub fn run() {
             commands::api::api_delete_conversation,
             commands::api::api_create_conversation_title,
             commands::api::api_chat_completion,
+            // Assistant runtime commands
+            commands::assistant::assistant_create_session,
+            commands::assistant::assistant_get_session,
+            commands::assistant::assistant_list_sessions,
+            commands::assistant::assistant_delete_session,
+            commands::assistant::assistant_attach_session_to_tab,
+            commands::assistant::assistant_load_session_messages,
+            commands::assistant::assistant_list_runs,
+            commands::assistant::assistant_send_message,
             // Auto-pilot commands (legacy - may be replaced by agent commands)
             commands::autopilot::get_autopilot_status,
             commands::autopilot::set_autopilot_enabled,
@@ -197,6 +207,12 @@ pub fn run() {
             commands::provider::get_available_ai_providers,
             commands::provider::validate_ai_provider,
             commands::provider::get_provider_models,
+            // Provider session commands for app-owned assistant runtime
+            commands::provider_sessions::provider_list_available,
+            commands::provider_sessions::provider_connect_api_key,
+            commands::provider_sessions::provider_disconnect,
+            commands::provider_sessions::provider_get_active_session,
+            commands::provider_sessions::provider_list_sessions,
             // Agent tool bridge commands
             commands::bridge::agent_tool_result,
             // Workspace state persistence commands

@@ -5,8 +5,10 @@
 
 pub mod agents;
 pub mod api;
+pub mod assistant;
 pub mod auth;
 pub mod autopilot;
 pub mod bridge;
 pub mod provider;
+pub mod provider_sessions;
 pub mod workspace;

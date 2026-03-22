@@ -1,0 +1,49 @@
+#![allow(dead_code)]
+
+use std::pin::Pin;
+
+use async_trait::async_trait;
+use futures::Stream;
+use thiserror::Error;
+
+use crate::assistant::types::{
+    CompletionRequest, ModelInfo, ProtocolFamily, ProviderEvent, ProviderSession,
+};
+
+#[derive(Debug, Error)]
+pub enum ProviderError {
+    #[error("provider is not configured")]
+    NotConfigured,
+    #[error("provider transport is not implemented yet")]
+    NotImplemented,
+    #[error("provider request failed: {0}")]
+    RequestFailed(String),
+}
+
+#[async_trait]
+pub trait ProviderAdapter: Send + Sync {
+    fn provider_id(&self) -> &'static str;
+    fn protocol_family(&self) -> ProtocolFamily;
+
+    async fn list_models(
+        &self,
+        _session: &ProviderSession,
+    ) -> Result<Vec<ModelInfo>, ProviderError> {
+        Err(ProviderError::NotImplemented)
+    }
+
+    async fn stream_completion(
+        &self,
+        _session: &ProviderSession,
+        _request: CompletionRequest,
+    ) -> Result<
+        Pin<Box<dyn Stream<Item = Result<ProviderEvent, ProviderError>> + Send>>,
+        ProviderError,
+    > {
+        Err(ProviderError::NotImplemented)
+    }
+
+    async fn cancel(&self, _provider_run_id: &str) -> Result<(), ProviderError> {
+        Err(ProviderError::NotImplemented)
+    }
+}
