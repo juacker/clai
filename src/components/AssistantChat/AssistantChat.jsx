@@ -1,22 +1,33 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
-import { useAssistantSession } from '../../assistant';
+import { assistantClient, useAssistantSession } from '../../assistant';
 import useAssistantStore from '../../assistant/sessionStore';
 import MarkdownMessage from '../Chat/MarkdownMessage';
 import UserAvatar from '../UserAvatar';
 import styles from '../AgentChat/AgentChat.module.css';
 
+const EMPTY_TOOL_CALLS = [];
+
 /**
  * AssistantChat Component
  *
  * Displays assistant session messages for a specific tab.
- * Sources data from the assistant Zustand store (not AgentActivityContext).
- * Coexists with AgentChat during migration.
+ * Sources data from the assistant Zustand store.
  */
 const AssistantChat = ({ tabId, userInfo }) => {
-  const { messages, streamingText, isStreaming, sessionId } = useAssistantSession(tabId);
+  const {
+    messages,
+    streamingText,
+    isStreaming,
+    sessionId,
+    clearSessions,
+  } = useAssistantSession(tabId);
   const toolCalls = useAssistantStore((state) =>
-    sessionId ? state.sessions[sessionId]?.toolCalls || [] : []
+    sessionId
+      ? (state.sessions[sessionId]?.toolCalls || EMPTY_TOOL_CALLS)
+      : EMPTY_TOOL_CALLS
   );
+  const [providerConfigured, setProviderConfigured] = useState(true);
+  const [isClearing, setIsClearing] = useState(false);
   const messagesEndRef = useRef(null);
   const containerRef = useRef(null);
   const isNearBottomRef = useRef(true);
@@ -50,28 +61,87 @@ const AssistantChat = ({ tabId, userInfo }) => {
     }
   }, [messages, isStreaming, streamingText, toolCalls]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProviderStatus = async () => {
+      try {
+        const sessions = await assistantClient.listProviderSessions();
+        if (!cancelled) {
+          setProviderConfigured(sessions.length > 0);
+        }
+      } catch {
+        if (!cancelled) {
+          setProviderConfigured(false);
+        }
+      }
+    };
+
+    loadProviderStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  const handleClearChat = useCallback(async () => {
+    if (!tabId || isClearing) return;
+
+    const confirmed = window.confirm(
+      'Clear the assistant chat history for this tab? This will remove all saved assistant sessions for the tab.'
+    );
+    if (!confirmed) return;
+
+    setIsClearing(true);
+    try {
+      await clearSessions();
+    } catch (error) {
+      console.error('[AssistantChat] Failed to clear chat:', error);
+    } finally {
+      setIsClearing(false);
+    }
+  }, [tabId, isClearing, clearSessions]);
+
   // Empty state
   if (messages.length === 0) {
     return (
       <div className={styles.agentChat}>
+        <div className={styles.chatToolbar}>
+          <div className={styles.toolbarTitle}>Assistant</div>
+          <button
+            type="button"
+            className={styles.chatActionButton}
+            onClick={handleClearChat}
+            disabled={isClearing}
+          >
+            {isClearing ? 'Clearing…' : 'Clear Chat'}
+          </button>
+        </div>
         <div className={styles.emptyState}>
           <div className={styles.emptyTitle}>No activity yet</div>
           <div className={styles.emptyDescription}>
-            Type a message in the terminal to start a conversation.
+            {providerConfigured
+              ? 'Type a message in the terminal to start a conversation.'
+              : 'Connect an assistant provider in Settings, then send a message from the terminal.'}
           </div>
         </div>
       </div>
     );
   }
 
-  // Build a tool call lookup by tool_call_id for matching with content parts
-  const toolCallMap = {};
-  toolCalls.forEach((tc) => {
-    toolCallMap[tc.toolName] = tc;
-  });
-
   return (
     <div className={styles.agentChat}>
+      <div className={styles.chatToolbar}>
+        <div className={styles.toolbarTitle}>Assistant</div>
+        <button
+          type="button"
+          className={styles.chatActionButton}
+          onClick={handleClearChat}
+          disabled={isClearing}
+        >
+          {isClearing ? 'Clearing…' : 'Clear Chat'}
+        </button>
+      </div>
       <div
         ref={containerRef}
         className={styles.activityList}
@@ -179,7 +249,7 @@ const MessageBlock = memo(({ message, userInfo, streamingText, toolCalls }) => {
             const toolCallId = tu.tool_call_id;
             const toolName = tu.tool_name;
             // ToolInvocation fields are camelCase (from Rust serde)
-            const tc = toolCalls.find((t) => t.toolName === toolName);
+            const tc = toolCalls.find((t) => t.id === toolCallId);
             return (
               <ToolCallBlock
                 key={toolCallId}

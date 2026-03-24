@@ -7,6 +7,7 @@ pub use router::execute_tool;
 use crate::assistant::types::{RunId, SessionId};
 
 /// Context for tool execution within an assistant run.
+#[allow(dead_code)]
 pub struct ToolExecutionContext {
     pub session_id: SessionId,
     pub run_id: RunId,

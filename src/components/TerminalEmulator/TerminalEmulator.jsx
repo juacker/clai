@@ -155,7 +155,10 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
         openChat();
       }
       if (onSendToChat) {
-        onSendToChat(trimmed);
+        const result = await onSendToChat(trimmed);
+        if (result?.error) {
+          addOutputMessage(result.error, 'error');
+        }
       }
       return;
     }

@@ -100,6 +100,8 @@ pub enum ContentPart {
     ToolUse {
         tool_call_id: ToolCallId,
         tool_name: String,
+        #[serde(default)]
+        arguments: serde_json::Value,
     },
     ToolResult {
         tool_call_id: ToolCallId,

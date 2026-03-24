@@ -253,12 +253,13 @@ fn build_message(msg: &crate::assistant::types::ProviderInputMessage) -> serde_j
                 ContentPart::ToolUse {
                     tool_call_id,
                     tool_name,
+                    arguments,
                 } => json!({
                     "id": tool_call_id,
                     "type": "function",
                     "function": {
                         "name": tool_name,
-                        "arguments": "{}", // The actual arguments were in the original call
+                        "arguments": arguments.to_string(),
                     }
                 }),
                 _ => json!(null),
@@ -329,8 +330,7 @@ fn sse_to_provider_events(
                 let frame = state.buf[..pos].to_string();
                 state.buf = state.buf[pos + 2..].to_string();
 
-                let events =
-                    parse_sse_frame(&frame, &mut state.is_first, &mut state.tool_calls);
+                let events = parse_sse_frame(&frame, &mut state.is_first, &mut state.tool_calls);
                 if !events.is_empty() {
                     return Some((events, state));
                 }
@@ -428,7 +428,9 @@ fn parse_sse_frame(
                 let delta = choice.and_then(|c| c.get("delta"));
 
                 // Extract text delta
-                if let Some(content) = delta.and_then(|d| d.get("content")).and_then(|c| c.as_str())
+                if let Some(content) = delta
+                    .and_then(|d| d.get("content"))
+                    .and_then(|c| c.as_str())
                 {
                     if !content.is_empty() {
                         events.push(Ok(ProviderEvent::TextDelta {
@@ -438,8 +440,9 @@ fn parse_sse_frame(
                 }
 
                 // Extract tool_calls deltas
-                if let Some(tool_calls) =
-                    delta.and_then(|d| d.get("tool_calls")).and_then(|t| t.as_array())
+                if let Some(tool_calls) = delta
+                    .and_then(|d| d.get("tool_calls"))
+                    .and_then(|t| t.as_array())
                 {
                     for tc in tool_calls {
                         let index = tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
@@ -478,9 +481,7 @@ fn parse_sse_frame(
                 if let Some(usage_obj) = json.get("usage") {
                     if !usage_obj.is_null() {
                         let usage = RunUsage {
-                            input_tokens: usage_obj
-                                .get("prompt_tokens")
-                                .and_then(|v| v.as_u64()),
+                            input_tokens: usage_obj.get("prompt_tokens").and_then(|v| v.as_u64()),
                             output_tokens: usage_obj
                                 .get("completion_tokens")
                                 .and_then(|v| v.as_u64()),
@@ -488,9 +489,7 @@ fn parse_sse_frame(
                                 .get("completion_tokens_details")
                                 .and_then(|d| d.get("reasoning_tokens"))
                                 .and_then(|v| v.as_u64()),
-                            total_tokens: usage_obj
-                                .get("total_tokens")
-                                .and_then(|v| v.as_u64()),
+                            total_tokens: usage_obj.get("total_tokens").and_then(|v| v.as_u64()),
                         };
                         events.push(Ok(ProviderEvent::Usage { usage }));
                     }

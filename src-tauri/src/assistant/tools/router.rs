@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use tauri::Manager;
 
-use crate::api::netdata::NetdataApi;
+use crate::api::client::create_client;
 use crate::assistant::engine::AssistantDeps;
 use crate::mcp::bridge::JsBridge;
 use crate::mcp::tools::netdata::{NetdataQueryParams, NetdataQueryTool};
+use crate::AppState;
 
 use super::ToolExecutionContext;
 
@@ -49,16 +50,25 @@ async fn execute_netdata_query(
         .as_deref()
         .ok_or("netdata.query requires room_id in session context")?;
 
-    let query_params: NetdataQueryParams =
-        serde_json::from_value(params).map_err(|e| format!("Invalid netdata.query params: {}", e))?;
+    let query_params: NetdataQueryParams = serde_json::from_value(params)
+        .map_err(|e| format!("Invalid netdata.query params: {}", e))?;
 
-    // Get the NetdataApi from Tauri managed state
-    let api: Arc<NetdataApi> = deps
-        .app
-        .try_state::<Arc<NetdataApi>>()
-        .ok_or("NetdataApi not available")?
-        .inner()
+    let state = deps.app.state::<AppState>();
+    let token = state
+        .token_storage
+        .get_token()
+        .map_err(|e| format!("Failed to read Netdata token: {}", e))?
+        .ok_or("Netdata token not configured")?;
+    let base_url = state
+        .base_url
+        .lock()
+        .map_err(|e| format!("Failed to read Netdata base URL: {}", e))?
         .clone();
+    let api = Arc::new(crate::api::netdata::NetdataApi::new(
+        create_client(),
+        base_url,
+        token,
+    ));
 
     let tool = NetdataQueryTool::new(api, space_id.to_string(), room_id.to_string());
     let result = tool
@@ -70,10 +80,8 @@ async fn execute_netdata_query(
 }
 
 /// Execute a JS-bridge tool (dashboard.*, tabs.*, canvas.*).
-///
-/// Before calling any bridge tool, we first call `agent.setup` to ensure
-/// the frontend bridge knows which tab the assistant is operating on.
-/// This allows tool handlers like `ensureAgentTab` to find the correct tab.
+/// The engine pre-registers the tab via `agent.setup` once per run,
+/// so tool handlers can find the correct tab via `ensureAgentTab`.
 async fn execute_bridge_tool(
     deps: &AssistantDeps,
     context: &ToolExecutionContext,
@@ -82,25 +90,14 @@ async fn execute_bridge_tool(
 ) -> Result<serde_json::Value, String> {
     let bridge = JsBridge::new(deps.app.clone());
 
-    let agent_id = "assistant";
-    let space_id = context.space_id.as_deref().unwrap_or("");
-    let room_id = context.room_id.as_deref().unwrap_or("");
-
-    // Ensure the frontend bridge has a tab mapping for the assistant agent.
-    // This calls `agent.setup` which registers the active tab so that
-    // tool handlers can find it via ensureAgentTab().
-    if let Some(tab_id) = &context.tab_id {
-        let setup_params = serde_json::json!({
-            "agentName": "Assistant",
-            "tabId": tab_id,
-        });
-        let _ = bridge
-            .call_tool(agent_id, space_id, room_id, "agent.setup", setup_params)
-            .await;
-    }
-
     bridge
-        .call_tool(agent_id, space_id, room_id, tool_name, params)
+        .call_tool(
+            "assistant",
+            context.space_id.as_deref().unwrap_or(""),
+            context.room_id.as_deref().unwrap_or(""),
+            tool_name,
+            params,
+        )
         .await
         .map_err(|e| format!("{} failed: {}", tool_name, e))
 }

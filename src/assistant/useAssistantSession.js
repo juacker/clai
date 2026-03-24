@@ -30,26 +30,38 @@ export function useAssistantSession(tabId) {
     async (providerId, modelId, context = {}) => {
       const store = useAssistantStore.getState();
 
+      // Match on provider, model, AND context (space/room)
+      const contextSpaceId = context.spaceId || null;
+      const contextRoomId = context.roomId || null;
+
+      const sessionMatches = (s) =>
+        s.modelId === modelId &&
+        s.providerId === providerId &&
+        (s.context?.spaceId || null) === contextSpaceId &&
+        (s.context?.roomId || null) === contextRoomId;
+
       // Check if we already have a matching session for this tab
       const existingId = store.activeSessionByTab[tabId];
       if (existingId && store.sessions[existingId]) {
         const existing = store.sessions[existingId].session;
-        if (existing.modelId === modelId && existing.providerId === providerId) {
+        if (sessionMatches(existing)) {
           return existingId;
         }
-        // Model or provider changed — remove stale mapping, create new session
+        // Config changed — remove stale mapping, create new session
         store.removeSession(existingId);
       }
 
-      // Check DB for an existing session attached to this tab with matching model
+      // Check DB for an existing session attached to this tab with matching config
       try {
         const sessions = await client.listSessions(tabId);
-        const matching = sessions.find(
-          (s) => s.modelId === modelId && s.providerId === providerId
-        );
+        const matching = sessions.find((s) => sessionMatches(s));
         if (matching) {
-          const messages = await client.loadSessionMessages(matching.id);
-          store.loadSessionData(matching.id, matching, messages);
+          const [messages, runs, toolCalls] = await Promise.all([
+            client.loadSessionMessages(matching.id),
+            client.listRuns(matching.id),
+            client.listToolCalls(matching.id),
+          ]);
+          store.loadSessionData(matching.id, matching, messages, runs, toolCalls);
           store.setActiveSessionForTab(tabId, matching.id);
           return matching.id;
         }
@@ -84,6 +96,21 @@ export function useAssistantSession(tabId) {
     []
   );
 
+  /**
+   * Clear all assistant sessions attached to this tab.
+   * This prevents older context-specific sessions from being restored later.
+   */
+  const clearSessions = useCallback(async () => {
+    const sessions = await client.listSessions(tabId);
+    const store = useAssistantStore.getState();
+
+    await Promise.all(sessions.map((session) => client.deleteSession(session.id)));
+
+    sessions.forEach((session) => {
+      store.removeSession(session.id);
+    });
+  }, [tabId]);
+
   return {
     sessionId,
     sessionState,
@@ -94,5 +121,6 @@ export function useAssistantSession(tabId) {
     isStreaming: sessionState?.isStreaming || false,
     ensureSession,
     sendMessage,
+    clearSessions,
   };
 }

@@ -5,7 +5,7 @@ use crate::assistant::auth::ProviderSecretStorage;
 use crate::assistant::providers;
 use crate::assistant::repository;
 use crate::assistant::repository::UpsertProviderSessionParams;
-use crate::assistant::types::{AuthMode, ProviderDescriptor, ProviderSession};
+use crate::assistant::types::{AuthMode, ModelInfo, ProviderDescriptor, ProviderSession};
 use crate::db::DbPool;
 
 #[derive(Debug, Deserialize)]
@@ -77,10 +77,16 @@ pub async fn provider_disconnect(
 
 #[tauri::command]
 pub async fn provider_get_active_session(
-    provider_id: String,
+    provider_id: Option<String>,
     pool: State<'_, DbPool>,
 ) -> Result<Option<ProviderSession>, String> {
-    repository::get_provider_session(pool.inner(), &provider_id).await
+    match provider_id {
+        Some(provider_id) => repository::get_provider_session(pool.inner(), &provider_id).await,
+        None => Ok(repository::list_provider_sessions(pool.inner())
+            .await?
+            .into_iter()
+            .next()),
+    }
 }
 
 #[tauri::command]
@@ -88,4 +94,20 @@ pub async fn provider_list_sessions(
     pool: State<'_, DbPool>,
 ) -> Result<Vec<ProviderSession>, String> {
     repository::list_provider_sessions(pool.inner()).await
+}
+
+#[tauri::command]
+pub async fn provider_list_models(
+    provider_id: String,
+    pool: State<'_, DbPool>,
+) -> Result<Vec<ModelInfo>, String> {
+    let provider_session = repository::get_provider_session(pool.inner(), &provider_id)
+        .await?
+        .ok_or_else(|| format!("Provider session not found: {}", provider_id))?;
+
+    let adapter = providers::resolve_adapter(&provider_id).map_err(|e| e.to_string())?;
+    adapter
+        .list_models(&provider_session)
+        .await
+        .map_err(|e| e.to_string())
 }

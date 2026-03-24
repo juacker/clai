@@ -15,6 +15,49 @@
   min-height: 0;
 }
 
+.chatToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--glass-border-tinted);
+  background: var(--glass-bg-strong);
+  flex-shrink: 0;
+}
+
+.toolbarTitle {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.chatActionButton {
+  appearance: none;
+  border: 1px solid var(--color-border-medium);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.chatActionButton:hover:not(:disabled) {
+  border-color: var(--color-critical-border);
+  color: var(--color-critical);
+  background: var(--color-critical-bg);
+}
+
+.chatActionButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Running indicator at bottom of chat */
 .runningIndicator {
   display: flex;

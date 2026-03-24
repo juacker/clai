@@ -184,7 +184,10 @@ pub fn run() {
             commands::assistant::assistant_attach_session_to_tab,
             commands::assistant::assistant_load_session_messages,
             commands::assistant::assistant_list_runs,
+            commands::assistant::assistant_list_tool_calls,
             commands::assistant::assistant_send_message,
+            commands::assistant::assistant_retry_run,
+            commands::assistant::assistant_cancel_run,
             // Auto-pilot commands (legacy - may be replaced by agent commands)
             commands::autopilot::get_autopilot_status,
             commands::autopilot::set_autopilot_enabled,
@@ -199,7 +202,6 @@ pub fn run() {
             commands::agents::disable_agent_for_room,
             commands::agents::get_agents_for_room,
             commands::agents::toggle_agents_for_room,
-            commands::agents::run_on_demand_agent,
             // Provider commands
             commands::provider::get_ai_provider,
             commands::provider::set_ai_provider,
@@ -213,6 +215,7 @@ pub fn run() {
             commands::provider_sessions::provider_disconnect,
             commands::provider_sessions::provider_get_active_session,
             commands::provider_sessions::provider_list_sessions,
+            commands::provider_sessions::provider_list_models,
             // Agent tool bridge commands
             commands::bridge::agent_tool_result,
             // Workspace state persistence commands

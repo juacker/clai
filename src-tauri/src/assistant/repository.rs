@@ -38,6 +38,7 @@ pub struct CreateRunParams {
 }
 
 pub struct CreateToolCallParams {
+    pub id: String,
     pub run_id: String,
     pub session_id: String,
     pub tool_name: String,
@@ -389,6 +390,22 @@ pub async fn list_runs(pool: &DbPool, session_id: &str) -> Result<Vec<AssistantR
     rows.iter().map(map_run_row).collect()
 }
 
+pub async fn get_run(pool: &DbPool, run_id: &str) -> Result<Option<AssistantRun>, String> {
+    let row = sqlx::query(
+        r#"
+        SELECT id, session_id, status, trigger, provider_id, model_id, usage_json, error, started_at, completed_at
+        FROM assistant_runs
+        WHERE id = ?
+        "#,
+    )
+    .bind(run_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("Failed to load assistant run: {}", e))?;
+
+    row.as_ref().map(map_run_row).transpose()
+}
+
 pub async fn upsert_provider_session(
     pool: &DbPool,
     params: UpsertProviderSessionParams,
@@ -609,10 +626,7 @@ fn map_tool_call_row(row: &sqlx::sqlite::SqliteRow) -> Result<ToolInvocation, St
         session_id: row.get("session_id"),
         tool_name: row.get("tool_name"),
         params: parse_json(&row.get::<String, _>("params_json"), "tool call params")?,
-        status: parse_json::<ToolCallStatus>(
-            &row.get::<String, _>("status"),
-            "tool call status",
-        )?,
+        status: parse_json::<ToolCallStatus>(&row.get::<String, _>("status"), "tool call status")?,
         result: parse_optional_json(row.get("result_json"), "tool call result")?,
         error: row.get("error"),
         started_at: row.get("started_at"),
@@ -625,7 +639,7 @@ pub async fn create_tool_call(
     params: CreateToolCallParams,
 ) -> Result<ToolInvocation, String> {
     let tc = ToolInvocation {
-        id: Uuid::new_v4().to_string(),
+        id: params.id,
         run_id: params.run_id,
         session_id: params.session_id,
         tool_name: params.tool_name,
@@ -700,6 +714,43 @@ pub async fn update_tool_call(
     .map_err(|e| format!("Failed to load updated tool call: {}", e))?;
 
     map_tool_call_row(&row)
+}
+
+pub async fn list_tool_calls(
+    pool: &DbPool,
+    session_id: &str,
+    run_id: Option<&str>,
+) -> Result<Vec<ToolInvocation>, String> {
+    let rows = if let Some(run_id) = run_id {
+        sqlx::query(
+            r#"
+            SELECT id, run_id, session_id, tool_name, params_json, status, result_json, error, started_at, completed_at
+            FROM assistant_tool_calls
+            WHERE session_id = ? AND run_id = ?
+            ORDER BY started_at ASC
+            "#,
+        )
+        .bind(session_id)
+        .bind(run_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to list assistant tool calls: {}", e))?
+    } else {
+        sqlx::query(
+            r#"
+            SELECT id, run_id, session_id, tool_name, params_json, status, result_json, error, started_at, completed_at
+            FROM assistant_tool_calls
+            WHERE session_id = ?
+            ORDER BY started_at ASC
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to list assistant tool calls: {}", e))?
+    };
+
+    rows.iter().map(map_tool_call_row).collect()
 }
 
 async fn touch_session(pool: &DbPool, session_id: &str) -> Result<(), String> {

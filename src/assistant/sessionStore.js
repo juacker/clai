@@ -110,11 +110,13 @@ const useAssistantStore = create(
           }
         }),
 
-      loadSessionData: (sessionId, session, messages) =>
+      loadSessionData: (sessionId, session, messages, runs = [], toolCalls = []) =>
         set((state) => {
           state.sessions[sessionId] = {
             ...createInitialSessionState(session),
             messages,
+            runs,
+            toolCalls,
           };
         }),
 

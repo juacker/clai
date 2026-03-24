@@ -6,15 +6,15 @@ use crate::assistant::events::{emit_event, AssistantUiEvent};
 use crate::assistant::providers;
 use crate::assistant::providers::types::ProviderError;
 use crate::assistant::repository;
-use crate::assistant::repository::{
-    CreateMessageParams, CreateRunParams, CreateToolCallParams,
-};
+use crate::assistant::repository::{CreateMessageParams, CreateRunParams, CreateToolCallParams};
+use crate::assistant::runtime;
 use crate::assistant::tools::{self, ToolExecutionContext};
 use crate::assistant::types::{
     CompletionRequest, ContentPart, MessageRole, ProviderEvent, ProviderInputMessage, RunId,
     RunStatus, RunTrigger, RunUsage, SessionId, ToolCallStatus, ToolInvocationDraft,
 };
 use crate::db::DbPool;
+use tokio_util::sync::CancellationToken;
 
 const MAX_TOOL_ITERATIONS: usize = 10;
 
@@ -29,6 +29,7 @@ pub struct RunTurnInput {
     pub session_id: SessionId,
     pub run_id: Option<RunId>,
     pub trigger: RunTrigger,
+    pub cancel_token: CancellationToken,
 }
 
 #[derive(Debug, Error)]
@@ -59,12 +60,9 @@ pub async fn run_session_turn(
         .ok_or_else(|| AssistantEngineError::SessionNotFound(input.session_id.clone()))?;
 
     // Load provider session
-    let provider_session =
-        repository::get_provider_session(&deps.pool, &session.provider_id)
-            .await?
-            .ok_or_else(|| {
-                AssistantEngineError::ProviderNotConfigured(session.provider_id.clone())
-            })?;
+    let provider_session = repository::get_provider_session(&deps.pool, &session.provider_id)
+        .await?
+        .ok_or_else(|| AssistantEngineError::ProviderNotConfigured(session.provider_id.clone()))?;
 
     // Get or create the run
     let run_id = match &input.run_id {
@@ -88,14 +86,18 @@ pub async fn run_session_turn(
     };
 
     // Transition run to Running
-    let run =
-        repository::update_run_status(&deps.pool, &run_id, RunStatus::Running, None).await?;
+    let run = repository::update_run_status(&deps.pool, &run_id, RunStatus::Running, None).await?;
     let _ = emit_event(
         &deps.app,
         &session,
         Some(&run_id),
         AssistantUiEvent::RunStarted { run },
     );
+
+    if input.cancel_token.is_cancelled() {
+        cancel_run(deps, &session, &run_id, usage_none(), None).await?;
+        return Ok(());
+    }
 
     // Resolve adapter
     let adapter = providers::resolve_adapter(&session.provider_id)?;
@@ -114,18 +116,43 @@ pub async fn run_session_turn(
 
     let mut usage: Option<RunUsage> = None;
 
+    // Pre-register the assistant's tab with the JS bridge (once per run)
+    // so that frontend tool handlers can find the correct tab.
+    if let Some(tab_id) = &session.tab_id {
+        let bridge = crate::mcp::bridge::JsBridge::new(deps.app.clone());
+        let setup_params = serde_json::json!({
+            "agentName": "Assistant",
+            "tabId": tab_id,
+        });
+        let _ = bridge
+            .call_tool(
+                "assistant",
+                session.context.space_id.as_deref().unwrap_or(""),
+                session.context.room_id.as_deref().unwrap_or(""),
+                "agent.setup",
+                setup_params,
+            )
+            .await;
+    }
+
     // === Tool execution loop ===
+    // Build system prompt (prepended to every API call, not persisted)
+    let system_message = build_system_prompt(&session.context, &tool_defs);
+
     for iteration in 0..MAX_TOOL_ITERATIONS {
+        if input.cancel_token.is_cancelled() {
+            cancel_run(deps, &session, &run_id, usage.as_ref(), None).await?;
+            return Ok(());
+        }
+
         // Load fresh message history each iteration
         let messages = repository::list_messages(&deps.pool, &session.id).await?;
 
-        let provider_messages: Vec<ProviderInputMessage> = messages
-            .iter()
-            .map(|msg| ProviderInputMessage {
-                role: msg.role.clone(),
-                content: msg.content.clone(),
-            })
-            .collect();
+        let mut provider_messages = vec![system_message.clone()];
+        provider_messages.extend(messages.iter().map(|msg| ProviderInputMessage {
+            role: msg.role.clone(),
+            content: msg.content.clone(),
+        }));
 
         let request = CompletionRequest {
             run_id: run_id.clone(),
@@ -138,9 +165,7 @@ pub async fn run_session_turn(
         };
 
         // Call the provider
-        let stream_result = adapter
-            .stream_completion(&provider_session, request)
-            .await;
+        let stream_result = adapter.stream_completion(&provider_session, request).await;
 
         let mut stream = match stream_result {
             Ok(s) => s,
@@ -178,7 +203,21 @@ pub async fn run_session_turn(
         let mut tool_calls: Vec<ToolInvocationDraft> = Vec::new();
 
         loop {
-            match stream.next().await {
+            match tokio::select! {
+                _ = input.cancel_token.cancelled() => None,
+                next = stream.next() => next,
+            } {
+                None if input.cancel_token.is_cancelled() => {
+                    cancel_run(
+                        deps,
+                        &session,
+                        &run_id,
+                        usage.as_ref(),
+                        Some(&assistant_message.id),
+                    )
+                    .await?;
+                    return Ok(());
+                }
                 Some(Ok(event)) => match event {
                     ProviderEvent::MessageStart => {}
                     ProviderEvent::TextDelta { text } => {
@@ -217,6 +256,7 @@ pub async fn run_session_turn(
                             final_content.push(ContentPart::ToolUse {
                                 tool_call_id: tc.tool_call_id.clone(),
                                 tool_name: tc.tool_name.clone(),
+                                arguments: tc.params.clone(),
                             });
                         }
 
@@ -271,10 +311,16 @@ pub async fn run_session_turn(
 
         // Execute each tool call
         for tc in &tool_calls {
+            if input.cancel_token.is_cancelled() {
+                cancel_run(deps, &session, &run_id, usage.as_ref(), None).await?;
+                return Ok(());
+            }
+
             // Persist tool call
             let tool_invocation = repository::create_tool_call(
                 &deps.pool,
                 CreateToolCallParams {
+                    id: tc.tool_call_id.clone(),
                     run_id: run_id.clone(),
                     session_id: session.id.clone(),
                     tool_name: tc.tool_name.clone(),
@@ -294,8 +340,13 @@ pub async fn run_session_turn(
             );
 
             // Execute the tool
-            let tool_result =
-                tools::execute_tool(deps, &tool_context, &tc.tool_name, tc.params.clone()).await;
+            let tool_result = tokio::select! {
+                _ = input.cancel_token.cancelled() => {
+                    cancel_run(deps, &session, &run_id, usage.as_ref(), None).await?;
+                    return Ok(());
+                }
+                result = tools::execute_tool(deps, &tool_context, &tc.tool_name, tc.params.clone()) => result,
+            };
 
             match tool_result {
                 Ok(result) => {
@@ -312,9 +363,7 @@ pub async fn run_session_turn(
                         &deps.app,
                         &session,
                         Some(&run_id),
-                        AssistantUiEvent::ToolCallCompleted {
-                            tool_call: updated,
-                        },
+                        AssistantUiEvent::ToolCallCompleted { tool_call: updated },
                     );
 
                     // Persist tool result as a message
@@ -355,9 +404,7 @@ pub async fn run_session_turn(
                         &deps.app,
                         &session,
                         Some(&run_id),
-                        AssistantUiEvent::ToolCallFailed {
-                            tool_call: updated,
-                        },
+                        AssistantUiEvent::ToolCallFailed { tool_call: updated },
                     );
 
                     // Still persist the error as a tool result so the API can see it
@@ -401,6 +448,54 @@ pub async fn run_session_turn(
     Ok(())
 }
 
+fn usage_none() -> Option<&'static RunUsage> {
+    None
+}
+
+/// Build the system prompt for the assistant.
+fn build_system_prompt(
+    context: &crate::assistant::types::SessionContext,
+    tool_defs: &[crate::assistant::types::ToolDefinition],
+) -> ProviderInputMessage {
+    let tool_names: Vec<&str> = tool_defs.iter().map(|t| t.name.as_str()).collect();
+
+    let mut prompt = String::from(
+        "You are CLAI, an infrastructure monitoring assistant built into a desktop app. \
+         You help users analyze their infrastructure, visualize metrics, and investigate issues.\n\n",
+    );
+
+    if !tool_names.is_empty() {
+        prompt.push_str("You have the following tools available:\n");
+        for td in tool_defs {
+            prompt.push_str(&format!("- `{}`: {}\n", td.name, td.description));
+        }
+        prompt.push_str("\n");
+    }
+
+    // Tool usage guidance
+    prompt.push_str(
+        "## Tool Usage Guidelines\n\
+         - When using canvas or dashboard tools, first call `tabs.getTileLayout` to discover \
+           available commandIds. Canvas and dashboard tools require a `commandId` parameter.\n\
+         - For `netdata.query`, ask natural language questions about infrastructure metrics, \
+           anomalies, alerts, and health.\n\
+         - Use `tabs.splitTile` to create new panels before adding charts or content.\n\
+         - Be concise and direct in your responses. Prefer showing data over describing it.\n",
+    );
+
+    if context.space_id.is_some() {
+        prompt.push_str(
+            "- You are connected to a Netdata monitoring space. \
+             Use `netdata.query` to analyze infrastructure data.\n",
+        );
+    }
+
+    ProviderInputMessage {
+        role: MessageRole::System,
+        content: vec![ContentPart::Text { text: prompt }],
+    }
+}
+
 /// Helper to mark a run as failed and emit the event.
 async fn fail_run(
     deps: &AssistantDeps,
@@ -423,5 +518,24 @@ async fn fail_run(
         Some(run_id),
         AssistantUiEvent::RunFailed { run },
     );
+    Ok(())
+}
+
+async fn cancel_run(
+    deps: &AssistantDeps,
+    session: &crate::assistant::types::AssistantSession,
+    run_id: &str,
+    usage: Option<&RunUsage>,
+    _message_id: Option<&str>,
+) -> Result<(), AssistantEngineError> {
+    let run =
+        repository::complete_run(&deps.pool, run_id, RunStatus::Cancelled, usage, None).await?;
+    let _ = emit_event(
+        &deps.app,
+        session,
+        Some(run_id),
+        AssistantUiEvent::RunCancelled { run },
+    );
+    runtime::unregister_run(run_id);
     Ok(())
 }

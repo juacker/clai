@@ -34,10 +34,31 @@ export async function listRuns(sessionId) {
   return invoke('assistant_list_runs', { sessionId });
 }
 
+export async function listToolCalls(sessionId, runId = null) {
+  return invoke('assistant_list_tool_calls', {
+    request: {
+      sessionId,
+      runId,
+    },
+  });
+}
+
+export async function retryRun(runId) {
+  return invoke('assistant_retry_run', { runId });
+}
+
+export async function cancelRun(runId) {
+  return invoke('assistant_cancel_run', { runId });
+}
+
 export async function listProviderSessions() {
   return invoke('provider_list_sessions');
 }
 
 export async function getActiveProviderSession() {
   return invoke('provider_get_active_session');
+}
+
+export async function listProviderModels(providerId) {
+  return invoke('provider_list_models', { providerId });
 }
