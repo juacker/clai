@@ -1,7 +1,7 @@
 /**
  * RoomAssignmentModal Component
  *
- * Modal for assigning an agent to specific spaces/rooms.
+ * Modal for assigning an agent to a single optional space/room.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -75,31 +75,24 @@ const RoomAssignmentModal = ({ isOpen, onClose, agent, onUpdate }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  // Track local selection state (starts from current assignments)
-  const [selectedRooms, setSelectedRooms] = useState(new Set());
+  // Track local selection state (single optional assignment)
+  const [selectedRoomKey, setSelectedRoomKey] = useState(null);
 
   // Initialize selected rooms when modal opens or agent changes
   useEffect(() => {
     if (isOpen && agent) {
-      setSelectedRooms(new Set(
-        (agent.enabledRooms || []).map(r => `${r.space_id}:${r.room_id}`)
-      ));
+      const assignment = (agent.enabledRooms || [])[0];
+      setSelectedRoomKey(assignment ? `${assignment.space_id}:${assignment.room_id}` : null);
     }
   }, [isOpen, agent]);
 
-  // Original assignments for comparison
-  const originalRooms = new Set(
-    (agent?.enabledRooms || []).map(r => `${r.space_id}:${r.room_id}`)
-  );
+  const originalRoomKey = (() => {
+    const assignment = (agent?.enabledRooms || [])[0];
+    return assignment ? `${assignment.space_id}:${assignment.room_id}` : null;
+  })();
 
   // Check if there are pending changes
-  const hasChanges = (() => {
-    if (selectedRooms.size !== originalRooms.size) return true;
-    for (const room of selectedRooms) {
-      if (!originalRooms.has(room)) return true;
-    }
-    return false;
-  })();
+  const hasChanges = selectedRoomKey !== originalRoomKey;
 
   // Fetch spaces on mount
   useEffect(() => {
@@ -189,15 +182,7 @@ const RoomAssignmentModal = ({ isOpen, onClose, agent, onUpdate }) => {
   // Toggle room selection locally (no API call yet)
   const handleRoomToggle = (spaceId, roomId) => {
     const roomKey = `${spaceId}:${roomId}`;
-    setSelectedRooms(prev => {
-      const next = new Set(prev);
-      if (next.has(roomKey)) {
-        next.delete(roomKey);
-      } else {
-        next.add(roomKey);
-      }
-      return next;
-    });
+    setSelectedRoomKey(prev => (prev === roomKey ? null : roomKey));
   };
 
   // Save all changes
@@ -206,33 +191,20 @@ const RoomAssignmentModal = ({ isOpen, onClose, agent, onUpdate }) => {
     setError(null);
 
     try {
-      // Find rooms to add (in selected but not in original)
-      const toAdd = [...selectedRooms].filter(r => !originalRooms.has(r));
-      // Find rooms to remove (in original but not in selected)
-      const toRemove = [...originalRooms].filter(r => !selectedRooms.has(r));
-
-      // Apply all changes
-      const promises = [];
-
-      for (const roomKey of toAdd) {
-        const [spaceId, roomId] = roomKey.split(':');
-        promises.push(enableAgentForRoom(agent.id, spaceId, roomId));
+      if (originalRoomKey && originalRoomKey !== selectedRoomKey) {
+        const [spaceId, roomId] = originalRoomKey.split(':');
+        await disableAgentForRoom(agent.id, spaceId, roomId);
       }
 
-      for (const roomKey of toRemove) {
-        const [spaceId, roomId] = roomKey.split(':');
-        promises.push(disableAgentForRoom(agent.id, spaceId, roomId));
+      if (selectedRoomKey && selectedRoomKey !== originalRoomKey) {
+        const [spaceId, roomId] = selectedRoomKey.split(':');
+        await enableAgentForRoom(agent.id, spaceId, roomId);
       }
-
-      await Promise.all(promises);
 
       // Notify parent to refresh agent data
       if (onUpdate) {
         onUpdate();
       }
-
-      // Dispatch event so AutoPilotBadge can refresh
-      window.dispatchEvent(new CustomEvent('agent-assignments-changed'));
 
       onClose();
     } catch (err) {
@@ -285,8 +257,6 @@ const RoomAssignmentModal = ({ isOpen, onClose, agent, onUpdate }) => {
     return null;
   }
 
-  const assignedCount = agent?.enabledRooms?.length || 0;
-
   return ReactDOM.createPortal(
     <div className={styles.overlay} onClick={handleOverlayClick}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -295,7 +265,7 @@ const RoomAssignmentModal = ({ isOpen, onClose, agent, onUpdate }) => {
           <div className={styles.headerText}>
             <h2 className={styles.title}>Assign Rooms</h2>
             <p className={styles.subtitle}>
-              Select which rooms "{agent?.name}" should monitor
+              Select one optional room scope for "{agent?.name}"
             </p>
           </div>
           <button
@@ -331,7 +301,7 @@ const RoomAssignmentModal = ({ isOpen, onClose, agent, onUpdate }) => {
                 const rooms = roomsBySpace[space.id] || [];
                 const isLoadingRooms = loadingRooms[space.id];
                 const assignedInSpace = rooms.filter(r =>
-                  selectedRooms.has(`${space.id}:${r.id}`)
+                  selectedRoomKey === `${space.id}:${r.id}`
                 ).length;
 
                 return (
@@ -363,7 +333,7 @@ const RoomAssignmentModal = ({ isOpen, onClose, agent, onUpdate }) => {
                         ) : (
                           rooms.map((room) => {
                             const roomKey = `${space.id}:${room.id}`;
-                            const isSelected = selectedRooms.has(roomKey);
+                            const isSelected = selectedRoomKey === roomKey;
 
                             return (
                               <button
@@ -392,9 +362,9 @@ const RoomAssignmentModal = ({ isOpen, onClose, agent, onUpdate }) => {
         {/* Footer */}
         <div className={styles.footer}>
           <span className={styles.assignedCount}>
-            {selectedRooms.size === 0
-              ? 'Not assigned to any rooms'
-              : `${selectedRooms.size} room${selectedRooms.size !== 1 ? 's' : ''} selected`
+            {selectedRoomKey === null
+              ? 'No room scope selected. The agent will run without Netdata room context.'
+              : '1 room selected'
             }
           </span>
           <div className={styles.footerActions}>

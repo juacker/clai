@@ -37,6 +37,37 @@
   flex-wrap: wrap;
 }
 
+.statusToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: transparent;
+}
+
+.statusToggle:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.statusToggleOn {
+  color: var(--color-success, #059669);
+  background: var(--color-success-alpha-10, rgba(5, 150, 105, 0.1));
+  border-color: var(--color-success-alpha-30, rgba(5, 150, 105, 0.3));
+}
+
+.statusToggleOff {
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-secondary);
+  border-color: var(--color-border-light);
+}
+
 .agentName {
   font-size: 14px;
   font-weight: 600;

@@ -210,7 +210,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent }) => {
               disabled={saving}
             />
             <span className={styles.hint}>
-              How often the agent runs when enabled for a room
+              How often the agent runs while enabled
             </span>
           </div>
 

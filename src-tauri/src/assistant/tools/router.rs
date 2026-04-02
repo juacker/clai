@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::Manager;
 
 use crate::api::client::create_client;
-use crate::assistant::engine::AssistantDeps;
+use crate::assistant::engine::{bridge_agent_id, AssistantDeps};
 use crate::mcp::bridge::JsBridge;
 use crate::mcp::tools::netdata::{NetdataQueryParams, NetdataQueryTool};
 use crate::AppState;
@@ -92,7 +92,7 @@ async fn execute_bridge_tool(
 
     bridge
         .call_tool(
-            "assistant",
+            &bridge_agent_id(&context.session_id),
             context.space_id.as_deref().unwrap_or(""),
             context.room_id.as_deref().unwrap_or(""),
             tool_name,

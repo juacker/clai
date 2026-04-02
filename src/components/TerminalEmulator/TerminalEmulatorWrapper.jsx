@@ -14,7 +14,6 @@ import { useTabManager } from '../../contexts/TabManagerContext';
 import { TabContextProvider } from '../../contexts/TabContext';
 import { useChatManager } from '../../contexts/ChatManagerContext';
 import { useAssistantSession, useAssistantStore, assistantClient } from '../../assistant';
-import { getStoredModel } from '../Settings/AssistantProviderSettings';
 import TerminalEmulator from './TerminalEmulator';
 
 const TerminalEmulatorWrapper = ({ userInfo }) => {
@@ -67,7 +66,7 @@ const TerminalEmulatorWrapper = ({ userInfo }) => {
       openChat();
 
       try {
-        const model = getStoredModel() || 'gpt-4o-mini';
+        const model = (await assistantClient.getDefaultModel().catch(() => null)) || 'gpt-4o-mini';
         const spaceId = activeTab.context?.spaceRoom?.selectedSpaceId || null;
         const roomId = activeTab.context?.spaceRoom?.selectedRoomId || null;
         const sessionId = await ensureSession(

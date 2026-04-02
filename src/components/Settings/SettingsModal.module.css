@@ -26,10 +26,10 @@
   border-radius: 16px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15),
               0 2px 8px rgba(0, 0, 0, 0.08);
-  width: 700px;
-  max-width: 90vw;
-  height: 500px;
-  max-height: 80vh;
+  width: min(980px, 94vw);
+  min-height: 640px;
+  height: min(78vh, 760px);
+  max-height: 88vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -83,8 +83,8 @@
 
 /* Sidebar Navigation */
 .sidebar {
-  width: 180px;
-  min-width: 180px;
+  width: 220px;
+  min-width: 220px;
   background: var(--color-bg-secondary, #F8F7F6);
   border-right: 1px solid var(--color-overlay-06);
   padding: 16px 12px;
@@ -190,6 +190,7 @@
   .modal {
     width: 95vw;
     height: 90vh;
+    min-height: 0;
     border-radius: 12px;
   }
 

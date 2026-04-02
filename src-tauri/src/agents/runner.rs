@@ -36,11 +36,17 @@
 
 use std::time::Duration;
 
-use reqwest::Client;
 use tauri::{AppHandle, Manager};
+use tokio::time::{sleep, Instant};
+use uuid::Uuid;
 
-use crate::agents::{cli_runner, SchedulerState, SharedScheduler};
-use crate::api::netdata::NetdataApi;
+use crate::agents::{SchedulerState, SharedScheduler};
+use crate::assistant::engine::{self, AssistantDeps, RunTurnInput};
+use crate::assistant::events::{emit_event, AssistantUiEvent};
+use crate::assistant::repository::{self, CreateSessionParams};
+use crate::assistant::runtime;
+use crate::assistant::types::{RunTrigger, SessionContext, SessionKind};
+use crate::db::DbPool;
 use crate::mcp::bridge::JsBridge;
 use crate::AppState;
 
@@ -50,9 +56,10 @@ use crate::AppState;
 
 /// How often to check for ready agents (in seconds).
 const CHECK_INTERVAL_SECS: u64 = 5;
-
-/// Default timeout for agent execution (in seconds).
-const AGENT_TIMEOUT_SECS: u64 = 5 * 60; // 5 minutes
+/// How long to wait for a newly created agent tab to be persisted in SQLite.
+const TAB_PERSISTENCE_TIMEOUT_MS: u64 = 3_000;
+/// Poll interval while waiting for a tab row to appear in SQLite.
+const TAB_PERSISTENCE_POLL_INTERVAL_MS: u64 = 100;
 
 // =============================================================================
 // Runner
@@ -108,27 +115,36 @@ async fn run_next_agent(
     // Get app state
     let state = app_handle.state::<AppState>();
 
-    // Check if we have a token (user is logged in)
-    let token = state.token_storage.get_token().ok().flatten();
-
-    let token = match token {
-        Some(t) => t,
+    let pool = match app_handle.try_state::<DbPool>() {
+        Some(pool) => pool.inner().clone(),
         None => {
-            tracing::debug!("No token available, skipping agent check");
+            tracing::debug!("Assistant database not ready yet, skipping agent check");
             return Ok(());
         }
     };
 
-    // Get the AI provider from config
-    let provider = {
-        let config = state.config_manager.lock().unwrap();
-        config.get().ai_provider.clone()
+    let provider_session = match repository::list_provider_sessions(&pool)
+        .await
+        .map_err(RunnerError::AssistantPersistence)?
+        .into_iter()
+        .next()
+    {
+        Some(session) => session,
+        None => {
+            tracing::debug!("No assistant provider configured, skipping agent check");
+            return Ok(());
+        }
     };
 
-    let provider = match provider {
-        Some(p) => p,
-        None => {
-            tracing::debug!("No AI provider configured, skipping agent check");
+    let model_id = {
+        let config = state.config_manager.lock().unwrap();
+        config.get_assistant_default_model()
+    };
+
+    let model_id = match model_id {
+        Some(model) if !model.trim().is_empty() => model,
+        _ => {
+            tracing::debug!("No assistant default model configured, skipping agent check");
             return Ok(());
         }
     };
@@ -196,13 +212,18 @@ async fn run_next_agent(
             .ok_or_else(|| RunnerError::AgentNotFound(agent_id.clone()))?
     };
 
-    // Check if agent is still enabled for this space/room
-    if !agent_config.is_enabled_for(&space_id, &room_id) {
+    let room_assignment_matches = agent_config
+        .assigned_room()
+        .map(|assignment| assignment.space_id == space_id && assignment.room_id == room_id)
+        .unwrap_or(space_id.is_empty() && room_id.is_empty());
+
+    // Check if agent is still enabled for this scope.
+    if !agent_config.enabled || !room_assignment_matches {
         tracing::info!(
             agent_id = %agent_id,
             space_id = %space_id,
             room_id = %room_id,
-            "Agent is no longer enabled for this room, removing instance"
+            "Agent is no longer enabled for this scope, removing instance"
         );
 
         // Remove the instance from scheduler
@@ -216,23 +237,8 @@ async fn run_next_agent(
 
     tracing::debug!(agent_name = %agent_config.name, "Got agent config");
 
-    // Get base URL
-    let base_url = {
-        let url = state.base_url.lock().unwrap();
-        url.clone()
-    };
-
-    tracing::debug!(base_url = %base_url, "Using API base URL");
-
-    // Create API client
-    let client = Client::new();
-    let api = std::sync::Arc::new(NetdataApi::new(client, base_url, token));
-
-    // Create JS bridge for UI tools
+    // Ensure the scheduled agent has its tab before running.
     let bridge = JsBridge::new(app_handle.clone());
-
-    // Setup agent tab BEFORE starting CLI (avoids race conditions)
-    tracing::debug!("Setting up agent tab...");
     let tab_id = bridge
         .setup_agent_tab(&agent_config.id, &agent_config.name, &space_id, &room_id)
         .await
@@ -240,44 +246,60 @@ async fn run_next_agent(
 
     tracing::debug!(tab_id = %tab_id, "Agent tab ready");
 
-    // Generate prompt from agent description
-    let prompt = agent_config.generate_prompt();
+    wait_for_persisted_tab(
+        &pool,
+        &tab_id,
+        Duration::from_millis(TAB_PERSISTENCE_TIMEOUT_MS),
+        Duration::from_millis(TAB_PERSISTENCE_POLL_INTERVAL_MS),
+    )
+    .await?;
 
-    tracing::info!(provider = ?provider, "Starting CLI");
+    {
+        let mut sched = scheduler.lock().await;
+        if let Some(instance) = sched.get_instance_mut(&instance_id) {
+            instance.tab_id = Some(tab_id.clone());
+        }
+    }
 
-    // Run the agent
-    let result = cli_runner::run_ai_cli(
-        &provider,
-        &prompt,
-        api,
-        &agent_config.id,
+    let session = ensure_background_session(
+        app_handle,
+        &pool,
+        &provider_session.provider_id,
+        &model_id,
+        &agent_config,
         &space_id,
         &room_id,
-        Some(bridge),
-        AGENT_TIMEOUT_SECS,
+        &tab_id,
     )
-    .await;
+    .await?;
 
-    tracing::debug!("CLI finished");
+    tracing::info!(
+        session_id = %session.id,
+        provider_id = %provider_session.provider_id,
+        model_id = %model_id,
+        "Starting scheduled assistant run"
+    );
+
+    let runtime_run_id = format!("scheduled:{}:{}", instance_id, Uuid::new_v4());
+    let cancel_token = runtime::register_run(&runtime_run_id);
+    let deps = AssistantDeps {
+        pool: pool.clone(),
+        app: app_handle.clone(),
+    };
+    let input = RunTurnInput {
+        session_id: session.id.clone(),
+        run_id: None,
+        trigger: RunTrigger::Scheduled,
+        cancel_token,
+    };
+    let result = engine::run_session_turn(&deps, input).await;
+    runtime::unregister_run(&runtime_run_id);
 
     // Mark agent complete
     let success = match &result {
-        Ok(run_result) => {
-            if run_result.success {
-                tracing::info!(instance_id = %instance_id, "Agent completed successfully");
-                true
-            } else {
-                tracing::warn!(
-                    instance_id = %instance_id,
-                    exit_code = ?run_result.exit_code,
-                    "Agent failed"
-                );
-                // Log stderr for debugging
-                if !run_result.stderr.is_empty() {
-                    tracing::warn!(stderr = %run_result.stderr, "Agent stderr output");
-                }
-                false
-            }
+        Ok(()) => {
+            tracing::info!(instance_id = %instance_id, "Agent completed successfully");
+            true
         }
         Err(e) => {
             tracing::error!(instance_id = %instance_id, error = %e, "Agent execution error");
@@ -319,6 +341,12 @@ pub enum RunnerError {
     AgentNotFound(String),
     /// Failed to setup agent tab.
     TabSetupFailed(String),
+    /// Agent tab was created in the UI but not yet persisted in SQLite.
+    TabPersistenceFailed(String),
+    /// Failed to persist or load assistant runtime data.
+    AssistantPersistence(String),
+    /// Failed to create or restore an assistant session.
+    AssistantSession(String),
 }
 
 impl std::fmt::Display for RunnerError {
@@ -327,11 +355,151 @@ impl std::fmt::Display for RunnerError {
             RunnerError::InstanceNotFound(id) => write!(f, "Agent instance not found: {}", id),
             RunnerError::AgentNotFound(id) => write!(f, "Agent config not found: {}", id),
             RunnerError::TabSetupFailed(msg) => write!(f, "Failed to setup agent tab: {}", msg),
+            RunnerError::TabPersistenceFailed(msg) => {
+                write!(f, "Failed to persist agent tab: {}", msg)
+            }
+            RunnerError::AssistantPersistence(msg) => {
+                write!(f, "Assistant persistence failed: {}", msg)
+            }
+            RunnerError::AssistantSession(msg) => write!(f, "Assistant session failed: {}", msg),
         }
     }
 }
 
 impl std::error::Error for RunnerError {}
+
+async fn wait_for_persisted_tab(
+    pool: &DbPool,
+    tab_id: &str,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<(), RunnerError> {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        let exists = sqlx::query_scalar::<_, i64>("SELECT 1 FROM tabs WHERE id = ? LIMIT 1")
+            .bind(tab_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| {
+                RunnerError::AssistantPersistence(format!(
+                    "Failed to verify persisted tab {}: {}",
+                    tab_id, e
+                ))
+            })?
+            .is_some();
+
+        if exists {
+            return Ok(());
+        }
+
+        if Instant::now() >= deadline {
+            return Err(RunnerError::TabPersistenceFailed(format!(
+                "Timed out waiting for tab {} to be saved to SQLite",
+                tab_id
+            )));
+        }
+
+        sleep(poll_interval).await;
+    }
+}
+
+async fn ensure_background_session(
+    app_handle: &AppHandle,
+    pool: &DbPool,
+    provider_id: &str,
+    model_id: &str,
+    agent_config: &crate::config::AgentConfig,
+    space_id: &str,
+    room_id: &str,
+    tab_id: &str,
+) -> Result<crate::assistant::types::AssistantSession, RunnerError> {
+    let session_space_id = if space_id.is_empty() {
+        None
+    } else {
+        Some(space_id.to_string())
+    };
+    let session_room_id = if room_id.is_empty() {
+        None
+    } else {
+        Some(room_id.to_string())
+    };
+
+    let existing = repository::list_sessions(pool, None)
+        .await
+        .map_err(RunnerError::AssistantPersistence)?
+        .into_iter()
+        .find(|session| {
+            session.kind == SessionKind::BackgroundJob
+                && session.provider_id == provider_id
+                && session.model_id == model_id
+                && session.context.space_id == session_space_id
+                && session.context.room_id == session_room_id
+                && session.context.automation_id.as_deref() == Some(agent_config.id.as_str())
+        });
+
+    if let Some(session) = existing {
+        let session = if session.tab_id.as_deref() != Some(tab_id) {
+            repository::attach_session_to_tab(pool, &session.id, Some(tab_id))
+                .await
+                .map_err(RunnerError::AssistantPersistence)?
+        } else {
+            session
+        };
+
+        emit_event(
+            app_handle,
+            &session,
+            None,
+            AssistantUiEvent::SessionCreated {
+                session: session.clone(),
+            },
+        )
+        .map_err(RunnerError::AssistantSession)?;
+
+        return Ok(session);
+    }
+
+    let session = repository::create_session(
+        pool,
+        CreateSessionParams {
+            tab_id: Some(tab_id.to_string()),
+            kind: SessionKind::BackgroundJob,
+            title: Some(agent_config.name.clone()),
+            provider_id: provider_id.to_string(),
+            model_id: model_id.to_string(),
+            context: SessionContext {
+                space_id: session_space_id,
+                room_id: session_room_id,
+                workspace_id: None,
+                tab_id: Some(tab_id.to_string()),
+                tool_scopes: agent_config
+                    .required_tools()
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+                netdata_conversation_id: None,
+                automation_id: Some(agent_config.id.clone()),
+                automation_name: Some(agent_config.name.clone()),
+                automation_description: Some(agent_config.description.clone()),
+            },
+        },
+    )
+    .await
+    .map_err(RunnerError::AssistantSession)?;
+
+    emit_event(
+        app_handle,
+        &session,
+        None,
+        AssistantUiEvent::SessionCreated {
+            session: session.clone(),
+        },
+    )
+    .map_err(RunnerError::AssistantSession)?;
+
+    Ok(session)
+}
 
 // =============================================================================
 // Tests
@@ -340,6 +508,7 @@ impl std::error::Error for RunnerError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
 
     #[test]
     fn test_runner_error_display() {
@@ -357,10 +526,66 @@ mod tests {
         assert!(CHECK_INTERVAL_SECS <= 120, "Check interval too long");
     }
 
-    #[test]
-    fn test_agent_timeout() {
-        // Verify timeout is reasonable
-        assert!(AGENT_TIMEOUT_SECS >= 60, "Timeout too short");
-        assert!(AGENT_TIMEOUT_SECS <= 30 * 60, "Timeout too long");
+    #[tokio::test]
+    async fn waits_for_persisted_tab() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+
+        sqlx::query("CREATE TABLE tabs (id TEXT PRIMARY KEY)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let pool_for_insert = pool.clone();
+        tokio::spawn(async move {
+            sleep(Duration::from_millis(50)).await;
+            sqlx::query("INSERT INTO tabs (id) VALUES (?)")
+                .bind("tab-delayed")
+                .execute(&pool_for_insert)
+                .await
+                .unwrap();
+        });
+
+        let result = wait_for_persisted_tab(
+            &pool,
+            "tab-delayed",
+            Duration::from_millis(500),
+            Duration::from_millis(10),
+        )
+        .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn times_out_when_tab_is_not_persisted() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+
+        sqlx::query("CREATE TABLE tabs (id TEXT PRIMARY KEY)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let result = wait_for_persisted_tab(
+            &pool,
+            "tab-missing",
+            Duration::from_millis(100),
+            Duration::from_millis(10),
+        )
+        .await;
+
+        match result {
+            Err(RunnerError::TabPersistenceFailed(message)) => {
+                assert!(message.contains("tab-missing"));
+            }
+            other => panic!("expected timeout error, got {:?}", other),
+        }
     }
 }

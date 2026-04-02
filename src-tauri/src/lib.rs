@@ -188,6 +188,8 @@ pub fn run() {
             commands::assistant::assistant_send_message,
             commands::assistant::assistant_retry_run,
             commands::assistant::assistant_cancel_run,
+            commands::assistant::assistant_get_default_model,
+            commands::assistant::assistant_set_default_model,
             // Auto-pilot commands (legacy - may be replaced by agent commands)
             commands::autopilot::get_autopilot_status,
             commands::autopilot::set_autopilot_enabled,
@@ -197,6 +199,7 @@ pub fn run() {
             commands::agents::get_agent,
             commands::agents::create_agent,
             commands::agents::update_agent,
+            commands::agents::set_agent_enabled,
             commands::agents::delete_agent,
             commands::agents::enable_agent_for_room,
             commands::agents::disable_agent_for_room,

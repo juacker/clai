@@ -28,6 +28,12 @@ fn agent_config_to_definition(config: &AgentConfig) -> AgentDefinition {
     .with_tools(config.required_tools())
 }
 
+fn agent_scope(config: &AgentConfig) -> Option<(String, String)> {
+    config
+        .assigned_room()
+        .map(|room| (room.space_id.clone(), room.room_id.clone()))
+}
+
 // =============================================================================
 // Initialization
 // =============================================================================
@@ -42,7 +48,7 @@ fn agent_config_to_definition(config: &AgentConfig) -> AgentDefinition {
 pub fn initialize_scheduler(
     scheduler: &SharedScheduler,
     config_manager: &ConfigManager,
-    token_storage: &TokenStorage,
+    _token_storage: &TokenStorage,
 ) {
     let mut scheduler = scheduler.blocking_lock();
 
@@ -53,28 +59,15 @@ pub fn initialize_scheduler(
         scheduler.register_definition(definition);
     }
 
-    // Only restore instances if user is logged in
-    let has_token = token_storage
-        .get_token()
-        .map(|t| t.is_some())
-        .unwrap_or(false);
-    if !has_token {
-        return;
-    }
-
-    // Restore agent instances from agent enabled_rooms (if autopilot is enabled)
     for agent_config in &config.agents {
-        for room in &agent_config.enabled_rooms {
-            // Only create instance if autopilot is enabled for this room
-            let autopilot_enabled = config
-                .spaces
-                .get(&room.space_id)
-                .map(|s| s.autopilot.is_room_enabled(&room.room_id))
-                .unwrap_or(false);
+        if !agent_config.enabled {
+            continue;
+        }
 
-            if autopilot_enabled {
-                scheduler.create_instance(&agent_config.id, &room.space_id, &room.room_id);
-            }
+        if let Some((space_id, room_id)) = agent_scope(agent_config) {
+            scheduler.create_instance(&agent_config.id, space_id, room_id);
+        } else {
+            scheduler.create_instance(&agent_config.id, "", "");
         }
     }
 }
@@ -98,17 +91,14 @@ pub async fn restore_instances_from_config(
         let definition = agent_config_to_definition(agent_config);
         scheduler.register_definition(definition);
 
-        for room in &agent_config.enabled_rooms {
-            // Only create instance if autopilot is enabled for this room
-            let autopilot_enabled = config
-                .spaces
-                .get(&room.space_id)
-                .map(|s| s.autopilot.is_room_enabled(&room.room_id))
-                .unwrap_or(false);
+        if !agent_config.enabled {
+            continue;
+        }
 
-            if autopilot_enabled {
-                scheduler.create_instance(&agent_config.id, &room.space_id, &room.room_id);
-            }
+        if let Some((space_id, room_id)) = agent_scope(agent_config) {
+            scheduler.create_instance(&agent_config.id, space_id, room_id);
+        } else {
+            scheduler.create_instance(&agent_config.id, "", "");
         }
     }
 }

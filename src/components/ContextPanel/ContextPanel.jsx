@@ -17,7 +17,6 @@ import { getSpaceBillingPlan } from '../../api/client';
 import { openExternal } from '../../utils/openExternal';
 import ContextBadge from './ContextBadge';
 import ContextSelector from './ContextSelector';
-import AutoPilotBadge from './AutoPilotBadge';
 import styles from './ContextPanel.module.css';
 
 const ContextPanel = () => {
@@ -183,14 +182,6 @@ const ContextPanel = () => {
             />
           )}
 
-          {/* Auto-pilot Badge - only show if user has AI permissions */}
-          {selectedSpace?.id && selectedRoom?.id && aiPermissions.canRead && (
-            <AutoPilotBadge
-              spaceId={selectedSpace.id}
-              roomId={selectedRoom.id}
-            />
-          )}
-
           {/* Custom Context Badges */}
           {hasCustomContext &&
             Object.entries(customContext).map(([key, value]) => (
@@ -232,4 +223,3 @@ const ContextPanel = () => {
 };
 
 export default ContextPanel;
-

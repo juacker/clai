@@ -6,6 +6,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+fn default_true() -> bool {
+    true
+}
+
 // =============================================================================
 // AI Provider
 // =============================================================================
@@ -165,7 +169,13 @@ pub struct AgentConfig {
     /// How often the agent runs (in minutes).
     pub interval_minutes: u32,
 
+    /// Whether this agent is enabled globally.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
     /// Space/room pairs where this agent is enabled.
+    ///
+    /// Currently only the first entry is used.
     #[serde(default)]
     pub enabled_rooms: Vec<SpaceRoomPair>,
 
@@ -206,6 +216,7 @@ impl AgentConfig {
 - Keep status updates concise when healthy"#
                 .to_string(),
             interval_minutes: 5,
+            enabled: false,
             enabled_rooms: vec![],
             created_at: now.clone(),
             updated_at: now,
@@ -220,6 +231,7 @@ impl AgentConfig {
             name,
             description,
             interval_minutes,
+            enabled: false,
             enabled_rooms: vec![],
             created_at: now.clone(),
             updated_at: now,
@@ -247,19 +259,24 @@ impl AgentConfig {
     /// Checks if this agent is enabled for a specific space/room.
     pub fn is_enabled_for(&self, space_id: &str, room_id: &str) -> bool {
         self.enabled_rooms
-            .iter()
-            .any(|r| r.space_id == space_id && r.room_id == room_id)
+            .first()
+            .map(|r| r.space_id == space_id && r.room_id == room_id)
+            .unwrap_or(false)
     }
 
     /// Enables this agent for a space/room.
     ///
     /// Returns true if the room was added (wasn't already enabled).
     pub fn enable_for(&mut self, space_id: &str, room_id: &str) -> bool {
-        if !self.is_enabled_for(space_id, room_id) {
-            self.enabled_rooms.push(SpaceRoomPair {
-                space_id: space_id.to_string(),
-                room_id: room_id.to_string(),
-            });
+        let next = SpaceRoomPair {
+            space_id: space_id.to_string(),
+            room_id: room_id.to_string(),
+        };
+
+        let changed = self.enabled_rooms.first() != Some(&next) || self.enabled_rooms.len() != 1;
+        if changed {
+            self.enabled_rooms.clear();
+            self.enabled_rooms.push(next);
             self.updated_at = chrono::Utc::now().to_rfc3339();
             true
         } else {
@@ -271,10 +288,13 @@ impl AgentConfig {
     ///
     /// Returns true if the room was removed (was enabled).
     pub fn disable_for(&mut self, space_id: &str, room_id: &str) -> bool {
-        let initial_len = self.enabled_rooms.len();
-        self.enabled_rooms
-            .retain(|r| !(r.space_id == space_id && r.room_id == room_id));
-        if self.enabled_rooms.len() != initial_len {
+        let should_clear = self
+            .enabled_rooms
+            .first()
+            .map(|r| r.space_id == space_id && r.room_id == room_id)
+            .unwrap_or(false);
+        if should_clear {
+            self.enabled_rooms.clear();
             self.updated_at = chrono::Utc::now().to_rfc3339();
             true
         } else {
@@ -288,6 +308,22 @@ impl AgentConfig {
         self.enabled_rooms.retain(|r| r.space_id != space_id);
         if self.enabled_rooms.len() != initial_len {
             self.updated_at = chrono::Utc::now().to_rfc3339();
+        }
+    }
+
+    /// Returns the single assigned room scope, if any.
+    pub fn assigned_room(&self) -> Option<&SpaceRoomPair> {
+        self.enabled_rooms.first()
+    }
+
+    /// Updates the global enabled state.
+    pub fn set_enabled(&mut self, enabled: bool) -> bool {
+        if self.enabled != enabled {
+            self.enabled = enabled;
+            self.updated_at = chrono::Utc::now().to_rfc3339();
+            true
+        } else {
+            false
         }
     }
 }
@@ -316,6 +352,13 @@ pub struct ClaiConfig {
     /// and all agents will use it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_provider: Option<AiProvider>,
+
+    /// Default model for the app-owned assistant runtime.
+    ///
+    /// This is used by interactive tab conversations and scheduled background
+    /// agents that run through the assistant engine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_default_model: Option<String>,
 
     /// User-defined autonomous agents.
     ///
@@ -675,14 +718,17 @@ mod tests {
         // Enabling same room again returns false
         assert!(!agent.enable_for("space-1", "room-1"));
 
-        // Enable another room
+        // Enable another room - replaces the previous assignment
         agent.enable_for("space-1", "room-2");
-        assert!(agent.is_enabled_for("space-1", "room-2"));
-
-        // Disable first room
-        assert!(agent.disable_for("space-1", "room-1"));
         assert!(!agent.is_enabled_for("space-1", "room-1"));
         assert!(agent.is_enabled_for("space-1", "room-2"));
+
+        // Disabling previous room returns false because it is no longer assigned
+        assert!(!agent.disable_for("space-1", "room-1"));
+
+        // Disable current room
+        assert!(agent.disable_for("space-1", "room-2"));
+        assert!(!agent.is_enabled_for("space-1", "room-2"));
 
         // Disabling non-existent room returns false
         assert!(!agent.disable_for("space-1", "room-1"));
@@ -692,12 +738,12 @@ mod tests {
     fn test_agent_disable_for_space() {
         let mut agent = AgentConfig::default_agent();
 
-        // Enable rooms in two spaces
+        // Enable rooms in two spaces - only one assignment is kept
         agent.enable_for("space-1", "room-1");
         agent.enable_for("space-1", "room-2");
         agent.enable_for("space-2", "room-3");
 
-        assert_eq!(agent.enabled_rooms.len(), 3);
+        assert_eq!(agent.enabled_rooms.len(), 1);
 
         // Disable all rooms in space-1
         agent.disable_for_space("space-1");

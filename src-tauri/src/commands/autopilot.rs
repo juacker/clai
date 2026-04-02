@@ -10,7 +10,9 @@ use tauri::State;
 use crate::agents::init::{create_instances_for_room, remove_instances_for_room};
 use crate::api::client::create_client;
 use crate::api::netdata::NetdataApi;
+use crate::assistant::{providers as assistant_providers, repository as assistant_repository};
 use crate::config::{AgentInfo, AutopilotStatus, ProviderInfo};
+use crate::db::DbPool;
 use crate::AppState;
 
 /// Get the auto-pilot status for a space/room.
@@ -26,12 +28,11 @@ pub async fn get_autopilot_status(
     space_id: String,
     room_id: String,
     state: State<'_, AppState>,
+    pool: State<'_, DbPool>,
 ) -> Result<AutopilotStatus, String> {
     // Get provider, agent info, and room status (before any async operations)
-    let (provider_info, agent_info, room_enabled) = {
+    let (agent_info, room_enabled, default_model) = {
         let config_manager = state.config_manager.lock().unwrap();
-        let provider = config_manager.get_ai_provider();
-        let provider_info = ProviderInfo::from_provider(provider.as_ref());
 
         // Get agent counts
         let agents = config_manager.get_agents();
@@ -43,8 +44,15 @@ pub async fn get_autopilot_status(
         let space_config = config_manager.get_space_autopilot(&space_id);
         let room_enabled = space_config.is_room_enabled(&room_id);
 
-        (provider_info, agent_info, room_enabled)
+        (
+            agent_info,
+            room_enabled,
+            config_manager.get_assistant_default_model(),
+        )
     };
+
+    let provider_info =
+        load_assistant_provider_info(pool.inner(), default_model.as_deref()).await?;
 
     // Get token for API calls
     let token = state
@@ -94,12 +102,18 @@ pub async fn set_autopilot_enabled(
     room_id: String,
     enabled: bool,
     state: State<'_, AppState>,
+    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     // Check provider is configured if enabling
     if enabled {
-        let config_manager = state.config_manager.lock().unwrap();
-        if !config_manager.has_ai_provider() {
-            return Err("Cannot enable auto-pilot: no AI provider configured. Please select a provider first.".to_string());
+        let default_model = {
+            let config_manager = state.config_manager.lock().unwrap();
+            config_manager.get_assistant_default_model()
+        };
+        let provider_info =
+            load_assistant_provider_info(pool.inner(), default_model.as_deref()).await?;
+        if !provider_info.configured {
+            return Err("Cannot enable auto-pilot: configure the assistant provider and default model first.".to_string());
         }
     }
 
@@ -180,4 +194,30 @@ pub fn get_all_autopilot_enabled(
     }
 
     Ok(result)
+}
+
+async fn load_assistant_provider_info(
+    pool: &DbPool,
+    default_model: Option<&str>,
+) -> Result<ProviderInfo, String> {
+    let provider_session = assistant_repository::list_provider_sessions(pool)
+        .await?
+        .into_iter()
+        .next();
+
+    let has_model = default_model
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
+    let configured = provider_session.is_some() && has_model;
+    let name = provider_session.as_ref().map(|session| {
+        assistant_providers::get_provider_descriptor(&session.provider_id)
+            .map(|descriptor| descriptor.display_name)
+            .unwrap_or_else(|| session.provider_id.clone())
+    });
+
+    Ok(ProviderInfo {
+        configured,
+        name,
+        provider: None,
+    })
 }

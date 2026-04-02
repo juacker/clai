@@ -38,6 +38,13 @@ const LoadingIcon = () => (
   </svg>
 );
 
+const PowerIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2v10" />
+    <path d="M18.4 5.6a9 9 0 1 1-12.8 0" />
+  </svg>
+);
+
 /**
  * Room/location icon
  */
@@ -57,48 +64,13 @@ const RoomIcon = () => (
  */
 const formatRoomAssignments = (enabledRooms, spaces, maxLength = 30) => {
   if (!enabledRooms || enabledRooms.length === 0) {
-    return 'Assign to rooms';
+    return 'No room scope';
   }
 
-  // Group rooms by space
-  const roomsBySpace = {};
-  for (const room of enabledRooms) {
-    if (!roomsBySpace[room.space_id]) {
-      roomsBySpace[room.space_id] = 0;
-    }
-    roomsBySpace[room.space_id]++;
-  }
-
-  // Build display string with space names
-  const spaceParts = [];
-  for (const [spaceId, count] of Object.entries(roomsBySpace)) {
-    const space = spaces?.find(s => s.id === spaceId);
-    const spaceName = space?.name || 'Unknown';
-    if (count === 1) {
-      spaceParts.push(spaceName);
-    } else {
-      spaceParts.push(`${spaceName} (${count})`);
-    }
-  }
-
-  // Try showing all spaces
-  let display = spaceParts.join(', ');
-  if (display.length <= maxLength) {
-    return display;
-  }
-
-  // Try showing first space + count
-  if (spaceParts.length > 1) {
-    const remaining = enabledRooms.length - roomsBySpace[Object.keys(roomsBySpace)[0]];
-    display = `${spaceParts[0]} +${remaining}`;
-    if (display.length <= maxLength) {
-      return display;
-    }
-  }
-
-  // Fall back to count
-  const count = enabledRooms.length;
-  return `${count} room${count !== 1 ? 's' : ''}`;
+  const room = enabledRooms[0];
+  const space = spaces?.find(s => s.id === room.space_id);
+  const display = space?.name ? `${space.name}` : '1 room assigned';
+  return display.length <= maxLength ? display : '1 room assigned';
 };
 
 /**
@@ -143,10 +115,12 @@ const truncateDescription = (text, maxLength = 120) => {
  * @param {Array} props.spaces - Available spaces for name lookup
  * @param {Function} props.onEdit - Callback when edit is clicked
  * @param {Function} props.onDelete - Callback when delete is clicked
+ * @param {Function} props.onToggleEnabled - Callback when enable state toggles
  * @param {Function} props.onUpdate - Callback when agent data changes (e.g., room assignments)
  * @param {boolean} props.isDeleting - Whether deletion is in progress
+ * @param {boolean} props.isToggling - Whether enable/disable is in progress
  */
-const AgentCard = ({ agent, spaces, onEdit, onDelete, onUpdate, isDeleting }) => {
+const AgentCard = ({ agent, spaces, onEdit, onDelete, onToggleEnabled, onUpdate, isDeleting, isToggling }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRoomAssignment, setShowRoomAssignment] = useState(false);
 
@@ -164,6 +138,7 @@ const AgentCard = ({ agent, spaces, onEdit, onDelete, onUpdate, isDeleting }) =>
   };
 
   const roomCount = agent.enabledRooms?.length || 0;
+  const isEnabled = !!agent.enabled;
 
   return (
     <div className={styles.card}>
@@ -173,6 +148,15 @@ const AgentCard = ({ agent, spaces, onEdit, onDelete, onUpdate, isDeleting }) =>
           <span className={styles.interval}>
             Every {formatInterval(agent.intervalMinutes)}
           </span>
+          <button
+            className={`${styles.statusToggle} ${isEnabled ? styles.statusToggleOn : styles.statusToggleOff}`}
+            onClick={onToggleEnabled}
+            disabled={isToggling}
+            title={isEnabled ? 'Disable agent' : 'Enable agent'}
+          >
+            {isToggling ? <LoadingIcon /> : <PowerIcon />}
+            <span>{isEnabled ? 'Enabled' : 'Disabled'}</span>
+          </button>
         </div>
 
         {agent.description && (

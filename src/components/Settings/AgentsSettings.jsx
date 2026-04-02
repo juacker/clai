@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { getAgents, createAgent, updateAgent, deleteAgent, getSpaces } from '../../api/client';
+import { getAgents, createAgent, updateAgent, deleteAgent, getSpaces, setAgentEnabled } from '../../api/client';
 import AgentCard from './AgentCard';
 import AgentFormModal from './AgentFormModal';
 import styles from './AgentsSettings.module.css';
@@ -53,6 +53,7 @@ const AgentsSettings = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [togglingId, setTogglingId] = useState(null);
 
   // Fetch agents and spaces on mount
   useEffect(() => {
@@ -110,8 +111,6 @@ const AgentsSettings = () => {
     try {
       await deleteAgent(agentId);
       setAgents(agents.filter(a => a.id !== agentId));
-      // Notify badge to refresh (agent count changed)
-      window.dispatchEvent(new CustomEvent('agent-assignments-changed'));
     } catch (err) {
       console.error('[AgentsSettings] Failed to delete agent:', err);
       setError('Failed to delete agent. Please try again.');
@@ -139,11 +138,26 @@ const AgentsSettings = () => {
       }
       setIsFormOpen(false);
       setEditingAgent(null);
-      // Notify badge to refresh (agent count changed)
-      window.dispatchEvent(new CustomEvent('agent-assignments-changed'));
     } catch (err) {
       console.error('[AgentsSettings] Failed to save agent:', err);
       throw err; // Re-throw so form can show error
+    }
+  };
+
+  const handleToggleEnabled = async (agent) => {
+    if (togglingId) return;
+
+    setTogglingId(agent.id);
+    setError(null);
+
+    try {
+      const updated = await setAgentEnabled(agent.id, !agent.enabled);
+      setAgents(agents.map(a => a.id === updated.id ? updated : a));
+    } catch (err) {
+      console.error('[AgentsSettings] Failed to toggle agent:', err);
+      setError(typeof err === 'string' ? err : (err?.message || 'Failed to update agent status. Please try again.'));
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -216,8 +230,10 @@ const AgentsSettings = () => {
               spaces={spaces}
               onEdit={() => handleEdit(agent)}
               onDelete={() => handleDelete(agent.id)}
+              onToggleEnabled={() => handleToggleEnabled(agent)}
               onUpdate={fetchAgents}
               isDeleting={deletingId === agent.id}
+              isToggling={togglingId === agent.id}
             />
           ))}
         </div>
@@ -225,8 +241,8 @@ const AgentsSettings = () => {
 
       <div className={styles.hint}>
         <p>
-          Agents run periodically when enabled for a space/room. Use the Auto-pilot toggle
-          in the context panel to enable agents for the current room.
+          Agents can be enabled individually here. Room assignment is optional and only
+          provides Netdata context to that agent.
         </p>
       </div>
 

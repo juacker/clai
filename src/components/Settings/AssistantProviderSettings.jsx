@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { assistantClient } from '../../assistant';
 import styles from './ProviderSettings.module.css';
 
 const STORAGE_KEY_MODEL = 'assistant-default-model';
@@ -74,12 +75,17 @@ const AssistantProviderSettings = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const sessions = await invoke('provider_list_sessions');
+        const [sessions, defaultModel] = await Promise.all([
+          invoke('provider_list_sessions'),
+          assistantClient.getDefaultModel().catch(() => null),
+        ]);
         if (sessions.length > 0) {
           setProviderSession(sessions[0]);
           setBaseUrl(sessions[0].baseUrl || '');
         }
-        setModelId(getStoredModel());
+        const resolvedModel = defaultModel || getStoredModel();
+        setModelId(resolvedModel);
+        setStoredModel(resolvedModel);
       } catch (err) {
         console.error('[AssistantProviderSettings] Failed to load:', err);
       } finally {
@@ -112,6 +118,7 @@ const AssistantProviderSettings = () => {
       };
 
       const session = await invoke('provider_connect_api_key', { request });
+      await assistantClient.setDefaultModel(modelId.trim());
       setProviderSession(session);
       setStoredModel(modelId.trim());
       setApiKey('');
@@ -134,6 +141,7 @@ const AssistantProviderSettings = () => {
 
     try {
       await invoke('provider_disconnect', { providerId: providerSession.providerId });
+      await assistantClient.setDefaultModel(null);
       setProviderSession(null);
       setBaseUrl('');
       setStoredModel('');
@@ -149,9 +157,18 @@ const AssistantProviderSettings = () => {
   }, [providerSession]);
 
   const handleModelSave = useCallback(() => {
-    setStoredModel(modelId.trim());
-    setSuccess('Model updated.');
-    setTimeout(() => setSuccess(null), 3000);
+    const save = async () => {
+      try {
+        await assistantClient.setDefaultModel(modelId.trim() || null);
+        setStoredModel(modelId.trim());
+        setSuccess('Model updated.');
+        setTimeout(() => setSuccess(null), 3000);
+      } catch (err) {
+        console.error('[AssistantProviderSettings] Failed to save model:', err);
+        setError('Failed to save model.');
+      }
+    };
+    save();
   }, [modelId]);
 
   const handleKeyDown = useCallback((e) => {

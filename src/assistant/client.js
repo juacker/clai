@@ -62,3 +62,15 @@ export async function getActiveProviderSession() {
 export async function listProviderModels(providerId) {
   return invoke('provider_list_models', { providerId });
 }
+
+export async function getDefaultModel() {
+  return invoke('assistant_get_default_model');
+}
+
+export async function setDefaultModel(modelId) {
+  return invoke('assistant_set_default_model', {
+    request: {
+      modelId,
+    },
+  });
+}

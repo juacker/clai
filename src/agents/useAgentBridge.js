@@ -99,9 +99,16 @@ export const useAgentBridge = () => {
 
     // Also check for existing agent tab by context (handles app reload where Map is lost)
     const existingAgentTab = tabManagerRef.current.tabs.find(
-      t => t.context?.agent?.agentId === agentId &&
-           t.context?.spaceRoom?.selectedSpaceId === spaceId &&
-           t.context?.spaceRoom?.selectedRoomId === roomId
+      t => {
+        if (t.context?.agent?.agentId !== agentId) return false;
+
+        const tabSpaceId = t.context?.spaceRoom?.selectedSpaceId || '';
+        const tabRoomId = t.context?.spaceRoom?.selectedRoomId || '';
+        const requestedSpaceId = spaceId || '';
+        const requestedRoomId = roomId || '';
+
+        return tabSpaceId === requestedSpaceId && tabRoomId === requestedRoomId;
+      }
     );
 
     if (existingAgentTab) {

@@ -11,6 +11,7 @@ use crate::assistant::types::{
     RunTrigger, SessionContext, SessionKind, ToolInvocation,
 };
 use crate::db::DbPool;
+use crate::AppState;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +42,13 @@ pub struct ListToolCallsRequest {
     pub session_id: String,
     #[serde(default)]
     pub run_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAssistantDefaultModelRequest {
+    #[serde(default)]
+    pub model_id: Option<String>,
 }
 
 #[tauri::command]
@@ -281,6 +289,38 @@ pub async fn assistant_cancel_run(
     )?;
 
     Ok(cancelled)
+}
+
+#[tauri::command]
+pub fn assistant_get_default_model(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let config_manager = state
+        .config_manager
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+
+    Ok(config_manager.get_assistant_default_model())
+}
+
+#[tauri::command]
+pub fn assistant_set_default_model(
+    request: SetAssistantDefaultModelRequest,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let model_id = request
+        .model_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let config_manager = state
+        .config_manager
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+
+    config_manager
+        .set_assistant_default_model(model_id.clone())
+        .map_err(|e| format!("Failed to save assistant default model: {}", e))?;
+
+    Ok(model_id)
 }
 
 fn spawn_run_task(

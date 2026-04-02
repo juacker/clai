@@ -242,6 +242,18 @@ impl ConfigManager {
         self.config.lock().unwrap().ai_provider.is_some()
     }
 
+    /// Gets the default model for the app-owned assistant runtime.
+    pub fn get_assistant_default_model(&self) -> Option<String> {
+        self.config.lock().unwrap().assistant_default_model.clone()
+    }
+
+    /// Sets the default model for the app-owned assistant runtime.
+    pub fn set_assistant_default_model(&self, model: Option<String>) -> Result<(), ConfigError> {
+        self.update(|config| {
+            config.assistant_default_model = model;
+        })
+    }
+
     // =========================================================================
     // Agent Helpers
     // =========================================================================
@@ -311,6 +323,17 @@ impl ConfigManager {
             }
         })?;
         Ok(enabled)
+    }
+
+    /// Enables or disables an agent globally and saves config.
+    pub fn set_agent_enabled(&self, agent_id: &str, enabled: bool) -> Result<bool, ConfigError> {
+        let mut changed = false;
+        self.update(|config| {
+            if let Some(agent) = config.agents.iter_mut().find(|a| a.id == agent_id) {
+                changed = agent.set_enabled(enabled);
+            }
+        })?;
+        Ok(changed)
     }
 
     /// Disables an agent for a specific space/room and saves config.

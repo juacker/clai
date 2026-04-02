@@ -73,6 +73,12 @@ pub struct SessionContext {
     pub tool_scopes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub netdata_conversation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

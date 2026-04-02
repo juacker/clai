@@ -20,10 +20,12 @@ const DesktopChatPanel = ({ userInfo }) => {
   const assistantSessionId = useAssistantStore(
     (state) => state.activeSessionByTab[activeTabId]
   );
+  const isOpen = isCurrentChatOpen();
 
-  // Restore existing assistant session from DB on tab change
+  // Restore existing assistant session from DB on tab change or when the
+  // panel is opened after a background run attached a session later.
   useEffect(() => {
-    if (!activeTabId || assistantSessionId) return;
+    if (!activeTabId || assistantSessionId || !isOpen) return;
 
     const restore = async () => {
       try {
@@ -44,9 +46,7 @@ const DesktopChatPanel = ({ userInfo }) => {
       }
     };
     restore();
-  }, [activeTabId, assistantSessionId]);
-
-  const isOpen = isCurrentChatOpen();
+  }, [activeTabId, assistantSessionId, isOpen]);
 
   return (
     <div

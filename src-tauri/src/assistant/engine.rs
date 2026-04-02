@@ -121,12 +121,17 @@ pub async fn run_session_turn(
     if let Some(tab_id) = &session.tab_id {
         let bridge = crate::mcp::bridge::JsBridge::new(deps.app.clone());
         let setup_params = serde_json::json!({
-            "agentName": "Assistant",
+            "agentName": session
+                .context
+                .automation_name
+                .as_deref()
+                .or(session.title.as_deref())
+                .unwrap_or("Assistant"),
             "tabId": tab_id,
         });
         let _ = bridge
             .call_tool(
-                "assistant",
+                &bridge_agent_id(&session.id),
                 session.context.space_id.as_deref().unwrap_or(""),
                 session.context.room_id.as_deref().unwrap_or(""),
                 "agent.setup",
@@ -149,6 +154,11 @@ pub async fn run_session_turn(
         let messages = repository::list_messages(&deps.pool, &session.id).await?;
 
         let mut provider_messages = vec![system_message.clone()];
+        if iteration == 0 {
+            if let Some(trigger_message) = build_trigger_message(&session, &input.trigger) {
+                provider_messages.push(trigger_message);
+            }
+        }
         provider_messages.extend(messages.iter().map(|msg| ProviderInputMessage {
             role: msg.role.clone(),
             content: msg.content.clone(),
@@ -490,10 +500,62 @@ fn build_system_prompt(
         );
     }
 
+    if let Some(automation_name) = context.automation_name.as_deref() {
+        prompt.push_str("\n## Scheduled Agent Context\n");
+        prompt.push_str(&format!(
+            "This session belongs to the scheduled agent `{}`.\n",
+            automation_name
+        ));
+        prompt.push_str(
+            "Your assistant text is visible to the user in chat. Use normal assistant replies for \
+             summaries and explanations; use dashboard/canvas/tabs tools to update the tab itself.\n\
+             Prefer updating existing visuals over recreating duplicate panels when the topic is unchanged.\n",
+        );
+
+        if let Some(description) = context.automation_description.as_deref() {
+            prompt.push_str("\nAgent instructions:\n");
+            prompt.push_str(description);
+            prompt.push('\n');
+        }
+    }
+
     ProviderInputMessage {
         role: MessageRole::System,
         content: vec![ContentPart::Text { text: prompt }],
     }
+}
+
+fn build_trigger_message(
+    session: &crate::assistant::types::AssistantSession,
+    trigger: &RunTrigger,
+) -> Option<ProviderInputMessage> {
+    let automation_name = session
+        .context
+        .automation_name
+        .as_deref()
+        .unwrap_or("scheduled agent");
+
+    let text = match trigger {
+        RunTrigger::Scheduled => Some(format!(
+            "Run the next scheduled monitoring pass for {} now. Inspect the current state, \
+             update the tab as needed, and end with a concise status update.",
+            automation_name
+        )),
+        RunTrigger::ManualAutomation => Some(format!(
+            "Run the automation {} now and report the current findings.",
+            automation_name
+        )),
+        RunTrigger::UserMessage | RunTrigger::Retry => None,
+    }?;
+
+    Some(ProviderInputMessage {
+        role: MessageRole::User,
+        content: vec![ContentPart::Text { text }],
+    })
+}
+
+pub fn bridge_agent_id(session_id: &str) -> String {
+    format!("assistant-session:{}", session_id)
 }
 
 /// Helper to mark a run as failed and emit the event.

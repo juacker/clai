@@ -537,6 +537,22 @@ export const deleteAgent = async (id) => {
 };
 
 /**
+ * Enable or disable an agent globally
+ * @param {string} id - Agent ID
+ * @param {boolean} enabled - Whether the agent should run
+ * @returns {Promise<Object>} Updated agent
+ */
+export const setAgentEnabled = async (id, enabled) => {
+  try {
+    return await invoke('set_agent_enabled', {
+      request: { id, enabled },
+    });
+  } catch (error) {
+    handleApiError(error, 'Failed to update agent status');
+  }
+};
+
+/**
  * Enable an agent for a specific space/room
  * @param {string} agentId - Agent ID
  * @param {string} spaceId - Space ID

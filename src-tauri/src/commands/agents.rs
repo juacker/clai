@@ -4,9 +4,11 @@
 //! and their room assignments.
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
+use crate::assistant::{providers as assistant_providers, repository as assistant_repository};
 use crate::config::{AgentConfig, SpaceRoomPair};
+use crate::db::DbPool;
 use crate::AppState;
 
 // =============================================================================
@@ -32,6 +34,14 @@ pub struct UpdateAgentRequest {
     pub interval_minutes: u32,
 }
 
+/// Request to enable/disable an agent globally.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAgentEnabledRequest {
+    pub id: String,
+    pub enabled: bool,
+}
+
 /// Response for agent list operations.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +50,7 @@ pub struct AgentResponse {
     pub name: String,
     pub description: String,
     pub interval_minutes: u32,
+    pub enabled: bool,
     pub enabled_rooms: Vec<SpaceRoomPair>,
     pub created_at: String,
     pub updated_at: String,
@@ -54,6 +65,7 @@ impl From<AgentConfig> for AgentResponse {
             name: agent.name,
             description: agent.description,
             interval_minutes: agent.interval_minutes,
+            enabled: agent.enabled,
             enabled_rooms: agent.enabled_rooms,
             created_at: agent.created_at,
             updated_at: agent.updated_at,
@@ -153,6 +165,56 @@ pub fn update_agent(
     Ok(AgentResponse::from(agent))
 }
 
+#[tauri::command]
+pub async fn set_agent_enabled(
+    request: SetAgentEnabledRequest,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<AgentResponse, String> {
+    if request.enabled {
+        let pool = app.try_state::<DbPool>().ok_or_else(|| {
+            "Assistant database is not ready yet. Try again in a moment.".to_string()
+        })?;
+        let default_model = {
+            let config_manager = state
+                .config_manager
+                .lock()
+                .map_err(|e| format!("Lock error: {}", e))?;
+            config_manager.get_assistant_default_model()
+        };
+        let provider_info =
+            load_assistant_provider_info(pool.inner(), default_model.as_deref()).await?;
+        if !provider_info.configured {
+            return Err(
+                "Configure the assistant provider and default model in Settings first.".to_string(),
+            );
+        }
+    }
+
+    let agent = {
+        let config_manager = state
+            .config_manager
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+
+        if config_manager.get_agent(&request.id).is_none() {
+            return Err(format!("Agent not found: {}", request.id));
+        }
+
+        config_manager
+            .set_agent_enabled(&request.id, request.enabled)
+            .map_err(|e| format!("Failed to update agent enabled state: {}", e))?;
+
+        config_manager
+            .get_agent(&request.id)
+            .ok_or_else(|| "Agent not found after update".to_string())?
+    };
+
+    sync_agent_scheduler(&state, &agent).await;
+
+    Ok(AgentResponse::from(agent))
+}
+
 /// Deletes an agent.
 ///
 /// Also removes any scheduler instances for this agent.
@@ -193,8 +255,7 @@ pub async fn enable_agent_for_room(
     room_id: String,
     state: State<'_, AppState>,
 ) -> Result<AgentResponse, String> {
-    // Scope the config_manager lock to avoid holding it across await
-    let (agent, definition) = {
+    let agent = {
         let config_manager = state
             .config_manager
             .lock()
@@ -213,28 +274,10 @@ pub async fn enable_agent_for_room(
         let agent = config_manager
             .get_agent(&agent_id)
             .ok_or_else(|| "Agent not found".to_string())?;
-
-        // Create agent definition from config and register instance
-        let definition = crate::agents::AgentDefinition::new(
-            &agent.id,
-            &agent.name,
-            (agent.interval_minutes as u64) * 60 * 1000, // Convert minutes to milliseconds
-        )
-        .with_description(&agent.description)
-        .with_prompt(&agent.generate_prompt())
-        .with_tools(agent.required_tools());
-
-        (agent, definition)
+        agent
     };
 
-    // Create scheduler instance
-    let mut scheduler = state.scheduler.lock().await;
-
-    // Register definition if not already registered
-    scheduler.register_definition(definition);
-
-    // Create instance for this space/room
-    scheduler.create_instance(&agent_id, &space_id, &room_id);
+    sync_agent_scheduler(&state, &agent).await;
 
     Ok(AgentResponse::from(agent))
 }
@@ -267,10 +310,7 @@ pub async fn disable_agent_for_room(
         config_manager.get_agent(&agent_id).unwrap_or(agent)
     };
 
-    // Remove scheduler instance
-    let mut scheduler = state.scheduler.lock().await;
-    let instance_id = format!("{}:{}:{}", agent_id, space_id, room_id);
-    scheduler.remove_instance(&instance_id);
+    sync_agent_scheduler(&state, &agent).await;
 
     Ok(AgentResponse::from(agent))
 }
@@ -323,7 +363,25 @@ pub async fn toggle_agents_for_room(
     room_id: String,
     enabled: bool,
     state: State<'_, AppState>,
+    pool: State<'_, DbPool>,
 ) -> Result<ToggleAgentsResult, String> {
+    if enabled {
+        let default_model = {
+            let config_manager = state
+                .config_manager
+                .lock()
+                .map_err(|e| format!("Lock error: {}", e))?;
+            config_manager.get_assistant_default_model()
+        };
+        let provider_info =
+            load_assistant_provider_info(pool.inner(), default_model.as_deref()).await?;
+        if !provider_info.configured {
+            return Err(
+                "Configure the assistant provider and default model in Settings first.".to_string(),
+            );
+        }
+    }
+
     // Collect all config changes first, then apply scheduler changes
     // This avoids holding the config lock across the await
 
@@ -344,11 +402,6 @@ pub async fn toggle_agents_for_room(
 
         if agents.is_empty() {
             return Err("No agents configured. Create an agent in Settings first.".to_string());
-        }
-
-        // Check provider is configured when enabling
-        if enabled && config_manager.get_ai_provider().is_none() {
-            return Err("No AI provider configured. Set a provider in Settings first.".to_string());
         }
 
         let mut affected_count = 0;
@@ -418,4 +471,57 @@ pub async fn toggle_agents_for_room(
         affected_count,
         total_agents,
     })
+}
+
+async fn load_assistant_provider_info(
+    pool: &DbPool,
+    default_model: Option<&str>,
+) -> Result<crate::config::ProviderInfo, String> {
+    let provider_session = assistant_repository::list_provider_sessions(pool)
+        .await?
+        .into_iter()
+        .next();
+
+    let has_model = default_model
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
+    let configured = provider_session.is_some() && has_model;
+    let name = provider_session.as_ref().map(|session| {
+        assistant_providers::get_provider_descriptor(&session.provider_id)
+            .map(|descriptor| descriptor.display_name)
+            .unwrap_or_else(|| session.provider_id.clone())
+    });
+
+    Ok(crate::config::ProviderInfo {
+        configured,
+        name,
+        provider: None,
+    })
+}
+
+fn build_agent_definition(agent: &AgentConfig) -> crate::agents::AgentDefinition {
+    crate::agents::AgentDefinition::new(
+        &agent.id,
+        &agent.name,
+        (agent.interval_minutes as u64) * 60 * 1000,
+    )
+    .with_description(&agent.description)
+    .with_prompt(&agent.generate_prompt())
+    .with_tools(agent.required_tools())
+}
+
+async fn sync_agent_scheduler(state: &State<'_, AppState>, agent: &AgentConfig) {
+    let mut scheduler = state.scheduler.lock().await;
+    scheduler.remove_instances_for_agent(&agent.id);
+    scheduler.register_definition(build_agent_definition(agent));
+
+    if !agent.enabled {
+        return;
+    }
+
+    if let Some(scope) = agent.assigned_room() {
+        scheduler.create_instance(&agent.id, &scope.space_id, &scope.room_id);
+    } else {
+        scheduler.create_instance(&agent.id, "", "");
+    }
 }
