@@ -29,9 +29,6 @@ import { invoke } from '@tauri-apps/api/core';
 
 /**
  * @typedef {Object} TabContext
- * @property {Object} spaceRoom
- * @property {string|null} spaceRoom.selectedSpaceId
- * @property {string|null} spaceRoom.selectedRoomId
  * @property {Object} mcpServers
  * @property {string[]} mcpServers.attachedServerIds
  * @property {string[]} mcpServers.disabledServerIds
@@ -40,7 +37,7 @@ import { invoke } from '@tauri-apps/api/core';
 /**
  * @typedef {Object} Command
  * @property {string} id
- * @property {string} type - 'dashboard' | 'canvas' | 'anomalies' | 'help' | 'echo'
+ * @property {string} type - 'dashboard' | 'canvas' | 'help' | 'echo'
  * @property {Object} args - Command arguments
  * @property {string} tabId
  * @property {string} tileId
@@ -59,15 +56,89 @@ import { invoke } from '@tauri-apps/api/core';
  */
 
 const DEFAULT_CONTEXT = {
-  spaceRoom: {
-    selectedSpaceId: null,
-    selectedRoomId: null,
-  },
   mcpServers: {
     attachedServerIds: [],
     disabledServerIds: [],
   },
+  customContext: {},
 };
+
+function normalizeTabContext(context = {}) {
+  const {
+    mcpServers: rawMcpServers = {},
+    customContext: rawCustomContext = {},
+    spaceRoom: _spaceRoom,
+    ...restContext
+  } = context || {};
+
+  const attachedServerIds = [...new Set(
+    (rawMcpServers.attachedServerIds || rawMcpServers.selectedServerIds || []).filter(Boolean)
+  )];
+  const disabledServerIds = [...new Set((rawMcpServers.disabledServerIds || []).filter(Boolean))]
+    .filter((id) => attachedServerIds.includes(id));
+
+  return {
+    ...DEFAULT_CONTEXT,
+    ...restContext,
+    mcpServers: {
+      attachedServerIds,
+      disabledServerIds,
+    },
+    customContext: {
+      ...DEFAULT_CONTEXT.customContext,
+      ...rawCustomContext,
+    },
+  };
+}
+
+function sanitizeTileCommandReferences(tile, validCommandIds) {
+  if (!tile) {
+    return tile;
+  }
+
+  if (tile.type === 'leaf') {
+    return {
+      ...tile,
+      commandId: tile.commandId && validCommandIds.has(tile.commandId) ? tile.commandId : undefined,
+    };
+  }
+
+  if (tile.type === 'split' && Array.isArray(tile.children)) {
+    return {
+      ...tile,
+      children: tile.children.map((child) => sanitizeTileCommandReferences(child, validCommandIds)),
+    };
+  }
+
+  return tile;
+}
+
+function sanitizeWorkspaceState(state) {
+  if (!state) {
+    return state;
+  }
+
+  const commands = Object.fromEntries(
+    Object.entries(state.commands || {})
+  );
+  const validCommandIds = new Set(Object.keys(commands));
+  const tabs = Object.fromEntries(
+    Object.entries(state.tabs || {}).map(([tabId, tab]) => [
+      tabId,
+      {
+        ...tab,
+        context: normalizeTabContext(tab.context),
+        rootTile: sanitizeTileCommandReferences(tab.rootTile, validCommandIds),
+      },
+    ])
+  );
+
+  return {
+    ...state,
+    tabs,
+    commands,
+  };
+}
 
 /**
  * Simple debounce function for async operations
@@ -155,7 +226,8 @@ export const useWorkspaceStore = create(
       // Initialize from SQLite
       initialize: async () => {
         try {
-          const state = await invoke('load_workspace_state');
+          const loadedState = await invoke('load_workspace_state');
+          const state = sanitizeWorkspaceState(loadedState);
           if (state && Object.keys(state.tabs).length > 0) {
             // Use tabOrder from state, or derive from tabs if not present (migration)
             const tabOrder = state.tabOrder && state.tabOrder.length > 0

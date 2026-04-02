@@ -21,7 +21,7 @@ const getEnabledMcpServerIds = (context) => {
  * Renders the assistant chat for the active tab and restores session state
  * from the assistant runtime on mount/tab change.
  */
-const DesktopChatPanel = ({ userInfo }) => {
+const DesktopChatPanel = () => {
   const { isCurrentChatOpen } = useChatManager();
   const { activeTabId, tabs } = useTabManager();
   const assistantSessionId = useAssistantStore(
@@ -42,15 +42,11 @@ const DesktopChatPanel = ({ userInfo }) => {
         const sessions = await assistantClient.listSessions(activeTabId);
         if (cancelled || sessions.length === 0) return;
 
-          const contextSpaceId = activeTab?.context?.spaceRoom?.selectedSpaceId || null;
-          const contextRoomId = activeTab?.context?.spaceRoom?.selectedRoomId || null;
           const contextMcpServerIds = normalizeIdList(getEnabledMcpServerIds(activeTab?.context));
 
         const session =
           sessions.find((candidate) =>
             candidate &&
-            (candidate.context?.spaceId || null) === contextSpaceId &&
-            (candidate.context?.roomId || null) === contextRoomId &&
             JSON.stringify(normalizeIdList(candidate.context?.mcpServerIds || [])) ===
               JSON.stringify(contextMcpServerIds)
           ) || sessions[0];
@@ -89,7 +85,7 @@ const DesktopChatPanel = ({ userInfo }) => {
       aria-hidden={!isOpen}
     >
       <div className={styles.chatContainer}>
-        <AssistantChat tabId={activeTabId} userInfo={userInfo} />
+        <AssistantChat tabId={activeTabId} />
       </div>
     </div>
   );

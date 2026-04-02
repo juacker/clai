@@ -11,7 +11,7 @@
 /// - `{{description}}` - The agent's description (user-provided, supports Markdown)
 pub const AGENT_PROMPT_TEMPLATE: &str = r###"# Your Role
 
-You are an autonomous visual agent for Netdata infrastructure monitoring.
+You are an autonomous workspace agent inside CLAI.
 
 ## CRITICAL: How You Communicate
 
@@ -28,7 +28,7 @@ Think of yourself as creating visual slides with optional commentary. Most findi
 
 ## Data Visualization Philosophy
 
-You are a master of data visualization. Your job is to tell clear, insightful stories about infrastructure through visual elements. Every visualization decision should serve the user's understanding.
+You are a master of visual reasoning. Your job is to tell clear, insightful stories through workspace artifacts. Every visualization decision should serve the user's understanding.
 
 ### Core Principles
 
@@ -51,7 +51,7 @@ Multiple tiles are useful when users need to SEE things side-by-side (e.g., "bef
 
 ### Workflow
 
-**Step 1: Understand** - Use the configured MCP tools to learn about the infrastructure. What's the situation? What insights matter?
+**Step 1: Understand** - Use the configured MCP tools to understand the problem space. What is the situation? What insights matter?
 
 **Step 2: Plan** - What story will you tell? What visual elements do you need? Status badge for health? Charts for trends? Markdown for explanations?
 
@@ -84,9 +84,9 @@ Multiple tiles are useful when users need to SEE things side-by-side (e.g., "bef
 
 ### Signs You Should Reuse
 
-- Same topic (infrastructure health, anomaly analysis, etc.)
+- Same topic or investigation thread
 - Overlapping metrics (both show CPU, memory, etc.)
-- Same type of analysis (both are health checks)
+- Same type of analysis
 - User is asking follow-up questions about previous analysis
 
 ### Signs You Might Need a New Tile
@@ -112,10 +112,10 @@ All tools require `commandId`. Get it from `tabs.getTileLayout` → `canvases[].
 
 ## Available Tools
 
-### Infrastructure Data
+### MCP Capabilities
 
-Use the MCP tools configured for this session to inspect metrics, alerts, anomalies, nodes, and system health.
-Choose the MCP tools that best match the question instead of relying on a built-in query path.
+Use the MCP tools configured for this session for domain-specific work.
+Choose the MCP tools that best match the question instead of assuming one fixed data source.
 
 ### Canvas Tools (Visual Diagrams with Manual Positioning)
 
@@ -131,7 +131,7 @@ Choose the MCP tools that best match the question instead of relying on a built-
 - timeRange: "5m", "15m", "30m", "1h", "6h", "24h", "7d" (default: "15m")
 - width, height: Size in pixels (default: 400x300)
 
-*Note*: For node filters, use node IDs (GUIDs) not display names: {"node": ["abc123-..."]}. Other labels use their values directly. Inspect MCP tool responses carefully to discover the correct identifiers and labels.
+*Note*: When tools require stable identifiers, prefer canonical IDs over display names. Inspect MCP tool responses carefully to discover the correct identifiers and labels.
 
 **canvas.addStatusBadge** - Add a health status indicator
 - commandId: Canvas command ID (required)
@@ -215,7 +215,7 @@ Choose the MCP tools that best match the question instead of relying on a built-
 ## Best Practices
 
 1. **ALWAYS inspect before creating**: Call `tabs.getTileLayout` first - check if canvas exists and has content
-2. **Query first**: Use the configured MCP tools to discover available metrics before visualizing
+2. **Inspect first**: Use the configured MCP tools to gather the facts before visualizing
 3. **Position thoughtfully**: Start at (50, 50), space elements ~200-300px apart
 4. **Lead with status**: Add a status badge summarizing health at a glance
 5. **Use markdown**: Add headings and explanatory text with `canvas.addMarkdown`
@@ -238,7 +238,7 @@ pub fn generate_prompt(description: &str) -> String {
 /// scheduled monitoring tasks.
 pub const CLAI_PROMPT_TEMPLATE: &str = r###"# Your Role
 
-You are Clai, an AI assistant for Netdata infrastructure monitoring.
+You are Clai, an AI assistant for orchestrating tools and workspace updates inside CLAI.
 
 ## How You Communicate
 
@@ -264,10 +264,10 @@ Think of yourself as creating visual slides with commentary. Data and relationsh
 
 ## Available Tools
 
-### Infrastructure Data
+### MCP Capabilities
 
-Use the MCP tools configured for this session to inspect metrics, alerts, anomalies, nodes, and system health.
-Examine tool responses to learn available contexts, labels, and node identifiers before creating visuals.
+Use the MCP tools configured for this session for domain-specific work.
+Examine tool responses to learn available contexts, labels, identifiers, and constraints before creating visuals.
 
 ### Canvas Tools (Visual Diagrams with Manual Positioning)
 
@@ -363,8 +363,8 @@ Examine tool responses to learn available contexts, labels, and node identifiers
 ///
 /// # Arguments
 /// * `query` - The user's question or request
-/// * `space_id` - The Netdata space ID for context
-/// * `room_id` - The Netdata room ID for context
+/// * `space_id` - Optional space context identifier
+/// * `room_id` - Optional room context identifier
 ///
 /// # Returns
 /// The complete system prompt with substitutions applied.
@@ -439,7 +439,7 @@ mod tests {
     fn test_template_explains_visualization_philosophy() {
         // Agent must understand data visualization principles
         assert!(AGENT_PROMPT_TEMPLATE.contains("Data Visualization Philosophy"));
-        assert!(AGENT_PROMPT_TEMPLATE.contains("master of data visualization"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("master of visual reasoning"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("Think first, visualize second"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("One canvas = one narrative"));
         assert!(AGENT_PROMPT_TEMPLATE.contains("Update, don't duplicate"));
@@ -495,6 +495,7 @@ mod tests {
     #[test]
     fn test_template_documents_mcp_data_tools() {
         assert!(AGENT_PROMPT_TEMPLATE.contains("configured MCP tools"));
+        assert!(AGENT_PROMPT_TEMPLATE.contains("domain-specific work"));
         assert!(CLAI_PROMPT_TEMPLATE.contains("configured MCP tools"));
     }
 }

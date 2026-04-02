@@ -212,18 +212,13 @@ async fn run_next_agent(
             .ok_or_else(|| RunnerError::AgentNotFound(agent_id.clone()))?
     };
 
-    let room_assignment_matches = agent_config
-        .assigned_room()
-        .map(|assignment| assignment.space_id == space_id && assignment.room_id == room_id)
-        .unwrap_or(space_id.is_empty() && room_id.is_empty());
-
-    // Check if agent is still enabled for this scope.
-    if !agent_config.enabled || !room_assignment_matches {
+    // Check if the automation is still enabled.
+    if !agent_config.enabled {
         tracing::info!(
             agent_id = %agent_id,
             space_id = %space_id,
             room_id = %room_id,
-            "Agent is no longer enabled for this scope, removing instance"
+            "Automation is no longer enabled, removing instance"
         );
 
         // Remove the instance from scheduler
@@ -237,10 +232,36 @@ async fn run_next_agent(
 
     tracing::debug!(agent_name = %agent_config.name, "Got agent config");
 
+    let existing_session = find_background_session(
+        &pool,
+        &provider_session.provider_id,
+        &model_id,
+        &agent_config,
+        if space_id.is_empty() {
+            None
+        } else {
+            Some(space_id.as_str())
+        },
+        if room_id.is_empty() {
+            None
+        } else {
+            Some(room_id.as_str())
+        },
+    )
+    .await?;
+    let preferred_tab_id = existing_session.as_ref().and_then(|session| session.tab_id.clone());
+
     // Ensure the scheduled agent has its tab before running.
     let bridge = JsBridge::new(app_handle.clone());
     let tab_id = bridge
-        .setup_agent_tab(&agent_config.id, &agent_config.name, &space_id, &room_id)
+        .setup_agent_tab(
+            &agent_config.id,
+            &agent_config.name,
+            &space_id,
+            &room_id,
+            preferred_tab_id.as_deref(),
+            &agent_config.selected_mcp_server_ids,
+        )
         .await
         .map_err(|e| RunnerError::TabSetupFailed(e.to_string()))?;
 
@@ -441,18 +462,15 @@ async fn ensure_background_session(
         automation_description: Some(agent_config.description.clone()),
     };
 
-    let existing = repository::list_sessions(pool, None)
-        .await
-        .map_err(RunnerError::AssistantPersistence)?
-        .into_iter()
-        .find(|session| {
-            session.kind == SessionKind::BackgroundJob
-                && session.provider_id == provider_id
-                && session.model_id == model_id
-                && session.context.space_id == session_space_id
-                && session.context.room_id == session_room_id
-                && session.context.automation_id.as_deref() == Some(agent_config.id.as_str())
-        });
+    let existing = find_background_session(
+        pool,
+        provider_id,
+        model_id,
+        agent_config,
+        session_space_id.as_deref(),
+        session_room_id.as_deref(),
+    )
+    .await?;
 
     if let Some(session) = existing {
         let session = if session.tab_id.as_deref() != Some(tab_id)
@@ -509,6 +527,31 @@ async fn ensure_background_session(
     .map_err(RunnerError::AssistantSession)?;
 
     Ok(session)
+}
+
+async fn find_background_session(
+    pool: &DbPool,
+    provider_id: &str,
+    model_id: &str,
+    agent_config: &crate::config::AgentConfig,
+    space_id: Option<&str>,
+    room_id: Option<&str>,
+) -> Result<Option<crate::assistant::types::AssistantSession>, RunnerError> {
+    let session_space_id = space_id.map(str::to_string);
+    let session_room_id = room_id.map(str::to_string);
+
+    Ok(repository::list_sessions(pool, None)
+        .await
+        .map_err(RunnerError::AssistantPersistence)?
+        .into_iter()
+        .find(|session| {
+            session.kind == SessionKind::BackgroundJob
+                && session.provider_id == provider_id
+                && session.model_id == model_id
+                && session.context.space_id == session_space_id
+                && session.context.room_id == session_room_id
+                && session.context.automation_id.as_deref() == Some(agent_config.id.as_str())
+        }))
 }
 
 // =============================================================================

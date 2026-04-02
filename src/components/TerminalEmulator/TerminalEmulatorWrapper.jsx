@@ -2,11 +2,7 @@
  * TerminalEmulatorWrapper
  *
  * Wraps the TerminalEmulator and provides it with access to the active tab's context.
- * This allows the global terminal to interact with the active tab's space/room/custom context.
  * Routes free-text terminal prompts into the assistant engine.
- *
- * @param {Object} props - Component props
- * @param {Object} props.userInfo - User information object
  */
 
 import React, { useCallback } from 'react';
@@ -16,7 +12,13 @@ import { useChatManager } from '../../contexts/ChatManagerContext';
 import { useAssistantSession, useAssistantStore, assistantClient } from '../../assistant';
 import TerminalEmulator from './TerminalEmulator';
 
-const TerminalEmulatorWrapper = ({ userInfo }) => {
+const getEnabledMcpServerIds = (tab) => {
+  const attached = tab.context?.mcpServers?.attachedServerIds || tab.context?.mcpServers?.selectedServerIds || [];
+  const disabled = new Set(tab.context?.mcpServers?.disabledServerIds || []);
+  return attached.filter((id) => !disabled.has(id));
+};
+
+const TerminalEmulatorWrapper = () => {
   const { tabs, activeTabId, updateTabContext } = useTabManager();
   const { openChat } = useChatManager();
   const { ensureSession } = useAssistantSession(activeTabId);
@@ -67,13 +69,11 @@ const TerminalEmulatorWrapper = ({ userInfo }) => {
 
       try {
         const model = (await assistantClient.getDefaultModel().catch(() => null)) || 'gpt-4o-mini';
-        const spaceId = activeTab.context?.spaceRoom?.selectedSpaceId || null;
-        const roomId = activeTab.context?.spaceRoom?.selectedRoomId || null;
         const mcpServerIds = getEnabledMcpServerIds(activeTab);
         const sessionId = await ensureSession(
           providerSession.providerId,
           model,
-          { spaceId, roomId, mcpServerIds }
+          { mcpServerIds }
         );
         const result = await assistantClient.sendMessage(sessionId, query);
         const store = useAssistantStore.getState();
@@ -91,7 +91,7 @@ const TerminalEmulatorWrapper = ({ userInfo }) => {
 
   // If no active tab, render terminal without context
   if (!activeTab) {
-    return <TerminalEmulator userInfo={userInfo} onSendToChat={handleSendToAgent} />;
+    return <TerminalEmulator onSendToChat={handleSendToAgent} />;
   }
 
   // Wrap terminal with the active tab's context
@@ -101,14 +101,9 @@ const TerminalEmulatorWrapper = ({ userInfo }) => {
       initialContext={activeTab.context}
       onContextChange={handleContextChange}
     >
-      <TerminalEmulator userInfo={userInfo} onSendToChat={handleSendToAgent} />
+      <TerminalEmulator onSendToChat={handleSendToAgent} />
     </TabContextProvider>
   );
 };
 
 export default TerminalEmulatorWrapper;
-  const getEnabledMcpServerIds = (tab) => {
-    const attached = tab.context?.mcpServers?.attachedServerIds || tab.context?.mcpServers?.selectedServerIds || [];
-    const disabled = new Set(tab.context?.mcpServers?.disabledServerIds || []);
-    return attached.filter((id) => !disabled.has(id));
-  };

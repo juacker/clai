@@ -2,7 +2,7 @@
  * TabContent Component
  *
  * Renders the content of the active tab wrapped with TabContext.
- * Each tab has its own isolated context (space/room selection).
+ * Each tab has its own isolated capability context.
  * Phase 3: Renders TileView with split layouts for multiple command visualizations.
  */
 
@@ -77,4 +77,3 @@ const TabPanel = ({ tab, isActive, activeTileId, updateTabContext }) => {
 };
 
 export default TabContent;
-

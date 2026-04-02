@@ -1,18 +1,18 @@
-//! CLAI - Netdata AI Desktop Application
+//! CLAI backend runtime.
 //!
 //! This is the Rust backend for the Tauri-based desktop application.
 //! It handles:
 //! - Secure token storage via OS keychain
-//! - HTTP communication with Netdata Cloud API
+//! - HTTP communication with backend APIs and provider services
 //! - Exposing functionality to the JavaScript frontend
-//! - AI Agents with MCP tool integration
+//! - Scheduled automations with MCP tool integration
 //!
-//! # AI Agents Architecture
+//! # Automation Architecture
 //!
-//! When auto-pilot is enabled, the app runs AI agents that:
+//! When an automation is enabled, the app runs it through the assistant engine:
 //! 1. Start an HTTP MCP server on localhost (127.0.0.1:PORT)
 //! 2. Spawn an AI CLI (Claude Code, Gemini CLI, or Codex) with the server URL
-//! 3. The AI CLI connects and uses tools (netdata.query, canvas.*, tabs.*)
+//! 3. The AI CLI connects and uses the available built-in and MCP tools
 //! 4. When complete, the server shuts down
 //!
 //! See `agents::cli_runner` for the execution flow.
@@ -60,7 +60,7 @@ pub struct AppState {
     pub token_storage: TokenStorage,
     /// Current API base URL (protected by mutex for thread safety)
     pub base_url: Mutex<String>,
-    /// Configuration manager (auto-pilot settings, etc.)
+    /// Configuration manager for providers, automations, and MCP servers.
     pub config_manager: Mutex<ConfigManager>,
     /// External MCP client registry.
     pub mcp_client_manager: AsyncMutex<mcp::client::McpClientManager>,
@@ -112,7 +112,7 @@ pub fn run() {
     // Initialize agent scheduler
     let scheduler = agents::create_shared_scheduler();
 
-    // Register default agent definitions and restore instances if logged in
+    // Register default automation definitions and restore enabled instances
     agents::init::initialize_scheduler(&scheduler, &config_manager, &token_storage);
 
     // Clone scheduler before moving into state (needed for runner)
@@ -171,11 +171,7 @@ pub fn run() {
             commands::auth::clear_token,
             commands::auth::set_base_url,
             commands::auth::get_base_url,
-            // API commands
-            commands::api::api_get_user_info,
-            commands::api::api_get_spaces,
-            commands::api::api_get_rooms,
-            commands::api::api_get_billing_plan,
+            // Legacy chart/anomalies API commands
             commands::api::api_get_data,
             commands::api::api_get_contexts,
             // Conversation commands
@@ -199,10 +195,6 @@ pub fn run() {
             commands::assistant::assistant_cancel_run,
             commands::assistant::assistant_get_default_model,
             commands::assistant::assistant_set_default_model,
-            // Auto-pilot commands (legacy - may be replaced by agent commands)
-            commands::autopilot::get_autopilot_status,
-            commands::autopilot::set_autopilot_enabled,
-            commands::autopilot::get_all_autopilot_enabled,
             // Agent commands
             commands::agents::get_agents,
             commands::agents::get_agent,
@@ -210,10 +202,6 @@ pub fn run() {
             commands::agents::update_agent,
             commands::agents::set_agent_enabled,
             commands::agents::delete_agent,
-            commands::agents::enable_agent_for_room,
-            commands::agents::disable_agent_for_room,
-            commands::agents::get_agents_for_room,
-            commands::agents::toggle_agents_for_room,
             // MCP server commands
             commands::mcp_servers::get_mcp_servers,
             commands::mcp_servers::get_mcp_server,

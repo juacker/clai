@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { assistantClient, useAssistantSession } from '../../assistant';
 import useAssistantStore from '../../assistant/sessionStore';
 import MarkdownMessage from '../Chat/MarkdownMessage';
-import UserAvatar from '../UserAvatar';
 import styles from '../AgentChat/AgentChat.module.css';
 
 const EMPTY_TOOL_CALLS = [];
@@ -13,7 +12,7 @@ const EMPTY_TOOL_CALLS = [];
  * Displays assistant session messages for a specific tab.
  * Sources data from the assistant Zustand store.
  */
-const AssistantChat = ({ tabId, userInfo }) => {
+const AssistantChat = ({ tabId }) => {
   const {
     messages,
     streamingText,
@@ -151,7 +150,6 @@ const AssistantChat = ({ tabId, userInfo }) => {
           <MessageBlock
             key={message.id}
             message={message}
-            userInfo={userInfo}
             streamingText={streamingText[message.id]}
             toolCalls={toolCalls}
           />
@@ -198,7 +196,7 @@ const getToolUses = (message) => {
   return message.content.filter((part) => part.type === 'tool_use');
 };
 
-const MessageBlock = memo(({ message, userInfo, streamingText, toolCalls }) => {
+const MessageBlock = memo(({ message, streamingText, toolCalls }) => {
   const { role, createdAt } = message;
 
   if (role === 'user') {
@@ -208,12 +206,7 @@ const MessageBlock = memo(({ message, userInfo, streamingText, toolCalls }) => {
     return (
       <div className={styles.userMessage}>
         <div className={styles.messageHeader}>
-          <UserAvatar
-            avatarUrl={userInfo?.avatarURL}
-            userName={userInfo?.name || userInfo?.email}
-            size="small"
-          />
-          <span className={styles.messageRoleText}>{userInfo?.name || 'You'}</span>
+          <span className={styles.messageRoleText}>You</span>
           {createdAt && <span className={styles.messageTimestamp}>{formatTimestamp(createdAt)}</span>}
         </div>
         <div className={styles.messageContent}>{textContent}</div>

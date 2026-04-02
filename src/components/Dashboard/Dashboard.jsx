@@ -16,7 +16,6 @@
  */
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useTabContext } from '../../contexts/TabContext';
 import { useCommandRegistration } from '../../hooks/useCommandRegistration';
 import { useCommandStateManager } from '../../hooks/useWorkspaceSelectors';
 import { useDebounce } from '../../hooks/useDebounce';
@@ -247,9 +246,6 @@ const generateElementId = () =>
  */
 const Dashboard = ({ command }) => {
   const commandId = command?.id;
-
-  // Get tab context for space/room (used for data fetching)
-  const { selectedSpace, selectedRoom } = useTabContext();
 
   // Use Zustand store for persistent state (backed by SQLite)
   const [persistedState, updatePersistedState] = useCommandStateManager(commandId);
@@ -684,7 +680,7 @@ const Dashboard = ({ command }) => {
             <div className={styles.emptyStateIcon}>📊</div>
             <h3 className={styles.emptyStateTitle}>No metrics in dashboard</h3>
             <p className={styles.emptyStateText}>
-              Click on metrics in the <strong>anomalies</strong> view to add charts here.
+              Use the assistant to add charts here from your available tools.
               <br />
               Charts will appear automatically when you select metrics.
             </p>
@@ -826,7 +822,7 @@ const Dashboard = ({ command }) => {
           {dashboardElements.map((element) => {
             // Currently only supporting context-chart type
             if (element.type === 'context-chart') {
-              const { context, groupBy, filterBy, valueAgg, timeAgg } = element.config;
+              const { context, groupBy, filterBy, valueAgg, timeAgg, spaceId, roomId } = element.config;
               return (
                 <div key={`${instanceId.current}-${element.id}`} className={styles.chartCard}>
                   <ContextChart
@@ -838,8 +834,8 @@ const Dashboard = ({ command }) => {
                     after={timeRange.after}
                     before={timeRange.before}
                     intervalCount={timeRange.intervalCount}
-                    space={selectedSpace}
-                    room={selectedRoom}
+                    space={spaceId ? { id: spaceId } : null}
+                    room={roomId ? { id: roomId } : null}
                     onRemove={() => handleRemoveElement(element.id)}
                     onSummaryUpdate={handleChartSummary}
                     showRefreshIndicator={false}

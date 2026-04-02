@@ -1,8 +1,7 @@
 /**
  * ProviderSettings Component
  *
- * Displays and allows selection of AI providers and models for auto-pilot.
- * Extracted from AutoPilotBadge for use in Settings modal.
+ * Displays and allows selection of AI providers and models for CLAI.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -181,7 +180,7 @@ const ProviderSettings = () => {
       <div className={styles.sectionHeader}>
         <h3 className={styles.sectionTitle}>AI Provider</h3>
         <p className={styles.sectionDescription}>
-          Select which AI CLI to use for chat and auto-pilot agents.
+          Select which AI CLI to use for chat and scheduled automations.
           {availableCount === 0 && (
             <span className={styles.noProviders}>
               {' '}No providers available. Install an AI CLI to get started.

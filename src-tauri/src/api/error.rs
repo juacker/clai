@@ -256,13 +256,13 @@ impl ApiError {
 ///
 /// ```javascript
 /// try {
-///     await invoke('api_get_spaces');
+///     await invoke('api_get_data', { spaceId, roomId, query });
 /// } catch (error) {
 ///     // Match exact conditions using PascalCase keys
 ///     if (error.errorMsgKey === 'ErrQuotaExceeded') {
 ///         showUpgradeDialog();
 ///     } else if (error.errorCode === 'unauthorized') {
-///         redirectToLogin();
+///         promptForCredentials();
 ///     } else {
 ///         showError(error.errorMessage);
 ///     }

@@ -44,6 +44,20 @@ pub struct AddChartNodeParams {
     #[schemars(description = "Canvas command ID (from tabs.splitTile or tabs.getTileLayout)")]
     pub command_id: String,
 
+    /// Optional Netdata MCP server ID.
+    /// If omitted, CLAI will use the only enabled Netdata MCP server for the session.
+    #[schemars(description = "Optional Netdata MCP server ID. Omit when exactly one Netdata MCP server is enabled for the session.")]
+    #[serde(default)]
+    pub mcp_server_id: Option<String>,
+
+    /// Netdata space ID for this chart node.
+    #[schemars(description = "Netdata space ID")]
+    pub space_id: String,
+
+    /// Netdata room ID for this chart node.
+    #[schemars(description = "Netdata room ID")]
+    pub room_id: String,
+
     /// X position on the canvas.
     #[schemars(description = "X coordinate on the canvas")]
     pub x: f64,

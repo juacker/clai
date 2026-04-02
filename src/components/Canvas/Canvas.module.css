@@ -15,7 +15,7 @@
   overflow: hidden;
 }
 
-/* Message when no space/room selected */
+/* Message when no canvas context is available */
 .noContext {
   display: flex;
   align-items: center;

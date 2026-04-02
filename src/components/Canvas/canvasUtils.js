@@ -25,6 +25,9 @@ export const createChartNode = (x, y, context, options = {}) => ({
   type: 'chart',
   position: { x, y },
   data: {
+    mcpServerId: options.mcpServerId || null,
+    spaceId: options.spaceId || null,
+    roomId: options.roomId || null,
     context,
     title: options.title,
     groupBy: options.groupBy || [],

@@ -2,7 +2,7 @@
  * Context Command Handler
  *
  * Handles all ctx command operations for managing tab context including:
- * - Space/Room selection
+ * - MCP server visibility
  * - Custom context key-value pairs
  * - Array-based context values
  */
@@ -27,11 +27,6 @@ export function handleContextCommand(command, tabContext) {
 
   switch (subcommand) {
     case 'space':
-      return handleSetSpace(positional.slice(1), tabContext);
-
-    case 'room':
-      return handleSetRoom(positional.slice(1), tabContext);
-
     case 'set':
       return handleSetContext(positional.slice(1), tabContext);
 
@@ -45,7 +40,7 @@ export function handleContextCommand(command, tabContext) {
     default:
       return {
         success: false,
-        message: `Unknown ctx subcommand: ${subcommand}\nUsage: ctx [space|room|set|add|del] [args...]`
+        message: `Unknown ctx subcommand: ${subcommand}\nUsage: ctx [set|add|del] [args...]`
       };
   }
 }
@@ -55,10 +50,9 @@ export function handleContextCommand(command, tabContext) {
  */
 function printContext(tabContext) {
   const {
-    selectedSpace,
-    selectedRoom,
+    selectedMcpServerIds,
+    disabledMcpServerIds,
     customContext,
-    getCurrentPath
   } = tabContext;
 
   const lines = [];
@@ -66,28 +60,17 @@ function printContext(tabContext) {
   lines.push('=== Current Context ===');
   lines.push('');
 
-  // Path
-  lines.push(`Path: ${getCurrentPath()}`);
-  lines.push('');
-
-  // Space/Room
-  lines.push('Space/Room:');
-  if (selectedSpace) {
-    lines.push(`  Space: ${selectedSpace.name || selectedSpace.id}`);
-    if (selectedSpace.description) {
-      lines.push(`    Description: ${selectedSpace.description}`);
-    }
+  lines.push('MCP Servers:');
+  if ((selectedMcpServerIds || []).length === 0) {
+    lines.push('  Attached: (none)');
   } else {
-    lines.push('  Space: (none)');
+    lines.push(`  Attached: ${selectedMcpServerIds.join(', ')}`);
   }
 
-  if (selectedRoom) {
-    lines.push(`  Room: ${selectedRoom.name || selectedRoom.id}`);
-    if (selectedRoom.description) {
-      lines.push(`    Description: ${selectedRoom.description}`);
-    }
+  if ((disabledMcpServerIds || []).length === 0) {
+    lines.push('  Disabled: (none)');
   } else {
-    lines.push('  Room: (none)');
+    lines.push(`  Disabled: ${disabledMcpServerIds.join(', ')}`);
   }
 
   lines.push('');
@@ -113,122 +96,6 @@ function printContext(tabContext) {
   return {
     success: true,
     message: lines.join('\n')
-  };
-}
-
-/**
- * Handle ctx space <space-name>
- */
-async function handleSetSpace(args, tabContext) {
-  if (args.length === 0) {
-    return {
-      success: false,
-      message: 'Usage: ctx space <space-name>'
-    };
-  }
-
-  const spaceName = args.join(' ');
-  const { allSpaces, changeSpace, rooms, changeRoom } = tabContext;
-
-  // Find space by name or ID
-  const space = allSpaces.find(s =>
-    s.id === spaceName ||
-    s.name?.toLowerCase() === spaceName.toLowerCase()
-  );
-
-  if (!space) {
-    // List available spaces
-    const spaceList = allSpaces
-      .map(s => `  - ${s.name || s.id}`)
-      .join('\n');
-
-    return {
-      success: false,
-      message: `Space not found: ${spaceName}\n\nAvailable spaces:\n${spaceList}`
-    };
-  }
-
-  // Change to the space
-  changeSpace(space);
-
-  // Automatically set a default room
-  // Priority: "All Nodes" room first, otherwise the first available room
-  let defaultRoom = null;
-
-  if (rooms && rooms.length > 0) {
-    // Try to find "All Nodes" room (case-insensitive)
-    defaultRoom = rooms.find(r =>
-      r.name?.toLowerCase() === 'all nodes' ||
-      r.id?.toLowerCase() === 'all nodes'
-    );
-
-    // If "All Nodes" not found, use the first room
-    if (!defaultRoom) {
-      defaultRoom = rooms[0];
-    }
-
-    // Set the default room
-    changeRoom(defaultRoom);
-
-    return {
-      success: true,
-      message: `Changed to space: ${space.name || space.id}\nAuto-selected room: ${defaultRoom.name || defaultRoom.id}`
-    };
-  }
-
-  // If no rooms available, still succeed but inform the user
-  return {
-    success: true,
-    message: `Changed to space: ${space.name || space.id}\nWarning: No rooms available in this space`
-  };
-}
-
-/**
- * Handle ctx room <room-name>
- */
-async function handleSetRoom(args, tabContext) {
-  if (args.length === 0) {
-    return {
-      success: false,
-      message: 'Usage: ctx room <room-name>'
-    };
-  }
-
-  const { selectedSpace, rooms, changeRoom } = tabContext;
-
-  if (!selectedSpace) {
-    return {
-      success: false,
-      message: 'No space selected. Use "ctx space <space-name>" first.'
-    };
-  }
-
-  const roomName = args.join(' ');
-
-  // Find room by name or ID
-  const room = rooms.find(r =>
-    r.id === roomName ||
-    r.name?.toLowerCase() === roomName.toLowerCase()
-  );
-
-  if (!room) {
-    // List available rooms
-    const roomList = rooms.length > 0
-      ? rooms.map(r => `  - ${r.name || r.id}`).join('\n')
-      : '  (no rooms available)';
-
-    return {
-      success: false,
-      message: `Room not found: ${roomName}\n\nAvailable rooms in ${selectedSpace.name}:\n${roomList}`
-    };
-  }
-
-  // Change to the room
-  changeRoom(room);
-
-  return {
-    success: true,
-    message: `Changed to room: ${room.name || room.id}`
   };
 }
 
@@ -398,4 +265,3 @@ function handleDeleteContext(args, tabContext) {
 export function isContextCommand(command) {
   return command.type === 'ctx' || command.name === 'ctx';
 }
-

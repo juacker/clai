@@ -2,16 +2,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 /**
- * Netdata Cloud API Client
+ * CLAI backend API client.
  *
- * This module provides a JavaScript interface to the Netdata Cloud API.
- * All API calls are routed through the Rust backend via Tauri invoke.
- *
- * Key differences from the previous axios-based implementation:
- * - Token is stored securely in the OS keychain (managed by Rust)
- * - Token is never exposed to JavaScript
- * - All HTTP calls go through Rust for security
- * - SSE streaming uses Tauri events instead of fetch
+ * This module provides a JavaScript interface to the Tauri backend.
+ * All API calls are routed through Rust via invoke handlers.
  */
 
 // ============================================================================
@@ -87,83 +81,19 @@ export const getBaseUrl = async () => {
 // ============================================================================
 
 /**
- * Handle API errors and redirect to login on 401
+ * Handle API errors
  * @param {Error} error - The error from invoke
  * @param {string} operation - Description of the operation that failed
  * @throws {Error} Re-throws the error after handling
  */
 const handleApiError = (error, operation) => {
   const errorMessage = error.toString();
-
-  // Check for authentication errors (401 Unauthorized)
-  // The Rust backend returns errors like "ErrUnauthorized" or "401"
-  if (errorMessage.includes('ErrUnauthorized') ||
-      errorMessage.includes('401') ||
-      errorMessage.includes('Unauthorized')) {
-    // Clear any cached state and redirect to login
-    window.location.href = '/login';
-  }
-
   throw new Error(`${operation}: ${errorMessage}`);
 };
 
 // ============================================================================
 // API Functions
 // ============================================================================
-
-/**
- * Get user information from Netdata Cloud
- * @returns {Promise<Object>} User information
- * @throws {Error} If the request fails
- */
-export const getUserInfo = async () => {
-  try {
-    return await invoke('api_get_user_info');
-  } catch (error) {
-    handleApiError(error, 'Failed to get user info');
-  }
-};
-
-/**
- * Get spaces from Netdata Cloud
- * @returns {Promise<Array>} Array of spaces
- * @throws {Error} If the request fails
- */
-export const getSpaces = async () => {
-  try {
-    return await invoke('api_get_spaces');
-  } catch (error) {
-    handleApiError(error, 'Failed to get spaces');
-  }
-};
-
-/**
- * Get rooms from a specific space in Netdata Cloud
- * @param {string} spaceId - Space ID
- * @returns {Promise<Array>} Array of rooms
- * @throws {Error} If the request fails
- */
-export const getRooms = async (spaceId) => {
-  try {
-    return await invoke('api_get_rooms', { spaceId });
-  } catch (error) {
-    handleApiError(error, 'Failed to get rooms');
-  }
-};
-
-/**
- * Get billing plan information for a specific space
- * @param {string} spaceId - Space ID
- * @returns {Promise<Object>} Billing plan information
- * @throws {Error} If the request fails
- */
-export const getSpaceBillingPlan = async (spaceId) => {
-  try {
-    return await invoke('api_get_billing_plan', { spaceId });
-  } catch (error) {
-    handleApiError(error, 'Failed to get billing plan');
-  }
-};
 
 /**
  * Create a chat completion in a conversation with SSE streaming support
@@ -309,59 +239,6 @@ export const getContexts = async (spaceId, roomId, params) => {
     return await invoke('api_get_contexts', { spaceId, roomId, query });
   } catch (error) {
     handleApiError(error, 'Failed to get contexts');
-  }
-};
-
-// ============================================================================
-// Auto-pilot Functions
-// ============================================================================
-
-/**
- * Get auto-pilot status for a space/room
- * @param {string} spaceId - Space ID (UUID)
- * @param {string} roomId - Room ID (UUID)
- * @returns {Promise<Object>} Auto-pilot status
- * @property {boolean} enabled - Is auto-pilot active for this room?
- * @property {boolean} can_toggle - Can user change the toggle?
- * @property {boolean} via_all_nodes - Is it enabled via All Nodes?
- * @property {boolean} has_credits - Does space have AI credits?
- * @property {string|null} message - Explanation if can't toggle
- * @throws {Error} If the request fails
- */
-export const getAutopilotStatus = async (spaceId, roomId) => {
-  try {
-    return await invoke('get_autopilot_status', { spaceId, roomId });
-  } catch (error) {
-    handleApiError(error, 'Failed to get auto-pilot status');
-  }
-};
-
-/**
- * Enable or disable auto-pilot for a room
- * @param {string} spaceId - Space ID (UUID)
- * @param {string} roomId - Room ID (UUID)
- * @param {boolean} enabled - Whether to enable or disable
- * @returns {Promise<void>}
- * @throws {Error} If the request fails (e.g., All Nodes is enabled, no credits)
- */
-export const setAutopilotEnabled = async (spaceId, roomId, enabled) => {
-  try {
-    await invoke('set_autopilot_enabled', { spaceId, roomId, enabled });
-  } catch (error) {
-    throw new Error(`Failed to ${enabled ? 'enable' : 'disable'} auto-pilot: ${error}`);
-  }
-};
-
-/**
- * Get all rooms with auto-pilot enabled (for debugging/status display)
- * @returns {Promise<Object>} Map of space_id -> array of enabled room_ids
- * @throws {Error} If the request fails
- */
-export const getAllAutopilotEnabled = async () => {
-  try {
-    return await invoke('get_all_autopilot_enabled');
-  } catch (error) {
-    handleApiError(error, 'Failed to get all auto-pilot settings');
   }
 };
 
@@ -554,65 +431,6 @@ export const setAgentEnabled = async (id, enabled) => {
   }
 };
 
-/**
- * Enable an agent for a specific space/room
- * @param {string} agentId - Agent ID
- * @param {string} spaceId - Space ID
- * @param {string} roomId - Room ID
- * @returns {Promise<Object>} Updated agent
- */
-export const enableAgentForRoom = async (agentId, spaceId, roomId) => {
-  try {
-    return await invoke('enable_agent_for_room', { agentId, spaceId, roomId });
-  } catch (error) {
-    handleApiError(error, 'Failed to enable agent');
-  }
-};
-
-/**
- * Disable an agent for a specific space/room
- * @param {string} agentId - Agent ID
- * @param {string} spaceId - Space ID
- * @param {string} roomId - Room ID
- * @returns {Promise<Object>} Updated agent
- */
-export const disableAgentForRoom = async (agentId, spaceId, roomId) => {
-  try {
-    return await invoke('disable_agent_for_room', { agentId, spaceId, roomId });
-  } catch (error) {
-    handleApiError(error, 'Failed to disable agent');
-  }
-};
-
-/**
- * Get all agents enabled for a specific space/room
- * @param {string} spaceId - Space ID
- * @param {string} roomId - Room ID
- * @returns {Promise<Array>} List of enabled agents
- */
-export const getAgentsForRoom = async (spaceId, roomId) => {
-  try {
-    return await invoke('get_agents_for_room', { spaceId, roomId });
-  } catch (error) {
-    handleApiError(error, 'Failed to get agents for room');
-  }
-};
-
-/**
- * Toggle all agents on/off for a space/room
- * @param {string} spaceId - Space ID
- * @param {string} roomId - Room ID
- * @param {boolean} enabled - Whether to enable or disable
- * @returns {Promise<Object>} Toggle result with affected count
- */
-export const toggleAgentsForRoom = async (spaceId, roomId, enabled) => {
-  try {
-    return await invoke('toggle_agents_for_room', { spaceId, roomId, enabled });
-  } catch (error) {
-    handleApiError(error, 'Failed to toggle agents');
-  }
-};
-
 // ============================================================================
 // MCP Server Management
 // ============================================================================
@@ -656,22 +474,3 @@ export const deleteMcpServer = async (id) => {
     handleApiError(error, 'Failed to delete MCP server');
   }
 };
-
-// ============================================================================
-// Legacy Compatibility
-// ============================================================================
-
-// Note: The following functions previously accepted a 'token' parameter.
-// They now ignore the token parameter for backward compatibility during migration.
-// The token is handled internally by the Rust backend.
-
-// Wrapper functions that accept but ignore the token parameter
-// These will be removed after all consumers are updated
-
-export const getUserInfoCompat = async (token) => getUserInfo();
-export const getSpacesCompat = async (token) => getSpaces();
-export const getRoomsCompat = async (token, spaceId) => getRooms(spaceId);
-export const getSpaceBillingPlanCompat = async (token, spaceId) => getSpaceBillingPlan(spaceId);
-export const createChatCompletionCompat = async (token, spaceId, roomId, conversationId, message, onChunk, parentMessageId) => createChatCompletion(spaceId, roomId, conversationId, message, onChunk, parentMessageId);
-export const getDataCompat = async (token, spaceId, roomId, params) => getData(spaceId, roomId, params);
-export const getContextsCompat = async (token, spaceId, roomId, params) => getContexts(spaceId, roomId, params);

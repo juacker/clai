@@ -2,7 +2,7 @@
  * CommandRegistry - Manages command instances for a tab
  *
  * Commands are the logical entities that produce UI content.
- * Each content command (canvas, dashboard, anomalies, help, echo)
+ * Each content command (canvas, dashboard, help, echo)
  * creates an entry in the registry when executed.
  *
  * Key concepts:

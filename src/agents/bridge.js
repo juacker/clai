@@ -40,18 +40,17 @@ const EVENT_TOOL_STREAM = 'agent:tool:stream';
 // Track registered tool handlers
 const toolHandlers = new Map();
 
-// Track agent tab mappings (agentId_spaceId_roomId -> { tabId, agentName, mcpServerIds })
+// Track agent tab mappings (agentId_scope -> { tabId, agentName, mcpServerIds })
 const agentTabs = new Map();
 
 // Track in-progress tab creations to prevent duplicates from rapid calls
 const tabCreationLocks = new Map();
 
 /**
- * Generate a unique ID for an agent in a specific space/room
+ * Generate a unique key for an automation runtime instance.
  * @param {string} agentId - Agent type identifier
- * @param {string} spaceId - Netdata space ID
- * @param {string} roomId - Netdata room ID
- * @returns {string} Unique key for this agent instance
+ * The extra scope fields are kept for runtime compatibility, but scheduled
+ * automations now use empty values here.
  */
 const getAgentKey = (agentId, spaceId, roomId) => {
   return `${agentId}_${spaceId}_${roomId}`;
@@ -98,8 +97,8 @@ export const getRegisteredTools = () => {
  * Used for lazy tab creation - agents get a tab when they first need UI
  *
  * @param {string} agentId - Agent type identifier
- * @param {string} spaceId - Netdata space ID
- * @param {string} roomId - Netdata room ID
+ * @param {string} spaceId - Optional scope identifier
+ * @param {string} roomId - Optional scope identifier
  * @param {string} tabId - Tab ID to associate with this agent
  * @param {string} agentName - Human-readable agent name (for tab recreation)
  * @param {string[]} mcpServerIds - MCP servers available to this agent tab
@@ -262,6 +261,8 @@ const waitForHandler = (tool, maxWaitMs = 2000, checkIntervalMs = 50) => {
  * @param {string} request.agentId - Agent type identifier
  * @param {string} request.spaceId - Netdata space ID
  * @param {string} request.roomId - Netdata room ID
+ * @param {string} [request.tabId] - Preferred tab ID for this tool execution
+ * @param {string[]} [request.mcpServerIds] - MCP servers enabled for this execution context
  * @param {string} request.tool - Tool name (e.g., "dashboard.addChart")
  * @param {Object} request.params - Tool parameters
  */

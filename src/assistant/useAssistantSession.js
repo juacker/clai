@@ -32,16 +32,13 @@ export function useAssistantSession(tabId) {
     async (providerId, modelId, context = {}) => {
       const store = useAssistantStore.getState();
 
-      // Match on provider, model, and session context (space/room/MCP selection)
-      const contextSpaceId = context.spaceId || null;
-      const contextRoomId = context.roomId || null;
+      // Match on provider, model, and MCP selection for interactive tabs.
+      // Integration-specific targeting should be explicit in tool params, not hidden in tab context.
       const contextMcpServerIds = normalizeIdList(context.mcpServerIds || []);
 
       const sessionMatches = (s) =>
         s.modelId === modelId &&
         s.providerId === providerId &&
-        (s.context?.spaceId || null) === contextSpaceId &&
-        (s.context?.roomId || null) === contextRoomId &&
         JSON.stringify(normalizeIdList(s.context?.mcpServerIds || [])) ===
           JSON.stringify(contextMcpServerIds);
 

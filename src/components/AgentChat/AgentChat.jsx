@@ -6,7 +6,6 @@ import LoadChartBlock from '../Chat/LoadChartBlock';
 import TimeSeriesChartBlock from '../Chat/TimeSeriesChartBlock';
 import BarChartBlock from '../Chat/BarChartBlock';
 import BubbleChartBlock from '../Chat/BubbleChartBlock';
-import UserAvatar from '../UserAvatar';
 import styles from './AgentChat.module.css';
 
 /**
@@ -23,7 +22,7 @@ import styles from './AgentChat.module.css';
  * This component subscribes to agent activity via AgentActivityContext
  * and updates in real-time as SSE events are processed.
  */
-const AgentChat = ({ tabId, userInfo }) => {
+const AgentChat = ({ tabId }) => {
   const { getActivity, ensureTabTracked } = useAgentActivity();
   const messagesEndRef = useRef(null);
   const [aiProvider, setAiProvider] = useState(null);
@@ -128,7 +127,6 @@ const AgentChat = ({ tabId, userInfo }) => {
           <MessageBlock
             key={message.id}
             message={message}
-            userInfo={userInfo}
             aiProvider={aiProvider}
             spaceId={spaceId}
             roomId={roomId}
@@ -242,7 +240,7 @@ const formatTimestamp = (timestamp) => {
  * MessageBlock - Renders a single message (user or assistant) with its content blocks
  * Memoized with custom comparison to prevent re-renders when message content hasn't changed
  */
-const MessageBlock = memo(({ message, userInfo, aiProvider: globalProvider, spaceId, roomId }) => {
+const MessageBlock = memo(({ message, aiProvider: globalProvider, spaceId, roomId }) => {
   const { role, contentBlocks = [], isStreaming, timestamp, provider: messageProvider } = message;
 
   // Use message's stored provider if available, fall back to global provider
@@ -293,12 +291,7 @@ const MessageBlock = memo(({ message, userInfo, aiProvider: globalProvider, spac
     return (
       <div className={styles.userMessage}>
         <div className={styles.messageHeader}>
-          <UserAvatar
-            avatarUrl={userInfo?.avatarURL}
-            userName={userInfo?.name || userInfo?.email}
-            size="small"
-          />
-          <span className={styles.messageRoleText}>{userInfo?.name || 'You'}</span>
+          <span className={styles.messageRoleText}>You</span>
           {timestamp && <span className={styles.messageTimestamp}>{formatTimestamp(timestamp)}</span>}
         </div>
         <div className={styles.messageContent}>{textContent}</div>

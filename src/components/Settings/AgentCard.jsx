@@ -5,7 +5,6 @@
  */
 
 import React, { useState } from 'react';
-import RoomAssignmentModal from './RoomAssignmentModal';
 import styles from './AgentCard.module.css';
 
 /**
@@ -46,34 +45,6 @@ const PowerIcon = () => (
 );
 
 /**
- * Room/location icon
- */
-const RoomIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-    <circle cx="12" cy="10" r="3" />
-  </svg>
-);
-
-/**
- * Format room assignments for display
- * Shows space names with room counts, falls back to total count if too long
- * @param {Array} enabledRooms - Array of {space_id, room_id}
- * @param {Array} spaces - Array of space objects with {id, name}
- * @param {number} maxLength - Maximum display length before fallback
- */
-const formatRoomAssignments = (enabledRooms, spaces, maxLength = 30) => {
-  if (!enabledRooms || enabledRooms.length === 0) {
-    return 'No room scope';
-  }
-
-  const room = enabledRooms[0];
-  const space = spaces?.find(s => s.id === room.space_id);
-  const display = space?.name ? `${space.name}` : '1 room assigned';
-  return display.length <= maxLength ? display : '1 room assigned';
-};
-
-/**
  * Format interval for display
  */
 const formatInterval = (minutes) => {
@@ -112,17 +83,14 @@ const truncateDescription = (text, maxLength = 120) => {
  *
  * @param {Object} props
  * @param {Object} props.agent - The agent data
- * @param {Array} props.spaces - Available spaces for name lookup
  * @param {Function} props.onEdit - Callback when edit is clicked
  * @param {Function} props.onDelete - Callback when delete is clicked
  * @param {Function} props.onToggleEnabled - Callback when enable state toggles
- * @param {Function} props.onUpdate - Callback when agent data changes (e.g., room assignments)
  * @param {boolean} props.isDeleting - Whether deletion is in progress
  * @param {boolean} props.isToggling - Whether enable/disable is in progress
  */
-const AgentCard = ({ agent, spaces, mcpServers = [], onEdit, onDelete, onToggleEnabled, onUpdate, isDeleting, isToggling }) => {
+const AgentCard = ({ agent, mcpServers = [], onEdit, onDelete, onToggleEnabled, isDeleting, isToggling }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showRoomAssignment, setShowRoomAssignment] = useState(false);
 
   const handleDeleteClick = () => {
     setShowDeleteConfirm(true);
@@ -137,7 +105,6 @@ const AgentCard = ({ agent, spaces, mcpServers = [], onEdit, onDelete, onToggleE
     setShowDeleteConfirm(false);
   };
 
-  const roomCount = agent.enabledRooms?.length || 0;
   const isEnabled = !!agent.enabled;
   const selectedMcpServerNames = (agent.selectedMcpServerIds || [])
     .map((id) => mcpServers.find((server) => server.id === id)?.name)
@@ -155,7 +122,7 @@ const AgentCard = ({ agent, spaces, mcpServers = [], onEdit, onDelete, onToggleE
             className={`${styles.statusToggle} ${isEnabled ? styles.statusToggleOn : styles.statusToggleOff}`}
             onClick={onToggleEnabled}
             disabled={isToggling}
-            title={isEnabled ? 'Disable agent' : 'Enable agent'}
+            title={isEnabled ? 'Disable automation' : 'Enable automation'}
           >
             {isToggling ? <LoadingIcon /> : <PowerIcon />}
             <span>{isEnabled ? 'Enabled' : 'Disabled'}</span>
@@ -171,14 +138,6 @@ const AgentCard = ({ agent, spaces, mcpServers = [], onEdit, onDelete, onToggleE
         <p className={styles.description}>
           MCP: {selectedMcpServerNames.length > 0 ? selectedMcpServerNames.join(', ') : 'None'}
         </p>
-
-        <button
-          className={`${styles.roomAssignButton} ${roomCount > 0 ? styles.roomAssignButtonActive : ''}`}
-          onClick={() => setShowRoomAssignment(true)}
-        >
-          <RoomIcon />
-          <span>{formatRoomAssignments(agent.enabledRooms, spaces)}</span>
-        </button>
       </div>
 
       <div className={styles.cardActions}>
@@ -220,13 +179,6 @@ const AgentCard = ({ agent, spaces, mcpServers = [], onEdit, onDelete, onToggleE
         )}
       </div>
 
-      {/* Room Assignment Modal */}
-      <RoomAssignmentModal
-        isOpen={showRoomAssignment}
-        onClose={() => setShowRoomAssignment(false)}
-        agent={agent}
-        onUpdate={onUpdate}
-      />
     </div>
   );
 };

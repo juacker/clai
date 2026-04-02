@@ -1,8 +1,7 @@
 /**
- * CommandContext for Netdata AI CLI
+ * CommandContext for the CLAI command interface.
  *
- * This context manages command execution state for the CLI interface.
- * It handles command parsing, execution, history, and output management.
+ * This context manages command execution state, history, and output.
  */
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
@@ -10,6 +9,8 @@ import { parseCommand } from '../utils/commandParser';
 import { COMMAND_STATUS } from '../utils/commandTypes';
 
 const CommandContext = createContext(null);
+const COMMAND_HISTORY_KEY = 'clai_command_history';
+const LEGACY_COMMAND_HISTORY_KEY = 'netdata_command_history';
 
 /**
  * Hook to use the CommandContext
@@ -51,7 +52,8 @@ export const CommandProvider = ({ children }) => {
    */
   useEffect(() => {
     try {
-      const savedHistory = localStorage.getItem('netdata_command_history');
+      const savedHistory = localStorage.getItem(COMMAND_HISTORY_KEY)
+        || localStorage.getItem(LEGACY_COMMAND_HISTORY_KEY);
       if (savedHistory) {
         const parsed = JSON.parse(savedHistory);
         setCommandHistory(Array.isArray(parsed) ? parsed : []);
@@ -69,7 +71,7 @@ export const CommandProvider = ({ children }) => {
       if (commandHistory.length > 0) {
         // Only save last MAX_HISTORY_SIZE commands
         const historyToSave = commandHistory.slice(-MAX_HISTORY_SIZE);
-        localStorage.setItem('netdata_command_history', JSON.stringify(historyToSave));
+        localStorage.setItem(COMMAND_HISTORY_KEY, JSON.stringify(historyToSave));
       }
     } catch (err) {
       console.error('Error saving command history:', err);
@@ -244,7 +246,8 @@ export const CommandProvider = ({ children }) => {
    */
   const clearHistory = useCallback(() => {
     setCommandHistory([]);
-    localStorage.removeItem('netdata_command_history');
+    localStorage.removeItem(COMMAND_HISTORY_KEY);
+    localStorage.removeItem(LEGACY_COMMAND_HISTORY_KEY);
   }, []);
 
   /**
@@ -348,4 +351,3 @@ export const CommandProvider = ({ children }) => {
 };
 
 export default CommandContext;
-

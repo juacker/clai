@@ -9,14 +9,12 @@
  * - Dynamic resize: Node height adjusts when filter panel expands/collapses
  */
 
-import React, { memo, useContext, useRef, useEffect } from 'react';
+import React, { memo, useRef, useEffect } from 'react';
 import { Handle, Position, useStore, useReactFlow } from '@xyflow/react';
-import TabContext from '../../../contexts/TabContext';
 import ContextChart from '../../ChartsView/ContextChart';
 import styles from './ChartNode.module.css';
 
 const ChartNode = ({ id, data, selected }) => {
-  const { selectedSpace, selectedRoom } = useContext(TabContext);
   const { setNodes } = useReactFlow();
   const contentRef = useRef(null);
 
@@ -74,6 +72,9 @@ const ChartNode = ({ id, data, selected }) => {
   }, [id, setNodes]);
 
   const {
+    mcpServerId,
+    spaceId,
+    roomId,
     context,
     title,
     groupBy = [],
@@ -106,14 +107,14 @@ const ChartNode = ({ id, data, selected }) => {
 
   const { after, before } = getTimeRange();
 
-  if (!context) {
+  if (!context || !mcpServerId || !spaceId || !roomId) {
     return (
       <div className={`${styles.chartNode} ${selected ? styles.selected : ''}`}>
         <Handle type="target" position={Position.Left} className={styles.handle} />
         <div ref={contentRef} className={styles.contentInner}>
           <div className={styles.placeholder}>
             <span className={styles.placeholderIcon}>📊</span>
-            <span className={styles.placeholderText}>No context specified</span>
+            <span className={styles.placeholderText}>Chart target not configured</span>
           </div>
         </div>
         <Handle type="source" position={Position.Right} className={styles.handle} />
@@ -136,8 +137,8 @@ const ChartNode = ({ id, data, selected }) => {
             after={after}
             before={before}
             intervalCount={Math.floor(width / 10)}
-            space={selectedSpace}
-            room={selectedRoom}
+            space={{ id: spaceId }}
+            room={{ id: roomId }}
             showRefreshIndicator={false}
             zoom={zoom}
           />

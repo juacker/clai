@@ -16,6 +16,7 @@ use crate::assistant::types::{
     ToolInvocationDraft,
 };
 use crate::db::DbPool;
+use crate::config::McpServerIntegrationType;
 use tokio_util::sync::CancellationToken;
 
 const MAX_TOOL_ITERATIONS: usize = 10;
@@ -105,14 +106,19 @@ pub async fn run_session_turn(
     let adapter = providers::resolve_adapter(&session.provider_id)?;
 
     // Get available tools for this session's context
-    let external_tools = {
+    let (external_tools, dashboard_enabled) = {
         let state = deps.app.state::<crate::AppState>();
         let mut manager = state.mcp_client_manager.lock().await;
-        manager
+        let external_tools = manager
             .list_tools_for_servers(&session.context.mcp_server_ids)
-            .await
+            .await;
+        let dashboard_enabled = manager.has_integration_type(
+            &session.context.mcp_server_ids,
+            McpServerIntegrationType::NetdataCloud,
+        );
+        (external_tools, dashboard_enabled)
     };
-    let tool_defs = tools::available_tools(&session.context, &external_tools);
+    let tool_defs = tools::available_tools(&session.context, &external_tools, dashboard_enabled);
 
     // Build execution context for tool calls
     let tool_context = ToolExecutionContext {
@@ -485,8 +491,9 @@ fn build_system_prompt(
     let tool_names: Vec<&str> = tool_defs.iter().map(|t| t.name.as_str()).collect();
 
     let mut prompt = String::from(
-        "You are CLAI, an infrastructure monitoring assistant built into a desktop app. \
-         You help users analyze their infrastructure, visualize metrics, and investigate issues.\n\n",
+        "You are CLAI, a workspace assistant and multi-agent orchestration tool built into a desktop app. \
+         You help users inspect available capabilities, choose the right tools for the job, update the workspace, \
+         and explain outcomes clearly.\n\n",
     );
 
     if !tool_names.is_empty() {
@@ -500,25 +507,26 @@ fn build_system_prompt(
     // Tool usage guidance
     prompt.push_str(
         "## Tool Usage Guidelines\n\
+         - First inspect what is available in this session and choose the smallest set of tools needed.\n\
          - When using canvas or dashboard tools, first call `tabs.getTileLayout` to discover \
            available commandIds. Canvas and dashboard tools require a `commandId` parameter.\n\
-         - Use the configured MCP tools available in this session to inspect infrastructure data, \
-           metrics, alerts, and health.\n\
+         - Use the configured MCP tools available in this session for domain-specific work.\n\
          - Use `tabs.splitTile` to create new panels before adding charts or content.\n\
-         - Be concise and direct in your responses. Prefer showing data over describing it.\n",
+         - Prefer updating existing workspace artifacts over duplicating them.\n\
+         - Be concise and direct in your responses. Prefer concrete actions and evidence over vague summaries.\n",
     );
 
     if context.space_id.is_some() || !context.mcp_server_ids.is_empty() {
         prompt.push_str(
-            "- You are connected to monitoring context for this tab. \
-             Use the MCP tools available in this session for infrastructure analysis.\n",
+            "- This tab already carries session-specific context and capabilities. \
+             Use the MCP tools attached to this session when they are relevant.\n",
         );
     }
 
     if let Some(automation_name) = context.automation_name.as_deref() {
-        prompt.push_str("\n## Scheduled Agent Context\n");
+        prompt.push_str("\n## Automation Context\n");
         prompt.push_str(&format!(
-            "This session belongs to the scheduled agent `{}`.\n",
+            "This session belongs to the automation `{}`.\n",
             automation_name
         ));
         prompt.push_str(
@@ -548,11 +556,11 @@ fn build_trigger_message(
         .context
         .automation_name
         .as_deref()
-        .unwrap_or("scheduled agent");
+        .unwrap_or("automation");
 
     let text = match trigger {
         RunTrigger::Scheduled => Some(format!(
-            "Run the next scheduled monitoring pass for {} now. Inspect the current state, \
+            "Run the next scheduled pass for {} now. Inspect the current state, \
              update the tab as needed, and end with a concise status update.",
             automation_name
         )),

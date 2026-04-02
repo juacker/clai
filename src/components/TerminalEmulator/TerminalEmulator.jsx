@@ -7,11 +7,10 @@ import { parseCommand, isLayoutCommand } from '../../utils/commandParser';
 import { handleContextCommand, isContextCommand } from '../../utils/contextCommandHandler';
 import { isCommandSupported } from '../../utils/commandRegistry';
 import ContextPanel from '../ContextPanel/ContextPanel';
-import UserAvatar from '../UserAvatar';
 import { SettingsModal } from '../Settings';
 import styles from './TerminalEmulator.module.css';
 
-const TerminalEmulator = ({ userInfo, onSendToChat }) => {
+const TerminalEmulator = ({ onSendToChat }) => {
   const { executeCommand, commandHistory } = useCommand();
   const { handleLayoutCommand, getActiveTab } = useTabManager();
   const { setActiveContext, toggleChat, openChat, isCurrentChatOpen } = useChatManager();
@@ -127,12 +126,11 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
     }
   }, [outputMessages]);
 
-  // Sync chat context with active tab's space/room
+  // Sync chat visibility with the active tab
   useEffect(() => {
     const activeTab = getActiveTab();
-    if (activeTab?.context?.spaceRoom) {
-      const { selectedSpaceId, selectedRoomId } = activeTab.context.spaceRoom;
-      setActiveContext(selectedSpaceId, selectedRoomId);
+    if (activeTab?.id) {
+      setActiveContext(activeTab.id, 'tab');
     }
   }, [getActiveTab, setActiveContext]);
 
@@ -303,23 +301,28 @@ const TerminalEmulator = ({ userInfo, onSendToChat }) => {
 
   return (
     <div ref={terminalRef} className={`${styles.terminal} ${isChatOpen ? styles.chatOpen : ''}`} onClick={handleTerminalClick}>
-      {/* Context Panel - shows space/room badges */}
+      {/* Context Panel - shows capability badges */}
       <div className={styles.contextPanelWrapper}>
         <ContextPanel />
       </div>
 
       {/* Input Line - Now at the top for better UX */}
       <div className={styles.terminalContent}>
-        {/* User Avatar - positioned at the left */}
-        <div className={styles.terminalAvatar}>
-          <UserAvatar
-            avatarUrl={userInfo?.avatarURL}
-            userName={userInfo?.name || userInfo?.email}
-            size="small"
-            showMenu={true}
-            onSettingsClick={handleSettingsClick}
-          />
-        </div>
+        <button
+          type="button"
+          className={styles.settingsButton}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSettingsClick();
+          }}
+          title="Open settings"
+          aria-label="Open settings"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
+          </svg>
+        </button>
 
         {/* Terminal Prompt Symbol */}
         <span className={styles.terminalPrompt}>%</span>

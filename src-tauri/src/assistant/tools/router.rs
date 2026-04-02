@@ -16,6 +16,7 @@ pub async fn execute_tool(
 ) -> Result<serde_json::Value, String> {
     match tool_name {
         name if name.starts_with("dashboard.")
+            || name.starts_with("anomalies.")
             || name.starts_with("tabs.")
             || name.starts_with("canvas.") =>
         {
@@ -37,10 +38,12 @@ async fn execute_bridge_tool(
     let bridge = JsBridge::new(deps.app.clone());
 
     bridge
-        .call_tool(
+        .call_tool_with_context(
             &bridge_agent_id(&context.session_id),
             context.space_id.as_deref().unwrap_or(""),
             context.room_id.as_deref().unwrap_or(""),
+            context.tab_id.as_deref(),
+            &context.mcp_server_ids,
             tool_name,
             params,
         )

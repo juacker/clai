@@ -1,5 +1,6 @@
 use crate::assistant::types::{SessionContext, ToolDefinition};
 use crate::mcp::tools::{
+    anomalies::OpenAnomaliesParams,
     canvas::{
         AddChartNodeParams, AddEdgeParams, AddMarkdownNodeParams, AddStatusBadgeParams,
         ClearCanvasParams, RemoveEdgeParams, RemoveNodeParams, UpdateNodeParams,
@@ -12,26 +13,32 @@ use crate::mcp::tools::{
 pub fn available_tools(
     _context: &SessionContext,
     external_tools: &[ToolDefinition],
+    dashboard_enabled: bool,
 ) -> Vec<ToolDefinition> {
     let mut tools = vec![];
 
-    // dashboard tools
-    tools.push(tool::<AddChartParams>(
-        "dashboard.addChart",
-        "Add a metric chart to the dashboard. Specify the metric context (e.g., 'system.cpu', 'disk.io').",
-    ));
-    tools.push(tool::<RemoveChartParams>(
-        "dashboard.removeChart",
-        "Remove a chart from the dashboard by its ID.",
-    ));
-    tools.push(tool::<ClearChartsParams>(
-        "dashboard.clearCharts",
-        "Remove all charts from the dashboard.",
-    ));
-    tools.push(tool::<SetTimeRangeParams>(
-        "dashboard.setTimeRange",
-        "Set the time range for all dashboard charts (e.g., '5m', '1h', '24h', '7d').",
-    ));
+    if dashboard_enabled {
+        tools.push(tool::<OpenAnomaliesParams>(
+            "anomalies.open",
+            "Open or reuse an anomalies panel for a specific Netdata space and room. Requires spaceId and roomId. Reuses an existing anomalies panel for the same target when available.",
+        ));
+        tools.push(tool::<AddChartParams>(
+            "dashboard.addChart",
+            "Add a metric chart to the dashboard. Requires space ID, room ID, and metric context. The Netdata MCP server is resolved automatically when exactly one compatible server is enabled for the session.",
+        ));
+        tools.push(tool::<RemoveChartParams>(
+            "dashboard.removeChart",
+            "Remove a chart from the dashboard by its ID.",
+        ));
+        tools.push(tool::<ClearChartsParams>(
+            "dashboard.clearCharts",
+            "Remove all charts from the dashboard.",
+        ));
+        tools.push(tool::<SetTimeRangeParams>(
+            "dashboard.setTimeRange",
+            "Set the time range for all dashboard charts (e.g., '5m', '1h', '24h', '7d').",
+        ));
+    }
 
     // tabs/tile tools
     tools.push(tool::<SplitTileParams>(
@@ -53,10 +60,12 @@ pub fn available_tools(
     ));
 
     // canvas tools
-    tools.push(tool::<AddChartNodeParams>(
-        "canvas.addChart",
-        "Add a metric chart node to the canvas at the specified position.",
-    ));
+    if dashboard_enabled {
+        tools.push(tool::<AddChartNodeParams>(
+            "canvas.addChart",
+            "Add a metric chart node to the canvas. Requires space ID, room ID, and metric context. The Netdata MCP server is resolved automatically when exactly one compatible server is enabled for the session.",
+        ));
+    }
     tools.push(tool::<AddStatusBadgeParams>(
         "canvas.addStatusBadge",
         "Add a status badge node to the canvas (ok, warning, critical).",

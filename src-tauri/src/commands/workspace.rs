@@ -8,20 +8,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::State;
 
-/// Tab context (space/room selection and future extensions)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TabContext {
-    pub space_room: SpaceRoom,
-    // Future extensions will be added here as optional fields
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SpaceRoom {
-    pub selected_space_id: Option<String>,
-    pub selected_room_id: Option<String>,
-}
+/// Tab context payload.
+///
+/// This is intentionally schema-less on the Rust side so frontend tab context can
+/// evolve without losing fields during persistence round-trips.
+pub type TabContext = serde_json::Value;
 
 /// Tile node in the layout tree
 #[derive(Debug, Clone, Serialize, Deserialize)]

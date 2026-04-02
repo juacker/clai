@@ -17,11 +17,20 @@
  */
 const ELEMENT_TYPES = {
   'context-chart': {
-    required: ['context'],
+    required: ['context', 'spaceId', 'roomId'],
     optional: ['groupBy', 'filterBy', 'valueAgg', 'timeAgg', 'customTimeRange'],
     validate: (config) => {
       if (typeof config.context !== 'string' || config.context.trim() === '') {
         return { valid: false, error: 'context-chart requires a non-empty context string' };
+      }
+      if (config.mcpServerId !== undefined && (typeof config.mcpServerId !== 'string' || config.mcpServerId.trim() === '')) {
+        return { valid: false, error: 'context-chart requires a non-empty mcpServerId' };
+      }
+      if (typeof config.spaceId !== 'string' || config.spaceId.trim() === '') {
+        return { valid: false, error: 'context-chart requires a non-empty spaceId' };
+      }
+      if (typeof config.roomId !== 'string' || config.roomId.trim() === '') {
+        return { valid: false, error: 'context-chart requires a non-empty roomId' };
       }
       if (config.groupBy && !Array.isArray(config.groupBy)) {
         return { valid: false, error: 'groupBy must be an array' };

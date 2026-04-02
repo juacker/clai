@@ -1,5 +1,5 @@
 /**
- * Command Types for Netdata AI CLI
+ * Command Types for CLAI terminal commands
  *
  * Simplified command type definitions.
  * Only includes commands that are actually used in the system.
@@ -36,9 +36,9 @@ export const LAYOUT_COMMANDS = {
 
 // Content Commands (create entry in CommandRegistry, display in tiles)
 export const CONTENT_COMMANDS = {
+  ANOMALIES: 'anomalies',
   CANVAS: 'canvas',
   DASHBOARD: 'dashboard',
-  ANOMALIES: 'anomalies',
   HELP: 'help',
   ECHO: 'echo',
   CHAT: 'chat'
@@ -71,4 +71,3 @@ export const isSystemCommand = (command) => {
 export const isContentCommand = (command) => {
   return Object.values(CONTENT_COMMANDS).includes(command.type);
 };
-

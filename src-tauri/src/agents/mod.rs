@@ -1,7 +1,7 @@
-//! AI Agents infrastructure.
+//! Automation infrastructure.
 //!
-//! This module provides the core infrastructure for autonomous AI agents
-//! that can monitor Netdata spaces, analyze data, and present insights.
+//! This module provides the core infrastructure for scheduled automations
+//! that run through the assistant engine with MCP-backed capabilities.
 //!
 //! # Architecture
 //!
@@ -11,7 +11,7 @@
 //! │                                                                 │
 //! │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
 //! │  │  Definition  │───▶│   Instance   │───▶│  CLI Runner  │     │
-//! │  │  (template)  │    │ (per space)  │    │  (AI CLI)    │     │
+//! │  │  (template)  │    │  (runtime)   │    │  (AI CLI)    │     │
 //! │  └──────────────┘    └──────────────┘    └──────────────┘     │
 //! │                              │                   │              │
 //! │                              ▼                   ▼              │

@@ -1,7 +1,7 @@
 /**
  * AgentsSettings Component
  *
- * Displays and manages user-defined autonomous agents.
+ * Displays and manages user-defined automations.
  * Allows creating, editing, and deleting agents.
  */
 
@@ -11,7 +11,6 @@ import {
   createAgent,
   updateAgent,
   deleteAgent,
-  getSpaces,
   getMcpServers,
   setAgentEnabled,
 } from '../../api/client';
@@ -51,11 +50,10 @@ const WarningIcon = () => (
 );
 
 /**
- * AgentsSettings - Agent management interface
+ * AgentsSettings - Automation management interface
  */
 const AgentsSettings = () => {
   const [agents, setAgents] = useState([]);
-  const [spaces, setSpaces] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -64,7 +62,7 @@ const AgentsSettings = () => {
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
 
-  // Fetch agents and spaces on mount
+  // Fetch automations and MCP servers on mount
   useEffect(() => {
     fetchData();
   }, []);
@@ -74,13 +72,11 @@ const AgentsSettings = () => {
     setError(null);
 
     try {
-      const [agentsResult, spacesResult, mcpServersResult] = await Promise.all([
+      const [agentsResult, mcpServersResult] = await Promise.all([
         getAgents(),
-        getSpaces(),
         getMcpServers(),
       ]);
       setAgents(agentsResult || []);
-      setSpaces(spacesResult || []);
       setMcpServers(mcpServersResult || []);
     } catch (err) {
       console.error('[AgentsSettings] Failed to fetch data:', err);
@@ -184,7 +180,7 @@ const AgentsSettings = () => {
       <div className={styles.container}>
         <div className={styles.loadingState}>
           <LoadingIcon />
-          <span>Loading agents...</span>
+          <span>Loading automations...</span>
         </div>
       </div>
     );
@@ -194,14 +190,14 @@ const AgentsSettings = () => {
     <div className={styles.container}>
       <div className={styles.header}>
         <div className={styles.headerText}>
-          <h3 className={styles.title}>Autonomous Agents</h3>
+          <h3 className={styles.title}>Automations</h3>
           <p className={styles.description}>
-            Create custom agents that periodically analyze your infrastructure and report findings.
+            Create scheduled automations with custom instructions, target scope, and MCP capabilities.
           </p>
         </div>
         <button className={styles.addButton} onClick={handleCreate}>
           <PlusIcon />
-          <span>Add Agent</span>
+          <span>Add Automation</span>
         </button>
       </div>
 
@@ -223,13 +219,13 @@ const AgentsSettings = () => {
               <circle cx="16" cy="16" r="1" fill="currentColor" />
             </svg>
           </div>
-          <h4 className={styles.emptyTitle}>No agents configured</h4>
+          <h4 className={styles.emptyTitle}>No automations configured</h4>
           <p className={styles.emptyDescription}>
-            Create your first agent to start monitoring your infrastructure automatically.
+            Create your first automation to run on a schedule with the MCP tools you attach to it.
           </p>
           <button className={styles.emptyButton} onClick={handleCreate}>
             <PlusIcon />
-            <span>Create Agent</span>
+            <span>Create Automation</span>
           </button>
         </div>
       ) : (
@@ -238,12 +234,10 @@ const AgentsSettings = () => {
             <AgentCard
               key={agent.id}
               agent={agent}
-              spaces={spaces}
               mcpServers={mcpServers}
               onEdit={() => handleEdit(agent)}
               onDelete={() => handleDelete(agent.id)}
               onToggleEnabled={() => handleToggleEnabled(agent)}
-              onUpdate={fetchAgents}
               isDeleting={deletingId === agent.id}
               isToggling={togglingId === agent.id}
             />
@@ -253,8 +247,8 @@ const AgentsSettings = () => {
 
       <div className={styles.hint}>
         <p>
-          Agents can be enabled individually here. Room assignment is optional and only
-          provides Netdata context to that agent.
+          Automations run independently when enabled. Attach MCP servers here, and let the model
+          discover any target space or room it needs through those tools.
         </p>
       </div>
 

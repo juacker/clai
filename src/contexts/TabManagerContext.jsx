@@ -1,14 +1,11 @@
 /**
- * TabManagerContext for Netdata AI
+ * TabManagerContext
  *
  * This context manages tabs and their tile layouts.
- * Each tab contains a tile layout (which can be split in Phase 3).
- * For Phase 1, each tab contains a single tile with one command.
  */
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useCommand } from './CommandContext';
-import { useSharedSpaceRoomData } from './SharedSpaceRoomDataContext';
 import { handleTabCommand } from '../utils/tabCommandHandler';
 import { handleTileCommand } from '../utils/tileCommandHandler';
 import { CommandRegistry } from '../commands/CommandRegistry';
@@ -41,10 +38,6 @@ const generateTabId = () => `tab_${Date.now()}_${Math.random().toString(36).subs
 const generateTileId = () => `tile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 const DEFAULT_TAB_CONTEXT = {
-  spaceRoom: {
-    selectedSpaceId: null,
-    selectedRoomId: null,
-  },
   mcpServers: {
     attachedServerIds: [],
     disabledServerIds: [],
@@ -55,7 +48,12 @@ const DEFAULT_TAB_CONTEXT = {
 const uniqueIds = (ids = []) => [...new Set((ids || []).filter(Boolean))];
 
 const normalizeTabContext = (context = {}) => {
-  const rawMcpContext = context?.mcpServers || {};
+  const {
+    mcpServers: rawMcpContext = {},
+    customContext: rawCustomContext = {},
+    spaceRoom: _spaceRoom,
+    ...restContext
+  } = context || {};
   const legacySelectedIds = uniqueIds(rawMcpContext.selectedServerIds || []);
   const attachedServerIds = uniqueIds(rawMcpContext.attachedServerIds || legacySelectedIds);
   const disabledServerIds = uniqueIds(rawMcpContext.disabledServerIds || []).filter(
@@ -64,18 +62,14 @@ const normalizeTabContext = (context = {}) => {
 
   return {
     ...DEFAULT_TAB_CONTEXT,
-    ...context,
-    spaceRoom: {
-      ...DEFAULT_TAB_CONTEXT.spaceRoom,
-      ...(context?.spaceRoom || {}),
-    },
+    ...restContext,
     mcpServers: {
       attachedServerIds,
       disabledServerIds,
     },
     customContext: {
       ...DEFAULT_TAB_CONTEXT.customContext,
-      ...(context?.customContext || {}),
+      ...rawCustomContext,
     },
   };
 };
@@ -344,21 +338,12 @@ export const TabManagerProvider = ({ children }) => {
   // Get current command and executeCommand from CommandContext
   const { currentCommand, executeCommand } = useCommand();
 
-  // Get shared space/room data for default initialization
-  const { spaces, getRoomsForSpace, loading: spacesLoading } = useSharedSpaceRoomData();
-
   // Track the last processed command ID to prevent re-processing on tab switches
   const lastProcessedCommandId = useRef(null);
-
-  // Track if we've initialized default context
-  const hasInitializedDefaults = useRef(false);
 
   // CommandRegistry instances per tab (Map<tabId, CommandRegistry>)
   // Stored in ref because APIs are mutable and shouldn't trigger re-renders
   const registriesRef = useRef(new Map());
-
-  // Cache for default space/room to use when creating new tabs
-  const defaultSpaceRoom = useRef(null);
 
   /**
    * Get or create a CommandRegistry for a tab
@@ -462,10 +447,6 @@ export const TabManagerProvider = ({ children }) => {
         const savedTabs = localStorage.getItem('netdata_tabs');
         const savedActiveTabId = localStorage.getItem('netdata_active_tab_id');
 
-        // Check for old global space/room selection from SpaceRoomContext
-        const oldSelectedSpaceId = localStorage.getItem('netdata_selected_space');
-        const oldSelectedRoomId = localStorage.getItem('netdata_selected_room');
-
         if (savedTabs) {
           const parsed = JSON.parse(savedTabs);
           if (Array.isArray(parsed) && parsed.length > 0) {
@@ -488,38 +469,7 @@ export const TabManagerProvider = ({ children }) => {
               if (!migratedTab.context) {
                 migratedTab = {
                   ...migratedTab,
-                  context: normalizeTabContext({
-                    spaceRoom: {
-                      selectedSpaceId: oldSelectedSpaceId || null,
-                      selectedRoomId: oldSelectedRoomId || null,
-                    },
-                  }),
-                };
-              }
-              // If tab has context but missing spaceRoom, add it with old global context
-              else if (!migratedTab.context.spaceRoom) {
-                migratedTab = {
-                  ...migratedTab,
-                  context: normalizeTabContext({
-                    ...migratedTab.context,
-                    spaceRoom: {
-                      selectedSpaceId: oldSelectedSpaceId || null,
-                      selectedRoomId: oldSelectedRoomId || null,
-                    },
-                  }),
-                };
-              }
-              // If tab has spaceRoom but no selection, use old global context
-              else if (!migratedTab.context.spaceRoom.selectedSpaceId && oldSelectedSpaceId) {
-                migratedTab = {
-                  ...migratedTab,
-                  context: normalizeTabContext({
-                    ...migratedTab.context,
-                    spaceRoom: {
-                      selectedSpaceId: oldSelectedSpaceId,
-                      selectedRoomId: oldSelectedRoomId,
-                    },
-                  }),
+                  context: normalizeTabContext(),
                 };
               }
 
@@ -540,6 +490,8 @@ export const TabManagerProvider = ({ children }) => {
             // Clear localStorage after successful migration (data is now in Zustand/SQLite)
             localStorage.removeItem('netdata_tabs');
             localStorage.removeItem('netdata_active_tab_id');
+            localStorage.removeItem('netdata_selected_space');
+            localStorage.removeItem('netdata_selected_room');
 
             tabsLoaded = true;
           }
@@ -548,6 +500,8 @@ export const TabManagerProvider = ({ children }) => {
         console.error('Error loading tabs from localStorage:', err);
         localStorage.removeItem('netdata_tabs');
         localStorage.removeItem('netdata_active_tab_id');
+        localStorage.removeItem('netdata_selected_space');
+        localStorage.removeItem('netdata_selected_room');
       }
     }
 
@@ -669,86 +623,6 @@ export const TabManagerProvider = ({ children }) => {
     // Trigger save for any direct state modifications made above
     useWorkspaceStore.getState().triggerSave();
   }, [tabs, activeTabId]);
-
-  /**
-   * Initialize and cache default space/room when spaces are loaded
-   * This cache is used when creating new tabs without explicit context
-   */
-  useEffect(() => {
-    // Skip if already initialized, spaces not loaded, or still loading
-    if (defaultSpaceRoom.current || !spaces || spaces.length === 0 || spacesLoading) {
-      return;
-    }
-
-    // Initialize defaults: first space + "All Nodes" room
-    const initializeDefaultCache = async () => {
-      try {
-        const firstSpace = spaces[0];
-        if (!firstSpace) return;
-
-        // Fetch rooms for the first space
-        const rooms = await getRoomsForSpace(firstSpace.id);
-        if (!rooms || rooms.length === 0) return;
-
-        // Find "All Nodes" room (case-insensitive)
-        const allNodesRoom = rooms.find(room =>
-          room.name?.toLowerCase() === 'all nodes'
-        ) || rooms[0]; // Fallback to first room if "All Nodes" not found
-
-        // Cache the default space/room
-        defaultSpaceRoom.current = {
-          selectedSpaceId: firstSpace.id,
-          selectedRoomId: allNodesRoom.id,
-        };
-      } catch (error) {
-        console.error('[TabManagerContext] Error caching default space/room:', error);
-      }
-    };
-
-    initializeDefaultCache();
-  }, [spaces, spacesLoading, getRoomsForSpace]);
-
-  /**
-   * Initialize default space/room context for existing tabs without selection
-   * Runs once when default cache is populated and tabs exist
-   */
-  useEffect(() => {
-    // Skip if already initialized, no default cache, or no tabs
-    if (hasInitializedDefaults.current || !defaultSpaceRoom.current || tabs.length === 0) {
-      return;
-    }
-
-    // Check if any tab needs default context
-    const needsDefaults = tabs.some(tab =>
-      !tab.context?.spaceRoom?.selectedSpaceId || !tab.context?.spaceRoom?.selectedRoomId
-    );
-
-    if (!needsDefaults) {
-      hasInitializedDefaults.current = true;
-      return;
-    }
-
-    // Update all tabs that don't have space/room selection
-    setTabs(prev =>
-      prev.map(tab => {
-        if (!tab.context?.spaceRoom?.selectedSpaceId || !tab.context?.spaceRoom?.selectedRoomId) {
-          return {
-            ...tab,
-            context: {
-              ...tab.context,
-              spaceRoom: {
-                selectedSpaceId: defaultSpaceRoom.current.selectedSpaceId,
-                selectedRoomId: defaultSpaceRoom.current.selectedRoomId,
-              },
-            },
-          };
-        }
-        return tab;
-      })
-    );
-
-    hasInitializedDefaults.current = true;
-  }, [tabs, defaultSpaceRoom.current]);
 
   /**
    * When a new command is executed, add it to the active tile
@@ -889,42 +763,20 @@ export const TabManagerProvider = ({ children }) => {
     // Calculate next available tab number if no title provided
     const tabTitle = title || `Tab ${getNextTabNumber(tabs)}`;
 
-    // Determine context for the new tab
-    let tabContext = null;
+    const tabContext = activeTabId
+      ? (() => {
+        const activeTab = tabs.find(t => t.id === activeTabId);
+        if (!activeTab?.context) return null;
 
-    // Priority 1: Inherit context from the currently active tab
-    if (activeTabId) {
-      const activeTab = tabs.find(t => t.id === activeTabId);
-      if (activeTab?.context?.spaceRoom?.selectedSpaceId && activeTab?.context?.spaceRoom?.selectedRoomId) {
-        // Deep clone the context to avoid reference issues
-        tabContext = {
-          spaceRoom: {
-            selectedSpaceId: activeTab.context.spaceRoom.selectedSpaceId,
-            selectedRoomId: activeTab.context.spaceRoom.selectedRoomId,
-          },
+        return {
           mcpServers: {
             attachedServerIds: [],
             disabledServerIds: [],
           },
           customContext: { ...activeTab.context.customContext },
         };
-      }
-    }
-
-    // Priority 2: Use cached default space/room if available and no context inherited
-    if (!tabContext && defaultSpaceRoom.current) {
-      tabContext = {
-        spaceRoom: {
-          selectedSpaceId: defaultSpaceRoom.current.selectedSpaceId,
-          selectedRoomId: defaultSpaceRoom.current.selectedRoomId,
-        },
-        mcpServers: {
-          attachedServerIds: [],
-          disabledServerIds: [],
-        },
-        customContext: {},
-      };
-    }
+      })()
+      : null;
 
     const newTab = createTab(tabTitle, commandId, tabContext);
 
@@ -1471,10 +1323,6 @@ export const TabManagerProvider = ({ children }) => {
       },
       // Deep clone context to prevent reference sharing
       context: {
-        spaceRoom: {
-          selectedSpaceId: tab.context?.spaceRoom?.selectedSpaceId || null,
-          selectedRoomId: tab.context?.spaceRoom?.selectedRoomId || null,
-        },
         mcpServers: {
           attachedServerIds: [...(tab.context?.mcpServers?.attachedServerIds || [])],
           disabledServerIds: [...(tab.context?.mcpServers?.disabledServerIds || [])],

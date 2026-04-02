@@ -12,4 +12,3 @@ export { default as AgentCard } from './AgentCard';
 export { default as AgentFormModal } from './AgentFormModal';
 export { default as McpServerFormModal } from './McpServerFormModal';
 export { default as IntervalSelect } from './IntervalSelect';
-export { default as RoomAssignmentModal } from './RoomAssignmentModal';

@@ -35,6 +35,13 @@ const authSummary = (auth) => {
   return auth.type;
 };
 
+const integrationSummary = (integrationType) => {
+  if (integrationType === 'netdata_cloud') {
+    return 'Netdata Cloud';
+  }
+  return 'Generic MCP';
+};
+
 const McpServersSettings = () => {
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -142,7 +149,7 @@ const McpServersSettings = () => {
                   </span>
                 </div>
                 <div className={styles.serverMeta}>
-                  {server.transport?.type === 'http' ? 'HTTP' : 'Stdio'} · {authSummary(server.auth)}
+                  {integrationSummary(server.integrationType)} · {server.transport?.type === 'http' ? 'HTTP' : 'Stdio'} · {authSummary(server.auth)}
                 </div>
                 <div className={styles.serverTransport}>{transportSummary(server.transport)}</div>
               </div>

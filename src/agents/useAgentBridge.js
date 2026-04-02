@@ -22,6 +22,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { getMcpServers } from '../api/client';
 import { useTabManager } from '../contexts/TabManagerContext';
 import { useCommand } from '../contexts/CommandContext';
 import {
@@ -39,10 +40,28 @@ import {
 } from './bridge';
 import { emit as emitActivity } from './activityBus';
 
+const MCP_SERVERS_CHANGED_EVENT = 'mcp-servers-changed';
+
 /**
  * Generate a unique chart ID
  */
 const generateChartId = () => `chart_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+const hasValidTileStructure = (tab) => Boolean(
+  tab?.rootTile?.id && (tab.rootTile.type === 'leaf' || tab.rootTile.type === 'split')
+);
+
+const getAnomaliesTarget = (command) => {
+  const args = command?.args || {};
+  const options = args.options || {};
+  return {
+    spaceId: args.spaceId || options.spaceId || options['space-id'] || '',
+    roomId: args.roomId || options.roomId || options['room-id'] || '',
+    mcpServerId: args.mcpServerId || options.mcpServerId || options['mcp-server-id'] || null,
+  };
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Hook to initialize and connect the agent bridge to TabManager
@@ -70,6 +89,176 @@ export const useAgentBridge = () => {
   // Store executeCommand ref for handlers
   const executeCommandRef = useRef(executeCommand);
   executeCommandRef.current = executeCommand;
+  const mcpServersRef = useRef([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadMcpServers = async () => {
+      try {
+        const servers = await getMcpServers();
+        if (!cancelled) {
+          mcpServersRef.current = servers || [];
+        }
+      } catch (error) {
+        console.error('[AgentBridge] Failed to load MCP servers:', error);
+        if (!cancelled) {
+          mcpServersRef.current = [];
+        }
+      }
+    };
+
+    loadMcpServers();
+    window.addEventListener(MCP_SERVERS_CHANGED_EVENT, loadMcpServers);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(MCP_SERVERS_CHANGED_EVENT, loadMcpServers);
+    };
+  }, []);
+
+  const waitForTab = async (tabId, timeoutMs = 2000, intervalMs = 50) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const candidate = tabManagerRef.current.tabs.find((tab) => tab.id === tabId);
+      if (hasValidTileStructure(candidate)) {
+        return candidate;
+      }
+      await sleep(intervalMs);
+    }
+    return null;
+  };
+
+  const resolveNetdataMcpServerId = async (agentTab, explicitMcpServerId = null) => {
+    if (mcpServersRef.current.length === 0) {
+      try {
+        mcpServersRef.current = (await getMcpServers()) || [];
+      } catch (error) {
+        console.error('[AgentBridge] Failed to refresh MCP servers:', error);
+      }
+    }
+
+    const enabledServerIds = agentTab?.mcpServerIds || [];
+    const enabledServers = mcpServersRef.current.filter((server) => (
+      server.enabled && enabledServerIds.includes(server.id)
+    ));
+    const netdataServers = enabledServers.filter((server) => server.integrationType === 'netdata_cloud');
+
+    if (explicitMcpServerId) {
+      const selectedServer = netdataServers.find((server) => server.id === explicitMcpServerId);
+      if (!selectedServer) {
+        throw new Error(`Netdata MCP server not enabled for this tab/session: ${explicitMcpServerId}`);
+      }
+      return selectedServer.id;
+    }
+
+    if (netdataServers.length === 0) {
+      if (enabledServers.length === 1) {
+        return enabledServers[0].id;
+      }
+      throw new Error('No Netdata MCP server is enabled for this tab/session');
+    }
+
+    if (netdataServers.length > 1) {
+      throw new Error('Multiple Netdata MCP servers are enabled for this tab/session. Attach only one Netdata server to use chart tools.');
+    }
+
+    return netdataServers[0].id;
+  };
+
+  const getEnabledMcpServerIdsForTab = (tabId, agentTab = null) => {
+    const fromAgentTab = agentTab?.mcpServerIds || [];
+    const tab = tabManagerRef.current.tabs.find((candidate) => candidate.id === tabId);
+    const attachedFromTab = tab?.context?.mcpServers?.attachedServerIds
+      || tab?.context?.mcpServers?.selectedServerIds
+      || [];
+    const disabledFromTab = new Set(tab?.context?.mcpServers?.disabledServerIds || []);
+    const enabledFromTab = attachedFromTab.filter((id) => !disabledFromTab.has(id));
+
+    return [...new Set([...fromAgentTab, ...enabledFromTab])];
+  };
+
+  const resolveNetdataMcpServerIdForTab = async (tabId, agentTab, explicitMcpServerId = null) => {
+    const agentTabWithFallback = {
+      ...agentTab,
+      mcpServerIds: getEnabledMcpServerIdsForTab(tabId, agentTab),
+    };
+
+    return resolveNetdataMcpServerId(agentTabWithFallback, explicitMcpServerId);
+  };
+
+  const normalizeGroupBy = (groupBy) => {
+    if (!groupBy) {
+      return [];
+    }
+    if (Array.isArray(groupBy)) {
+      return groupBy.filter((value) => typeof value === 'string' && value.trim() !== '');
+    }
+    if (typeof groupBy === 'string' && groupBy.trim() !== '') {
+      return [groupBy.trim()];
+    }
+    return [];
+  };
+
+  const normalizeFilterBy = (filterBy) => {
+    const convertFilterEntriesToMap = (entries) => {
+      if (!Array.isArray(entries)) {
+        return null;
+      }
+
+      const result = {};
+      let foundStructuredEntry = false;
+
+      for (const entry of entries) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          continue;
+        }
+
+        const label = typeof entry.label === 'string' ? entry.label.trim() : '';
+        const value = typeof entry.value === 'string' ? entry.value.trim() : '';
+        if (!label || !value) {
+          continue;
+        }
+
+        foundStructuredEntry = true;
+        if (!Array.isArray(result[label])) {
+          result[label] = [];
+        }
+        if (!result[label].includes(value)) {
+          result[label].push(value);
+        }
+      }
+
+      return foundStructuredEntry ? result : null;
+    };
+
+    if (!filterBy) {
+      return {};
+    }
+    if (typeof filterBy === 'string') {
+      try {
+        const parsed = JSON.parse(filterBy);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed;
+        }
+        const normalizedEntries = convertFilterEntriesToMap(parsed);
+        if (normalizedEntries) {
+          return normalizedEntries;
+        }
+      } catch {
+        return {};
+      }
+      return {};
+    }
+    const normalizedEntries = convertFilterEntriesToMap(filterBy);
+    if (normalizedEntries) {
+      return normalizedEntries;
+    }
+    if (typeof filterBy === 'object' && !Array.isArray(filterBy)) {
+      return filterBy;
+    }
+    return {};
+  };
 
   /**
    * Setup an agent's tab with dashboard command.
@@ -97,27 +286,15 @@ export const useAgentBridge = () => {
       clearAgentTab(agentId, spaceId, roomId);
     }
 
-    // Also check for existing agent tab by context (handles app reload where Map is lost)
+    // Also check for an existing dedicated agent tab by persisted agent context
+    // (handles app reload where the in-memory Map is lost).
     const existingAgentTab = tabManagerRef.current.tabs.find(
-      t => {
-        if (t.context?.agent?.agentId !== agentId) return false;
-
-        const tabSpaceId = t.context?.spaceRoom?.selectedSpaceId || '';
-        const tabRoomId = t.context?.spaceRoom?.selectedRoomId || '';
-        const requestedSpaceId = spaceId || '';
-        const requestedRoomId = roomId || '';
-
-        return tabSpaceId === requestedSpaceId && tabRoomId === requestedRoomId;
-      }
+      (t) => t.context?.agent?.agentId === agentId
     );
 
     if (existingAgentTab) {
       // Found existing tab, restore the mapping (with agent name)
       tabManagerRef.current.updateTabContext(existingAgentTab.id, {
-        spaceRoom: {
-          selectedSpaceId: spaceId,
-          selectedRoomId: roomId,
-        },
         mcpServers: {
           attachedServerIds: mcpServerIds,
           disabledServerIds: [],
@@ -139,12 +316,8 @@ export const useAgentBridge = () => {
     const title = `🤖 ${agentName}`;
     const newTab = tabManagerRef.current.createTab(title);
 
-    // Update the tab's context with the agent's space/room
+    // Update the tab's context with the automation binding
     tabManagerRef.current.updateTabContext(newTab.id, {
-      spaceRoom: {
-        selectedSpaceId: spaceId,
-        selectedRoomId: roomId,
-      },
       mcpServers: {
         attachedServerIds: mcpServerIds,
         disabledServerIds: [],
@@ -197,11 +370,19 @@ export const useAgentBridge = () => {
    * @param {string} roomId - Netdata room ID
    * @returns {string} Tab ID (existing or newly created)
    */
-  const ensureAgentTab = (agentId, spaceId, roomId) => {
+  const ensureAgentTab = (agentId, spaceId, roomId, fallbackTabId = null, fallbackMcpServerIds = []) => {
     // First check if tab exists (fast path)
     const existingTabId = getAgentTabId(agentId, spaceId, roomId);
     if (existingTabId) {
       return existingTabId;
+    }
+
+    if (fallbackTabId) {
+      const fallbackTab = tabManagerRef.current.tabs.find((tab) => tab.id === fallbackTabId);
+      if (hasValidTileStructure(fallbackTab)) {
+        setAgentTab(agentId, spaceId, roomId, fallbackTabId, agentId, fallbackMcpServerIds);
+        return fallbackTabId;
+      }
     }
 
     // Check if another call is already creating this tab
@@ -220,7 +401,7 @@ export const useAgentBridge = () => {
     // Tab doesn't exist - recreate it
     const tabInfo = getAgentTab(agentId, spaceId, roomId);
     const agentName = tabInfo?.agentName || agentId;
-    const mcpServerIds = tabInfo?.mcpServerIds || [];
+    const mcpServerIds = tabInfo?.mcpServerIds?.length ? tabInfo.mcpServerIds : fallbackMcpServerIds;
 
     console.log(`[AgentBridge] Recreating closed tab for agent: ${agentId}`);
 
@@ -249,11 +430,11 @@ export const useAgentBridge = () => {
    * @returns {Object|null} Command entry with api, or null/throws
    */
   const getCommandByType = (commandType, request, { required = true } = {}) => {
-    const { agentId, spaceId, roomId, params } = request;
+    const { agentId, spaceId, roomId, tabId: fallbackTabId, mcpServerIds: fallbackMcpServerIds = [], params } = request;
     const { commandId } = params;
 
     // Use ensureAgentTab to recreate tab if user closed it
-    const tabId = ensureAgentTab(agentId, spaceId, roomId);
+    const tabId = ensureAgentTab(agentId, spaceId, roomId, fallbackTabId, fallbackMcpServerIds);
     if (!tabId) {
       if (required) {
         throw new Error('No tab found for this agent. Call agent.setup first.');
@@ -312,21 +493,14 @@ export const useAgentBridge = () => {
 
       // If tabId is provided (on-demand agent), check if it has a valid tile structure
       if (existingTabId) {
-        const existingTab = tabManagerRef.current.tabs.find(t => t.id === existingTabId);
+        let existingTab = tabManagerRef.current.tabs.find(t => t.id === existingTabId);
 
-        // Validate the tile structure is complete:
-        // - rootTile exists
-        // - rootTile has an id
-        // - rootTile has a valid type ('leaf' or 'split')
-        const hasValidTileStructure = existingTab?.rootTile?.id &&
-          (existingTab.rootTile.type === 'leaf' || existingTab.rootTile.type === 'split');
+        if (!hasValidTileStructure(existingTab)) {
+          existingTab = await waitForTab(existingTabId);
+        }
 
-        if (hasValidTileStructure) {
+        if (hasValidTileStructure(existingTab)) {
           const nextContext = {
-            spaceRoom: {
-              selectedSpaceId: spaceId,
-              selectedRoomId: roomId,
-            },
             agent: managedAgentTab
               ? {
                 agentId,
@@ -377,11 +551,120 @@ export const useAgentBridge = () => {
       return dashboards.length > 0 ? dashboards[0] : null;
     };
 
+    const getAnomaliesFromTab = (tabId, commandId = null) => {
+      if (commandId) {
+        const command = tabManagerRef.current.getCommandFromTab(tabId, commandId);
+        if (!command || command.type !== 'anomalies') {
+          return null;
+        }
+        return command;
+      }
+
+      const anomalies = tabManagerRef.current.getCommandsByTypeFromTab(tabId, 'anomalies');
+      return anomalies.length > 0 ? anomalies[0] : null;
+    };
+
+    const findTileInTree = (tile, tileId) => {
+      if (!tile) {
+        return null;
+      }
+      if (tile.id === tileId) {
+        return tile;
+      }
+      if (!Array.isArray(tile.children)) {
+        return null;
+      }
+      for (const child of tile.children) {
+        const match = findTileInTree(child, tileId);
+        if (match) {
+          return match;
+        }
+      }
+      return null;
+    };
+
+    registerToolHandler('anomalies.open', async (request) => {
+      const { agentId, spaceId, roomId, tabId: fallbackTabId, mcpServerIds: fallbackMcpServerIds = [], params } = request;
+      const tabId = ensureAgentTab(agentId, spaceId, roomId, fallbackTabId, fallbackMcpServerIds);
+      const requestedSpaceId = typeof params?.spaceId === 'string' ? params.spaceId.trim() : '';
+      const requestedRoomId = typeof params?.roomId === 'string' ? params.roomId.trim() : '';
+
+      if (!requestedSpaceId || !requestedRoomId) {
+        throw new Error('anomalies.open requires spaceId and roomId');
+      }
+
+      const tab = tabManagerRef.current.tabs.find((candidate) => candidate.id === tabId);
+      if (!tab) {
+        throw new Error(`Tab not found: ${tabId}`);
+      }
+
+      const targetMatches = (command) => {
+        const target = command?.api?.getTarget?.() || getAnomaliesTarget(command);
+        return target.spaceId === requestedSpaceId && target.roomId === requestedRoomId;
+      };
+
+      if (params?.commandId) {
+        const command = getAnomaliesFromTab(tabId, params.commandId);
+        if (!command) {
+          throw new Error(`Anomalies command not found: ${params.commandId}`);
+        }
+        if (!targetMatches(command)) {
+          throw new Error('Requested anomalies command is bound to a different target');
+        }
+        return { commandId: command.id, tileId: command.tileId, reused: true };
+      }
+
+      const matchingCommand = tabManagerRef.current
+        .getCommandsByTypeFromTab(tabId, 'anomalies')
+        .find((command) => targetMatches(command));
+
+      if (matchingCommand) {
+        return { commandId: matchingCommand.id, tileId: matchingCommand.tileId, reused: true };
+      }
+
+      const splitType = params?.splitType === 'horizontal' ? 'horizontal' : 'vertical';
+      const parentTileId = params?.parentTileId || tab.rootTile?.id;
+      const parentTile = findTileInTree(tab.rootTile, parentTileId);
+      if (!parentTile) {
+        throw new Error(`Parent tile not found: ${parentTileId}`);
+      }
+
+      let targetTileId = null;
+      if (parentTile.type === 'leaf' && !parentTile.commandId) {
+        targetTileId = parentTile.id;
+      } else {
+        const splitResult = tabManagerRef.current.splitTileInTab(tabId, parentTile.id, splitType);
+        if (!splitResult.success) {
+          throw new Error(splitResult.message || 'Failed to create anomalies tile');
+        }
+        targetTileId = splitResult.newTileId;
+      }
+
+      const command = tabManagerRef.current.createCommandInTab(tabId, 'anomalies', {
+        spaceId: requestedSpaceId,
+        roomId: requestedRoomId,
+      });
+
+      if (!command) {
+        throw new Error('Failed to create anomalies command');
+      }
+
+      tabManagerRef.current.assignCommandToTileInTab(tabId, command.id, targetTileId);
+
+      return { commandId: command.id, tileId: targetTileId, reused: false };
+    });
+
     // Register dashboard tool handlers
     registerToolHandler('dashboard.addChart', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
+      const { agentId, spaceId, roomId, tabId: fallbackTabId, mcpServerIds: fallbackMcpServerIds = [], params } = request;
       // Use ensureAgentTab to recreate tab if user closed it
-      const tabId = ensureAgentTab(agentId, spaceId, roomId);
+      const tabId = ensureAgentTab(agentId, spaceId, roomId, fallbackTabId, fallbackMcpServerIds);
+      const agentTab = getAgentTab(agentId, spaceId, roomId);
+
+      if (!params?.spaceId || !params?.roomId) {
+        throw new Error('dashboard.addChart requires spaceId and roomId');
+      }
+      const mcpServerId = await resolveNetdataMcpServerIdForTab(tabId, agentTab, params.mcpServerId);
 
       const dashboard = getDashboardFromTab(tabId, params.commandId);
       if (!dashboard) {
@@ -391,19 +674,25 @@ export const useAgentBridge = () => {
         throw new Error('Dashboard not ready yet');
       }
 
+      const normalizedGroupBy = normalizeGroupBy(params.groupBy);
+      const normalizedFilterBy = normalizeFilterBy(params.filterBy);
+
       const chartId = dashboard.api.addChart({
+        mcpServerId,
+        spaceId: params.spaceId,
+        roomId: params.roomId,
         context: params.context,
-        groupBy: params.groupBy || null,
-        filterBy: params.filterBy || null,
+        groupBy: normalizedGroupBy,
+        filterBy: normalizedFilterBy,
       });
 
       return { chartId };
     });
 
     registerToolHandler('dashboard.removeChart', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
+      const { agentId, spaceId, roomId, tabId: fallbackTabId, mcpServerIds: fallbackMcpServerIds = [], params } = request;
       // Use ensureAgentTab to recreate tab if user closed it
-      const tabId = ensureAgentTab(agentId, spaceId, roomId);
+      const tabId = ensureAgentTab(agentId, spaceId, roomId, fallbackTabId, fallbackMcpServerIds);
 
       const dashboard = getDashboardFromTab(tabId, params.commandId);
       if (!dashboard?.api) {
@@ -432,9 +721,9 @@ export const useAgentBridge = () => {
     });
 
     registerToolHandler('dashboard.setTimeRange', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
+      const { agentId, spaceId, roomId, tabId: fallbackTabId, mcpServerIds: fallbackMcpServerIds = [], params } = request;
       // Use ensureAgentTab to recreate tab if user closed it
-      const tabId = ensureAgentTab(agentId, spaceId, roomId);
+      const tabId = ensureAgentTab(agentId, spaceId, roomId, fallbackTabId, fallbackMcpServerIds);
 
       const dashboard = getDashboardFromTab(tabId, params?.commandId);
       if (!dashboard?.api) {
@@ -460,9 +749,9 @@ export const useAgentBridge = () => {
 
     // Register tabs tool handlers
     registerToolHandler('tabs.splitTile', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
+      const { agentId, spaceId, roomId, tabId: fallbackTabId, mcpServerIds: fallbackMcpServerIds = [], params } = request;
       // Use ensureAgentTab to recreate tab if user closed it
-      const tabId = ensureAgentTab(agentId, spaceId, roomId);
+      const tabId = ensureAgentTab(agentId, spaceId, roomId, fallbackTabId, fallbackMcpServerIds);
 
       // Get the parent tile ID - use the root tile if not specified or if "root" is passed
       let parentTileId = params.parentTileId;
@@ -529,9 +818,9 @@ export const useAgentBridge = () => {
     });
 
     registerToolHandler('tabs.removeTile', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
+      const { agentId, spaceId, roomId, tabId: fallbackTabId, mcpServerIds: fallbackMcpServerIds = [], params } = request;
       // Use ensureAgentTab to recreate tab if user closed it
-      const tabId = ensureAgentTab(agentId, spaceId, roomId);
+      const tabId = ensureAgentTab(agentId, spaceId, roomId, fallbackTabId, fallbackMcpServerIds);
 
       const result = tabManagerRef.current.closeTile(params.tileId);
 
@@ -543,9 +832,9 @@ export const useAgentBridge = () => {
     });
 
     registerToolHandler('tabs.getTileLayout', async (request) => {
-      const { agentId, spaceId, roomId } = request;
+      const { agentId, spaceId, roomId, tabId: fallbackTabId, mcpServerIds: fallbackMcpServerIds = [] } = request;
       // Use ensureAgentTab to recreate tab if user closed it
-      const tabId = ensureAgentTab(agentId, spaceId, roomId);
+      const tabId = ensureAgentTab(agentId, spaceId, roomId, fallbackTabId, fallbackMcpServerIds);
 
       const tab = tabManagerRef.current.tabs.find(t => t.id === tabId);
       if (!tab) {
@@ -597,6 +886,16 @@ export const useAgentBridge = () => {
           };
         }
 
+        if (command.type === 'anomalies') {
+          const target = command.api?.getTarget?.() || getAnomaliesTarget(command);
+          const items = command.api?.getItems?.() || [];
+          return {
+            spaceId: target.spaceId || null,
+            roomId: target.roomId || null,
+            itemCount: items.length,
+          };
+        }
+
         return null;
       };
 
@@ -634,7 +933,7 @@ export const useAgentBridge = () => {
       const root = convertTile(tab.rootTile);
 
       // Collect all canvases and dashboards for easy access
-      const collectCommands = (tile, result = { canvases: [], dashboards: [] }) => {
+      const collectCommands = (tile, result = { canvases: [], dashboards: [], anomalies: [] }) => {
         if (tile.command === 'canvas' && tile.commandId) {
           result.canvases.push({
             commandId: tile.commandId,
@@ -646,6 +945,13 @@ export const useAgentBridge = () => {
             commandId: tile.commandId,
             chartCount: tile.content?.chartCount || 0,
             charts: tile.content?.charts || [],
+          });
+        } else if (tile.command === 'anomalies' && tile.commandId) {
+          result.anomalies.push({
+            commandId: tile.commandId,
+            spaceId: tile.content?.spaceId || null,
+            roomId: tile.content?.roomId || null,
+            itemCount: tile.content?.itemCount || 0,
           });
         }
         if (tile.children) {
@@ -664,19 +970,21 @@ export const useAgentBridge = () => {
         canvases: available.canvases,
         dashboardCount: available.dashboards.length,
         dashboards: available.dashboards,
+        anomaliesCount: available.anomalies.length,
+        anomalies: available.anomalies,
       };
     });
 
     // Get full content details for any command by ID
     registerToolHandler('tabs.getCommandContent', async (request) => {
-      const { agentId, spaceId, roomId, params } = request;
+      const { agentId, spaceId, roomId, tabId: fallbackTabId, mcpServerIds: fallbackMcpServerIds = [], params } = request;
       const { commandId } = params;
 
       if (!commandId) {
         throw new Error('commandId is required');
       }
 
-      const tabId = ensureAgentTab(agentId, spaceId, roomId);
+      const tabId = ensureAgentTab(agentId, spaceId, roomId, fallbackTabId, fallbackMcpServerIds);
       const command = tabManagerRef.current.getCommandFromTab(tabId, commandId);
 
       if (!command) {
@@ -712,6 +1020,18 @@ export const useAgentBridge = () => {
             filterBy: c.config?.filterBy || null,
           })),
         };
+      } else if (command.type === 'anomalies') {
+        const target = command.api?.getTarget?.() || getAnomaliesTarget(command);
+        const items = command.api?.getItems?.() || [];
+        result.content = {
+          spaceId: target.spaceId || null,
+          roomId: target.roomId || null,
+          itemCount: items.length,
+          contexts: items.slice(0, 50).map((item) => ({
+            context: item.context,
+            anomalyRate: item.anomalyRate,
+          })),
+        };
       }
 
       return result;
@@ -722,15 +1042,28 @@ export const useAgentBridge = () => {
     // =========================================================================
 
     registerToolHandler('canvas.addChart', async (request) => {
-      const { params } = request;
+      const { agentId, spaceId, roomId, tabId: fallbackTabId, mcpServerIds: fallbackMcpServerIds = [], params } = request;
       const { x, y, context, title, groupBy, filterBy, timeRange, width, height } = params;
+      const tabId = ensureAgentTab(agentId, spaceId, roomId, fallbackTabId, fallbackMcpServerIds);
+      const agentTab = getAgentTab(agentId, spaceId, roomId);
+
+      if (!params?.spaceId || !params?.roomId) {
+        throw new Error('canvas.addChart requires spaceId and roomId');
+      }
+      const mcpServerId = await resolveNetdataMcpServerIdForTab(tabId, agentTab, params.mcpServerId);
+
+      const normalizedGroupBy = normalizeGroupBy(groupBy);
+      const normalizedFilterBy = normalizeFilterBy(filterBy);
 
       const command = getCanvasCommand(request);
       const nodeId = command.api.addNode('chart', { x, y }, {
+        mcpServerId,
+        spaceId: params.spaceId,
+        roomId: params.roomId,
         context,
         title: title || null,
-        groupBy: groupBy || [],
-        filterBy: filterBy || {},
+        groupBy: normalizedGroupBy,
+        filterBy: normalizedFilterBy,
         timeRange: timeRange || '15m',
         width: width || 400,
         height: height || 300,

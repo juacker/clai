@@ -3,8 +3,8 @@ import React, { createContext, useContext, useState, useCallback, useRef, useMem
 /**
  * ChatManagerContext
  *
- * Manages chat panel visibility state based on space/room combinations.
- * Each space/room can have its own open/close state that persists across tab switches.
+ * Manages chat panel visibility state based on the active tab context.
+ * Each tab can keep its own open/close state across tab switches.
  *
  * Note: Message state and streaming is handled by AgentActivityContext.
  * This context only handles the UI visibility of the chat panel.
@@ -21,11 +21,11 @@ export const useChatManager = () => {
 };
 
 export const ChatManagerProvider = ({ children }) => {
-  // Store panel state by space-room key
-  // Format: { 'space-room': { isOpen: boolean } }
+  // Store panel state by context key.
+  // Format: { 'tab-id--context': { isOpen: boolean } }
   const [panelStates, setPanelStates] = useState({});
 
-  // Track the currently active space-room
+  // Track the currently active chat context
   const [activeSpaceRoom, setActiveSpaceRoom] = useState(null);
 
   // Reference to prevent unnecessary re-renders
@@ -33,7 +33,7 @@ export const ChatManagerProvider = ({ children }) => {
   panelStatesRef.current = panelStates;
 
   /**
-   * Generate a unique key for space-room combination
+   * Generate a unique key for a chat context
    */
   const generateKey = useCallback((space, room) => {
     const spaceKey = space || 'no-space';
@@ -42,7 +42,7 @@ export const ChatManagerProvider = ({ children }) => {
   }, []);
 
   /**
-   * Get panel state for a specific space-room
+   * Get panel state for a specific context
    */
   const getPanelState = useCallback((space, room) => {
     const key = generateKey(space, room);
@@ -50,7 +50,7 @@ export const ChatManagerProvider = ({ children }) => {
   }, [generateKey]);
 
   /**
-   * Set the active space-room context
+   * Set the active chat context
    * This is called when switching tabs or when context changes
    */
   const setActiveContext = useCallback((space, room) => {
@@ -68,7 +68,7 @@ export const ChatManagerProvider = ({ children }) => {
   }, [generateKey]);
 
   /**
-   * Toggle the chat open/closed state for the active space-room
+   * Toggle the chat open/closed state for the active context
    */
   const toggleChat = useCallback(() => {
     if (!activeSpaceRoom) return;
@@ -82,7 +82,7 @@ export const ChatManagerProvider = ({ children }) => {
   }, [activeSpaceRoom]);
 
   /**
-   * Open the chat for the active space-room
+   * Open the chat for the active context
    */
   const openChat = useCallback(() => {
     if (!activeSpaceRoom) return;
@@ -94,7 +94,7 @@ export const ChatManagerProvider = ({ children }) => {
   }, [activeSpaceRoom]);
 
   /**
-   * Close the chat for the active space-room
+   * Close the chat for the active context
    */
   const closeChat = useCallback(() => {
     if (!activeSpaceRoom) return;

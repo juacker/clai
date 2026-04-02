@@ -25,12 +25,12 @@ const Help = () => {
           <div className={styles.column}>
             <h3 className={styles.sectionTitle}>Terminal</h3>
             <div className={styles.chatRow}><span className={styles.chatHighlight}>Just type to chat with AI</span></div>
-            <div className={styles.commandRow}><code>/ctx</code> <span>Show/set context</span></div>
+            <div className={styles.commandRow}><code>/ctx</code> <span>Show/set custom tab context</span></div>
             <div className={styles.commandRow}><code>/echo &lt;text&gt;</code> <span>Display text</span></div>
             <div className={styles.commandRow}><code>/help</code> <span>This reference</span></div>
-            <div className={styles.commandRow}><code>/anomalies</code> <span>Anomaly detection</span></div>
             <div className={styles.commandRow}><code>/dashboard</code> <span>Chart dashboard</span></div>
             <div className={styles.commandRow}><code>/canvas</code> <span>Whiteboard</span></div>
+            <div className={styles.commandRow}><code>/anomalies --spaceId=&lt;id&gt; --roomId=&lt;id&gt;</code> <span>Anomalies panel</span></div>
             <div className={styles.commandRow}><code>/reset-all</code> <span>Reset layout</span></div>
             <div className={styles.commandRow}><code>/tab</code> <span>New tab</span></div>
             <div className={styles.commandRow}><code>/tab close</code> / <code>rename</code> / <code>next</code> / <code>prev</code> / <code>list</code></div>

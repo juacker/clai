@@ -8,13 +8,14 @@
 //! These tools execute directly in Rust:
 //! - `netdata.query` - Query Netdata Cloud AI for analysis
 //!
-//! ## JS-bridge (`dashboard.*`, `tabs.*`, `canvas.*`, `chat.*`)
+//! ## JS-bridge (`dashboard.*`, `tabs.*`, `canvas.*`, `anomalies.*`, `chat.*`)
 //! These tools are defined in Rust but execute via Tauri events to the frontend:
 //! - `dashboard.addChart` - Add a metric chart to the dashboard
 //! - `dashboard.removeChart` - Remove a chart by ID
 //! - `dashboard.getCharts` - List all charts
 //! - `dashboard.clearCharts` - Remove all charts
 //! - `dashboard.setTimeRange` - Set time range for charts
+//! - `anomalies.open` - Open an anomalies panel for a specific space/room
 //! - `tabs.addTile` - Add a tile to the current tab
 //! - `tabs.removeTile` - Remove a tile by ID
 //! - `tabs.getTileLayout` - Get current tile layout
@@ -28,6 +29,7 @@
 //! - `canvas.clearCanvas` - Remove all nodes and edges
 //! - `chat.message` - Send a text message to the user
 
+pub mod anomalies;
 pub mod canvas;
 pub mod chat;
 pub mod dashboard;

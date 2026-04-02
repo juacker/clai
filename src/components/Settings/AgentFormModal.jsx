@@ -31,7 +31,7 @@ const LoadingIcon = () => (
 
 
 /**
- * AgentFormModal - Create/Edit agent form
+ * AgentFormModal - Create/Edit automation form
  *
  * @param {Object} props
  * @param {boolean} props.isOpen - Whether modal is open
@@ -104,12 +104,12 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
     // Validation
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setError('Agent name is required');
+      setError('Automation name is required');
       return;
     }
 
     if (trimmedName.length > 100) {
-      setError('Agent name must be 100 characters or less');
+      setError('Automation name must be 100 characters or less');
       return;
     }
 
@@ -145,7 +145,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
         {/* Header */}
         <div className={styles.header}>
           <h2 className={styles.title}>
-            {isEditing ? 'Edit Agent' : 'Create Agent'}
+            {isEditing ? 'Edit Automation' : 'Create Automation'}
           </h2>
           <button
             className={styles.closeButton}
@@ -181,7 +181,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
               autoFocus
             />
             <span className={styles.hint}>
-              A descriptive name for this agent
+              A descriptive name for this automation
             </span>
           </div>
 
@@ -194,12 +194,12 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
               className={styles.textarea}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe what this agent should focus on, what to look for, and how to report findings..."
+              placeholder="Describe what this automation should focus on, what to look for, and how to report findings..."
               disabled={saving}
               rows={6}
             />
             <span className={styles.hint}>
-              Markdown supported. This description guides the AI on what to monitor and how to report.
+              Markdown supported. These instructions guide the automation on what to do and how to report.
             </span>
           </div>
 
@@ -214,7 +214,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
               disabled={saving}
             />
             <span className={styles.hint}>
-              How often the agent runs while enabled
+              How often the automation runs while enabled
             </span>
           </div>
 
@@ -222,7 +222,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
             <label className={styles.label}>MCP Servers</label>
             {mcpServers.length === 0 ? (
               <div className={styles.hint}>
-                No MCP servers configured yet. Add them in Settings to make external tools available to this agent.
+                No MCP servers configured yet. Add them in Settings to make external tools available to this automation.
               </div>
             ) : (
               <div className={styles.checkboxGroup}>
@@ -253,7 +253,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
               </div>
             )}
             <span className={styles.hint}>
-              Selected servers will be attached to the agent session and exposed once external MCP discovery and execution are enabled.
+              Selected servers will be attached to the automation session when it runs.
             </span>
           </div>
 
@@ -278,7 +278,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
                   <span>Saving...</span>
                 </>
               ) : (
-                <span>{isEditing ? 'Save Changes' : 'Create Agent'}</span>
+                <span>{isEditing ? 'Save Changes' : 'Create Automation'}</span>
               )}
             </button>
           </div>

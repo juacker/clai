@@ -33,6 +33,20 @@ use crate::mcp::bridge::JsBridge;
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AddChartParams {
+    /// Optional Netdata MCP server ID.
+    /// If omitted, CLAI will use the only enabled Netdata MCP server for the session.
+    #[schemars(description = "Optional Netdata MCP server ID. Omit when exactly one Netdata MCP server is enabled for the session.")]
+    #[serde(default)]
+    pub mcp_server_id: Option<String>,
+
+    /// Netdata space ID for this chart.
+    #[schemars(description = "Netdata space ID")]
+    pub space_id: String,
+
+    /// Netdata room ID for this chart.
+    #[schemars(description = "Netdata room ID")]
+    pub room_id: String,
+
     /// Optional dashboard command ID. If omitted, uses the first dashboard in the tab.
     #[schemars(description = "Dashboard command ID (optional - uses first dashboard if omitted)")]
     #[serde(default)]
@@ -308,12 +322,18 @@ mod tests {
     #[test]
     fn test_add_chart_params_deserialization() {
         let json = json!({
+            "mcpServerId": "netdata-cloud",
+            "spaceId": "space-123",
+            "roomId": "room-456",
             "context": "system.cpu",
             "groupBy": ["node"],
             "filterBy": {"node": ["server1"]}
         });
 
         let params: AddChartParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.mcp_server_id.as_deref(), Some("netdata-cloud"));
+        assert_eq!(params.space_id, "space-123");
+        assert_eq!(params.room_id, "room-456");
         assert_eq!(params.context, "system.cpu");
         assert_eq!(params.group_by, Some(vec!["node".to_string()]));
         assert!(params.filter_by.is_some());
@@ -322,10 +342,16 @@ mod tests {
     #[test]
     fn test_add_chart_params_minimal() {
         let json = json!({
+            "mcpServerId": "netdata-cloud",
+            "spaceId": "space-123",
+            "roomId": "room-456",
             "context": "disk.io"
         });
 
         let params: AddChartParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.mcp_server_id.as_deref(), Some("netdata-cloud"));
+        assert_eq!(params.space_id, "space-123");
+        assert_eq!(params.room_id, "room-456");
         assert_eq!(params.context, "disk.io");
         assert!(params.group_by.is_none());
         assert!(params.filter_by.is_none());

@@ -1,8 +1,6 @@
 /**
  * Anomalies Component CSS Module
  * Hilbert curve visualization with click-to-dashboard functionality
- *
- * Design: Analytical, investigative feel - "command center" for finding issues
  */
 
 .metricsContainer {
@@ -30,7 +28,6 @@
   image-rendering: crisp-edges;
 }
 
-/* Header Bar - Command center feel */
 .headerBar {
   position: absolute;
   top: 0;
@@ -75,7 +72,6 @@
   color: var(--color-text-tertiary);
 }
 
-/* Filter Input - Professional, focused */
 .filterInput {
   flex: 1;
   max-width: 300px;
@@ -124,7 +120,6 @@
   color: var(--color-text-secondary);
 }
 
-/* Backdrop for context panel */
 .backdrop {
   position: fixed;
   top: 0;
@@ -142,7 +137,6 @@
   to { opacity: 1; }
 }
 
-/* Context panel - Elevated, professional */
 .contextPanel {
   position: absolute;
   top: 50%;
@@ -202,7 +196,6 @@
   flex: 1;
 }
 
-/* Context items - Clear health status indication */
 .contextItem {
   display: flex;
   align-items: stretch;
@@ -239,7 +232,6 @@
   border-color: var(--color-healthy);
 }
 
-/* Health status band on left */
 .contextBand {
   width: 4px;
   flex-shrink: 0;
@@ -253,7 +245,7 @@
 .contextName {
   flex: 1;
   padding: 12px 14px;
-  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-family: Monaco, Menlo, Consolas, monospace;
   font-size: 12px;
   word-break: break-all;
   line-height: 1.4;
@@ -313,7 +305,6 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
 }
 
-/* Info banner - Status indicator */
 .infoBanner {
   position: absolute;
   top: 56px;
@@ -337,7 +328,6 @@
   box-shadow: var(--shadow-lg);
 }
 
-/* Success state - healthy/nominal */
 .infoBannerSuccess {
   background: var(--color-healthy-bg-solid);
   border-color: var(--color-healthy-border);
@@ -347,7 +337,6 @@
   box-shadow: var(--shadow-healthy);
 }
 
-/* Info state - analytical, informational */
 .infoBannerInfo {
   background: var(--color-info-bg-solid);
   border-color: var(--color-info-border);
@@ -357,7 +346,6 @@
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.18);
 }
 
-/* Loading state */
 .loadingContainer {
   display: flex;
   flex-direction: column;
@@ -375,7 +363,6 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
 }
 
-/* Error state - Critical feel */
 .errorContainer {
   display: flex;
   align-items: center;
@@ -393,7 +380,6 @@
   line-height: 1.6;
 }
 
-/* Empty state */
 .emptyContainer {
   display: flex;
   align-items: center;
@@ -411,7 +397,6 @@
   line-height: 1.6;
 }
 
-/* Desktop override */
 @media (min-width: 769px) and (pointer: fine) {
   .metricsContainer {
     background: var(--color-bg-secondary);

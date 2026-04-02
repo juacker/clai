@@ -4,17 +4,42 @@
  * Displays metrics using a Hilbert curve layout with anomaly rate coloring.
  * Clicking on a metric sends it to the Dashboard component for charting.
  *
- * This component is focused on anomaly visualization only.
- * Charts are handled by the separate Dashboard command.
+ * This version keeps the explicit-target model: the target space/room comes
+ * from the command args rather than hidden tab context.
  */
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useTabContext } from '../../contexts/TabContext';
 import { useCommandMessaging } from '../../contexts/CommandMessagingContext';
 import { getContexts, getData } from '../../api/client';
+import { useCommandRegistration } from '../../hooks/useCommandRegistration';
 import NetdataSpinner from '../common/NetdataSpinner';
 import DashboardPicker from '../common/DashboardPicker';
 import styles from './Anomalies.module.css';
+
+function getTargetFromCommand(command) {
+  const args = command?.args || {};
+  const options = args.options || {};
+
+  const pick = (...keys) => {
+    for (const key of keys) {
+      const direct = args[key];
+      if (typeof direct === 'string' && direct.trim() !== '') {
+        return direct.trim();
+      }
+      const option = options[key];
+      if (typeof option === 'string' && option.trim() !== '') {
+        return option.trim();
+      }
+    }
+    return '';
+  };
+
+  return {
+    spaceId: pick('spaceId', 'space-id'),
+    roomId: pick('roomId', 'room-id'),
+    mcpServerId: pick('mcpServerId', 'mcp-server-id') || null,
+  };
+}
 
 // ============================================================================
 // HILBERT CURVE ALGORITHM
@@ -24,12 +49,14 @@ function generateHilbertPoints(order) {
   const n = Math.pow(2, order);
   const points = [];
 
-  function hilbertD2XY(n, d) {
-    let x = 0, y = 0;
+  function hilbertD2XY(nValue, dValue) {
+    let x = 0;
+    let y = 0;
+    let d = dValue;
     let s = 1;
 
-    while (s < n) {
-      const rx = 1 & (d / 2);
+    while (s < nValue) {
+      const rx = 1 & Math.floor(d / 2);
       const ry = 1 & (d ^ rx);
 
       if (ry === 0) {
@@ -50,7 +77,7 @@ function generateHilbertPoints(order) {
   }
 
   const total = n * n;
-  for (let i = 0; i < total; i++) {
+  for (let i = 0; i < total; i += 1) {
     points.push(hilbertD2XY(n, i));
   }
 
@@ -64,14 +91,14 @@ function generateHilbertPoints(order) {
 function groupMetricsMultiLevel(metrics, targetCount) {
   if (metrics.length <= targetCount) {
     const sorted = [...metrics].sort();
-    return new Map(sorted.map(m => [m, [m]]));
+    return new Map(sorted.map((metric) => [metric, [metric]]));
   }
 
   const sortedMetrics = [...metrics].sort();
-  let currentGroups = new Map(sortedMetrics.map(m => [m, [m]]));
-  const maxDepth = Math.max(...sortedMetrics.map(m => m.split('.').length));
+  let currentGroups = new Map(sortedMetrics.map((metric) => [metric, [metric]]));
+  const maxDepth = Math.max(...sortedMetrics.map((metric) => metric.split('.').length));
 
-  for (let depth = maxDepth - 1; depth >= 1; depth--) {
+  for (let depth = maxDepth - 1; depth >= 1; depth -= 1) {
     if (currentGroups.size <= targetCount) break;
 
     const prefixMap = new Map();
@@ -124,18 +151,16 @@ function calculateProportionalCells(groupedMetrics, totalCells) {
 
   const groupCount = groupedMetrics.size;
 
-  // If we have more groups than cells, each group gets exactly 1 cell
   if (groupCount >= totalCells) {
     const allocations = Array.from(groupedMetrics.keys())
       .sort()
-      .map(name => ({ name, cells: 1 }));
-    return new Map(allocations.map(a => [a.name, a.cells]));
+      .map((name) => ({ name, cells: 1 }));
+    return new Map(allocations.map((allocation) => [allocation.name, allocation.cells]));
   }
 
   const allocations = [];
   let allocatedCells = 0;
 
-  // First pass: calculate proportional shares (floor values)
   for (const [name, originals] of groupedMetrics) {
     const exactShare = (originals.length / totalOriginals) * totalCells;
     const floorShare = Math.floor(exactShare);
@@ -145,39 +170,34 @@ function calculateProportionalCells(groupedMetrics, totalCells) {
     allocatedCells += floorShare;
   }
 
-  // Ensure every group gets at least 1 cell
-  for (const alloc of allocations) {
-    if (alloc.cells === 0) {
-      alloc.cells = 1;
-      allocatedCells++;
+  for (const allocation of allocations) {
+    if (allocation.cells === 0) {
+      allocation.cells = 1;
+      allocatedCells += 1;
     }
   }
 
-  // Distribute remaining cells by remainder (highest first)
   const remainingCells = totalCells - allocatedCells;
   if (remainingCells > 0) {
     allocations.sort((a, b) => b.remainder - a.remainder);
-    for (let i = 0; i < remainingCells && i < allocations.length; i++) {
-      allocations[i].cells++;
+    for (let i = 0; i < remainingCells && i < allocations.length; i += 1) {
+      allocations[i].cells += 1;
     }
   } else if (remainingCells < 0) {
-    // We over-allocated! Need to reduce some allocations
-    // Sort by cells descending, reduce the largest ones first
     allocations.sort((a, b) => b.cells - a.cells);
     let toReduce = -remainingCells;
-    for (const alloc of allocations) {
+    for (const allocation of allocations) {
       if (toReduce <= 0) break;
-      // Only reduce if group has more than 1 cell
-      while (alloc.cells > 1 && toReduce > 0) {
-        alloc.cells--;
-        toReduce--;
+      while (allocation.cells > 1 && toReduce > 0) {
+        allocation.cells -= 1;
+        toReduce -= 1;
       }
     }
   }
 
   allocations.sort((a, b) => a.name.localeCompare(b.name));
 
-  return new Map(allocations.map(a => [a.name, a.cells]));
+  return new Map(allocations.map((allocation) => [allocation.name, allocation.cells]));
 }
 
 function calculateHilbertConfig(metrics) {
@@ -188,7 +208,7 @@ function calculateHilbertConfig(metrics) {
       totalCells: 1,
       processedMetrics: [],
       groupedMetrics: new Map(),
-      cellAllocations: new Map()
+      cellAllocations: new Map(),
     };
   }
 
@@ -196,7 +216,7 @@ function calculateHilbertConfig(metrics) {
 
   let maxOrder = 0;
   while (Math.pow(2, maxOrder) * Math.pow(2, maxOrder) < sortedMetrics.length) {
-    maxOrder++;
+    maxOrder += 1;
   }
 
   const maxGridSize = Math.pow(2, maxOrder);
@@ -205,15 +225,15 @@ function calculateHilbertConfig(metrics) {
 
   const WASTE_THRESHOLD = 20;
   if (initialWaste <= WASTE_THRESHOLD) {
-    const groupedMetrics = new Map(sortedMetrics.map(m => [m, [m]]));
-    const cellAllocations = new Map(sortedMetrics.map(m => [m, 1]));
+    const groupedMetrics = new Map(sortedMetrics.map((metric) => [metric, [metric]]));
+    const cellAllocations = new Map(sortedMetrics.map((metric) => [metric, 1]));
     return {
       order: maxOrder,
       gridSize: maxGridSize,
       totalCells: maxTotalCells,
       processedMetrics: sortedMetrics,
       groupedMetrics,
-      cellAllocations
+      cellAllocations,
     };
   }
 
@@ -221,7 +241,7 @@ function calculateHilbertConfig(metrics) {
   let bestWaste = initialWaste;
   const minOrder = 3;
 
-  for (let tryOrder = maxOrder - 1; tryOrder >= minOrder; tryOrder--) {
+  for (let tryOrder = maxOrder - 1; tryOrder >= minOrder; tryOrder -= 1) {
     const tryGridSize = Math.pow(2, tryOrder);
     const tryCells = tryGridSize * tryGridSize;
 
@@ -241,7 +261,7 @@ function calculateHilbertConfig(metrics) {
           totalCells: tryCells,
           processedMetrics: Array.from(grouped.keys()).sort(),
           groupedMetrics: grouped,
-          cellAllocations
+          cellAllocations,
         };
       }
 
@@ -255,15 +275,15 @@ function calculateHilbertConfig(metrics) {
     return bestConfig;
   }
 
-  const groupedMetrics = new Map(sortedMetrics.map(m => [m, [m]]));
-  const cellAllocations = new Map(sortedMetrics.map(m => [m, 1]));
+  const groupedMetrics = new Map(sortedMetrics.map((metric) => [metric, [metric]]));
+  const cellAllocations = new Map(sortedMetrics.map((metric) => [metric, 1]));
   return {
     order: maxOrder,
     gridSize: maxGridSize,
     totalCells: maxTotalCells,
     processedMetrics: sortedMetrics,
     groupedMetrics,
-    cellAllocations
+    cellAllocations,
   };
 }
 
@@ -272,14 +292,10 @@ function calculateHilbertConfig(metrics) {
 // ============================================================================
 
 function createVisualGroups(groupedMetrics, cellAllocations) {
-  // For large groups, extract more subgroups to reduce fragmentation
-  // More extracted subgroups = smaller remaining parent = less scattered
-
   const MAX_VISUAL_GROUPS = 60;
-  const MIN_SUBGROUP_CELLS = 20; // Lower threshold = more subgroups extracted
+  const MIN_SUBGROUP_CELLS = 20;
   const displayNames = Array.from(groupedMetrics.keys()).sort();
 
-  // Step 1: Calculate cell counts for each first-level and second-level prefix
   const firstLevelCounts = new Map();
   const firstLevelMetrics = new Map();
   const secondLevelCounts = new Map();
@@ -307,11 +323,9 @@ function createVisualGroups(groupedMetrics, cellAllocations) {
     }
   }
 
-  // Step 2: Calculate threshold for large groups
   const totalCells = Array.from(firstLevelCounts.values()).reduce((a, b) => a + b, 0);
-  const largeGroupThreshold = totalCells * 0.10; // 10% of total (lower = more groups split)
+  const largeGroupThreshold = totalCells * 0.10;
 
-  // Step 3: Build visual groups
   const groups = new Map();
 
   for (const [firstLevel, metrics] of firstLevelMetrics) {
@@ -322,7 +336,6 @@ function createVisualGroups(groupedMetrics, cellAllocations) {
       continue;
     }
 
-    // Large group - extract subgroups
     const subgroups = [];
     for (const [key, entry] of secondLevelCounts) {
       if (key.startsWith(`${firstLevel}|`)) {
@@ -337,15 +350,13 @@ function createVisualGroups(groupedMetrics, cellAllocations) {
     for (const subgroup of subgroups) {
       if (groups.size >= MAX_VISUAL_GROUPS - 1) break;
 
-      // Extract if subgroup has enough cells
       if (subgroup.cells >= MIN_SUBGROUP_CELLS) {
         groups.set(subgroup.secondLevel, subgroup.metrics);
-        subgroup.metrics.forEach(m => extractedMetrics.add(m));
+        subgroup.metrics.forEach((metric) => extractedMetrics.add(metric));
       }
     }
 
-    // Keep remaining under parent (only if there are remaining metrics)
-    const remainingMetrics = metrics.filter(m => !extractedMetrics.has(m));
+    const remainingMetrics = metrics.filter((metric) => !extractedMetrics.has(metric));
     if (remainingMetrics.length > 0) {
       groups.set(firstLevel, remainingMetrics);
     }
@@ -357,11 +368,11 @@ function createVisualGroups(groupedMetrics, cellAllocations) {
 function calculateGroupBorders(cells, visualGroups) {
   const metricToGroup = new Map();
   visualGroups.forEach((metrics, groupKey) => {
-    metrics.forEach(metric => metricToGroup.set(metric, groupKey));
+    metrics.forEach((metric) => metricToGroup.set(metric, groupKey));
   });
 
   const gridMap = new Map();
-  cells.forEach(cell => {
+  cells.forEach((cell) => {
     const gridX = Math.round(cell.x / cell.width);
     const gridY = Math.round(cell.y / cell.height);
     gridMap.set(`${gridX},${gridY}`, cell);
@@ -371,7 +382,7 @@ function calculateGroupBorders(cells, visualGroups) {
 
   const borders = [];
 
-  cells.forEach(cell => {
+  cells.forEach((cell) => {
     const myGroup = metricToGroup.get(cell.name);
 
     const top = gridMap.get(`${cell.gridX},${cell.gridY - 1}`);
@@ -383,10 +394,20 @@ function calculateGroupBorders(cells, visualGroups) {
       borders.push({ x1: cell.x, y1: cell.y, x2: cell.x + cell.width, y2: cell.y });
     }
     if (!right || metricToGroup.get(right.name) !== myGroup) {
-      borders.push({ x1: cell.x + cell.width, y1: cell.y, x2: cell.x + cell.width, y2: cell.y + cell.height });
+      borders.push({
+        x1: cell.x + cell.width,
+        y1: cell.y,
+        x2: cell.x + cell.width,
+        y2: cell.y + cell.height,
+      });
     }
     if (!bottom || metricToGroup.get(bottom.name) !== myGroup) {
-      borders.push({ x1: cell.x, y1: cell.y + cell.height, x2: cell.x + cell.width, y2: cell.y + cell.height });
+      borders.push({
+        x1: cell.x,
+        y1: cell.y + cell.height,
+        x2: cell.x + cell.width,
+        y2: cell.y + cell.height,
+      });
     }
     if (!left || metricToGroup.get(left.name) !== myGroup) {
       borders.push({ x1: cell.x, y1: cell.y, x2: cell.x, y2: cell.y + cell.height });
@@ -403,36 +424,35 @@ function calculateGroupBorders(cells, visualGroups) {
 function getColorForAnomalyRate(anomalyRate) {
   if (anomalyRate === null || anomalyRate === undefined || anomalyRate < 10) {
     return '#E6F9EE';
-  } else if (anomalyRate >= 10 && anomalyRate < 50) {
-    return '#E6F7FB';
-  } else if (anomalyRate >= 50 && anomalyRate < 100) {
-    return '#FEF5E7';
-  } else {
-    return '#FCE8E6';
   }
+  if (anomalyRate >= 10 && anomalyRate < 50) {
+    return '#E6F7FB';
+  }
+  if (anomalyRate >= 50 && anomalyRate < 100) {
+    return '#FEF5E7';
+  }
+  return '#FCE8E6';
 }
 
 function getSeverityLevel(anomalyRate) {
   if (anomalyRate === null || anomalyRate === undefined) {
     return 0;
-  } else if (anomalyRate >= 100) {
-    return 4;
-  } else if (anomalyRate >= 50) {
-    return 3;
-  } else if (anomalyRate >= 10) {
-    return 2;
-  } else {
-    return 1;
   }
+  if (anomalyRate >= 100) {
+    return 4;
+  }
+  if (anomalyRate >= 50) {
+    return 3;
+  }
+  if (anomalyRate >= 10) {
+    return 2;
+  }
+  return 1;
 }
 
-// ============================================================================
-// ANOMALIES COMPONENT
-// ============================================================================
-
 const Anomalies = ({ command }) => {
-  const { selectedSpace, selectedRoom } = useTabContext();
-  const { sendToDashboard, sendToDashboardById, isElementInDashboard, highlightDashboard } = useCommandMessaging();
+  const { sendToDashboard, sendToDashboardById, getDashboardElements, highlightDashboard } = useCommandMessaging();
+  const { spaceId, roomId, mcpServerId } = useMemo(() => getTargetFromCommand(command), [command]);
 
   const [contexts, setContexts] = useState([]);
   const [anomalyRates, setAnomalyRates] = useState(new Map());
@@ -443,22 +463,27 @@ const Anomalies = ({ command }) => {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [filterText, setFilterText] = useState('');
   const [debouncedFilterText, setDebouncedFilterText] = useState('');
-  const [sentFeedback, setSentFeedback] = useState(null); // Track recently sent metric for feedback
-
-  // Dashboard picker state
-  const [dashboardPicker, setDashboardPicker] = useState(null); // { dashboards, config, position }
+  const [sentFeedback, setSentFeedback] = useState(null);
+  const [dashboardPicker, setDashboardPicker] = useState(null);
 
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const filterTimeoutRef = useRef(null);
   const filterInputRef = useRef(null);
 
-  const sortedContexts = useMemo(() => {
-    return [...contexts].sort((a, b) => a.name.localeCompare(b.name));
-  }, [contexts]);
+  const dashboardContexts = useMemo(() => {
+    const elements = getDashboardElements();
+    return new Set(
+      elements
+        .map((element) => element?.config?.context)
+        .filter((context) => typeof context === 'string' && context.trim() !== '')
+    );
+  }, [getDashboardElements, sentFeedback, selectedGroup]);
+
+  const sortedContexts = useMemo(() => [...contexts].sort((a, b) => a.name.localeCompare(b.name)), [contexts]);
 
   const hilbertConfig = useMemo(() => {
-    const metricNames = sortedContexts.map(c => c.name);
+    const metricNames = sortedContexts.map((context) => context.name);
     return calculateHilbertConfig(metricNames);
   }, [sortedContexts]);
 
@@ -478,7 +503,7 @@ const Anomalies = ({ command }) => {
       const originalMetrics = groupedMetrics.get(metricName) || [metricName];
       const cellCount = cellAllocations.get(metricName) || 1;
 
-      for (let c = 0; c < cellCount && hilbertIndex < hilbertPoints.length; c++) {
+      for (let count = 0; count < cellCount && hilbertIndex < hilbertPoints.length; count += 1) {
         const [hx, hy] = hilbertPoints[hilbertIndex];
 
         cells.push({
@@ -491,7 +516,7 @@ const Anomalies = ({ command }) => {
           height: cellHeight,
         });
 
-        hilbertIndex++;
+        hilbertIndex += 1;
       }
     }
 
@@ -504,10 +529,10 @@ const Anomalies = ({ command }) => {
     }
 
     const { groupedMetrics, cellAllocations } = hilbertConfig;
-    const visualGroups = createVisualGroups(groupedMetrics, cellAllocations);
-    const groupBorders = calculateGroupBorders(allCells, visualGroups);
+    const groups = createVisualGroups(groupedMetrics, cellAllocations);
+    const borders = calculateGroupBorders(allCells, groups);
 
-    return { groupBorders, visualGroups };
+    return { groupBorders: borders, visualGroups: groups };
   }, [allCells, hilbertConfig]);
 
   const groupLabels = useMemo(() => {
@@ -516,7 +541,7 @@ const Anomalies = ({ command }) => {
     }
 
     const metricToCells = new Map();
-    allCells.forEach(cell => {
+    allCells.forEach((cell) => {
       if (!metricToCells.has(cell.name)) {
         metricToCells.set(cell.name, []);
       }
@@ -535,7 +560,10 @@ const Anomalies = ({ command }) => {
 
       if (groupCells.length === 0) return;
 
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
       for (const cell of groupCells) {
         minX = Math.min(minX, cell.x);
         minY = Math.min(minY, cell.y);
@@ -543,14 +571,10 @@ const Anomalies = ({ command }) => {
         maxY = Math.max(maxY, cell.y + cell.height);
       }
 
-      const cx = (minX + maxX) / 2;
-      const cy = (minY + maxY) / 2;
-
       labels.push({
         text: groupKey,
-        x: cx,
-        y: cy,
-        count: groupCells.length
+        x: (minX + maxX) / 2,
+        y: (minY + maxY) / 2,
       });
     });
 
@@ -567,11 +591,11 @@ const Anomalies = ({ command }) => {
     const { groupedMetrics } = hilbertConfig;
 
     visualGroups.forEach((processedMetrics) => {
-      processedMetrics.forEach(metric => {
+      processedMetrics.forEach((metric) => {
         const originals = groupedMetrics.get(metric);
-        const metricsToSearch = (originals && originals.length > 0) ? originals : [metric];
+        const metricsToSearch = originals && originals.length > 0 ? originals : [metric];
 
-        metricsToSearch.forEach(original => {
+        metricsToSearch.forEach((original) => {
           if (original.toLowerCase().includes(lowerFilter)) {
             matchingContexts.push(original);
           }
@@ -591,7 +615,7 @@ const Anomalies = ({ command }) => {
     });
 
     return matchingContexts;
-  }, [debouncedFilterText, visualGroups, anomalyRates, hilbertConfig]);
+  }, [anomalyRates, debouncedFilterText, hilbertConfig, visualGroups]);
 
   const sortedGroupMetrics = useMemo(() => {
     if (!selectedGroup || selectedGroup === 'filter-results') {
@@ -615,7 +639,7 @@ const Anomalies = ({ command }) => {
       }
     }
 
-    const sorted = expandedMetrics.sort((a, b) => {
+    return expandedMetrics.sort((a, b) => {
       const severityA = getSeverityLevel(anomalyRates.get(a));
       const severityB = getSeverityLevel(anomalyRates.get(b));
 
@@ -625,11 +649,120 @@ const Anomalies = ({ command }) => {
 
       return a.localeCompare(b);
     });
+  }, [anomalyRates, hilbertConfig, selectedGroup, visualGroups]);
 
-    return sorted;
-  }, [selectedGroup, visualGroups, anomalyRates, hilbertConfig]);
+  const getGroupForCell = useCallback((cell) => {
+    for (const [groupKey, metrics] of visualGroups.entries()) {
+      if (metrics.includes(cell.name)) {
+        return groupKey;
+      }
+    }
+    return null;
+  }, [visualGroups]);
 
-  // Canvas rendering effect
+  const fetchData = useCallback(async () => {
+    if (!spaceId || !roomId) {
+      setError('Anomalies target not configured. Provide spaceId and roomId.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const now = Math.floor(Date.now() / 1000);
+      const fifteenMinutesAgo = now - (15 * 60);
+
+      const [contextsResponse, anomalyResponse] = await Promise.all([
+        getContexts(spaceId, roomId, {
+          window: {
+            after: fifteenMinutesAgo,
+            before: now,
+          },
+        }),
+        getData(spaceId, roomId, {
+          scope: {
+            contexts: ['anomaly_detection.context_anomaly_rate'],
+            nodes: [],
+          },
+          aggregations: {
+            metrics: [
+              {
+                group_by: ['dimension'],
+                aggregation: 'sum',
+              },
+            ],
+            time: {
+              time_group: 'average',
+              time_resampling: 0,
+            },
+          },
+          window: {
+            after: fifteenMinutesAgo,
+            before: now,
+            points: 2,
+          },
+        }).catch((err) => {
+          console.warn('Failed to fetch anomaly data:', err);
+          return null;
+        }),
+      ]);
+
+      if (contextsResponse?.contexts) {
+        const contextList = Object.entries(contextsResponse.contexts).map(([name, data]) => ({
+          name,
+          ...data,
+        }));
+        setContexts(contextList);
+      } else {
+        setContexts([]);
+      }
+
+      if (anomalyResponse?.result) {
+        const { labels, data } = anomalyResponse.result;
+        const rates = new Map();
+
+        if (Array.isArray(data) && data.length > 0 && Array.isArray(labels) && labels.length > 0) {
+          const firstRow = data[0];
+
+          for (let i = 1; i < labels.length; i += 1) {
+            const contextName = labels[i];
+            const valueArray = firstRow[i];
+
+            if (Array.isArray(valueArray) && valueArray.length > 0) {
+              rates.set(contextName, valueArray[0]);
+            }
+          }
+        }
+
+        setAnomalyRates(rates);
+      } else {
+        setAnomalyRates(new Map());
+      }
+    } catch (err) {
+      console.error('Error fetching anomalies:', err);
+      setError(err.message || 'Failed to fetch metrics');
+    } finally {
+      setLoading(false);
+    }
+  }, [roomId, spaceId]);
+
+  useCommandRegistration(
+    command?.id,
+    () => ({
+      type: 'anomalies',
+      getTarget: () => ({ spaceId, roomId, mcpServerId }),
+      getItems: () => Array.from(anomalyRates.entries()).map(([context, anomalyRate]) => ({ context, anomalyRate })),
+      refresh: fetchData,
+    }),
+    [anomalyRates, command?.id, fetchData, mcpServerId, roomId, spaceId]
+  );
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || allCells.length === 0) return;
@@ -647,13 +780,13 @@ const Anomalies = ({ command }) => {
 
     const hoveredGroupMetrics = hoveredGroup ? visualGroups.get(hoveredGroup) : null;
 
-    allCells.forEach(cell => {
+    allCells.forEach((cell) => {
       let anomalyRate = null;
 
       if (cell.isGrouped) {
         const rates = cell.originalMetrics
-          .map(metric => anomalyRates.get(metric))
-          .filter(rate => rate !== undefined && rate !== null);
+          .map((metric) => anomalyRates.get(metric))
+          .filter((rate) => rate !== undefined && rate !== null);
 
         if (rates.length > 0) {
           anomalyRate = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
@@ -669,7 +802,7 @@ const Anomalies = ({ command }) => {
     ctx.strokeStyle = '#e5e5e5';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    groupBorders.forEach(border => {
+    groupBorders.forEach((border) => {
       ctx.moveTo(border.x1, border.y1);
       ctx.lineTo(border.x2, border.y2);
     });
@@ -681,13 +814,13 @@ const Anomalies = ({ command }) => {
       ctx.beginPath();
 
       const gridMap = new Map();
-      allCells.forEach(cell => {
+      allCells.forEach((cell) => {
         const gridX = Math.round(cell.x / cell.width);
         const gridY = Math.round(cell.y / cell.height);
         gridMap.set(`${gridX},${gridY}`, cell);
       });
 
-      allCells.forEach(cell => {
+      allCells.forEach((cell) => {
         if (!hoveredGroupMetrics.includes(cell.name)) return;
 
         const gridX = Math.round(cell.x / cell.width);
@@ -724,12 +857,12 @@ const Anomalies = ({ command }) => {
     ctx.textBaseline = 'middle';
     const fontSize = 12;
 
-    groupLabels.forEach(label => {
+    groupLabels.forEach((label) => {
       const isBold = hoveredGroup === label.text;
       ctx.font = `${isBold ? '700' : '500'} ${fontSize}px sans-serif`;
       ctx.fillText(label.text, label.x, label.y);
     });
-  }, [allCells, groupBorders, groupLabels, dimensions, visualGroups, hoveredGroup, anomalyRates]);
+  }, [allCells, anomalyRates, dimensions, groupBorders, groupLabels, hoveredGroup, visualGroups]);
 
   const handleMouseMove = useCallback((e) => {
     const canvas = canvasRef.current;
@@ -739,24 +872,26 @@ const Anomalies = ({ command }) => {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const cell = allCells.find(c =>
-      x >= c.x && x <= c.x + c.width &&
-      y >= c.y && y <= c.y + c.height
-    );
+    const cell = allCells.find((candidate) => (
+      x >= candidate.x
+      && x <= candidate.x + candidate.width
+      && y >= candidate.y
+      && y <= candidate.y + candidate.height
+    ));
 
     if (cell) {
-      const groupKey = getGroupForCell(cell);
-      setHoveredGroup(groupKey);
+      setHoveredGroup(getGroupForCell(cell));
       canvas.style.cursor = 'pointer';
     } else {
       setHoveredGroup(null);
       canvas.style.cursor = 'default';
     }
-  }, [allCells]);
+  }, [allCells, getGroupForCell]);
 
   const handleMouseLeave = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (canvas) canvas.style.cursor = 'default';
+    if (canvasRef.current) {
+      canvasRef.current.style.cursor = 'default';
+    }
     setHoveredGroup(null);
   }, []);
 
@@ -768,16 +903,17 @@ const Anomalies = ({ command }) => {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const cell = allCells.find(c =>
-      x >= c.x && x <= c.x + c.width &&
-      y >= c.y && y <= c.y + c.height
-    );
+    const cell = allCells.find((candidate) => (
+      x >= candidate.x
+      && x <= candidate.x + candidate.width
+      && y >= candidate.y
+      && y <= candidate.y + candidate.height
+    ));
 
     if (cell) {
-      const groupKey = getGroupForCell(cell);
-      setSelectedGroup(groupKey);
+      setSelectedGroup(getGroupForCell(cell));
     }
-  }, [allCells]);
+  }, [allCells, getGroupForCell]);
 
   const handleBackdropClick = useCallback((e) => {
     if (e.target === e.currentTarget) {
@@ -813,20 +949,12 @@ const Anomalies = ({ command }) => {
     }
   }, []);
 
-  const getGroupForCell = useCallback((cell) => {
-    for (const [groupKey, metrics] of visualGroups.entries()) {
-      if (metrics.includes(cell.name)) {
-        return groupKey;
-      }
-    }
-    return null;
-  }, [visualGroups]);
-
-  // Send metric to dashboard
   const handleMetricClick = useCallback((context, event) => {
-    // Create chart config
     const config = {
-      context: context,
+      context,
+      spaceId,
+      roomId,
+      ...(mcpServerId ? { mcpServerId } : {}),
     };
 
     const result = sendToDashboard(config);
@@ -835,17 +963,15 @@ const Anomalies = ({ command }) => {
       setSentFeedback(context);
       setTimeout(() => setSentFeedback(null), 1500);
     } else if (result.needsSelection) {
-      // Multiple dashboards - show picker at click position
       setDashboardPicker({
         dashboards: result.dashboards,
         config: result.config,
-        context: context, // Store context for feedback
+        context,
         position: event ? { top: event.clientY, left: event.clientX } : null,
       });
     }
-  }, [sendToDashboard]);
+  }, [mcpServerId, roomId, sendToDashboard, spaceId]);
 
-  // Handle dashboard selection from picker
   const handleDashboardSelect = useCallback((dashboardId) => {
     if (!dashboardPicker) return;
 
@@ -857,14 +983,12 @@ const Anomalies = ({ command }) => {
     setDashboardPicker(null);
   }, [dashboardPicker, sendToDashboardById]);
 
-  // Cancel dashboard picker
   const handleDashboardPickerCancel = useCallback(() => {
     setDashboardPicker(null);
   }, []);
 
-  // Handle container resizing
   useEffect(() => {
-    if (!containerRef.current || contexts.length === 0) return;
+    if (!containerRef.current || contexts.length === 0) return undefined;
 
     const updateDimensions = () => {
       const container = containerRef.current;
@@ -890,16 +1014,12 @@ const Anomalies = ({ command }) => {
     };
   }, [contexts]);
 
-  // Cleanup filter timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (filterTimeoutRef.current) {
-        clearTimeout(filterTimeoutRef.current);
-      }
-    };
+  useEffect(() => () => {
+    if (filterTimeoutRef.current) {
+      clearTimeout(filterTimeoutRef.current);
+    }
   }, []);
 
-  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && selectedGroup) {
@@ -925,101 +1045,6 @@ const Anomalies = ({ command }) => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [selectedGroup]);
-
-  // Fetch contexts and anomaly data
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!selectedSpace || !selectedRoom) {
-        setError('Please select a space and room');
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        setError(null);
-
-        const now = Math.floor(Date.now() / 1000);
-        const fifteenMinutesAgo = now - (15 * 60);
-
-        // Token is handled by Rust backend
-        const [contextsResponse, anomalyResponse] = await Promise.all([
-          getContexts(selectedSpace.id, selectedRoom.id, {
-            window: {
-              after: fifteenMinutesAgo,
-              before: now,
-            },
-          }),
-          getData(selectedSpace.id, selectedRoom.id, {
-            scope: {
-              contexts: ['anomaly_detection.context_anomaly_rate'],
-              nodes: [],
-            },
-            aggregations: {
-              metrics: [
-                {
-                  group_by: ['dimension'],
-                  aggregation: 'sum',
-                },
-              ],
-              time: {
-                time_group: 'average',
-                time_resampling: 0,
-              },
-            },
-            window: {
-              after: fifteenMinutesAgo,
-              before: now,
-              points: 2,
-            },
-          }).catch(err => {
-            console.warn('Failed to fetch anomaly data:', err);
-            return null;
-          }),
-        ]);
-
-        if (contextsResponse && contextsResponse.contexts) {
-          const contextList = Object.entries(contextsResponse.contexts).map(([name, data]) => ({
-            name,
-            ...data,
-          }));
-          setContexts(contextList);
-        } else {
-          setContexts([]);
-        }
-
-        if (anomalyResponse && anomalyResponse.result) {
-          const { labels, data } = anomalyResponse.result;
-          const rates = new Map();
-
-          if (data && data.length > 0 && labels && labels.length > 0) {
-            const firstRow = data[0];
-
-            for (let i = 1; i < labels.length; i++) {
-              const contextName = labels[i];
-              const valueArray = firstRow[i];
-
-              if (Array.isArray(valueArray) && valueArray.length > 0) {
-                const anomalyRate = valueArray[0];
-                rates.set(contextName, anomalyRate);
-              }
-            }
-          }
-
-          setAnomalyRates(rates);
-        } else {
-          setAnomalyRates(new Map());
-        }
-      } catch (err) {
-        console.error('Error fetching data:', err);
-        setError(err.message || 'Failed to fetch metrics');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [selectedSpace, selectedRoom]);
 
   if (loading) {
     return (
@@ -1057,9 +1082,34 @@ const Anomalies = ({ command }) => {
   const waste = ((totalCells - cellsUsed) / totalCells) * 100;
   const totalOriginalMetrics = Array.from(groupedMetrics.values()).reduce((sum, arr) => sum + arr.length, 0);
 
+  const renderContextList = (list) => list?.map((context) => {
+    const anomalyRate = anomalyRates.get(context);
+    const color = getColorForAnomalyRate(anomalyRate);
+    const inDashboard = dashboardContexts.has(context);
+    const justSent = sentFeedback === context;
+    return (
+      <div
+        key={context}
+        className={`${styles.contextItem} ${inDashboard ? styles.inDashboard : ''}`}
+        onClick={(e) => handleMetricClick(context, e)}
+      >
+        <div className={styles.contextBand} style={{ backgroundColor: color }} />
+        <div className={styles.contextName}>{context}</div>
+        <div className={styles.statusIndicator}>
+          {justSent ? (
+            <span className={styles.sentBadge}>Sent!</span>
+          ) : inDashboard ? (
+            <span className={styles.inDashboardBadge}>In Dashboard</span>
+          ) : (
+            <span className={styles.addHint}>+ Add</span>
+          )}
+        </div>
+      </div>
+    );
+  });
+
   return (
     <div className={styles.metricsContainer} ref={containerRef}>
-      {/* Header toolbar */}
       <div className={styles.headerBar}>
         <div className={styles.toolbarLeft}>
           <span className={styles.headerTitle}>Anomalies</span>
@@ -1082,12 +1132,8 @@ const Anomalies = ({ command }) => {
         </div>
       </div>
 
-      {/* Info banner */}
       <div className={`${styles.infoBanner} ${waste <= 5 ? styles.infoBannerSuccess : styles.infoBannerInfo}`}>
-        Grid: {gridSize}×{gridSize} •
-        Cells: {cellsUsed}/{totalCells} •
-        Groups: {processedMetrics.length} •
-        Metrics: {totalOriginalMetrics}
+        Grid: {gridSize}×{gridSize} • Cells: {cellsUsed}/{totalCells} • Groups: {processedMetrics.length} • Metrics: {totalOriginalMetrics}
       </div>
 
       {dimensions.width > 0 && dimensions.height > 0 && (
@@ -1100,7 +1146,6 @@ const Anomalies = ({ command }) => {
         />
       )}
 
-      {/* Context list panel with backdrop */}
       {selectedGroup && (
         <>
           <div className={styles.backdrop} onClick={handleBackdropClick} />
@@ -1109,76 +1154,26 @@ const Anomalies = ({ command }) => {
               <h3 className={styles.contextPanelTitle}>
                 {selectedGroup === 'filter-results'
                   ? `Filter: "${debouncedFilterText}" (${filteredContexts?.length || 0} results)`
-                  : selectedGroup
-                }
+                  : selectedGroup}
               </h3>
             </div>
             <div className={styles.contextList}>
               {selectedGroup === 'filter-results' ? (
                 filteredContexts && filteredContexts.length > 0 ? (
-                  filteredContexts.map((context) => {
-                    const anomalyRate = anomalyRates.get(context);
-                    const color = getColorForAnomalyRate(anomalyRate);
-                    const inDashboard = isElementInDashboard(`context-chart-${context}`);
-                    const justSent = sentFeedback === context;
-                    return (
-                      <div
-                        key={context}
-                        className={`${styles.contextItem} ${inDashboard ? styles.inDashboard : ''}`}
-                        onClick={(e) => handleMetricClick(context, e)}
-                      >
-                        <div className={styles.contextBand} style={{ backgroundColor: color }} />
-                        <div className={styles.contextName}>{context}</div>
-                        <div className={styles.statusIndicator}>
-                          {justSent ? (
-                            <span className={styles.sentBadge}>Sent!</span>
-                          ) : inDashboard ? (
-                            <span className={styles.inDashboardBadge}>In Dashboard</span>
-                          ) : (
-                            <span className={styles.addHint}>+ Add</span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
+                  renderContextList(filteredContexts)
                 ) : debouncedFilterText ? (
                   <div className={styles.noResults}>No matching contexts found</div>
                 ) : (
                   <div className={styles.noResults}>Searching...</div>
                 )
               ) : (
-                sortedGroupMetrics?.map((context) => {
-                  const anomalyRate = anomalyRates.get(context);
-                  const color = getColorForAnomalyRate(anomalyRate);
-                  const inDashboard = isElementInDashboard(`context-chart-${context}`);
-                  const justSent = sentFeedback === context;
-                  return (
-                    <div
-                      key={context}
-                      className={`${styles.contextItem} ${inDashboard ? styles.inDashboard : ''}`}
-                      onClick={(e) => handleMetricClick(context, e)}
-                    >
-                      <div className={styles.contextBand} style={{ backgroundColor: color }} />
-                      <div className={styles.contextName}>{context}</div>
-                      <div className={styles.statusIndicator}>
-                        {justSent ? (
-                          <span className={styles.sentBadge}>Sent!</span>
-                        ) : inDashboard ? (
-                          <span className={styles.inDashboardBadge}>In Dashboard</span>
-                        ) : (
-                          <span className={styles.addHint}>+ Add</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
+                renderContextList(sortedGroupMetrics)
               )}
             </div>
           </div>
         </>
       )}
 
-      {/* Dashboard picker for multiple dashboards */}
       {dashboardPicker && (
         <DashboardPicker
           dashboards={dashboardPicker.dashboards}

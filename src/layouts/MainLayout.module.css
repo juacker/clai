@@ -16,29 +16,6 @@
   background: var(--color-bg-primary);
 }
 
-/* Desktop override: Remove padding */
-@media (min-width: 769px) and (pointer: fine) {
-  .mainLayout {
-    padding-top: 0;
-  }
-}
-
-.spaceRoomWrapper {
-  position: fixed;
-  z-index: 999;
-  transition: all 0.3s ease;
-
-  top: 16px;
-  left: 16px;
-}
-
-/* Hide SpaceRoomSelector on desktop */
-@media (min-width: 769px) {
-  .spaceRoomWrapper {
-    display: none;
-  }
-}
-
 /* Content Area - takes remaining flex space after TerminalEmulator */
 .contentArea {
   flex: 1;
@@ -69,13 +46,4 @@
   .contentArea {
     padding-left: 0;
   }
-}
-
-.loadingContainer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-  color: var(--color-text-secondary);
-  background: var(--color-bg-primary);
 }

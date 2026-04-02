@@ -7,7 +7,6 @@ pub mod agents;
 pub mod api;
 pub mod assistant;
 pub mod auth;
-pub mod autopilot;
 pub mod bridge;
 pub mod mcp_servers;
 pub mod provider;

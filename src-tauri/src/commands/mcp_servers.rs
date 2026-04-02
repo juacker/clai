@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::assistant::auth::McpSecretStorage;
-use crate::config::{McpServerAuth, McpServerConfig, McpServerTransport};
+use crate::config::{
+    McpServerAuth, McpServerConfig, McpServerIntegrationType, McpServerTransport,
+};
 use crate::AppState;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -11,6 +13,8 @@ pub struct CreateMcpServerRequest {
     pub name: String,
     pub enabled: bool,
     pub transport: McpServerTransport,
+    #[serde(default)]
+    pub integration_type: McpServerIntegrationType,
     #[serde(default)]
     pub auth: McpServerAuthRequest,
 }
@@ -22,6 +26,8 @@ pub struct UpdateMcpServerRequest {
     pub name: String,
     pub enabled: bool,
     pub transport: McpServerTransport,
+    #[serde(default)]
+    pub integration_type: McpServerIntegrationType,
     #[serde(default)]
     pub auth: McpServerAuthRequest,
 }
@@ -53,6 +59,7 @@ pub struct McpServerResponse {
     pub name: String,
     pub enabled: bool,
     pub transport: McpServerTransport,
+    pub integration_type: McpServerIntegrationType,
     pub auth: McpServerAuthResponse,
     pub created_at: String,
     pub updated_at: String,
@@ -65,6 +72,7 @@ impl McpServerResponse {
             name: server.name,
             enabled: server.enabled,
             transport: server.transport,
+            integration_type: server.integration_type,
             auth: match server.auth {
                 McpServerAuth::None => McpServerAuthResponse::None,
                 McpServerAuth::BearerToken { secret_ref } => McpServerAuthResponse::BearerToken {
@@ -121,6 +129,7 @@ pub async fn create_mcp_server(
 
         let mut server = McpServerConfig::new(request.name, request.transport);
         server.enabled = request.enabled;
+        server.integration_type = request.integration_type;
         server.auth = build_auth_for_new_server(&server.id, &request.auth)?;
         config_manager
             .add_mcp_server(server.clone())
@@ -158,6 +167,7 @@ pub async fn update_mcp_server(
                 server.name = request.name.clone();
                 server.enabled = request.enabled;
                 server.transport = request.transport.clone();
+                server.integration_type = request.integration_type.clone();
                 server.auth = next_auth.clone();
             })
             .map_err(|e| format!("Failed to update MCP server: {}", e))?;

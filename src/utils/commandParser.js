@@ -1,8 +1,8 @@
 /**
- * Command Parser for Netdata AI CLI
+ * Command parser for the CLAI terminal interface.
  *
  * Lightweight command parser that converts command strings into structured objects.
- * Philosophy: Parse, don't validate. Let the registry handle command existence.
+ * Philosophy: parse, don't validate. Let the registry handle command existence.
  */
 
 import { COMMAND_STATUS } from './commandTypes';
@@ -162,4 +162,3 @@ export const formatCommand = (command) => {
 export const isLayoutCommand = (command) => {
   return ['tab', 'tile', 'reset-all'].includes(command.type);
 };
-

@@ -72,6 +72,12 @@ pub struct ToolRequest {
     pub space_id: String,
     /// Netdata room ID.
     pub room_id: String,
+    /// Preferred tab ID for this tool execution, if known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tab_id: Option<String>,
+    /// MCP servers enabled for this execution context.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_server_ids: Vec<String>,
     /// Tool name (e.g., "canvas.addChart", "tabs.splitTile").
     pub tool: String,
     /// Tool parameters as JSON.
@@ -285,6 +291,8 @@ impl JsBridge {
         agent_name: &str,
         space_id: &str,
         room_id: &str,
+        preferred_tab_id: Option<&str>,
+        mcp_server_ids: &[String],
     ) -> Result<String, BridgeError> {
         let result = self
             .call_tool(
@@ -294,6 +302,9 @@ impl JsBridge {
                 "agent.setup",
                 serde_json::json!({
                     "agentName": agent_name,
+                    "managedAgentTab": true,
+                    "tabId": preferred_tab_id,
+                    "mcpServerIds": mcp_server_ids,
                 }),
             )
             .await?;
@@ -391,6 +402,20 @@ impl JsBridge {
         tool: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, BridgeError> {
+        self.call_tool_with_context(agent_id, space_id, room_id, None, &[], tool, params)
+            .await
+    }
+
+    pub async fn call_tool_with_context(
+        &self,
+        agent_id: &str,
+        space_id: &str,
+        room_id: &str,
+        tab_id: Option<&str>,
+        mcp_server_ids: &[String],
+        tool: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, BridgeError> {
         // Generate unique request ID
         let request_id = uuid::Uuid::new_v4().to_string();
 
@@ -409,6 +434,8 @@ impl JsBridge {
             agent_id: agent_id.to_string(),
             space_id: space_id.to_string(),
             room_id: room_id.to_string(),
+            tab_id: tab_id.map(str::to_string),
+            mcp_server_ids: mcp_server_ids.to_vec(),
             tool: tool.to_string(),
             params,
         };

@@ -11,9 +11,9 @@
  */
 
 import Echo from '../components/Echo';
-import Anomalies from '../components/Anomalies/Anomalies';
 import Dashboard from '../components/Dashboard/Dashboard';
 import Canvas from '../components/Canvas/Canvas';
+import Anomalies from '../components/Anomalies/Anomalies';
 import Help from '../components/Help/Help';
 
 /**
@@ -21,8 +21,8 @@ import Help from '../components/Help/Help';
  * Maps command names to their React components
  */
 export const COMMAND_COMPONENTS = {
-  echo: Echo,
   anomalies: Anomalies,
+  echo: Echo,
   dashboard: Dashboard,
   canvas: Canvas,
   help: Help,
@@ -53,4 +53,3 @@ export const getCommandComponent = (commandName) => {
 export const getSupportedCommands = () => {
   return Object.keys(COMMAND_COMPONENTS);
 };
-

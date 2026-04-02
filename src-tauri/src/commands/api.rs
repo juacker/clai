@@ -1,6 +1,7 @@
 //! API-related Tauri commands.
 //!
-//! These commands expose the Netdata Cloud API to the JavaScript frontend.
+//! These commands expose the Netdata API client used by legacy chart/anomalies
+//! surfaces to the JavaScript frontend.
 //! Each command creates a short-lived `NetdataApi` instance with the current
 //! token and base URL, then makes the API call.
 //!
@@ -45,98 +46,6 @@ async fn create_api(state: &State<'_, AppState>) -> Result<NetdataApi, ApiError>
     // In production, you might want to store the client in AppState.
     // However, reqwest::Client is cheap to clone if we do add it.
     Ok(NetdataApi::new(create_client(), base_url, token))
-}
-
-/// Gets information about the authenticated user.
-///
-/// # JavaScript Usage
-///
-/// ```javascript
-/// import { invoke } from '@tauri-apps/api/core';
-///
-/// const userInfo = await invoke('api_get_user_info');
-/// console.log(userInfo.name, userInfo.email);
-/// ```
-#[tauri::command]
-pub async fn api_get_user_info(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let api = create_api(&state).await.map_err(|e| e.to_string())?;
-
-    api.get_user_info()
-        .await
-        .map(|v| serde_json::to_value(v).unwrap())
-        .map_err(|e| e.to_string())
-}
-
-/// Gets all spaces the user has access to.
-///
-/// # JavaScript Usage
-///
-/// ```javascript
-/// const spaces = await invoke('api_get_spaces');
-/// spaces.forEach(space => console.log(space.name));
-/// ```
-#[tauri::command]
-pub async fn api_get_spaces(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let api = create_api(&state).await.map_err(|e| e.to_string())?;
-
-    api.get_spaces()
-        .await
-        .map(|v| serde_json::to_value(v).unwrap())
-        .map_err(|e| e.to_string())
-}
-
-/// Gets all rooms in a space.
-///
-/// # Arguments
-///
-/// * `space_id` - The ID of the space
-///
-/// # JavaScript Usage
-///
-/// ```javascript
-/// const rooms = await invoke('api_get_rooms', { spaceId: 'abc123' });
-/// ```
-///
-/// # Rust Learning: Naming Convention
-///
-/// Tauri automatically converts Rust's `snake_case` parameters to JavaScript's
-/// `camelCase`. So `space_id` in Rust becomes `spaceId` in JavaScript.
-#[tauri::command]
-pub async fn api_get_rooms(
-    space_id: String,
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
-    let api = create_api(&state).await.map_err(|e| e.to_string())?;
-
-    api.get_rooms(&space_id)
-        .await
-        .map(|v| serde_json::to_value(v).unwrap())
-        .map_err(|e| e.to_string())
-}
-
-/// Gets the billing plan for a space, including AI credits.
-///
-/// # Arguments
-///
-/// * `space_id` - The ID of the space
-///
-/// # JavaScript Usage
-///
-/// ```javascript
-/// const plan = await invoke('api_get_billing_plan', { spaceId: 'abc123' });
-/// const credits = plan.ai?.total_available_microcredits;
-/// ```
-#[tauri::command]
-pub async fn api_get_billing_plan(
-    space_id: String,
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
-    let api = create_api(&state).await.map_err(|e| e.to_string())?;
-
-    api.get_billing_plan(&space_id)
-        .await
-        .map(|v| serde_json::to_value(v).unwrap())
-        .map_err(|e| e.to_string())
 }
 
 /// Gets data with complex aggregation and filtering options.

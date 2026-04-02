@@ -2,19 +2,12 @@
 //!
 //! This module handles loading and saving the application configuration
 //! to a JSON file in the platform-specific config directory.
-//!
-//! # Config File Locations
-//!
-//! - Linux: `~/.config/clai/config.json`
-//! - macOS: `~/Library/Application Support/clai/config.json`
-//! - Windows: `%APPDATA%/clai/config.json`
 
 pub mod types;
 
 pub use types::{
-    AgentConfig, AgentInfo, AiProvider, AutopilotStatus, ClaiConfig, McpServerAuth,
-    McpServerConfig, McpServerTransport, ProviderInfo, SpaceAutopilot, SpaceConfig,
-    SpaceRoomPair,
+    AgentConfig, AiProvider, ClaiConfig, McpServerAuth, McpServerConfig,
+    McpServerIntegrationType, McpServerTransport, ProviderInfo,
 };
 
 use std::fs;
@@ -28,14 +21,7 @@ const CONFIG_FILE_NAME: &str = "config.json";
 /// Application identifier for config directory.
 const APP_IDENTIFIER: &str = "clai";
 
-// =============================================================================
-// Config Manager
-// =============================================================================
-
 /// Manages loading and saving the application configuration.
-///
-/// The config is cached in memory and written to disk on changes.
-/// Thread-safe via internal Mutex.
 pub struct ConfigManager {
     /// Cached configuration (protected by mutex).
     config: Mutex<ClaiConfig>,
@@ -47,11 +33,10 @@ pub struct ConfigManager {
 impl ConfigManager {
     /// Creates a new ConfigManager, loading existing config or creating default.
     ///
-    /// If no agents exist in the config, creates the default agent.
+    /// If no automations exist in the config, creates the default one.
     pub fn new() -> Result<Self, ConfigError> {
         let config_path = Self::get_config_path()?;
 
-        // Ensure config directory exists
         if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent).map_err(|e| ConfigError::Io {
                 operation: "create config directory".to_string(),
@@ -59,14 +44,12 @@ impl ConfigManager {
             })?;
         }
 
-        // Load existing config or create default
         let mut config = if config_path.exists() {
             Self::load_from_file(&config_path)?
         } else {
             ClaiConfig::default()
         };
 
-        // Create default agent if no agents exist
         let needs_save = if config.agents.is_empty() {
             config.agents.push(AgentConfig::default_agent());
             true
@@ -79,7 +62,6 @@ impl ConfigManager {
             config_path,
         };
 
-        // Save if we added the default agent
         if needs_save {
             manager.save()?;
         }
@@ -90,7 +72,6 @@ impl ConfigManager {
     /// Gets the platform-specific config file path.
     fn get_config_path() -> Result<PathBuf, ConfigError> {
         let config_dir = dirs::config_dir().ok_or(ConfigError::NoConfigDir)?;
-
         Ok(config_dir.join(APP_IDENTIFIER).join(CONFIG_FILE_NAME))
     }
 
@@ -105,8 +86,6 @@ impl ConfigManager {
     }
 
     /// Saves the current config to disk.
-    ///
-    /// Uses atomic write (write to temp file, then rename) to prevent corruption.
     pub fn save(&self) -> Result<(), ConfigError> {
         let config = self.config.lock().unwrap();
         self.save_to_file(&config)
@@ -117,9 +96,7 @@ impl ConfigManager {
         let json = serde_json::to_string_pretty(config)
             .map_err(|e| ConfigError::Serialize { source: e })?;
 
-        // Write to temp file first
         let temp_path = self.config_path.with_extension("json.tmp");
-
         let mut file = fs::File::create(&temp_path).map_err(|e| ConfigError::Io {
             operation: "create temp config file".to_string(),
             source: e,
@@ -136,7 +113,6 @@ impl ConfigManager {
             source: e,
         })?;
 
-        // Atomic rename
         fs::rename(&temp_path, &self.config_path).map_err(|e| ConfigError::Io {
             operation: "rename temp config file".to_string(),
             source: e,
@@ -144,10 +120,6 @@ impl ConfigManager {
 
         Ok(())
     }
-
-    // =========================================================================
-    // Config Access
-    // =========================================================================
 
     /// Gets a clone of the current config.
     pub fn get(&self) -> ClaiConfig {
@@ -163,61 +135,6 @@ impl ConfigManager {
         f(&mut config);
         self.save_to_file(&config)
     }
-
-    // =========================================================================
-    // Space Config Helpers
-    // =========================================================================
-
-    /// Gets config for a space.
-    pub fn get_space_config(&self, space_id: &str) -> SpaceConfig {
-        let config = self.config.lock().unwrap();
-        config.spaces.get(space_id).cloned().unwrap_or_default()
-    }
-
-    // =========================================================================
-    // Auto-pilot Helpers
-    // =========================================================================
-
-    /// Gets auto-pilot config for a space.
-    pub fn get_space_autopilot(&self, space_id: &str) -> SpaceAutopilot {
-        self.get_space_config(space_id).autopilot
-    }
-
-    /// Checks if auto-pilot is enabled for a specific room.
-    pub fn is_autopilot_enabled(&self, space_id: &str, room_id: &str) -> bool {
-        self.get_space_autopilot(space_id).is_room_enabled(room_id)
-    }
-
-    /// Enables auto-pilot for a room and saves config.
-    pub fn enable_autopilot(&self, space_id: &str, room_id: &str) -> Result<(), ConfigError> {
-        self.update(|config| {
-            let space_config = config.spaces.entry(space_id.to_string()).or_default();
-            space_config.autopilot.enable_room(room_id);
-        })
-    }
-
-    /// Disables auto-pilot for a room and saves config.
-    pub fn disable_autopilot(&self, space_id: &str, room_id: &str) -> Result<(), ConfigError> {
-        self.update(|config| {
-            if let Some(space_config) = config.spaces.get_mut(space_id) {
-                space_config.autopilot.disable_room(room_id);
-
-                // Clean up empty space configs (no autopilot rooms)
-                if !space_config.autopilot.has_any_enabled() {
-                    config.spaces.remove(space_id);
-                }
-            }
-        })
-    }
-
-    /// Gets all rooms with auto-pilot enabled for a space.
-    pub fn get_enabled_rooms(&self, space_id: &str) -> Vec<String> {
-        self.get_space_autopilot(space_id).enabled_rooms
-    }
-
-    // =========================================================================
-    // AI Provider Helpers
-    // =========================================================================
 
     /// Gets the current AI provider.
     pub fn get_ai_provider(&self) -> Option<AiProvider> {
@@ -255,10 +172,6 @@ impl ConfigManager {
         })
     }
 
-    // =========================================================================
-    // MCP Server Helpers
-    // =========================================================================
-
     /// Gets all configured MCP servers.
     pub fn get_mcp_servers(&self) -> Vec<McpServerConfig> {
         self.config.lock().unwrap().mcp_servers.clone()
@@ -295,7 +208,7 @@ impl ConfigManager {
         })
     }
 
-    /// Removes an MCP server and clears stale agent selections.
+    /// Removes an MCP server and clears stale automation selections.
     ///
     /// Returns true if the server was removed.
     pub fn remove_mcp_server(&self, id: &str) -> Result<bool, ConfigError> {
@@ -314,141 +227,66 @@ impl ConfigManager {
         Ok(removed)
     }
 
-    // =========================================================================
-    // Agent Helpers
-    // =========================================================================
-
-    /// Gets all agents.
+    /// Gets all automations.
     pub fn get_agents(&self) -> Vec<AgentConfig> {
         self.config.lock().unwrap().agents.clone()
     }
 
-    /// Gets an agent by ID.
+    /// Gets an automation by ID.
     pub fn get_agent(&self, id: &str) -> Option<AgentConfig> {
         self.config
             .lock()
             .unwrap()
             .agents
             .iter()
-            .find(|a| a.id == id)
+            .find(|agent| agent.id == id)
             .cloned()
     }
 
-    /// Adds a new agent and saves config.
+    /// Adds a new automation and saves config.
     pub fn add_agent(&self, agent: AgentConfig) -> Result<(), ConfigError> {
         self.update(|config| {
             config.agents.push(agent);
         })
     }
 
-    /// Updates an existing agent and saves config.
-    ///
-    /// Returns an error if the agent doesn't exist.
+    /// Updates an existing automation and saves config.
     pub fn update_agent<F>(&self, id: &str, updater: F) -> Result<(), ConfigError>
     where
         F: FnOnce(&mut AgentConfig),
     {
         self.update(|config| {
-            if let Some(agent) = config.agents.iter_mut().find(|a| a.id == id) {
+            if let Some(agent) = config.agents.iter_mut().find(|agent| agent.id == id) {
                 updater(agent);
                 agent.updated_at = chrono::Utc::now().to_rfc3339();
             }
         })
     }
 
-    /// Removes an agent by ID and saves config.
+    /// Removes an automation by ID and saves config.
     ///
-    /// Returns true if the agent was removed.
+    /// Returns true if the automation was removed.
     pub fn remove_agent(&self, id: &str) -> Result<bool, ConfigError> {
         let mut removed = false;
         self.update(|config| {
             let initial_len = config.agents.len();
-            config.agents.retain(|a| a.id != id);
+            config.agents.retain(|agent| agent.id != id);
             removed = config.agents.len() != initial_len;
         })?;
         Ok(removed)
     }
 
-    /// Enables an agent for a specific space/room and saves config.
-    pub fn enable_agent_for_room(
-        &self,
-        agent_id: &str,
-        space_id: &str,
-        room_id: &str,
-    ) -> Result<bool, ConfigError> {
-        let mut enabled = false;
-        self.update(|config| {
-            if let Some(agent) = config.agents.iter_mut().find(|a| a.id == agent_id) {
-                enabled = agent.enable_for(space_id, room_id);
-            }
-        })?;
-        Ok(enabled)
-    }
-
-    /// Enables or disables an agent globally and saves config.
+    /// Enables or disables an automation globally and saves config.
     pub fn set_agent_enabled(&self, agent_id: &str, enabled: bool) -> Result<bool, ConfigError> {
         let mut changed = false;
         self.update(|config| {
-            if let Some(agent) = config.agents.iter_mut().find(|a| a.id == agent_id) {
+            if let Some(agent) = config.agents.iter_mut().find(|agent| agent.id == agent_id) {
                 changed = agent.set_enabled(enabled);
             }
         })?;
         Ok(changed)
     }
-
-    /// Disables an agent for a specific space/room and saves config.
-    pub fn disable_agent_for_room(
-        &self,
-        agent_id: &str,
-        space_id: &str,
-        room_id: &str,
-    ) -> Result<bool, ConfigError> {
-        let mut disabled = false;
-        self.update(|config| {
-            if let Some(agent) = config.agents.iter_mut().find(|a| a.id == agent_id) {
-                disabled = agent.disable_for(space_id, room_id);
-            }
-        })?;
-        Ok(disabled)
-    }
-
-    /// Gets all agents enabled for a specific space/room.
-    pub fn get_agents_for_room(&self, space_id: &str, room_id: &str) -> Vec<AgentConfig> {
-        self.config
-            .lock()
-            .unwrap()
-            .agents
-            .iter()
-            .filter(|a| a.is_enabled_for(space_id, room_id))
-            .cloned()
-            .collect()
-    }
-
-    /// Checks if any agents are enabled for a specific space/room.
-    pub fn has_agents_enabled(&self, space_id: &str, room_id: &str) -> bool {
-        self.config
-            .lock()
-            .unwrap()
-            .agents
-            .iter()
-            .any(|a| a.is_enabled_for(space_id, room_id))
-    }
-
-    /// Counts agents enabled for a specific space/room.
-    pub fn count_agents_enabled(&self, space_id: &str, room_id: &str) -> usize {
-        self.config
-            .lock()
-            .unwrap()
-            .agents
-            .iter()
-            .filter(|a| a.is_enabled_for(space_id, room_id))
-            .count()
-    }
 }
-
-// =============================================================================
-// Errors
-// =============================================================================
 
 /// Errors that can occur during config operations.
 #[derive(Debug)]
@@ -495,16 +333,11 @@ impl std::error::Error for ConfigError {
     }
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// Helper to create a ConfigManager with a temp directory.
     fn create_test_manager() -> (ConfigManager, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("config.json");
@@ -521,50 +354,18 @@ mod tests {
     fn test_config_manager_save_load() {
         let (manager, _temp_dir) = create_test_manager();
 
-        // Enable autopilot
-        manager.enable_autopilot("space-1", "room-1").unwrap();
-        manager.enable_autopilot("space-1", "room-2").unwrap();
+        manager
+            .set_ai_provider(AiProvider::Claude { model: None })
+            .unwrap();
+        manager
+            .set_assistant_default_model(Some("gpt-5".to_string()))
+            .unwrap();
 
-        // Verify in memory
-        assert!(manager.is_autopilot_enabled("space-1", "room-1"));
-        assert!(manager.is_autopilot_enabled("space-1", "room-2"));
-        assert!(!manager.is_autopilot_enabled("space-1", "room-3"));
-
-        // Verify file was created
         assert!(manager.config_path.exists());
 
-        // Load from file
         let loaded = ConfigManager::load_from_file(&manager.config_path).unwrap();
-        assert!(loaded
-            .spaces
-            .get("space-1")
-            .unwrap()
-            .autopilot
-            .is_room_enabled("room-1"));
-    }
-
-    #[test]
-    fn test_disable_autopilot_cleans_up() {
-        let (manager, _temp_dir) = create_test_manager();
-
-        manager.enable_autopilot("space-1", "room-1").unwrap();
-        assert!(manager.get().spaces.contains_key("space-1"));
-
-        manager.disable_autopilot("space-1", "room-1").unwrap();
-        assert!(!manager.get().spaces.contains_key("space-1"));
-    }
-
-    #[test]
-    fn test_get_enabled_rooms() {
-        let (manager, _temp_dir) = create_test_manager();
-
-        manager.enable_autopilot("space-1", "room-a").unwrap();
-        manager.enable_autopilot("space-1", "room-b").unwrap();
-
-        let rooms = manager.get_enabled_rooms("space-1");
-        assert_eq!(rooms.len(), 2);
-        assert!(rooms.contains(&"room-a".to_string()));
-        assert!(rooms.contains(&"room-b".to_string()));
+        assert!(matches!(loaded.ai_provider, Some(AiProvider::Claude { .. })));
+        assert_eq!(loaded.assistant_default_model.as_deref(), Some("gpt-5"));
     }
 
     #[test]
