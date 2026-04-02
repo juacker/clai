@@ -1,5 +1,6 @@
 use futures::StreamExt;
 use tauri::AppHandle;
+use tauri::Manager;
 use thiserror::Error;
 
 use crate::assistant::events::{emit_event, AssistantUiEvent};
@@ -11,7 +12,8 @@ use crate::assistant::runtime;
 use crate::assistant::tools::{self, ToolExecutionContext};
 use crate::assistant::types::{
     CompletionRequest, ContentPart, MessageRole, ProviderEvent, ProviderInputMessage, RunId,
-    RunStatus, RunTrigger, RunUsage, SessionId, ToolCallStatus, ToolInvocationDraft,
+    RunStatus, RunTrigger, RunUsage, SessionId, SessionKind, ToolCallStatus,
+    ToolInvocationDraft,
 };
 use crate::db::DbPool;
 use tokio_util::sync::CancellationToken;
@@ -103,7 +105,14 @@ pub async fn run_session_turn(
     let adapter = providers::resolve_adapter(&session.provider_id)?;
 
     // Get available tools for this session's context
-    let tool_defs = tools::available_tools(&session.context);
+    let external_tools = {
+        let state = deps.app.state::<crate::AppState>();
+        let mut manager = state.mcp_client_manager.lock().await;
+        manager
+            .list_tools_for_servers(&session.context.mcp_server_ids)
+            .await
+    };
+    let tool_defs = tools::available_tools(&session.context, &external_tools);
 
     // Build execution context for tool calls
     let tool_context = ToolExecutionContext {
@@ -112,6 +121,7 @@ pub async fn run_session_turn(
         tab_id: session.tab_id.clone(),
         space_id: session.context.space_id.clone(),
         room_id: session.context.room_id.clone(),
+        mcp_server_ids: session.context.mcp_server_ids.clone(),
     };
 
     let mut usage: Option<RunUsage> = None;
@@ -119,6 +129,9 @@ pub async fn run_session_turn(
     // Pre-register the assistant's tab with the JS bridge (once per run)
     // so that frontend tool handlers can find the correct tab.
     if let Some(tab_id) = &session.tab_id {
+        let managed_agent_tab = session.kind == SessionKind::BackgroundJob
+            || session.context.automation_id.is_some()
+            || session.context.automation_name.is_some();
         let bridge = crate::mcp::bridge::JsBridge::new(deps.app.clone());
         let setup_params = serde_json::json!({
             "agentName": session
@@ -127,7 +140,9 @@ pub async fn run_session_turn(
                 .as_deref()
                 .or(session.title.as_deref())
                 .unwrap_or("Assistant"),
+            "managedAgentTab": managed_agent_tab,
             "tabId": tab_id,
+            "mcpServerIds": session.context.mcp_server_ids,
         });
         let _ = bridge
             .call_tool(
@@ -487,16 +502,16 @@ fn build_system_prompt(
         "## Tool Usage Guidelines\n\
          - When using canvas or dashboard tools, first call `tabs.getTileLayout` to discover \
            available commandIds. Canvas and dashboard tools require a `commandId` parameter.\n\
-         - For `netdata.query`, ask natural language questions about infrastructure metrics, \
-           anomalies, alerts, and health.\n\
+         - Use the configured MCP tools available in this session to inspect infrastructure data, \
+           metrics, alerts, and health.\n\
          - Use `tabs.splitTile` to create new panels before adding charts or content.\n\
          - Be concise and direct in your responses. Prefer showing data over describing it.\n",
     );
 
-    if context.space_id.is_some() {
+    if context.space_id.is_some() || !context.mcp_server_ids.is_empty() {
         prompt.push_str(
-            "- You are connected to a Netdata monitoring space. \
-             Use `netdata.query` to analyze infrastructure data.\n",
+            "- You are connected to monitoring context for this tab. \
+             Use the MCP tools available in this session for infrastructure analysis.\n",
         );
     }
 

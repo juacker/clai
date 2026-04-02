@@ -37,6 +37,12 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
   const [selectedRoomId, setSelectedRoomId] = useState(
     initialContext?.spaceRoom?.selectedRoomId || null
   );
+  const [selectedMcpServerIds, setSelectedMcpServerIds] = useState(
+    initialContext?.mcpServers?.attachedServerIds || initialContext?.mcpServers?.selectedServerIds || []
+  );
+  const [disabledMcpServerIds, setDisabledMcpServerIds] = useState(
+    initialContext?.mcpServers?.disabledServerIds || []
+  );
   const [rooms, setRooms] = useState([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [customContext, setCustomContextState] = useState(
@@ -48,6 +54,10 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
   useEffect(() => {
     setSelectedSpaceId(initialContext?.spaceRoom?.selectedSpaceId || null);
     setSelectedRoomId(initialContext?.spaceRoom?.selectedRoomId || null);
+    setSelectedMcpServerIds(
+      initialContext?.mcpServers?.attachedServerIds || initialContext?.mcpServers?.selectedServerIds || []
+    );
+    setDisabledMcpServerIds(initialContext?.mcpServers?.disabledServerIds || []);
     setCustomContextState(initialContext?.customContext || {});
   }, [tabId, initialContext]);
 
@@ -119,10 +129,14 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
           selectedSpaceId: newSpaceId,
           selectedRoomId: null,
         },
+        mcpServers: {
+          attachedServerIds: selectedMcpServerIds,
+          disabledServerIds: disabledMcpServerIds,
+        },
         customContext,
       });
     }
-  }, [onContextChange, customContext]);
+  }, [onContextChange, customContext, selectedMcpServerIds, disabledMcpServerIds]);
 
   /**
    * Change to a different room within current space
@@ -141,10 +155,14 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
           selectedSpaceId,
           selectedRoomId: room?.id || null,
         },
+        mcpServers: {
+          attachedServerIds: selectedMcpServerIds,
+          disabledServerIds: disabledMcpServerIds,
+        },
         customContext,
       });
     }
-  }, [selectedSpaceId, onContextChange, customContext]);
+  }, [selectedSpaceId, onContextChange, customContext, selectedMcpServerIds, disabledMcpServerIds]);
 
   /**
    * Set a custom context value
@@ -162,13 +180,17 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
             selectedSpaceId,
             selectedRoomId,
           },
+          mcpServers: {
+            attachedServerIds: selectedMcpServerIds,
+            disabledServerIds: disabledMcpServerIds,
+          },
           customContext: newContext,
         });
       }
 
       return newContext;
     });
-  }, [selectedSpaceId, selectedRoomId, onContextChange]);
+  }, [selectedSpaceId, selectedRoomId, onContextChange, selectedMcpServerIds, disabledMcpServerIds]);
 
   /**
    * Get a custom context value
@@ -195,13 +217,17 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
             selectedSpaceId,
             selectedRoomId,
           },
+          mcpServers: {
+            attachedServerIds: selectedMcpServerIds,
+            disabledServerIds: disabledMcpServerIds,
+          },
           customContext: newContext,
         });
       }
 
       return newContext;
     });
-  }, [selectedSpaceId, selectedRoomId, onContextChange]);
+  }, [selectedSpaceId, selectedRoomId, onContextChange, selectedMcpServerIds, disabledMcpServerIds]);
 
   /**
    * Clear all custom context
@@ -216,10 +242,14 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
           selectedSpaceId,
           selectedRoomId,
         },
+        mcpServers: {
+          attachedServerIds: selectedMcpServerIds,
+          disabledServerIds: disabledMcpServerIds,
+        },
         customContext: {},
       });
     }
-  }, [selectedSpaceId, selectedRoomId, onContextChange]);
+  }, [selectedSpaceId, selectedRoomId, onContextChange, selectedMcpServerIds, disabledMcpServerIds]);
 
   /**
    * Navigate using cd command syntax
@@ -300,6 +330,10 @@ export function TabContextProvider({ children, tabId, initialContext, onContextC
     allSpaces: spaces,
 
     // Custom context (future)
+    selectedMcpServerIds,
+    setSelectedMcpServerIds,
+    disabledMcpServerIds,
+    setDisabledMcpServerIds,
     customContext,
     setCustomContext,
     getCustomContext,
@@ -331,4 +365,3 @@ export function useTabContext() {
 }
 
 export default TabContext;
-

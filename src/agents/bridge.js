@@ -40,7 +40,7 @@ const EVENT_TOOL_STREAM = 'agent:tool:stream';
 // Track registered tool handlers
 const toolHandlers = new Map();
 
-// Track agent tab mappings (agentId_spaceId_roomId -> { tabId, agentName })
+// Track agent tab mappings (agentId_spaceId_roomId -> { tabId, agentName, mcpServerIds })
 const agentTabs = new Map();
 
 // Track in-progress tab creations to prevent duplicates from rapid calls
@@ -102,14 +102,23 @@ export const getRegisteredTools = () => {
  * @param {string} roomId - Netdata room ID
  * @param {string} tabId - Tab ID to associate with this agent
  * @param {string} agentName - Human-readable agent name (for tab recreation)
+ * @param {string[]} mcpServerIds - MCP servers available to this agent tab
  */
-export const setAgentTab = (agentId, spaceId, roomId, tabId, agentName = null) => {
+export const setAgentTab = (
+  agentId,
+  spaceId,
+  roomId,
+  tabId,
+  agentName = null,
+  mcpServerIds = null
+) => {
   const key = getAgentKey(agentId, spaceId, roomId);
   // Preserve existing agentName if not provided
   const existing = agentTabs.get(key);
   agentTabs.set(key, {
     tabId,
     agentName: agentName || existing?.agentName || agentId,
+    mcpServerIds: mcpServerIds || existing?.mcpServerIds || [],
   });
 };
 
@@ -119,7 +128,7 @@ export const setAgentTab = (agentId, spaceId, roomId, tabId, agentName = null) =
  * @param {string} agentId - Agent type identifier
  * @param {string} spaceId - Netdata space ID
  * @param {string} roomId - Netdata room ID
- * @returns {{ tabId: string, agentName: string }|null} Tab info or null if not found
+ * @returns {{ tabId: string, agentName: string, mcpServerIds: string[] }|null} Tab info or null if not found
  */
 export const getAgentTab = (agentId, spaceId, roomId) => {
   const key = getAgentKey(agentId, spaceId, roomId);

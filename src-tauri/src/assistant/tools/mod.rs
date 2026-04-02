@@ -14,4 +14,5 @@ pub struct ToolExecutionContext {
     pub tab_id: Option<String>,
     pub space_id: Option<String>,
     pub room_id: Option<String>,
+    pub mcp_server_ids: Vec<String>,
 }

@@ -32,6 +32,9 @@ import { invoke } from '@tauri-apps/api/core';
  * @property {Object} spaceRoom
  * @property {string|null} spaceRoom.selectedSpaceId
  * @property {string|null} spaceRoom.selectedRoomId
+ * @property {Object} mcpServers
+ * @property {string[]} mcpServers.attachedServerIds
+ * @property {string[]} mcpServers.disabledServerIds
  */
 
 /**
@@ -59,6 +62,10 @@ const DEFAULT_CONTEXT = {
   spaceRoom: {
     selectedSpaceId: null,
     selectedRoomId: null,
+  },
+  mcpServers: {
+    attachedServerIds: [],
+    disabledServerIds: [],
   },
 };
 

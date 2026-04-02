@@ -77,7 +77,7 @@ export const useTabCommands = (tabId) => {
 };
 
 /**
- * Select tab context (space/room, future: directories, mcpServers).
+ * Select tab context (space/room, mcpServers, future: directories).
  * @param {string} tabId
  * @returns {Object|null}
  */

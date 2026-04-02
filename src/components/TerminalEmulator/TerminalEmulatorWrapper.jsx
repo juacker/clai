@@ -69,10 +69,11 @@ const TerminalEmulatorWrapper = ({ userInfo }) => {
         const model = (await assistantClient.getDefaultModel().catch(() => null)) || 'gpt-4o-mini';
         const spaceId = activeTab.context?.spaceRoom?.selectedSpaceId || null;
         const roomId = activeTab.context?.spaceRoom?.selectedRoomId || null;
+        const mcpServerIds = getEnabledMcpServerIds(activeTab);
         const sessionId = await ensureSession(
           providerSession.providerId,
           model,
-          { spaceId, roomId }
+          { spaceId, roomId, mcpServerIds }
         );
         const result = await assistantClient.sendMessage(sessionId, query);
         const store = useAssistantStore.getState();
@@ -106,3 +107,8 @@ const TerminalEmulatorWrapper = ({ userInfo }) => {
 };
 
 export default TerminalEmulatorWrapper;
+  const getEnabledMcpServerIds = (tab) => {
+    const attached = tab.context?.mcpServers?.attachedServerIds || tab.context?.mcpServers?.selectedServerIds || [];
+    const disabled = new Set(tab.context?.mcpServers?.disabledServerIds || []);
+    return attached.filter((id) => !disabled.has(id));
+  };

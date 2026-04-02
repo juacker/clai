@@ -39,12 +39,13 @@ const LoadingIcon = () => (
  * @param {Function} props.onSubmit - Callback with form data
  * @param {Object} props.agent - Agent to edit (null for create)
  */
-const AgentFormModal = ({ isOpen, onClose, onSubmit, agent }) => {
+const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) => {
   const isEditing = !!agent;
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [intervalMinutes, setIntervalMinutes] = useState(30);
+  const [selectedMcpServerIds, setSelectedMcpServerIds] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -55,10 +56,12 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent }) => {
         setName(agent.name || '');
         setDescription(agent.description || '');
         setIntervalMinutes(agent.intervalMinutes || 30);
+        setSelectedMcpServerIds(agent.selectedMcpServerIds || []);
       } else {
         setName('');
         setDescription('');
         setIntervalMinutes(30);
+        setSelectedMcpServerIds([]);
       }
       setError(null);
     }
@@ -122,6 +125,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent }) => {
         name: trimmedName,
         description: description.trim(),
         intervalMinutes: Number(intervalMinutes),
+        selectedMcpServerIds,
       });
     } catch (err) {
       console.error('[AgentFormModal] Submit error:', err);
@@ -211,6 +215,45 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent }) => {
             />
             <span className={styles.hint}>
               How often the agent runs while enabled
+            </span>
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label}>MCP Servers</label>
+            {mcpServers.length === 0 ? (
+              <div className={styles.hint}>
+                No MCP servers configured yet. Add them in Settings to make external tools available to this agent.
+              </div>
+            ) : (
+              <div className={styles.checkboxGroup}>
+                {mcpServers.map((server) => {
+                  const checked = selectedMcpServerIds.includes(server.id);
+                  return (
+                    <label key={server.id} className={styles.checkboxOption}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={saving || !server.enabled}
+                        onChange={(e) => {
+                          const nextChecked = e.target.checked;
+                          setSelectedMcpServerIds((current) => (
+                            nextChecked
+                              ? [...current, server.id]
+                              : current.filter((id) => id !== server.id)
+                          ));
+                        }}
+                      />
+                      <span>
+                        {server.name}
+                        {!server.enabled ? ' (disabled)' : ''}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <span className={styles.hint}>
+              Selected servers will be attached to the agent session and exposed once external MCP discovery and execution are enabled.
             </span>
           </div>
 

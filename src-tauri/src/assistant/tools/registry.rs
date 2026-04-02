@@ -4,29 +4,16 @@ use crate::mcp::tools::{
         AddChartNodeParams, AddEdgeParams, AddMarkdownNodeParams, AddStatusBadgeParams,
         ClearCanvasParams, RemoveEdgeParams, RemoveNodeParams, UpdateNodeParams,
     },
-    chat::SendMessageParams,
     dashboard::{AddChartParams, ClearChartsParams, RemoveChartParams, SetTimeRangeParams},
-    netdata::NetdataQueryParams,
     tabs::{GetCommandContentParams, RemoveTileParams, SplitTileParams},
 };
 
 /// Returns all tool definitions available for the given session context.
-pub fn available_tools(context: &SessionContext) -> Vec<ToolDefinition> {
+pub fn available_tools(
+    _context: &SessionContext,
+    external_tools: &[ToolDefinition],
+) -> Vec<ToolDefinition> {
     let mut tools = vec![];
-
-    // chat.message — always available
-    tools.push(tool::<SendMessageParams>(
-        "chat.message",
-        "Send a text message to the user. Use this to communicate findings, analysis, or responses.",
-    ));
-
-    // netdata.query — needs space+room
-    if context.space_id.is_some() && context.room_id.is_some() {
-        tools.push(tool::<NetdataQueryParams>(
-            "netdata.query",
-            "Query Netdata Cloud AI for infrastructure analysis. Ask about anomalies, metrics, alerts, and infrastructure health.",
-        ));
-    }
 
     // dashboard tools
     tools.push(tool::<AddChartParams>(
@@ -98,6 +85,8 @@ pub fn available_tools(context: &SessionContext) -> Vec<ToolDefinition> {
         "canvas.clearCanvas",
         "Remove all nodes and edges from the canvas.",
     ));
+
+    tools.extend(external_tools.iter().cloned());
 
     tools
 }

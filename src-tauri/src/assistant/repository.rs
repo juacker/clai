@@ -254,22 +254,29 @@ pub async fn attach_session_to_tab(
     session.context.tab_id = session.tab_id.clone();
     session.updated_at = now_ms();
 
+    update_session(pool, &session)
+        .await
+        .map_err(|e| format!("Failed to attach session to tab: {}", e))
+}
+
+pub async fn update_session(pool: &DbPool, session: &AssistantSession) -> Result<AssistantSession, String> {
     sqlx::query(
         r#"
         UPDATE assistant_sessions
-        SET tab_id = ?, context_json = ?, updated_at = ?
+        SET tab_id = ?, title = ?, context_json = ?, updated_at = ?
         WHERE id = ?
         "#,
     )
     .bind(&session.tab_id)
+    .bind(&session.title)
     .bind(to_json_string(&session.context)?)
     .bind(session.updated_at)
     .bind(&session.id)
     .execute(pool)
     .await
-    .map_err(|e| format!("Failed to attach session to tab: {}", e))?;
+    .map_err(|e| format!("Failed to update assistant session: {}", e))?;
 
-    Ok(session)
+    Ok(session.clone())
 }
 
 pub async fn list_messages(

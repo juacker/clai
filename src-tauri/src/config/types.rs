@@ -130,6 +130,88 @@ impl AiProvider {
 }
 
 // =============================================================================
+// MCP Server Config
+// =============================================================================
+
+/// User-configured MCP server transport.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum McpServerTransport {
+    /// Spawn a local MCP server via stdio.
+    Stdio {
+        /// Command to spawn.
+        command: String,
+        /// Arguments passed to the command.
+        #[serde(default)]
+        args: Vec<String>,
+    },
+
+    /// Connect to a remote MCP server over HTTP.
+    Http {
+        /// Base URL for the remote MCP server.
+        url: String,
+    },
+}
+
+/// Auth mode for a configured MCP server.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum McpServerAuth {
+    /// No authentication configured.
+    #[default]
+    None,
+
+    /// Bearer token authentication stored in secure keyring storage.
+    BearerToken {
+        /// Reference to the token in secure storage.
+        secret_ref: String,
+    },
+}
+
+/// User-configured MCP server definition persisted in app config.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct McpServerConfig {
+    /// Unique identifier for this server.
+    pub id: String,
+
+    /// Human-readable label shown in settings.
+    pub name: String,
+
+    /// Whether this server is available for selection.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// How to connect to the server.
+    pub transport: McpServerTransport,
+
+    /// Authentication metadata for the server.
+    #[serde(default)]
+    pub auth: McpServerAuth,
+
+    /// When the server was created (ISO 8601).
+    pub created_at: String,
+
+    /// When the server was last modified (ISO 8601).
+    pub updated_at: String,
+}
+
+impl McpServerConfig {
+    /// Creates a new MCP server with a generated UUID.
+    pub fn new(name: String, transport: McpServerTransport) -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            enabled: true,
+            transport,
+            auth: McpServerAuth::None,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+}
+
+// =============================================================================
 // Agent Config
 // =============================================================================
 
@@ -179,6 +261,10 @@ pub struct AgentConfig {
     #[serde(default)]
     pub enabled_rooms: Vec<SpaceRoomPair>,
 
+    /// User-selected MCP servers available to this agent.
+    #[serde(default)]
+    pub selected_mcp_server_ids: Vec<String>,
+
     /// When the agent was created (ISO 8601).
     pub created_at: String,
 
@@ -218,6 +304,7 @@ impl AgentConfig {
             interval_minutes: 5,
             enabled: false,
             enabled_rooms: vec![],
+            selected_mcp_server_ids: vec![],
             created_at: now.clone(),
             updated_at: now,
         }
@@ -233,6 +320,7 @@ impl AgentConfig {
             interval_minutes,
             enabled: false,
             enabled_rooms: vec![],
+            selected_mcp_server_ids: vec![],
             created_at: now.clone(),
             updated_at: now,
         }
@@ -366,6 +454,10 @@ pub struct ClaiConfig {
     /// If empty on first load, a default agent will be created.
     #[serde(default)]
     pub agents: Vec<AgentConfig>,
+
+    /// User-configured MCP servers.
+    #[serde(default)]
+    pub mcp_servers: Vec<McpServerConfig>,
 
     /// Per-space configuration (key is space UUID).
     ///
@@ -702,6 +794,7 @@ mod tests {
         assert!(!agent2.is_default());
         assert_eq!(agent1.name, "Agent 1");
         assert_eq!(agent2.interval_minutes, 15);
+        assert!(agent1.selected_mcp_server_ids.is_empty());
     }
 
     #[test]
@@ -769,6 +862,7 @@ mod tests {
     fn test_agent_serialization() {
         let mut agent = AgentConfig::default_agent();
         agent.enable_for("space-abc", "room-xyz");
+        agent.selected_mcp_server_ids = vec!["mcp-a".to_string(), "mcp-b".to_string()];
 
         let json = serde_json::to_string_pretty(&agent).unwrap();
 
@@ -783,12 +877,20 @@ mod tests {
         assert_eq!(parsed.id, agent.id);
         assert_eq!(parsed.name, agent.name);
         assert!(parsed.is_enabled_for("space-abc", "room-xyz"));
+        assert_eq!(parsed.selected_mcp_server_ids, agent.selected_mcp_server_ids);
     }
 
     #[test]
     fn test_config_with_agents_serialization() {
         let mut config = ClaiConfig::default();
         config.agents.push(AgentConfig::default_agent());
+        config.mcp_servers.push(McpServerConfig::new(
+            "Filesystem MCP".to_string(),
+            McpServerTransport::Stdio {
+                command: "npx".to_string(),
+                args: vec!["@modelcontextprotocol/server-filesystem".to_string()],
+            },
+        ));
 
         let mut custom_agent = AgentConfig::new(
             "Custom Monitor".to_string(),
@@ -796,6 +898,7 @@ mod tests {
             30,
         );
         custom_agent.enable_for("space-1", "room-1");
+        custom_agent.selected_mcp_server_ids = vec![config.mcp_servers[0].id.clone()];
         config.agents.push(custom_agent);
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -807,8 +910,37 @@ mod tests {
         // Should deserialize back
         let parsed: ClaiConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.agents.len(), 2);
+        assert_eq!(parsed.mcp_servers.len(), 1);
         assert!(parsed.agents[0].is_default());
         assert!(!parsed.agents[1].is_default());
+        assert_eq!(
+            parsed.agents[1].selected_mcp_server_ids,
+            vec![parsed.mcp_servers[0].id.clone()]
+        );
+    }
+
+    #[test]
+    fn test_mcp_server_serialization() {
+        let mut server = McpServerConfig::new(
+            "Remote MCP".to_string(),
+            McpServerTransport::Http {
+                url: "https://example.com/mcp".to_string(),
+            },
+        );
+        server.auth = McpServerAuth::BearerToken {
+            secret_ref: "mcp-server::remote::bearer".to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&server).unwrap();
+        assert!(json.contains("Remote MCP"));
+        assert!(json.contains("https://example.com/mcp"));
+        assert!(json.contains("bearer_token"));
+
+        let parsed: McpServerConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.name, server.name);
+        assert_eq!(parsed.transport, server.transport);
+        assert_eq!(parsed.auth, server.auth);
+        assert!(parsed.enabled);
     }
 
     #[test]

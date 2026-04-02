@@ -6,7 +6,15 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { getAgents, createAgent, updateAgent, deleteAgent, getSpaces, setAgentEnabled } from '../../api/client';
+import {
+  getAgents,
+  createAgent,
+  updateAgent,
+  deleteAgent,
+  getSpaces,
+  getMcpServers,
+  setAgentEnabled,
+} from '../../api/client';
 import AgentCard from './AgentCard';
 import AgentFormModal from './AgentFormModal';
 import styles from './AgentsSettings.module.css';
@@ -48,6 +56,7 @@ const WarningIcon = () => (
 const AgentsSettings = () => {
   const [agents, setAgents] = useState([]);
   const [spaces, setSpaces] = useState([]);
+  const [mcpServers, setMcpServers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -65,12 +74,14 @@ const AgentsSettings = () => {
     setError(null);
 
     try {
-      const [agentsResult, spacesResult] = await Promise.all([
+      const [agentsResult, spacesResult, mcpServersResult] = await Promise.all([
         getAgents(),
         getSpaces(),
+        getMcpServers(),
       ]);
       setAgents(agentsResult || []);
       setSpaces(spacesResult || []);
+      setMcpServers(mcpServersResult || []);
     } catch (err) {
       console.error('[AgentsSettings] Failed to fetch data:', err);
       setError('Failed to load agents. Please try again.');
@@ -228,6 +239,7 @@ const AgentsSettings = () => {
               key={agent.id}
               agent={agent}
               spaces={spaces}
+              mcpServers={mcpServers}
               onEdit={() => handleEdit(agent)}
               onDelete={() => handleDelete(agent.id)}
               onToggleEnabled={() => handleToggleEnabled(agent)}
@@ -252,6 +264,7 @@ const AgentsSettings = () => {
         onClose={handleFormClose}
         onSubmit={handleFormSubmit}
         agent={editingAgent}
+        mcpServers={mcpServers}
       />
     </div>
   );

@@ -22,6 +22,8 @@ pub struct CreateAgentRequest {
     pub name: String,
     pub description: String,
     pub interval_minutes: u32,
+    #[serde(default)]
+    pub selected_mcp_server_ids: Vec<String>,
 }
 
 /// Request to update an existing agent.
@@ -32,6 +34,8 @@ pub struct UpdateAgentRequest {
     pub name: String,
     pub description: String,
     pub interval_minutes: u32,
+    #[serde(default)]
+    pub selected_mcp_server_ids: Vec<String>,
 }
 
 /// Request to enable/disable an agent globally.
@@ -52,6 +56,7 @@ pub struct AgentResponse {
     pub interval_minutes: u32,
     pub enabled: bool,
     pub enabled_rooms: Vec<SpaceRoomPair>,
+    pub selected_mcp_server_ids: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
     pub is_default: bool,
@@ -67,6 +72,7 @@ impl From<AgentConfig> for AgentResponse {
             interval_minutes: agent.interval_minutes,
             enabled: agent.enabled,
             enabled_rooms: agent.enabled_rooms,
+            selected_mcp_server_ids: agent.selected_mcp_server_ids,
             created_at: agent.created_at,
             updated_at: agent.updated_at,
             is_default,
@@ -121,7 +127,14 @@ pub fn create_agent(
         .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
 
-    let agent = AgentConfig::new(request.name, request.description, request.interval_minutes);
+    validate_mcp_server_ids(
+        &config_manager,
+        &request.selected_mcp_server_ids,
+        "create agent",
+    )?;
+
+    let mut agent = AgentConfig::new(request.name, request.description, request.interval_minutes);
+    agent.selected_mcp_server_ids = request.selected_mcp_server_ids;
 
     config_manager
         .add_agent(agent.clone())
@@ -149,11 +162,18 @@ pub fn update_agent(
         return Err(format!("Agent not found: {}", request.id));
     }
 
+    validate_mcp_server_ids(
+        &config_manager,
+        &request.selected_mcp_server_ids,
+        "update agent",
+    )?;
+
     config_manager
         .update_agent(&request.id, |agent| {
             agent.name = request.name.clone();
             agent.description = request.description.clone();
             agent.interval_minutes = request.interval_minutes;
+            agent.selected_mcp_server_ids = request.selected_mcp_server_ids.clone();
         })
         .map_err(|e| format!("Failed to update agent: {}", e))?;
 
@@ -524,4 +544,26 @@ async fn sync_agent_scheduler(state: &State<'_, AppState>, agent: &AgentConfig) 
     } else {
         scheduler.create_instance(&agent.id, "", "");
     }
+}
+
+fn validate_mcp_server_ids(
+    config_manager: &crate::config::ConfigManager,
+    server_ids: &[String],
+    action: &str,
+) -> Result<(), String> {
+    let missing: Vec<String> = server_ids
+        .iter()
+        .filter(|server_id| config_manager.get_mcp_server(server_id).is_none())
+        .cloned()
+        .collect();
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "Cannot {}: unknown MCP server IDs: {}",
+        action,
+        missing.join(", ")
+    ))
 }

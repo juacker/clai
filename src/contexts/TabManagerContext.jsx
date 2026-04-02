@@ -40,6 +40,46 @@ const generateTabId = () => `tab_${Date.now()}_${Math.random().toString(36).subs
  */
 const generateTileId = () => `tile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+const DEFAULT_TAB_CONTEXT = {
+  spaceRoom: {
+    selectedSpaceId: null,
+    selectedRoomId: null,
+  },
+  mcpServers: {
+    attachedServerIds: [],
+    disabledServerIds: [],
+  },
+  customContext: {},
+};
+
+const uniqueIds = (ids = []) => [...new Set((ids || []).filter(Boolean))];
+
+const normalizeTabContext = (context = {}) => {
+  const rawMcpContext = context?.mcpServers || {};
+  const legacySelectedIds = uniqueIds(rawMcpContext.selectedServerIds || []);
+  const attachedServerIds = uniqueIds(rawMcpContext.attachedServerIds || legacySelectedIds);
+  const disabledServerIds = uniqueIds(rawMcpContext.disabledServerIds || []).filter(
+    (id) => attachedServerIds.includes(id)
+  );
+
+  return {
+    ...DEFAULT_TAB_CONTEXT,
+    ...context,
+    spaceRoom: {
+      ...DEFAULT_TAB_CONTEXT.spaceRoom,
+      ...(context?.spaceRoom || {}),
+    },
+    mcpServers: {
+      attachedServerIds,
+      disabledServerIds,
+    },
+    customContext: {
+      ...DEFAULT_TAB_CONTEXT.customContext,
+      ...(context?.customContext || {}),
+    },
+  };
+};
+
 /**
  * Create a new leaf tile (contains a command)
  * @param {string|null} commandId - Command ID to display in this tile
@@ -117,13 +157,7 @@ const createTab = (title = null, commandId = null, initialContext = null) => ({
   createdAt: Date.now(),
   rootTile: createTile(commandId),
   // Tab-specific context
-  context: initialContext || {
-    spaceRoom: {
-      selectedSpaceId: null,
-      selectedRoomId: null,
-    },
-    customContext: {},
-  },
+  context: normalizeTabContext(initialContext),
 });
 
 /**
@@ -454,41 +488,42 @@ export const TabManagerProvider = ({ children }) => {
               if (!migratedTab.context) {
                 migratedTab = {
                   ...migratedTab,
-                  context: {
+                  context: normalizeTabContext({
                     spaceRoom: {
                       selectedSpaceId: oldSelectedSpaceId || null,
                       selectedRoomId: oldSelectedRoomId || null,
                     },
-                    customContext: {},
-                  },
+                  }),
                 };
               }
               // If tab has context but missing spaceRoom, add it with old global context
               else if (!migratedTab.context.spaceRoom) {
                 migratedTab = {
                   ...migratedTab,
-                  context: {
+                  context: normalizeTabContext({
                     ...migratedTab.context,
                     spaceRoom: {
                       selectedSpaceId: oldSelectedSpaceId || null,
                       selectedRoomId: oldSelectedRoomId || null,
                     },
-                  },
+                  }),
                 };
               }
               // If tab has spaceRoom but no selection, use old global context
               else if (!migratedTab.context.spaceRoom.selectedSpaceId && oldSelectedSpaceId) {
                 migratedTab = {
                   ...migratedTab,
-                  context: {
+                  context: normalizeTabContext({
                     ...migratedTab.context,
                     spaceRoom: {
                       selectedSpaceId: oldSelectedSpaceId,
                       selectedRoomId: oldSelectedRoomId,
                     },
-                  },
+                  }),
                 };
               }
+
+              migratedTab.context = normalizeTabContext(migratedTab.context);
 
               return migratedTab;
             });
@@ -867,6 +902,10 @@ export const TabManagerProvider = ({ children }) => {
             selectedSpaceId: activeTab.context.spaceRoom.selectedSpaceId,
             selectedRoomId: activeTab.context.spaceRoom.selectedRoomId,
           },
+          mcpServers: {
+            attachedServerIds: [],
+            disabledServerIds: [],
+          },
           customContext: { ...activeTab.context.customContext },
         };
       }
@@ -878,6 +917,10 @@ export const TabManagerProvider = ({ children }) => {
         spaceRoom: {
           selectedSpaceId: defaultSpaceRoom.current.selectedSpaceId,
           selectedRoomId: defaultSpaceRoom.current.selectedRoomId,
+        },
+        mcpServers: {
+          attachedServerIds: [],
+          disabledServerIds: [],
         },
         customContext: {},
       };
@@ -1064,10 +1107,10 @@ export const TabManagerProvider = ({ children }) => {
         tab.id === tabId
           ? {
             ...tab,
-            context: {
+            context: normalizeTabContext({
               ...tab.context,
               ...context,
-            },
+            }),
           }
           : tab
       )
@@ -1431,6 +1474,10 @@ export const TabManagerProvider = ({ children }) => {
         spaceRoom: {
           selectedSpaceId: tab.context?.spaceRoom?.selectedSpaceId || null,
           selectedRoomId: tab.context?.spaceRoom?.selectedRoomId || null,
+        },
+        mcpServers: {
+          attachedServerIds: [...(tab.context?.mcpServers?.attachedServerIds || [])],
+          disabledServerIds: [...(tab.context?.mcpServers?.disabledServerIds || [])],
         },
         customContext: { ...tab.context?.customContext || {} },
       },
@@ -1879,4 +1926,3 @@ export const TabManagerProvider = ({ children }) => {
 };
 
 export default TabManagerContext;
-

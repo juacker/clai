@@ -1,11 +1,7 @@
-use std::sync::Arc;
-
 use tauri::Manager;
 
-use crate::api::client::create_client;
 use crate::assistant::engine::{bridge_agent_id, AssistantDeps};
 use crate::mcp::bridge::JsBridge;
-use crate::mcp::tools::netdata::{NetdataQueryParams, NetdataQueryTool};
 use crate::AppState;
 
 use super::ToolExecutionContext;
@@ -19,64 +15,14 @@ pub async fn execute_tool(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     match tool_name {
-        "netdata.query" => execute_netdata_query(deps, context, params).await,
-        "chat.message" => {
-            // chat.message is handled by returning the message content as a tool result.
-            // The AI's text response in the conversation already serves as the message.
-            Ok(serde_json::json!({"success": true}))
-        }
         name if name.starts_with("dashboard.")
             || name.starts_with("tabs.")
             || name.starts_with("canvas.") =>
         {
             execute_bridge_tool(deps, context, name, params).await
         }
-        _ => Err(format!("Unknown tool: {}", tool_name)),
+        _ => execute_external_mcp_tool(deps, context, tool_name, params).await,
     }
-}
-
-/// Execute netdata.query via the Rust-native NetdataQueryTool.
-async fn execute_netdata_query(
-    deps: &AssistantDeps,
-    context: &ToolExecutionContext,
-    params: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    let space_id = context
-        .space_id
-        .as_deref()
-        .ok_or("netdata.query requires space_id in session context")?;
-    let room_id = context
-        .room_id
-        .as_deref()
-        .ok_or("netdata.query requires room_id in session context")?;
-
-    let query_params: NetdataQueryParams = serde_json::from_value(params)
-        .map_err(|e| format!("Invalid netdata.query params: {}", e))?;
-
-    let state = deps.app.state::<AppState>();
-    let token = state
-        .token_storage
-        .get_token()
-        .map_err(|e| format!("Failed to read Netdata token: {}", e))?
-        .ok_or("Netdata token not configured")?;
-    let base_url = state
-        .base_url
-        .lock()
-        .map_err(|e| format!("Failed to read Netdata base URL: {}", e))?
-        .clone();
-    let api = Arc::new(crate::api::netdata::NetdataApi::new(
-        create_client(),
-        base_url,
-        token,
-    ));
-
-    let tool = NetdataQueryTool::new(api, space_id.to_string(), room_id.to_string());
-    let result = tool
-        .query(query_params)
-        .await
-        .map_err(|e| format!("netdata.query failed: {}", e))?;
-
-    Ok(serde_json::json!({"response": result}))
 }
 
 /// Execute a JS-bridge tool (dashboard.*, tabs.*, canvas.*).
@@ -98,6 +44,20 @@ async fn execute_bridge_tool(
             tool_name,
             params,
         )
+        .await
+        .map_err(|e| format!("{} failed: {}", tool_name, e))
+}
+
+async fn execute_external_mcp_tool(
+    deps: &AssistantDeps,
+    context: &ToolExecutionContext,
+    tool_name: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let state = deps.app.state::<AppState>();
+    let mut manager = state.mcp_client_manager.lock().await;
+    manager
+        .execute_tool(&context.mcp_server_ids, tool_name, params)
         .await
         .map_err(|e| format!("{} failed: {}", tool_name, e))
 }

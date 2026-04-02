@@ -48,6 +48,7 @@ use agents::SharedScheduler;
 use auth::TokenStorage;
 use config::ConfigManager;
 use tauri::Manager;
+use tokio::sync::Mutex as AsyncMutex;
 
 /// Shared application state accessible from all commands.
 ///
@@ -61,6 +62,8 @@ pub struct AppState {
     pub base_url: Mutex<String>,
     /// Configuration manager (auto-pilot settings, etc.)
     pub config_manager: Mutex<ConfigManager>,
+    /// External MCP client registry.
+    pub mcp_client_manager: AsyncMutex<mcp::client::McpClientManager>,
     /// Agent scheduler (manages agent instances)
     pub scheduler: SharedScheduler,
 }
@@ -104,6 +107,7 @@ pub fn run() {
         "Failed to initialize configuration manager. \
          Check that the config directory is accessible.",
     );
+    let initial_config = config_manager.get();
 
     // Initialize agent scheduler
     let scheduler = agents::create_shared_scheduler();
@@ -119,6 +123,11 @@ pub fn run() {
         token_storage,
         base_url: Mutex::new(DEFAULT_BASE_URL.to_string()),
         config_manager: Mutex::new(config_manager),
+        mcp_client_manager: AsyncMutex::new({
+            let mut manager = mcp::client::McpClientManager::new();
+            manager.sync_from_config(&initial_config);
+            manager
+        }),
         scheduler,
     };
 
@@ -205,6 +214,12 @@ pub fn run() {
             commands::agents::disable_agent_for_room,
             commands::agents::get_agents_for_room,
             commands::agents::toggle_agents_for_room,
+            // MCP server commands
+            commands::mcp_servers::get_mcp_servers,
+            commands::mcp_servers::get_mcp_server,
+            commands::mcp_servers::create_mcp_server,
+            commands::mcp_servers::update_mcp_server,
+            commands::mcp_servers::delete_mcp_server,
             // Provider commands
             commands::provider::get_ai_provider,
             commands::provider::set_ai_provider,

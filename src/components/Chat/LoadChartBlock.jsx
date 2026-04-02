@@ -7,6 +7,16 @@ import NetdataSpinner from '../common/NetdataSpinner';
 import DashboardPicker from '../common/DashboardPicker';
 import styles from './LoadChartBlock.module.css';
 
+const normalizeFilterMap = (filterMap) => {
+  if (!filterMap || typeof filterMap !== 'object') return {};
+
+  return Object.fromEntries(
+    Object.entries(filterMap)
+      .filter(([key]) => !!key)
+      .map(([key, value]) => [key, Array.isArray(value) ? value : [value].filter(Boolean)])
+  );
+};
+
 /**
  * LoadChartBlock Component
  *
@@ -62,7 +72,7 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     // Convert activeFilters to filterBy format
     const filterBy = {};
     Object.entries(activeFilters).forEach(([label, values]) => {
-      filterBy[label] = values;
+      filterBy[label] = Array.isArray(values) ? values : [values].filter(Boolean);
     });
 
     const config = {
@@ -134,7 +144,9 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
         }
         filters[filter.label].push(filter.value);
       });
-      setActiveFilters(filters);
+      setActiveFilters(normalizeFilterMap(filters));
+    } else if (toolInput.filter_by && typeof toolInput.filter_by === 'object') {
+      setActiveFilters(normalizeFilterMap(toolInput.filter_by));
     }
 
     // Mark initialization as complete
@@ -172,10 +184,11 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     const dimensions = [];
     const instances = [];
     const labels = [];
+    const normalizedFilters = normalizeFilterMap(filters);
 
     // Build filters from activeFilters state
-    Object.keys(filters).forEach(label => {
-      const values = filters[label];
+    Object.keys(normalizedFilters).forEach(label => {
+      const values = normalizedFilters[label];
       values.forEach(value => {
         switch (label) {
           case 'node':
@@ -502,15 +515,17 @@ const LoadChartBlock = ({ toolInput, toolResult, space, room }) => {
     if (!activeGroupBy.every(g => initialGroupBy.includes(g))) return true;
 
     // Check filter changes
-    const activeFilterKeys = Object.keys(activeFilters);
-    const initialFilterKeys = Object.keys(initialFilters);
+    const normalizedActiveFilters = normalizeFilterMap(activeFilters);
+    const normalizedInitialFilters = normalizeFilterMap(initialFilters);
+    const activeFilterKeys = Object.keys(normalizedActiveFilters);
+    const initialFilterKeys = Object.keys(normalizedInitialFilters);
 
     if (activeFilterKeys.length !== initialFilterKeys.length) return true;
 
     for (const key of activeFilterKeys) {
-      if (!initialFilters[key]) return true;
-      if (activeFilters[key].length !== initialFilters[key].length) return true;
-      if (!activeFilters[key].every(v => initialFilters[key].includes(v))) return true;
+      if (!normalizedInitialFilters[key]) return true;
+      if (normalizedActiveFilters[key].length !== normalizedInitialFilters[key].length) return true;
+      if (!normalizedActiveFilters[key].every(v => normalizedInitialFilters[key].includes(v))) return true;
     }
 
     return false;

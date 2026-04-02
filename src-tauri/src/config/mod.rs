@@ -12,8 +12,9 @@
 pub mod types;
 
 pub use types::{
-    AgentConfig, AgentInfo, AiProvider, AutopilotStatus, ClaiConfig, ProviderInfo, SpaceAutopilot,
-    SpaceConfig, SpaceRoomPair,
+    AgentConfig, AgentInfo, AiProvider, AutopilotStatus, ClaiConfig, McpServerAuth,
+    McpServerConfig, McpServerTransport, ProviderInfo, SpaceAutopilot, SpaceConfig,
+    SpaceRoomPair,
 };
 
 use std::fs;
@@ -252,6 +253,65 @@ impl ConfigManager {
         self.update(|config| {
             config.assistant_default_model = model;
         })
+    }
+
+    // =========================================================================
+    // MCP Server Helpers
+    // =========================================================================
+
+    /// Gets all configured MCP servers.
+    pub fn get_mcp_servers(&self) -> Vec<McpServerConfig> {
+        self.config.lock().unwrap().mcp_servers.clone()
+    }
+
+    /// Gets a configured MCP server by ID.
+    pub fn get_mcp_server(&self, id: &str) -> Option<McpServerConfig> {
+        self.config
+            .lock()
+            .unwrap()
+            .mcp_servers
+            .iter()
+            .find(|server| server.id == id)
+            .cloned()
+    }
+
+    /// Adds a new MCP server and saves config.
+    pub fn add_mcp_server(&self, server: McpServerConfig) -> Result<(), ConfigError> {
+        self.update(|config| {
+            config.mcp_servers.push(server);
+        })
+    }
+
+    /// Updates an existing MCP server and saves config.
+    pub fn update_mcp_server<F>(&self, id: &str, updater: F) -> Result<(), ConfigError>
+    where
+        F: FnOnce(&mut McpServerConfig),
+    {
+        self.update(|config| {
+            if let Some(server) = config.mcp_servers.iter_mut().find(|server| server.id == id) {
+                updater(server);
+                server.updated_at = chrono::Utc::now().to_rfc3339();
+            }
+        })
+    }
+
+    /// Removes an MCP server and clears stale agent selections.
+    ///
+    /// Returns true if the server was removed.
+    pub fn remove_mcp_server(&self, id: &str) -> Result<bool, ConfigError> {
+        let mut removed = false;
+        self.update(|config| {
+            let initial_len = config.mcp_servers.len();
+            config.mcp_servers.retain(|server| server.id != id);
+            removed = config.mcp_servers.len() != initial_len;
+
+            if removed {
+                for agent in &mut config.agents {
+                    agent.selected_mcp_server_ids.retain(|server_id| server_id != id);
+                }
+            }
+        })?;
+        Ok(removed)
     }
 
     // =========================================================================
@@ -505,5 +565,29 @@ mod tests {
         assert_eq!(rooms.len(), 2);
         assert!(rooms.contains(&"room-a".to_string()));
         assert!(rooms.contains(&"room-b".to_string()));
+    }
+
+    #[test]
+    fn test_remove_mcp_server_cleans_agent_selection() {
+        let (manager, _temp_dir) = create_test_manager();
+
+        let server = McpServerConfig::new(
+            "Filesystem".to_string(),
+            McpServerTransport::Stdio {
+                command: "npx".to_string(),
+                args: vec!["@modelcontextprotocol/server-filesystem".to_string()],
+            },
+        );
+        let server_id = server.id.clone();
+        manager.add_mcp_server(server).unwrap();
+
+        let mut agent = AgentConfig::new("Test".to_string(), "Desc".to_string(), 5);
+        agent.selected_mcp_server_ids = vec![server_id.clone()];
+        manager.add_agent(agent).unwrap();
+
+        assert!(manager.remove_mcp_server(&server_id).unwrap());
+
+        let agent = manager.get_agents().into_iter().next().unwrap();
+        assert!(agent.selected_mcp_server_ids.is_empty());
     }
 }

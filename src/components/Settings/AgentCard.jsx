@@ -120,7 +120,7 @@ const truncateDescription = (text, maxLength = 120) => {
  * @param {boolean} props.isDeleting - Whether deletion is in progress
  * @param {boolean} props.isToggling - Whether enable/disable is in progress
  */
-const AgentCard = ({ agent, spaces, onEdit, onDelete, onToggleEnabled, onUpdate, isDeleting, isToggling }) => {
+const AgentCard = ({ agent, spaces, mcpServers = [], onEdit, onDelete, onToggleEnabled, onUpdate, isDeleting, isToggling }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRoomAssignment, setShowRoomAssignment] = useState(false);
 
@@ -139,6 +139,9 @@ const AgentCard = ({ agent, spaces, onEdit, onDelete, onToggleEnabled, onUpdate,
 
   const roomCount = agent.enabledRooms?.length || 0;
   const isEnabled = !!agent.enabled;
+  const selectedMcpServerNames = (agent.selectedMcpServerIds || [])
+    .map((id) => mcpServers.find((server) => server.id === id)?.name)
+    .filter(Boolean);
 
   return (
     <div className={styles.card}>
@@ -164,6 +167,10 @@ const AgentCard = ({ agent, spaces, onEdit, onDelete, onToggleEnabled, onUpdate,
             {truncateDescription(agent.description)}
           </p>
         )}
+
+        <p className={styles.description}>
+          MCP: {selectedMcpServerNames.length > 0 ? selectedMcpServerNames.join(', ') : 'None'}
+        </p>
 
         <button
           className={`${styles.roomAssignButton} ${roomCount > 0 ? styles.roomAssignButtonActive : ''}`}

@@ -2,7 +2,6 @@
  * SettingsModal Component
  *
  * Main settings modal with sidebar navigation for different settings sections.
- * Supports: AI Provider selection and Autonomous Agents management.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -10,6 +9,7 @@ import ReactDOM from 'react-dom';
 import ProviderSettings from './ProviderSettings';
 import AgentsSettings from './AgentsSettings';
 import AssistantProviderSettings from './AssistantProviderSettings';
+import McpServersSettings from './McpServersSettings';
 import styles from './SettingsModal.module.css';
 
 /**
@@ -36,6 +36,15 @@ const AgentsIcon = () => (
   </svg>
 );
 
+const PlugIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22v-5" />
+    <path d="M9 8V2" />
+    <path d="M15 8V2" />
+    <path d="M18 8H6v4a6 6 0 0 0 12 0V8z" />
+  </svg>
+);
+
 /**
  * Close icon
  */
@@ -49,6 +58,7 @@ const CloseIcon = () => (
 const TABS = {
   PROVIDER: 'provider',
   AGENTS: 'agents',
+  MCP_SERVERS: 'mcp_servers',
 };
 
 /**
@@ -109,6 +119,8 @@ const SettingsModal = ({ isOpen, onClose, initialTab = TABS.PROVIDER }) => {
         return <AssistantProviderSettings />;
       case TABS.AGENTS:
         return <AgentsSettings />;
+      case TABS.MCP_SERVERS:
+        return <McpServersSettings />;
       default:
         return null;
     }
@@ -141,6 +153,13 @@ const SettingsModal = ({ isOpen, onClose, initialTab = TABS.PROVIDER }) => {
             >
               <AgentsIcon />
               <span>Agents</span>
+            </button>
+            <button
+              className={`${styles.navItem} ${activeTab === TABS.MCP_SERVERS ? styles.active : ''}`}
+              onClick={() => setActiveTab(TABS.MCP_SERVERS)}
+            >
+              <PlugIcon />
+              <span>MCP Servers</span>
             </button>
           </nav>
 

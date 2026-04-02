@@ -82,7 +82,7 @@ export const useAgentBridge = () => {
    * @param {string} roomId - Netdata room ID
    * @returns {{ tabId: string }} The created/existing tab ID
    */
-  const setupAgentTab = (agentId, agentName, spaceId, roomId) => {
+  const setupAgentTab = (agentId, agentName, spaceId, roomId, mcpServerIds = []) => {
     // Check if we already have a tab for this agent in the Map
     const tabInfo = getAgentTab(agentId, spaceId, roomId);
 
@@ -113,7 +113,21 @@ export const useAgentBridge = () => {
 
     if (existingAgentTab) {
       // Found existing tab, restore the mapping (with agent name)
-      setAgentTab(agentId, spaceId, roomId, existingAgentTab.id, agentName);
+      tabManagerRef.current.updateTabContext(existingAgentTab.id, {
+        spaceRoom: {
+          selectedSpaceId: spaceId,
+          selectedRoomId: roomId,
+        },
+        mcpServers: {
+          attachedServerIds: mcpServerIds,
+          disabledServerIds: [],
+        },
+        agent: {
+          agentId,
+          agentName,
+        },
+      });
+      setAgentTab(agentId, spaceId, roomId, existingAgentTab.id, agentName, mcpServerIds);
       return { tabId: existingAgentTab.id };
     }
 
@@ -131,6 +145,10 @@ export const useAgentBridge = () => {
         selectedSpaceId: spaceId,
         selectedRoomId: roomId,
       },
+      mcpServers: {
+        attachedServerIds: mcpServerIds,
+        disabledServerIds: [],
+      },
       agent: {
         agentId,
         agentName,
@@ -141,7 +159,7 @@ export const useAgentBridge = () => {
     executeCommandRef.current('canvas');
 
     // Store the mapping (with agent name for future recreation)
-    setAgentTab(agentId, spaceId, roomId, newTab.id, agentName);
+    setAgentTab(agentId, spaceId, roomId, newTab.id, agentName, mcpServerIds);
 
     return { tabId: newTab.id, rootTileId: newTab.rootTile?.id || null };
   };
@@ -202,6 +220,7 @@ export const useAgentBridge = () => {
     // Tab doesn't exist - recreate it
     const tabInfo = getAgentTab(agentId, spaceId, roomId);
     const agentName = tabInfo?.agentName || agentId;
+    const mcpServerIds = tabInfo?.mcpServerIds || [];
 
     console.log(`[AgentBridge] Recreating closed tab for agent: ${agentId}`);
 
@@ -210,7 +229,7 @@ export const useAgentBridge = () => {
 
     try {
       // Use setupAgentTab to create a new tab (synchronous)
-      const result = setupAgentTab(agentId, agentName, spaceId, roomId);
+      const result = setupAgentTab(agentId, agentName, spaceId, roomId, mcpServerIds);
       return result.tabId;
     } finally {
       // Clear lock - mapping is already updated by setupAgentTab
@@ -284,7 +303,12 @@ export const useAgentBridge = () => {
     // For on-demand agents: uses an existing tabId if it has valid tile structure
     registerToolHandler('agent.setup', async (request) => {
       const { agentId, spaceId, roomId, params } = request;
-      const { agentName, tabId: existingTabId } = params;
+      const {
+        agentName,
+        tabId: existingTabId,
+        mcpServerIds = [],
+        managedAgentTab = true,
+      } = params;
 
       // If tabId is provided (on-demand agent), check if it has a valid tile structure
       if (existingTabId) {
@@ -298,7 +322,26 @@ export const useAgentBridge = () => {
           (existingTab.rootTile.type === 'leaf' || existingTab.rootTile.type === 'split');
 
         if (hasValidTileStructure) {
-          setAgentTab(agentId, spaceId, roomId, existingTabId, agentName || 'Clai');
+          const nextContext = {
+            spaceRoom: {
+              selectedSpaceId: spaceId,
+              selectedRoomId: roomId,
+            },
+            agent: managedAgentTab
+              ? {
+                agentId,
+                agentName: agentName || 'Clai',
+              }
+              : null,
+          };
+          if (managedAgentTab) {
+            nextContext.mcpServers = {
+              attachedServerIds: mcpServerIds,
+              disabledServerIds: [],
+            };
+          }
+          tabManagerRef.current.updateTabContext(existingTabId, nextContext);
+          setAgentTab(agentId, spaceId, roomId, existingTabId, agentName || 'Clai', mcpServerIds);
           console.log(`[AgentBridge] Agent tab set for on-demand: ${existingTabId}, rootTile: ${existingTab.rootTile.id}`);
           return { tabId: existingTabId, rootTileId: existingTab.rootTile.id };
         }
@@ -313,7 +356,7 @@ export const useAgentBridge = () => {
       }
 
       // Create a new tab for the agent (scheduled agents or tabs without valid tiles)
-      const result = setupAgentTab(agentId, agentName || 'Clai', spaceId, roomId);
+      const result = setupAgentTab(agentId, agentName || 'Clai', spaceId, roomId, mcpServerIds);
 
       console.log(`[AgentBridge] Agent tab setup complete: ${result.tabId}`);
       return result;

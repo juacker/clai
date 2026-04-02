@@ -58,7 +58,7 @@ pub enum RunTrigger {
     ManualAutomation,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionContext {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -71,6 +71,8 @@ pub struct SessionContext {
     pub tab_id: Option<String>,
     #[serde(default)]
     pub tool_scopes: Vec<String>,
+    #[serde(default)]
+    pub mcp_server_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub netdata_conversation_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

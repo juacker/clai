@@ -424,6 +424,22 @@ async fn ensure_background_session(
     } else {
         Some(room_id.to_string())
     };
+    let desired_context = SessionContext {
+        space_id: session_space_id.clone(),
+        room_id: session_room_id.clone(),
+        workspace_id: None,
+        tab_id: Some(tab_id.to_string()),
+        tool_scopes: agent_config
+            .required_tools()
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        mcp_server_ids: agent_config.selected_mcp_server_ids.clone(),
+        netdata_conversation_id: None,
+        automation_id: Some(agent_config.id.clone()),
+        automation_name: Some(agent_config.name.clone()),
+        automation_description: Some(agent_config.description.clone()),
+    };
 
     let existing = repository::list_sessions(pool, None)
         .await
@@ -439,8 +455,16 @@ async fn ensure_background_session(
         });
 
     if let Some(session) = existing {
-        let session = if session.tab_id.as_deref() != Some(tab_id) {
-            repository::attach_session_to_tab(pool, &session.id, Some(tab_id))
+        let session = if session.tab_id.as_deref() != Some(tab_id)
+            || session.title.as_deref() != Some(agent_config.name.as_str())
+            || session.context != desired_context
+        {
+            let mut updated = session;
+            updated.tab_id = Some(tab_id.to_string());
+            updated.title = Some(agent_config.name.clone());
+            updated.context = desired_context.clone();
+            updated.updated_at = chrono::Utc::now().timestamp_millis();
+            repository::update_session(pool, &updated)
                 .await
                 .map_err(RunnerError::AssistantPersistence)?
         } else {
@@ -468,21 +492,7 @@ async fn ensure_background_session(
             title: Some(agent_config.name.clone()),
             provider_id: provider_id.to_string(),
             model_id: model_id.to_string(),
-            context: SessionContext {
-                space_id: session_space_id,
-                room_id: session_room_id,
-                workspace_id: None,
-                tab_id: Some(tab_id.to_string()),
-                tool_scopes: agent_config
-                    .required_tools()
-                    .into_iter()
-                    .map(str::to_string)
-                    .collect(),
-                netdata_conversation_id: None,
-                automation_id: Some(agent_config.id.clone()),
-                automation_name: Some(agent_config.name.clone()),
-                automation_description: Some(agent_config.description.clone()),
-            },
+            context: desired_context,
         },
     )
     .await

@@ -9,6 +9,8 @@ import { useCallback, useRef } from 'react';
 import useAssistantStore from './sessionStore';
 import * as client from './client';
 
+const normalizeIdList = (ids) => [...(ids || [])].sort();
+
 export function useAssistantSession(tabId) {
   const sessionId = useAssistantStore(
     (state) => state.activeSessionByTab[tabId]
@@ -30,15 +32,18 @@ export function useAssistantSession(tabId) {
     async (providerId, modelId, context = {}) => {
       const store = useAssistantStore.getState();
 
-      // Match on provider, model, AND context (space/room)
+      // Match on provider, model, and session context (space/room/MCP selection)
       const contextSpaceId = context.spaceId || null;
       const contextRoomId = context.roomId || null;
+      const contextMcpServerIds = normalizeIdList(context.mcpServerIds || []);
 
       const sessionMatches = (s) =>
         s.modelId === modelId &&
         s.providerId === providerId &&
         (s.context?.spaceId || null) === contextSpaceId &&
-        (s.context?.roomId || null) === contextRoomId;
+        (s.context?.roomId || null) === contextRoomId &&
+        JSON.stringify(normalizeIdList(s.context?.mcpServerIds || [])) ===
+          JSON.stringify(contextMcpServerIds);
 
       // Check if we already have a matching session for this tab
       const existingId = store.activeSessionByTab[tabId];

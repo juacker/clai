@@ -5,6 +5,16 @@ import { getData } from '../../api/client';
 import NetdataSpinner from '../common/NetdataSpinner';
 import styles from './ContextChart.module.css';
 
+const normalizeFilterMap = (filterMap) => {
+  if (!filterMap || typeof filterMap !== 'object') return {};
+
+  return Object.fromEntries(
+    Object.entries(filterMap)
+      .filter(([key]) => !!key)
+      .map(([key, value]) => [key, Array.isArray(value) ? value : [value].filter(Boolean)])
+  );
+};
+
 // Memoized FilterChip component to prevent unnecessary re-renders
 const FilterChip = React.memo(({
   option,
@@ -163,7 +173,7 @@ const ContextChart = ({
   // Convert filterBy prop to object format if it's an array
   const normalizeFilterBy = useCallback((filterByProp) => {
     if (!filterByProp) return {};
-    if (!Array.isArray(filterByProp)) return filterByProp;
+    if (!Array.isArray(filterByProp)) return normalizeFilterMap(filterByProp);
 
     const filters = {};
     filterByProp.forEach(filter => {
@@ -279,7 +289,7 @@ const ContextChart = ({
     });
 
     const applicableFilters = {};
-    Object.entries(filters).forEach(([filterLabel, values]) => {
+    Object.entries(normalizeFilterMap(filters)).forEach(([filterLabel, values]) => {
       if (!availableLabels.has(filterLabel)) {
         skippedFilters[filterLabel] = values;
         return;
@@ -349,9 +359,10 @@ const ContextChart = ({
     const dimensions = [];
     const instances = [];
     const labels = [];
+    const normalizedFilters = normalizeFilterMap(filters);
 
-    Object.keys(filters).forEach(label => {
-      const values = filters[label];
+    Object.keys(normalizedFilters).forEach(label => {
+      const values = normalizedFilters[label];
       values.forEach(value => {
         switch (label) {
           case 'node':
@@ -759,18 +770,21 @@ const ContextChart = ({
 
   // Check if current state differs from initial props
   const hasChanges = useMemo(() => {
+    const normalizedActiveFilters = normalizeFilterMap(activeFilters);
+    const normalizedInitialFilters = normalizeFilterMap(normalizedFilterBy);
+
     if (activeGroupBy.length !== normalizedGroupBy.length) return true;
     if (!activeGroupBy.every(g => normalizedGroupBy.includes(g))) return true;
 
-    const activeFilterKeys = Object.keys(activeFilters);
-    const normalizedFilterKeys = Object.keys(normalizedFilterBy);
+    const activeFilterKeys = Object.keys(normalizedActiveFilters);
+    const normalizedFilterKeys = Object.keys(normalizedInitialFilters);
 
     if (activeFilterKeys.length !== normalizedFilterKeys.length) return true;
 
     for (const key of activeFilterKeys) {
-      if (!normalizedFilterBy[key]) return true;
-      if (activeFilters[key].length !== normalizedFilterBy[key].length) return true;
-      if (!activeFilters[key].every(v => normalizedFilterBy[key].includes(v))) return true;
+      if (!normalizedInitialFilters[key]) return true;
+      if (normalizedActiveFilters[key].length !== normalizedInitialFilters[key].length) return true;
+      if (!normalizedActiveFilters[key].every(v => normalizedInitialFilters[key].includes(v))) return true;
     }
 
     return false;

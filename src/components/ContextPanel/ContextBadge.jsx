@@ -42,29 +42,58 @@ const CreditsIcon = () => (
   </svg>
 );
 
+const McpIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8 6h8" />
+    <path d="M8 12h8" />
+    <path d="M8 18h8" />
+    <path d="M4 6h.01" />
+    <path d="M4 12h.01" />
+    <path d="M4 18h.01" />
+    <rect x="2" y="3" width="20" height="18" rx="3" />
+  </svg>
+);
+
 /**
  * ContextBadge displays a single context item
  *
  * @param {Object} props
- * @param {string} props.type - Type of badge: 'space', 'room', 'credits', or 'custom'
+ * @param {string} props.type - Type of badge: 'space', 'room', 'credits', 'mcp', or 'custom'
  * @param {string} props.label - Label to display (for custom badges, this is the key)
  * @param {string} props.value - Value to display
  * @param {Function} props.onClick - Optional click handler for interactive badges
  * @param {boolean} props.clickable - Whether the badge is clickable (default: false)
- * @param {string} props.variant - Optional variant for styling: 'warning', 'danger' (only for credits type)
+ * @param {string} props.variant - Optional variant for styling: 'warning', 'danger', 'disabled', 'add'
  */
-const ContextBadge = ({ type = 'custom', label, value, onClick, clickable = false, variant }) => {
+const ContextBadge = ({
+  type = 'custom',
+  label,
+  value,
+  onClick,
+  clickable = false,
+  variant,
+  titleOverride,
+  iconElement,
+}) => {
   // Determine badge style based on type and variant
   const typeClass = type.charAt(0).toUpperCase() + type.slice(1);
   const variantClass = variant ? variant.charAt(0).toUpperCase() + variant.slice(1) : '';
   const badgeClass = `${styles.badge} ${styles[`badge${typeClass}${variantClass}`] || styles[`badge${typeClass}`] || ''} ${clickable ? styles.clickable : ''}`;
 
   // Select the appropriate icon based on type
-  const IconComponent = type === 'space' ? SpaceIcon : type === 'room' ? RoomIcon : type === 'credits' ? CreditsIcon : CustomIcon;
+  const IconComponent = type === 'space'
+    ? SpaceIcon
+    : type === 'room'
+      ? RoomIcon
+      : type === 'credits'
+        ? CreditsIcon
+        : type === 'mcp'
+          ? McpIcon
+          : CustomIcon;
 
   // For space, room, and credits, we show just the value
   // For custom, we show key=value
-  const displayText = type === 'space' || type === 'room' || type === 'credits'
+  const displayText = type === 'space' || type === 'room' || type === 'credits' || type === 'mcp'
     ? value
     : `${label}=${value}`;
 
@@ -79,7 +108,7 @@ const ContextBadge = ({ type = 'custom', label, value, onClick, clickable = fals
   return (
     <div
       className={badgeClass}
-      title={`${label}: ${value}`}
+      title={titleOverride || `${label}: ${value}`}
       onClick={handleClick}
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}
@@ -91,7 +120,7 @@ const ContextBadge = ({ type = 'custom', label, value, onClick, clickable = fals
       } : undefined}
     >
       <span className={styles.icon}>
-        <IconComponent />
+        {iconElement || <IconComponent />}
       </span>
       <span className={styles.text}>{displayText}</span>
     </div>
@@ -99,4 +128,3 @@ const ContextBadge = ({ type = 'custom', label, value, onClick, clickable = fals
 };
 
 export default ContextBadge;
-

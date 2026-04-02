@@ -496,6 +496,7 @@ export const getAgent = async (id) => {
  * @param {string} request.name - Agent name
  * @param {string} request.description - Agent description (supports markdown)
  * @param {number} request.intervalMinutes - Check interval in minutes
+ * @param {Array<string>} request.selectedMcpServerIds - Enabled MCP servers for this agent
  * @returns {Promise<Object>} Created agent
  */
 export const createAgent = async (request) => {
@@ -513,6 +514,7 @@ export const createAgent = async (request) => {
  * @param {string} request.name - Agent name
  * @param {string} request.description - Agent description
  * @param {number} request.intervalMinutes - Check interval in minutes
+ * @param {Array<string>} request.selectedMcpServerIds - Enabled MCP servers for this agent
  * @returns {Promise<Object>} Updated agent
  */
 export const updateAgent = async (request) => {
@@ -608,6 +610,50 @@ export const toggleAgentsForRoom = async (spaceId, roomId, enabled) => {
     return await invoke('toggle_agents_for_room', { spaceId, roomId, enabled });
   } catch (error) {
     handleApiError(error, 'Failed to toggle agents');
+  }
+};
+
+// ============================================================================
+// MCP Server Management
+// ============================================================================
+
+export const getMcpServers = async () => {
+  try {
+    return await invoke('get_mcp_servers');
+  } catch (error) {
+    handleApiError(error, 'Failed to get MCP servers');
+  }
+};
+
+export const getMcpServer = async (id) => {
+  try {
+    return await invoke('get_mcp_server', { id });
+  } catch (error) {
+    handleApiError(error, 'Failed to get MCP server');
+  }
+};
+
+export const createMcpServer = async (request) => {
+  try {
+    return await invoke('create_mcp_server', { request });
+  } catch (error) {
+    handleApiError(error, 'Failed to create MCP server');
+  }
+};
+
+export const updateMcpServer = async (request) => {
+  try {
+    return await invoke('update_mcp_server', { request });
+  } catch (error) {
+    handleApiError(error, 'Failed to update MCP server');
+  }
+};
+
+export const deleteMcpServer = async (id) => {
+  try {
+    return await invoke('delete_mcp_server', { id });
+  } catch (error) {
+    handleApiError(error, 'Failed to delete MCP server');
   }
 };
 
