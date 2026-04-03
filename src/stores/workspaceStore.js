@@ -399,6 +399,21 @@ export const useWorkspaceStore = create(
         debouncedSave(get());
       },
 
+      /**
+       * Atomically update command state using a function that receives current
+       * state and returns the new state.  Safe for concurrent read-modify-write.
+       */
+      updateCommandStateAtomic: (commandId, updater) => {
+        set((state) => {
+          const cmd = state.commands[commandId];
+          if (cmd) {
+            const current = cmd.state || {};
+            Object.assign(cmd.state, updater(current));
+          }
+        });
+        debouncedSave(get());
+      },
+
       updateCommandArgs: (commandId, args) => {
         set((state) => {
           if (state.commands[commandId]) {

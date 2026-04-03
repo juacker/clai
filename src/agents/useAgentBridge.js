@@ -25,6 +25,7 @@ import { useEffect, useRef } from 'react';
 import { getMcpServers } from '../api/client';
 import { useTabManager } from '../contexts/TabManagerContext';
 import { useCommand } from '../contexts/CommandContext';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import {
   initAgentBridge,
   cleanupAgentBridge,
@@ -41,6 +42,114 @@ import {
 import { emit as emitActivity } from './activityBus';
 
 const MCP_SERVERS_CHANGED_EVENT = 'mcp-servers-changed';
+
+/**
+ * Create a store-backed fallback canvas API for when the Canvas component
+ * isn't mounted (e.g., agent tab not active).  Manipulates Zustand state
+ * directly — the Canvas component will pick up changes on next mount.
+ */
+const createStoreBackedCanvasApi = (commandId) => {
+  const generateNodeId = () => `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const generateEdgeId = () => `edge_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  const atomicUpdate = (updater) => {
+    useWorkspaceStore.getState().updateCommandStateAtomic(commandId, updater);
+  };
+
+  const getState = () => {
+    const cmd = useWorkspaceStore.getState().commands[commandId];
+    return cmd?.state || { nodes: [], edges: [] };
+  };
+
+  return {
+    addNode: (type, position, data) => {
+      const id = generateNodeId();
+      atomicUpdate((state) => ({
+        nodes: [...(state.nodes || []), { id, type, position, data, width: data?.width || 400, height: data?.height || 300 }],
+      }));
+      return id;
+    },
+    removeNode: (nodeId) => {
+      atomicUpdate((state) => ({
+        nodes: (state.nodes || []).filter((n) => n.id !== nodeId),
+        edges: (state.edges || []).filter((e) => e.source !== nodeId && e.target !== nodeId),
+      }));
+    },
+    updateNode: (nodeId, updates) => {
+      atomicUpdate((state) => ({
+        nodes: (state.nodes || []).map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                ...(updates.position ? { position: updates.position } : {}),
+                ...(updates.data ? { data: { ...n.data, ...updates.data } } : {}),
+              }
+            : n
+        ),
+      }));
+    },
+    addEdge: (sourceId, targetId, options = {}) => {
+      const id = generateEdgeId();
+      atomicUpdate((state) => ({
+        edges: [...(state.edges || []), { id, source: sourceId, target: targetId, label: options.label, animated: options.animated || false }],
+      }));
+      return id;
+    },
+    removeEdge: (edgeId) => {
+      atomicUpdate((state) => ({
+        edges: (state.edges || []).filter((e) => e.id !== edgeId),
+      }));
+    },
+    getNodes: () => getState().nodes || [],
+    getEdges: () => getState().edges || [],
+    clear: () => {
+      atomicUpdate(() => ({ nodes: [], edges: [] }));
+    },
+  };
+};
+
+/**
+ * Create a store-backed fallback dashboard API for when the Dashboard
+ * component isn't mounted.
+ */
+const createStoreBackedDashboardApi = (commandId) => {
+  const generateElementId = () => `el_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  const atomicUpdate = (updater) => {
+    useWorkspaceStore.getState().updateCommandStateAtomic(commandId, updater);
+  };
+
+  const getState = () => {
+    const cmd = useWorkspaceStore.getState().commands[commandId];
+    return cmd?.state || { elements: [], selectedInterval: { label: '15m', seconds: 900 } };
+  };
+
+  return {
+    addChart: (config) => {
+      const elementId = generateElementId();
+      atomicUpdate((state) => ({
+        elements: [...(state.elements || []), { id: elementId, type: 'context-chart', config }],
+      }));
+      return elementId;
+    },
+    removeChart: (chartId) => {
+      atomicUpdate((state) => ({
+        elements: (state.elements || []).filter((el) => el.id !== chartId),
+      }));
+      return true;
+    },
+    getCharts: () => (getState().elements || []).filter((el) => el.type === 'context-chart'),
+    getChartsDetailed: () => (getState().elements || []).filter((el) => el.type === 'context-chart'),
+    hasElement: (elementId) => (getState().elements || []).some((el) => el.id === elementId),
+    setTimeRange: (range) => {
+      atomicUpdate(() => ({ selectedInterval: { label: range } }));
+      return true;
+    },
+    clearCharts: () => {
+      atomicUpdate(() => ({ elements: [] }));
+    },
+  };
+};
 
 /**
  * Generate a unique chart ID
@@ -457,6 +566,10 @@ export const useAgentBridge = () => {
     }
 
     if (!command.api) {
+      // Component not mounted — use store-backed fallback for canvas
+      if (commandType === 'canvas') {
+        return { ...command, api: createStoreBackedCanvasApi(commandId) };
+      }
       if (required) {
         throw new Error(`${commandType} not ready: ${commandId}`);
       }
@@ -538,17 +651,20 @@ export const useAgentBridge = () => {
 
     // Helper to get dashboard command from agent's tab
     const getDashboardFromTab = (tabId, commandId = null) => {
+      let command;
       if (commandId) {
-        // Get specific dashboard by commandId
-        const command = tabManagerRef.current.getCommandFromTab(tabId, commandId);
-        if (!command || command.type !== 'dashboard') {
-          return null;
-        }
-        return command;
+        command = tabManagerRef.current.getCommandFromTab(tabId, commandId);
+        if (!command || command.type !== 'dashboard') return null;
+      } else {
+        const dashboards = tabManagerRef.current.getCommandsByTypeFromTab(tabId, 'dashboard');
+        command = dashboards.length > 0 ? dashboards[0] : null;
       }
-      // Get first dashboard in tab
-      const dashboards = tabManagerRef.current.getCommandsByTypeFromTab(tabId, 'dashboard');
-      return dashboards.length > 0 ? dashboards[0] : null;
+      if (!command) return null;
+      // Provide store-backed fallback when component isn't mounted
+      if (!command.api) {
+        return { ...command, api: createStoreBackedDashboardApi(command.id) };
+      }
+      return command;
     };
 
     const getAnomaliesFromTab = (tabId, commandId = null) => {
@@ -670,9 +786,6 @@ export const useAgentBridge = () => {
       if (!dashboard) {
         throw new Error('No dashboard found. Create one with tabs.splitTile({ commandType: "dashboard" })');
       }
-      if (!dashboard.api) {
-        throw new Error('Dashboard not ready yet');
-      }
 
       const normalizedGroupBy = normalizeGroupBy(params.groupBy);
       const normalizedFilterBy = normalizeFilterBy(params.filterBy);
@@ -695,8 +808,8 @@ export const useAgentBridge = () => {
       const tabId = ensureAgentTab(agentId, spaceId, roomId, fallbackTabId, fallbackMcpServerIds);
 
       const dashboard = getDashboardFromTab(tabId, params.commandId);
-      if (!dashboard?.api) {
-        throw new Error('Dashboard not found or not ready');
+      if (!dashboard) {
+        throw new Error('Dashboard not found');
       }
 
       dashboard.api.removeChart(params.chartId);
@@ -712,7 +825,7 @@ export const useAgentBridge = () => {
       }
 
       const dashboard = getDashboardFromTab(tabId, params?.commandId);
-      if (!dashboard?.api) {
+      if (!dashboard) {
         return { success: true };
       }
 
@@ -726,8 +839,8 @@ export const useAgentBridge = () => {
       const tabId = ensureAgentTab(agentId, spaceId, roomId, fallbackTabId, fallbackMcpServerIds);
 
       const dashboard = getDashboardFromTab(tabId, params?.commandId);
-      if (!dashboard?.api) {
-        throw new Error('Dashboard not found or not ready');
+      if (!dashboard) {
+        throw new Error('Dashboard not found');
       }
 
       const success = dashboard.api.setTimeRange(params.range);
