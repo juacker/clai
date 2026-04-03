@@ -392,8 +392,9 @@ export const useWorkspaceStore = create(
 
       updateCommandState: (commandId, partialState) => {
         set((state) => {
-          if (state.commands[commandId]) {
-            Object.assign(state.commands[commandId].state, partialState);
+          const cmd = state.commands[commandId];
+          if (cmd) {
+            cmd.state = { ...(cmd.state || {}), ...partialState };
           }
         });
         debouncedSave(get());
@@ -408,7 +409,7 @@ export const useWorkspaceStore = create(
           const cmd = state.commands[commandId];
           if (cmd) {
             const current = cmd.state || {};
-            Object.assign(cmd.state, updater(current));
+            cmd.state = { ...current, ...updater(current) };
           }
         });
         debouncedSave(get());
