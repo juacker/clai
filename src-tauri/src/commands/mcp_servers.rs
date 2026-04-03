@@ -2,9 +2,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::assistant::auth::McpSecretStorage;
-use crate::config::{
-    McpServerAuth, McpServerConfig, McpServerIntegrationType, McpServerTransport,
-};
+use crate::config::{McpServerAuth, McpServerConfig, McpServerIntegrationType, McpServerTransport};
 use crate::AppState;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -47,9 +45,7 @@ pub enum McpServerAuthRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum McpServerAuthResponse {
     None,
-    BearerToken {
-        has_secret: bool,
-    },
+    BearerToken { has_secret: bool },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -113,7 +109,9 @@ pub fn get_mcp_server(
         .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
 
-    Ok(config_manager.get_mcp_server(&id).map(McpServerResponse::from_config))
+    Ok(config_manager
+        .get_mcp_server(&id)
+        .map(McpServerResponse::from_config))
 }
 
 #[tauri::command]
@@ -221,7 +219,10 @@ async fn sync_mcp_client_manager(state: &State<'_, AppState>) {
     manager.sync_from_config(&config);
 }
 
-fn build_auth_for_new_server(id: &str, auth: &McpServerAuthRequest) -> Result<McpServerAuth, String> {
+fn build_auth_for_new_server(
+    id: &str,
+    auth: &McpServerAuthRequest,
+) -> Result<McpServerAuth, String> {
     match auth {
         McpServerAuthRequest::None => Ok(McpServerAuth::None),
         McpServerAuthRequest::BearerToken { token } => {
@@ -255,7 +256,11 @@ fn build_auth_for_existing_server(
                 McpServerAuth::None => format!("mcp-server::{}::bearer", existing.id),
             };
 
-            if let Some(token) = token.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+            if let Some(token) = token
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
                 McpSecretStorage::set_secret(&secret_ref, token)
                     .map_err(|e| format!("Failed to store MCP server credential: {}", e))?;
             } else if matches!(existing.auth, McpServerAuth::None) {

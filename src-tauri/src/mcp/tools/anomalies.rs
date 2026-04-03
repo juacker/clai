@@ -27,7 +27,9 @@ pub struct OpenAnomaliesParams {
     pub parent_tile_id: Option<String>,
 
     /// Optional split orientation for the new panel.
-    #[schemars(description = "Split type for a new panel: 'vertical' or 'horizontal' (optional, defaults to 'vertical')")]
+    #[schemars(
+        description = "Split type for a new panel: 'vertical' or 'horizontal' (optional, defaults to 'vertical')"
+    )]
     #[serde(default)]
     pub split_type: Option<String>,
 }

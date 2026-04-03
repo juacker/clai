@@ -125,7 +125,9 @@ pub fn available_tools(
         });
     }
 
-    if context.agent_workspace_id.is_some() && !matches!(context.execution.shell.mode, ShellAccessMode::Off) {
+    if context.agent_workspace_id.is_some()
+        && !matches!(context.execution.shell.mode, ShellAccessMode::Off)
+    {
         tools.push(ToolDefinition {
             name: "bash.exec".to_string(),
             description: "Run a shell command inside this automation's allowed working directory. Use this for local command execution and data processing when MCP tools are not the right fit.".to_string(),

@@ -160,11 +160,7 @@ fn completions_url(session: &ProviderSession) -> String {
 // =============================================================================
 
 fn build_request_body(request: &CompletionRequest) -> serde_json::Value {
-    let messages: Vec<serde_json::Value> = request
-        .messages
-        .iter()
-        .map(build_message)
-        .collect();
+    let messages: Vec<serde_json::Value> = request.messages.iter().map(build_message).collect();
 
     let mut body = json!({
         "model": request.model_id,

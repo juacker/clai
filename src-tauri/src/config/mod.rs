@@ -221,7 +221,9 @@ impl ConfigManager {
 
             if removed {
                 for agent in &mut config.agents {
-                    agent.selected_mcp_server_ids.retain(|server_id| server_id != id);
+                    agent
+                        .selected_mcp_server_ids
+                        .retain(|server_id| server_id != id);
                 }
             }
         })?;
@@ -365,7 +367,10 @@ mod tests {
         assert!(manager.config_path.exists());
 
         let loaded = ConfigManager::load_from_file(&manager.config_path).unwrap();
-        assert!(matches!(loaded.ai_provider, Some(AiProvider::Claude { .. })));
+        assert!(matches!(
+            loaded.ai_provider,
+            Some(AiProvider::Claude { .. })
+        ));
         assert_eq!(loaded.assistant_default_model.as_deref(), Some("gpt-5"));
     }
 

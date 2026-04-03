@@ -278,9 +278,7 @@ async fn load_assistant_provider_info(
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false);
     let configured = provider_session.is_some() && has_model;
-    Ok(crate::config::ProviderInfo {
-        configured,
-    })
+    Ok(crate::config::ProviderInfo { configured })
 }
 
 fn build_agent_definition(agent: &AgentConfig) -> crate::agents::AgentDefinition {

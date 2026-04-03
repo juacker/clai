@@ -427,7 +427,10 @@ mod tests {
         assert!(json.contains(DEFAULT_AGENT_ID));
 
         let parsed: ClaiConfig = serde_json::from_str(&json).unwrap();
-        assert!(matches!(parsed.ai_provider, Some(AiProvider::Claude { .. })));
+        assert!(matches!(
+            parsed.ai_provider,
+            Some(AiProvider::Claude { .. })
+        ));
         assert_eq!(parsed.assistant_default_model.as_deref(), Some("gpt-5"));
         assert_eq!(parsed.agents.len(), 1);
     }
@@ -507,7 +510,10 @@ mod tests {
         let parsed: AgentConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, agent.id);
         assert_eq!(parsed.name, agent.name);
-        assert_eq!(parsed.selected_mcp_server_ids, agent.selected_mcp_server_ids);
+        assert_eq!(
+            parsed.selected_mcp_server_ids,
+            agent.selected_mcp_server_ids
+        );
         assert_eq!(parsed.execution, agent.execution);
     }
 

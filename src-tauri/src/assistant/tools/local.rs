@@ -1,6 +1,6 @@
+use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
-use std::fs;
 
 use serde::Deserialize;
 use tokio::io::AsyncReadExt;
@@ -107,7 +107,8 @@ fn execute_fs_read(
 ) -> Result<serde_json::Value, String> {
     let grants = filesystem_grants(context)?;
     let path = resolve_allowed_existing_path(&params.path, &grants, false).inspect_err(|e| {
-        if e.contains("outside the agent's allowed filesystem grants") || e.contains("not writable") {
+        if e.contains("outside the agent's allowed filesystem grants") || e.contains("not writable")
+        {
             context.add_notice(RunNoticeKind::PathDenied, e.clone());
         }
     })?;
@@ -138,7 +139,8 @@ fn execute_fs_write(
 ) -> Result<serde_json::Value, String> {
     let grants = filesystem_grants(context)?;
     let path = resolve_allowed_path(&params.path, &grants, true).inspect_err(|e| {
-        if e.contains("outside the agent's allowed filesystem grants") || e.contains("not writable") {
+        if e.contains("outside the agent's allowed filesystem grants") || e.contains("not writable")
+        {
             context.add_notice(RunNoticeKind::PathDenied, e.clone());
         }
     })?;
@@ -146,7 +148,11 @@ fn execute_fs_write(
     if params.create_parents {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| {
-                format!("Failed to create parent directories for {}: {}", path.display(), e)
+                format!(
+                    "Failed to create parent directories for {}: {}",
+                    path.display(),
+                    e
+                )
             })?;
         }
     }
@@ -233,8 +239,14 @@ async fn execute_bash_exec(
         .map_err(|e| format!("Failed to collect stderr: {}", e))?
         .map_err(|e| format!("Failed to read stderr: {}", e))?;
 
-    let stdout = truncate_string(String::from_utf8_lossy(&stdout_bytes).into_owned(), output_limit);
-    let stderr = truncate_string(String::from_utf8_lossy(&stderr_bytes).into_owned(), output_limit);
+    let stdout = truncate_string(
+        String::from_utf8_lossy(&stdout_bytes).into_owned(),
+        output_limit,
+    );
+    let stderr = truncate_string(
+        String::from_utf8_lossy(&stderr_bytes).into_owned(),
+        output_limit,
+    );
 
     Ok(serde_json::json!({
         "cwd": cwd.display().to_string(),
@@ -253,9 +265,10 @@ fn filesystem_grants(context: &ToolExecutionContext) -> Result<Vec<ResolvedGrant
 
     for grant in &context.execution.filesystem.extra_paths {
         let resolved = resolve_grant(grant)?;
-        if !grants.iter().any(|existing| {
-            existing.root == resolved.root && existing.access == resolved.access
-        }) {
+        if !grants
+            .iter()
+            .any(|existing| existing.root == resolved.root && existing.access == resolved.access)
+        {
             grants.push(resolved);
         }
     }
@@ -410,10 +423,13 @@ fn enforce_command_policy(
     execution: &ExecutionCapabilityConfig,
     command: &str,
 ) -> Result<(), CommandDenial> {
-    let normalized = normalize_command(command)
-        .ok_or_else(|| CommandDenial::ExplicitlyBlocked("Shell command cannot be empty".to_string()))?;
+    let normalized = normalize_command(command).ok_or_else(|| {
+        CommandDenial::ExplicitlyBlocked("Shell command cannot be empty".to_string())
+    })?;
 
-    if let Some(matched) = find_matching_prefix(&execution.shell.blocked_command_prefixes, &normalized) {
+    if let Some(matched) =
+        find_matching_prefix(&execution.shell.blocked_command_prefixes, &normalized)
+    {
         return Err(CommandDenial::ExplicitlyBlocked(format!(
             "Command `{}` is blocked for this agent (matched prefix `{}`)",
             normalized, matched
@@ -458,11 +474,14 @@ fn command_preview(command: &str) -> String {
 ///   - prefix "kubectl" matches command "kubectl delete pods"
 ///   - prefix "kubectl get" does NOT match command "kubectl delete pods"
 fn find_matching_prefix<'a>(prefixes: &'a [String], command: &str) -> Option<&'a str> {
-    prefixes.iter().find(|prefix| {
-        let p = prefix.trim();
-        command == p
-            || (command.starts_with(p) && command.as_bytes().get(p.len()) == Some(&b' '))
-    }).map(|s| s.as_str())
+    prefixes
+        .iter()
+        .find(|prefix| {
+            let p = prefix.trim();
+            command == p
+                || (command.starts_with(p) && command.as_bytes().get(p.len()) == Some(&b' '))
+        })
+        .map(|s| s.as_str())
 }
 
 fn truncate_string(text: String, limit: usize) -> String {

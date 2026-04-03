@@ -9,15 +9,14 @@ use crate::assistant::providers::types::ProviderError;
 use crate::assistant::repository;
 use crate::assistant::repository::{CreateMessageParams, CreateRunParams, CreateToolCallParams};
 use crate::assistant::runtime;
+use crate::assistant::tools::local::agent_workspace_root_for_id;
 use crate::assistant::tools::{self, ToolExecutionContext};
 use crate::assistant::types::{
     CompletionRequest, ContentPart, MessageRole, ProviderEvent, ProviderInputMessage, RunId,
-    RunStatus, RunTrigger, RunUsage, SessionId, SessionKind, ToolCallStatus,
-    ToolInvocationDraft,
+    RunStatus, RunTrigger, RunUsage, SessionId, SessionKind, ToolCallStatus, ToolInvocationDraft,
 };
-use crate::db::DbPool;
 use crate::config::McpServerIntegrationType;
-use crate::assistant::tools::local::agent_workspace_root_for_id;
+use crate::db::DbPool;
 use tokio_util::sync::CancellationToken;
 
 const MAX_TOOL_ITERATIONS: usize = 10;
@@ -562,7 +561,8 @@ fn build_system_prompt(
                 workspace_root.display()
             ));
         } else {
-            prompt.push_str("- Private agent workspace: available (read_write, default shell cwd)\n");
+            prompt
+                .push_str("- Private agent workspace: available (read_write, default shell cwd)\n");
         }
 
         if context.execution.filesystem.extra_paths.is_empty() {
@@ -678,8 +678,8 @@ async fn cancel_run(
     usage: Option<&RunUsage>,
     _message_id: Option<&str>,
 ) -> Result<(), AssistantEngineError> {
-    let run =
-        repository::complete_run(&deps.pool, run_id, RunStatus::Cancelled, usage, None, &[]).await?;
+    let run = repository::complete_run(&deps.pool, run_id, RunStatus::Cancelled, usage, None, &[])
+        .await?;
     let _ = emit_event(
         &deps.app,
         session,

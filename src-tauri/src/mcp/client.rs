@@ -9,8 +9,7 @@ use rmcp::{
     },
     service::{RoleClient, RunningService, ServiceExt},
     transport::{
-        StreamableHttpClientTransport,
-        streamable_http_client::StreamableHttpClientTransportConfig,
+        streamable_http_client::StreamableHttpClientTransportConfig, StreamableHttpClientTransport,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -128,7 +127,6 @@ struct ManagedMcpServer {
 pub struct McpClientManager {
     servers: HashMap<String, ManagedMcpServer>,
 }
-
 
 impl McpClientManager {
     pub fn new() -> Self {
@@ -301,8 +299,10 @@ impl McpClientManager {
 
             let bearer_token = match &server.config.auth {
                 McpServerAuth::None => None,
-                McpServerAuth::BearerToken { secret_ref } => McpSecretStorage::get_secret(secret_ref)
-                    .map_err(|e| format!("Failed to read MCP server credential: {}", e))?,
+                McpServerAuth::BearerToken { secret_ref } => {
+                    McpSecretStorage::get_secret(secret_ref)
+                        .map_err(|e| format!("Failed to read MCP server credential: {}", e))?
+                }
             };
 
             (needs_connect, server.config.clone(), bearer_token)
@@ -380,7 +380,10 @@ impl McpClientManager {
         let mut matches = Vec::new();
         for server_id in server_ids {
             let discovered_tools = self.ensure_server_tools_discovered(server_id).await?;
-            if discovered_tools.iter().any(|tool| tool.tool_name == tool_name) {
+            if discovered_tools
+                .iter()
+                .any(|tool| tool.tool_name == tool_name)
+            {
                 matches.push(server_id.clone());
             }
         }
@@ -462,15 +465,12 @@ impl McpClientManager {
                     format!("Failed to capture stdin for MCP server `{}`", config.name)
                 })?;
 
-                let service = ()
-                    .serve((stdout, stdin))
-                    .await
-                    .map_err(|error| {
-                        format!(
-                            "Failed to initialize stdio MCP server `{}`: {}",
-                            config.name, error
-                        )
-                    })?;
+                let service = ().serve((stdout, stdin)).await.map_err(|error| {
+                    format!(
+                        "Failed to initialize stdio MCP server `{}`: {}",
+                        config.name, error
+                    )
+                })?;
 
                 Ok(ConnectedMcpServer::Stdio(StdioMcpServerConnection {
                     service,
@@ -479,7 +479,6 @@ impl McpClientManager {
             }
         }
     }
-
 }
 
 impl McpClientManager {
@@ -501,12 +500,11 @@ fn infer_integration_type_from_tools(
     let tool_names: std::collections::HashSet<&str> =
         tools.iter().map(|tool| tool.tool_name.as_str()).collect();
 
-    let looks_like_netdata_cloud =
-        tool_names.contains("get_profile")
-            && tool_names.contains("search_metrics")
-            && (tool_names.contains("get_metric_data")
-                || tool_names.contains("get_anomalous_contexts")
-                || tool_names.contains("trigger_report"));
+    let looks_like_netdata_cloud = tool_names.contains("get_profile")
+        && tool_names.contains("search_metrics")
+        && (tool_names.contains("get_metric_data")
+            || tool_names.contains("get_anomalous_contexts")
+            || tool_names.contains("trigger_report"));
 
     if looks_like_netdata_cloud {
         Some(McpServerIntegrationType::NetdataCloud)
@@ -549,10 +547,12 @@ fn extract_text_from_contents(contents: &[McpContent]) -> String {
                 return Some(text.text.clone());
             }
 
-            content.as_resource().and_then(|resource| match &resource.resource {
-                ResourceContents::TextResourceContents { text, .. } => Some(text.clone()),
-                _ => None,
-            })
+            content
+                .as_resource()
+                .and_then(|resource| match &resource.resource {
+                    ResourceContents::TextResourceContents { text, .. } => Some(text.clone()),
+                    _ => None,
+                })
         })
         .filter(|text| !text.is_empty())
         .collect::<Vec<_>>()

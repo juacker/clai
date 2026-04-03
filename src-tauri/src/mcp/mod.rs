@@ -38,8 +38,8 @@
 //! starts its own server on a random port. Use `McpToolServer::with_bridge()`
 //! to create a server with JS bridge support for canvas/tabs tools.
 
-pub mod client;
 pub mod bridge;
+pub mod client;
 pub mod server;
 pub mod tools;
 

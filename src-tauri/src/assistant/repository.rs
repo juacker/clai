@@ -261,7 +261,10 @@ pub async fn attach_session_to_tab(
         .map_err(|e| format!("Failed to attach session to tab: {}", e))
 }
 
-pub async fn update_session(pool: &DbPool, session: &AssistantSession) -> Result<AssistantSession, String> {
+pub async fn update_session(
+    pool: &DbPool,
+    session: &AssistantSession,
+) -> Result<AssistantSession, String> {
     sqlx::query(
         r#"
         UPDATE assistant_sessions

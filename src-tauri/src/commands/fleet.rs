@@ -97,7 +97,10 @@ pub async fn fleet_get_snapshot(
             .config_manager
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
-        (config_manager.get_agents(), config_manager.get_mcp_servers())
+        (
+            config_manager.get_agents(),
+            config_manager.get_mcp_servers(),
+        )
     };
 
     let mcp_name_map: std::collections::HashMap<&str, &str> = mcp_servers
@@ -167,7 +170,9 @@ pub async fn fleet_get_snapshot(
         let tab_id = scheduler_entry
             .and_then(|(tab_id, _, _)| tab_id.clone())
             .or_else(|| session.as_ref().and_then(|value| value.tab_id.clone()));
-        let is_running = scheduler_entry.map(|(_, running, _)| *running).unwrap_or(false);
+        let is_running = scheduler_entry
+            .map(|(_, running, _)| *running)
+            .unwrap_or(false);
         let next_run_in_seconds = scheduler_entry.map(|(_, _, seconds)| *seconds);
 
         let status = if !agent.enabled {
@@ -249,10 +254,7 @@ pub async fn fleet_get_snapshot(
 }
 
 #[tauri::command]
-pub async fn fleet_run_now(
-    agent_id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn fleet_run_now(agent_id: String, state: State<'_, AppState>) -> Result<(), String> {
     // Verify the agent exists and is enabled
     {
         let config_manager = state

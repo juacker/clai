@@ -35,7 +35,9 @@ use crate::mcp::bridge::JsBridge;
 pub struct AddChartParams {
     /// Optional Netdata MCP server ID.
     /// If omitted, CLAI will use the only enabled Netdata MCP server for the session.
-    #[schemars(description = "Optional Netdata MCP server ID. Omit when exactly one Netdata MCP server is enabled for the session.")]
+    #[schemars(
+        description = "Optional Netdata MCP server ID. Omit when exactly one Netdata MCP server is enabled for the session."
+    )]
     #[serde(default)]
     pub mcp_server_id: Option<String>,
 

@@ -254,7 +254,9 @@ async fn run_next_agent(
         },
     )
     .await?;
-    let preferred_tab_id = existing_session.as_ref().and_then(|session| session.tab_id.clone());
+    let preferred_tab_id = existing_session
+        .as_ref()
+        .and_then(|session| session.tab_id.clone());
 
     wait_for_bridge_ready(
         Duration::from_millis(BRIDGE_READY_TIMEOUT_MS),
