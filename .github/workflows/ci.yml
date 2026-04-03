@@ -55,5 +55,9 @@ jobs:
         working-directory: src-tauri
         run: cargo fmt --check
 
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test
+
       - name: Build Tauri app (debug, no bundle)
         run: npm run tauri -- build --debug --no-bundle
