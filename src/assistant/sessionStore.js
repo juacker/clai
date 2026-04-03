@@ -92,7 +92,7 @@ const useAssistantStore = create(
           } else {
             s.runs.push(run);
           }
-          if (['completed', 'failed', 'cancelled'].includes(run.status)) {
+          if (['completed', 'completed_with_warnings', 'failed', 'cancelled'].includes(run.status)) {
             s.isStreaming = false;
             s.streamingTextByMessageId = {};
           }

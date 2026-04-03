@@ -489,8 +489,10 @@ async fn ensure_background_session(
             .map(str::to_string)
             .collect(),
         mcp_server_ids: agent_config.selected_mcp_server_ids.clone(),
+        execution: agent_config.execution.clone(),
         netdata_conversation_id: None,
         automation_id: Some(agent_config.id.clone()),
+        agent_workspace_id: Some(agent_config.id.clone()),
         automation_name: Some(agent_config.name.clone()),
         automation_description: Some(agent_config.description.clone()),
     };

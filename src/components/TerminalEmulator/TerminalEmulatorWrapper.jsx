@@ -82,7 +82,9 @@ const TerminalEmulatorWrapper = () => {
               context: {
                 tabId: selectedAgent.tabId || null,
                 mcpServerIds: selectedAgent.selectedMcpServerIds || [],
+                execution: selectedAgent.execution || undefined,
                 automationId: selectedAgent.agentId,
+                agentWorkspaceId: selectedAgent.agentId,
                 automationName: selectedAgent.name,
                 automationDescription: selectedAgent.description || null,
               },

@@ -194,6 +194,12 @@ async fn run_migrations(pool: &DbPool) -> Result<(), String> {
     .await
     .map_err(|e| format!("Failed to create assistant_runs index: {}", e))?;
 
+    // Migration: add notices_json column (idempotent — ignored if already present)
+    sqlx::query("ALTER TABLE assistant_runs ADD COLUMN notices_json TEXT")
+        .execute(pool)
+        .await
+        .ok();
+
     // Create assistant tool calls table
     sqlx::query(
         r#"

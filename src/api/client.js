@@ -374,6 +374,7 @@ export const getAgent = async (id) => {
  * @param {string} request.description - Agent description (supports markdown)
  * @param {number} request.intervalMinutes - Check interval in minutes
  * @param {Array<string>} request.selectedMcpServerIds - Enabled MCP servers for this agent
+ * @param {Object} request.execution - Local execution capability policy
  * @returns {Promise<Object>} Created agent
  */
 export const createAgent = async (request) => {
@@ -392,6 +393,7 @@ export const createAgent = async (request) => {
  * @param {string} request.description - Agent description
  * @param {number} request.intervalMinutes - Check interval in minutes
  * @param {Array<string>} request.selectedMcpServerIds - Enabled MCP servers for this agent
+ * @param {Object} request.execution - Local execution capability policy
  * @returns {Promise<Object>} Updated agent
  */
 export const updateAgent = async (request) => {

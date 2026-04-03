@@ -6,7 +6,7 @@ import { useChatManager } from '../contexts/ChatManagerContext';
 import { assistantClient, useAssistantStore } from '../assistant';
 import { createAgent, updateAgent, getMcpServers, setAgentEnabled } from '../api/client';
 import { fleetRunNow } from '../fleet/client';
-import ChatMessageList from '../components/AssistantChat/ChatMessageList';
+import ChatMessageList, { NoticesBanner } from '../components/AssistantChat/ChatMessageList';
 import MarkdownMessage from '../components/Chat/MarkdownMessage';
 import AgentFormModal from '../components/Settings/AgentFormModal';
 import styles from './Fleet.module.css';
@@ -69,6 +69,7 @@ const SUMMARY_ITEMS = [
 
 const RUN_STATUS_CLASS = {
   completed: 'ribbonCompleted',
+  completed_with_warnings: 'ribbonWarning',
   failed: 'ribbonFailed',
   cancelled: 'ribbonCancelled',
   running: 'ribbonRunning',
@@ -116,7 +117,7 @@ const RunRibbon = ({ runs }) => {
           <div
             key={run.id || run.startedAt || i}
             className={`${styles.ribbonSegment} ${styles[RUN_STATUS_CLASS[run.status]] || styles.ribbonCompleted}`}
-            title={`${run.status}${run.startedAt ? ' — ' + formatTimestamp(run.startedAt) : ''}${run.error ? '\n' + run.error : ''}`}
+            title={`${run.status}${run.startedAt ? ' — ' + formatTimestamp(run.startedAt) : ''}${run.error ? '\n' + run.error : ''}${run.notices?.length ? '\n' + run.notices.length + ' warning(s)' : ''}`}
           />
         ))}
       </div>
@@ -262,6 +263,7 @@ const Fleet = () => {
       description: selectedAgent.description,
       intervalMinutes: selectedAgent.intervalMinutes,
       selectedMcpServerIds: selectedAgent.selectedMcpServerIds || [],
+      execution: selectedAgent.execution || undefined,
     });
     setIsFormOpen(true);
   }, [selectedAgent]);
@@ -286,6 +288,7 @@ const Fleet = () => {
   const detailToolCalls = sessionState?.toolCalls || EMPTY_TOOL_CALLS;
   const detailStreamingText = sessionState?.streamingTextByMessageId || EMPTY_STREAMING;
   const detailIsStreaming = sessionState?.isStreaming || false;
+  const detailRuns = sessionState?.runs || [];
 
   return (
     <div className={styles.fleetPage}>
@@ -361,6 +364,8 @@ const Fleet = () => {
                   <span>Next: <strong>{formatNextRun(agent.nextRunInSeconds)}</strong></span>
                 </div>
 
+                <MiniRibbon entries={agent.recentRunStatuses} />
+
                 {agent.selectedMcpServerNames && agent.selectedMcpServerNames.length > 0 && (
                   <div className={styles.mcpBadges}>
                     {agent.selectedMcpServerNames.map((name) => (
@@ -372,8 +377,6 @@ const Fleet = () => {
                 {agent.lastError && (
                   <p className={styles.errorPreview}>{agent.lastError}</p>
                 )}
-
-                <MiniRibbon entries={agent.recentRunStatuses} />
               </button>
             );
           })}
@@ -444,12 +447,18 @@ const Fleet = () => {
               <div className={styles.detailSection}>
                 {detailSection === 'chat' ? (
                   detailMessages.length > 0 ? (
-                    <ChatMessageList
-                      messages={detailMessages}
-                      toolCalls={detailToolCalls}
-                      streamingText={detailStreamingText}
-                      isStreaming={detailIsStreaming}
-                    />
+                    <>
+                      {(() => {
+                        const latestWarningRun = detailRuns.find((r) => r.status === 'completed_with_warnings' && r.notices?.length);
+                        return latestWarningRun ? <NoticesBanner notices={latestWarningRun.notices} /> : null;
+                      })()}
+                      <ChatMessageList
+                        messages={detailMessages}
+                        toolCalls={detailToolCalls}
+                        streamingText={detailStreamingText}
+                        isStreaming={detailIsStreaming}
+                      />
+                    </>
                   ) : (
                     <div className={styles.emptyDetail}>
                       {selectedAgent.sessionId

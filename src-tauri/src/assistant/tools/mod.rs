@@ -1,10 +1,14 @@
+pub mod local;
 pub mod registry;
 pub mod router;
 
 pub use registry::available_tools;
 pub use router::execute_tool;
 
-use crate::assistant::types::{RunId, SessionId};
+use std::sync::Mutex;
+
+use crate::assistant::types::{RunId, RunNotice, RunNoticeKind, SessionId};
+use crate::config::ExecutionCapabilityConfig;
 
 /// Context for tool execution within an assistant run.
 #[allow(dead_code)]
@@ -15,4 +19,28 @@ pub struct ToolExecutionContext {
     pub space_id: Option<String>,
     pub room_id: Option<String>,
     pub mcp_server_ids: Vec<String>,
+    pub agent_workspace_id: Option<String>,
+    pub execution: ExecutionCapabilityConfig,
+    pub notices: Mutex<Vec<RunNotice>>,
+}
+
+impl ToolExecutionContext {
+    /// Record a policy notice (e.g. command denied) on this run.
+    pub fn add_notice(&self, kind: RunNoticeKind, message: String) {
+        if let Ok(mut notices) = self.notices.lock() {
+            notices.push(RunNotice {
+                kind,
+                message,
+                timestamp: chrono::Utc::now().timestamp_millis(),
+            });
+        }
+    }
+
+    /// Drain all accumulated notices.
+    pub fn take_notices(&self) -> Vec<RunNotice> {
+        self.notices
+            .lock()
+            .map(|mut n| std::mem::take(&mut *n))
+            .unwrap_or_default()
+    }
 }

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
 use crate::assistant::repository as assistant_repository;
-use crate::config::AgentConfig;
+use crate::config::{AgentConfig, ExecutionCapabilityConfig};
 use crate::db::DbPool;
 use crate::AppState;
 
@@ -23,6 +23,8 @@ pub struct CreateAgentRequest {
     pub interval_minutes: u32,
     #[serde(default)]
     pub selected_mcp_server_ids: Vec<String>,
+    #[serde(default)]
+    pub execution: ExecutionCapabilityConfig,
 }
 
 /// Request to update an existing agent.
@@ -35,6 +37,8 @@ pub struct UpdateAgentRequest {
     pub interval_minutes: u32,
     #[serde(default)]
     pub selected_mcp_server_ids: Vec<String>,
+    #[serde(default)]
+    pub execution: ExecutionCapabilityConfig,
 }
 
 /// Request to enable/disable an agent globally.
@@ -55,6 +59,7 @@ pub struct AgentResponse {
     pub interval_minutes: u32,
     pub enabled: bool,
     pub selected_mcp_server_ids: Vec<String>,
+    pub execution: ExecutionCapabilityConfig,
     pub created_at: String,
     pub updated_at: String,
     pub is_default: bool,
@@ -70,6 +75,7 @@ impl From<AgentConfig> for AgentResponse {
             interval_minutes: agent.interval_minutes,
             enabled: agent.enabled,
             selected_mcp_server_ids: agent.selected_mcp_server_ids,
+            execution: agent.execution,
             created_at: agent.created_at,
             updated_at: agent.updated_at,
             is_default,
@@ -132,6 +138,7 @@ pub fn create_agent(
 
     let mut agent = AgentConfig::new(request.name, request.description, request.interval_minutes);
     agent.selected_mcp_server_ids = request.selected_mcp_server_ids;
+    agent.execution = request.execution;
 
     config_manager
         .add_agent(agent.clone())
@@ -168,6 +175,7 @@ pub fn update_agent(
             agent.description = request.description.clone();
             agent.interval_minutes = request.interval_minutes;
             agent.selected_mcp_server_ids = request.selected_mcp_server_ids.clone();
+            agent.execution = request.execution.clone();
         })
         .map_err(|e| format!("Failed to update agent: {}", e))?;
 

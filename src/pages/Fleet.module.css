@@ -370,6 +370,12 @@
   border: 1px solid var(--color-healthy-border);
 }
 
+.status_warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: #b45309;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
 .status_error,
 .status_failed,
 .status_cancelled {
@@ -607,6 +613,10 @@
 
 .ribbonCompleted {
   background: var(--color-healthy);
+}
+
+.ribbonWarning {
+  background: #f59e0b;
 }
 
 .ribbonFailed {

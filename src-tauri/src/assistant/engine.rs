@@ -17,6 +17,7 @@ use crate::assistant::types::{
 };
 use crate::db::DbPool;
 use crate::config::McpServerIntegrationType;
+use crate::assistant::tools::local::agent_workspace_root_for_id;
 use tokio_util::sync::CancellationToken;
 
 const MAX_TOOL_ITERATIONS: usize = 10;
@@ -128,6 +129,9 @@ pub async fn run_session_turn(
         space_id: session.context.space_id.clone(),
         room_id: session.context.room_id.clone(),
         mcp_server_ids: session.context.mcp_server_ids.clone(),
+        agent_workspace_id: session.context.agent_workspace_id.clone(),
+        execution: session.context.execution.clone(),
+        notices: std::sync::Mutex::new(Vec::new()),
     };
 
     let mut usage: Option<RunUsage> = None;
@@ -460,13 +464,20 @@ pub async fn run_session_turn(
         // Continue loop — will call API again with tool results in message history
     }
 
-    // Complete the run
+    // Complete the run — check for policy notices
+    let notices = tool_context.take_notices();
+    let final_status = if notices.is_empty() {
+        RunStatus::Completed
+    } else {
+        RunStatus::CompletedWithWarnings
+    };
     let run = repository::complete_run(
         &deps.pool,
         &run_id,
-        RunStatus::Completed,
+        final_status,
         usage.as_ref(),
         None,
+        &notices,
     )
     .await?;
     let _ = emit_event(
@@ -511,6 +522,7 @@ fn build_system_prompt(
          - When using canvas or dashboard tools, first call `tabs.getTileLayout` to discover \
            available commandIds. Canvas and dashboard tools require a `commandId` parameter.\n\
          - Use the configured MCP tools available in this session for domain-specific work.\n\
+         - Use `fs.*` and `bash.*` only when those local execution capabilities are exposed in this session.\n\
          - Use `tabs.splitTile` to create new panels before adding charts or content.\n\
          - Prefer updating existing workspace artifacts over duplicating them.\n\
          - Be concise and direct in your responses. Prefer concrete actions and evidence over vague summaries.\n",
@@ -539,6 +551,58 @@ fn build_system_prompt(
             prompt.push_str("\nAgent instructions:\n");
             prompt.push_str(description);
             prompt.push('\n');
+        }
+    }
+
+    if let Some(agent_workspace_id) = context.agent_workspace_id.as_deref() {
+        prompt.push_str("\n## Local Execution Capabilities\n");
+        if let Some(workspace_root) = agent_workspace_root_for_id(agent_workspace_id) {
+            prompt.push_str(&format!(
+                "- Private agent workspace: `{}` (read_write, default shell cwd)\n",
+                workspace_root.display()
+            ));
+        } else {
+            prompt.push_str("- Private agent workspace: available (read_write, default shell cwd)\n");
+        }
+
+        if context.execution.filesystem.extra_paths.is_empty() {
+            prompt.push_str("- Additional path grants: none\n");
+        } else {
+            prompt.push_str("- Additional path grants:\n");
+            for grant in &context.execution.filesystem.extra_paths {
+                let access = match grant.access {
+                    crate::config::FilesystemPathAccess::ReadOnly => "read_only",
+                    crate::config::FilesystemPathAccess::ReadWrite => "read_write",
+                };
+                prompt.push_str(&format!("  - `{}` ({})\n", grant.path, access));
+            }
+        }
+
+        let shell_mode = match context.execution.shell.mode {
+            crate::config::ShellAccessMode::Off => "off",
+            crate::config::ShellAccessMode::Restricted => "restricted",
+            crate::config::ShellAccessMode::Full => "full",
+        };
+        prompt.push_str(&format!("- Shell mode: {}\n", shell_mode));
+
+        if !context.execution.shell.blocked_command_prefixes.is_empty() {
+            prompt.push_str(&format!(
+                "- Blocked command prefixes: {}\n",
+                context.execution.shell.blocked_command_prefixes.join(", ")
+            ));
+        }
+
+        if context.execution.shell.allowed_command_prefixes.is_empty() {
+            let hint = match context.execution.shell.mode {
+                crate::config::ShellAccessMode::Restricted => "none (no commands allowed)",
+                _ => "any command not blocked",
+            };
+            prompt.push_str(&format!("- Allowed command prefixes: {}\n", hint));
+        } else {
+            prompt.push_str(&format!(
+                "- Allowed command prefixes: {}\n",
+                context.execution.shell.allowed_command_prefixes.join(", ")
+            ));
         }
     }
 
@@ -595,6 +659,7 @@ async fn fail_run(
         RunStatus::Failed,
         usage,
         Some(error_msg),
+        &[],
     )
     .await?;
     let _ = emit_event(
@@ -614,7 +679,7 @@ async fn cancel_run(
     _message_id: Option<&str>,
 ) -> Result<(), AssistantEngineError> {
     let run =
-        repository::complete_run(&deps.pool, run_id, RunStatus::Cancelled, usage, None).await?;
+        repository::complete_run(&deps.pool, run_id, RunStatus::Cancelled, usage, None, &[]).await?;
     let _ = emit_event(
         &deps.app,
         session,

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::config::ExecutionCapabilityConfig;
+
 pub type SessionId = String;
 pub type MessageId = String;
 pub type RunId = String;
@@ -45,8 +47,24 @@ pub enum RunStatus {
     Running,
     WaitingForTool,
     Completed,
+    CompletedWithWarnings,
     Failed,
     Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunNoticeKind {
+    CommandDenied,
+    PathDenied,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunNotice {
+    pub kind: RunNoticeKind,
+    pub message: String,
+    pub timestamp: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -73,10 +91,14 @@ pub struct SessionContext {
     pub tool_scopes: Vec<String>,
     #[serde(default)]
     pub mcp_server_ids: Vec<String>,
+    #[serde(default)]
+    pub execution: ExecutionCapabilityConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub netdata_conversation_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_workspace_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -158,6 +180,8 @@ pub struct AssistantRun {
     pub usage: Option<RunUsage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notices: Vec<RunNotice>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -9,6 +9,33 @@ import ReactDOM from 'react-dom';
 import IntervalSelect from './IntervalSelect';
 import styles from './AgentFormModal.module.css';
 
+const defaultExecution = () => ({
+  filesystem: {
+    extraPaths: [],
+  },
+  shell: {
+    mode: 'off',
+    allowedCommandPrefixes: [],
+    blockedCommandPrefixes: ['rm', 'sudo', 'chmod', 'chown', 'dd', 'mkfs', 'mount', 'umount', 'shutdown', 'reboot'],
+  },
+});
+
+const normalizeItems = (items = []) => items.map((item) => item.trim()).filter(Boolean);
+const addUniqueItem = (items, value) => {
+  const trimmed = value.trim();
+  if (!trimmed || items.includes(trimmed)) {
+    return items;
+  }
+  return [...items, trimmed];
+};
+const normalizePathGrants = (items = []) =>
+  items
+    .map((item) => ({
+      path: item.path?.trim() || '',
+      access: item.access || 'read_only',
+    }))
+    .filter((item) => item.path);
+
 /**
  * Close icon
  */
@@ -29,6 +56,60 @@ const LoadingIcon = () => (
   </svg>
 );
 
+const ListInputField = ({
+  label,
+  value,
+  onChange,
+  onAdd,
+  items,
+  onRemove,
+  placeholder,
+  disabled,
+  hint,
+  id,
+  variant,
+}) => (
+  <div className={styles.field}>
+    <label className={styles.label} htmlFor={id}>
+      {label}
+    </label>
+    <input
+      id={id}
+      type="text"
+      className={styles.input}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onAdd();
+        }
+      }}
+      placeholder={placeholder}
+      disabled={disabled}
+    />
+    {items.length > 0 && (
+      <div className={styles.chipList}>
+        {items.map((item) => (
+          <span key={item} className={`${styles.chip} ${variant === 'danger' ? styles.chipDanger : ''}`}>
+            <code>{item}</code>
+            <button
+              type="button"
+              className={styles.chipRemove}
+              onClick={() => onRemove(item)}
+              disabled={disabled}
+              aria-label={`Remove ${item}`}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+    )}
+    {hint && <span className={styles.hint}>{hint}</span>}
+  </div>
+);
+
 
 /**
  * AgentFormModal - Create/Edit automation form
@@ -46,22 +127,47 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
   const [description, setDescription] = useState('');
   const [intervalMinutes, setIntervalMinutes] = useState(30);
   const [selectedMcpServerIds, setSelectedMcpServerIds] = useState([]);
+  const [extraPathGrants, setExtraPathGrants] = useState([]);
+  const [extraPathDraft, setExtraPathDraft] = useState('');
+  const [extraPathAccess, setExtraPathAccess] = useState('read_only');
+  const [shellMode, setShellMode] = useState('off');
+  const [allowedCommands, setAllowedCommands] = useState([]);
+  const [blockedCommands, setBlockedCommands] = useState(defaultExecution().shell.blockedCommandPrefixes);
+  const [allowedCommandDraft, setAllowedCommandDraft] = useState('');
+  const [blockedCommandDraft, setBlockedCommandDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   // Reset form when modal opens/closes or agent changes
   useEffect(() => {
     if (isOpen) {
+      const execution = agent?.execution || defaultExecution();
       if (agent) {
         setName(agent.name || '');
         setDescription(agent.description || '');
         setIntervalMinutes(agent.intervalMinutes || 30);
         setSelectedMcpServerIds(agent.selectedMcpServerIds || []);
+        setExtraPathGrants(normalizePathGrants(execution.filesystem?.extraPaths || []));
+        setExtraPathDraft('');
+        setExtraPathAccess('read_only');
+        setShellMode(execution.shell?.mode || 'off');
+        setAllowedCommands(normalizeItems(execution.shell?.allowedCommandPrefixes || []));
+        setBlockedCommands(normalizeItems(execution.shell?.blockedCommandPrefixes || defaultExecution().shell.blockedCommandPrefixes));
+        setAllowedCommandDraft('');
+        setBlockedCommandDraft('');
       } else {
         setName('');
         setDescription('');
         setIntervalMinutes(30);
         setSelectedMcpServerIds([]);
+        setExtraPathGrants([]);
+        setExtraPathDraft('');
+        setExtraPathAccess('read_only');
+        setShellMode('off');
+        setAllowedCommands([]);
+        setBlockedCommands(defaultExecution().shell.blockedCommandPrefixes);
+        setAllowedCommandDraft('');
+        setBlockedCommandDraft('');
       }
       setError(null);
     }
@@ -126,6 +232,16 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
         description: description.trim(),
         intervalMinutes: Number(intervalMinutes),
         selectedMcpServerIds,
+        execution: {
+          filesystem: {
+            extraPaths: extraPathGrants,
+          },
+          shell: {
+            mode: shellMode,
+            allowedCommandPrefixes: allowedCommands,
+            blockedCommandPrefixes: blockedCommands,
+          },
+        },
       });
     } catch (err) {
       console.error('[AgentFormModal] Submit error:', err);
@@ -255,6 +371,185 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
             <span className={styles.hint}>
               Selected servers will be attached to the agent session when it runs.
             </span>
+          </div>
+
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Local Capabilities</div>
+            <div className={styles.sectionDescription}>
+              Each agent always gets a private writable workspace folder. Use this section to grant additional local paths or shell access.
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label}>Agent Workspace</label>
+              <div className={styles.fixedGrantCard}>
+                <div className={styles.fixedGrantTitle}>Private agent workspace</div>
+                <div className={styles.fixedGrantText}>
+                  CLAI creates a dedicated workspace directory for this agent automatically. It is always available with read + write access and used as the default working directory for shell commands.
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="agent-extra-path">
+                Additional Path Grants
+              </label>
+              <div className={styles.listInputRow}>
+                <input
+                  id="agent-extra-path"
+                  type="text"
+                  className={styles.input}
+                  value={extraPathDraft}
+                  onChange={(e) => setExtraPathDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const trimmed = extraPathDraft.trim();
+                      if (!trimmed) return;
+                      setExtraPathGrants((current) => {
+                        if (current.some((item) => item.path === trimmed)) {
+                          return current;
+                        }
+                        return [...current, { path: trimmed, access: extraPathAccess }];
+                      });
+                      setExtraPathDraft('');
+                    }
+                  }}
+                  placeholder="$HOME, /tmp, /var/log"
+                  disabled={saving}
+                />
+                <select
+                  className={styles.selectSmall}
+                  value={extraPathAccess}
+                  onChange={(e) => setExtraPathAccess(e.target.value)}
+                  disabled={saving}
+                >
+                  <option value="read_only">Read only</option>
+                  <option value="read_write">Read + write</option>
+                </select>
+                <button
+                  type="button"
+                  className={styles.addButton}
+                  onClick={() => {
+                    const trimmed = extraPathDraft.trim();
+                    if (!trimmed) return;
+                    setExtraPathGrants((current) => {
+                      if (current.some((item) => item.path === trimmed)) {
+                        return current;
+                      }
+                      return [...current, { path: trimmed, access: extraPathAccess }];
+                    });
+                    setExtraPathDraft('');
+                  }}
+                  disabled={saving || !extraPathDraft.trim()}
+                >
+                  Add
+                </button>
+              </div>
+              {extraPathGrants.length > 0 && (
+                <div className={styles.chipList}>
+                  {extraPathGrants.map((item) => (
+                    <span key={item.path} className={styles.chip}>
+                      <code>{item.path}</code>
+                      <span className={styles.chipMeta}>{item.access === 'read_write' ? 'rw' : 'ro'}</span>
+                      <button
+                        type="button"
+                        className={styles.chipRemove}
+                        onClick={() => setExtraPathGrants((current) => current.filter((grant) => grant.path !== item.path))}
+                        disabled={saving}
+                        aria-label={`Remove ${item.path}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <span className={styles.hint}>
+                Use this for extra locations such as <code>$HOME</code> as read-only or <code>/tmp</code> as read + write.
+              </span>
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="agent-shell-mode">
+                Shell Access
+              </label>
+              <select
+                id="agent-shell-mode"
+                className={styles.select}
+                value={shellMode}
+                onChange={(e) => setShellMode(e.target.value)}
+                disabled={saving}
+              >
+                <option value="off">Off</option>
+                <option value="restricted">Restricted</option>
+                <option value="full">Full</option>
+              </select>
+              <span className={styles.hint}>
+                {shellMode === 'off' && 'The agent cannot run shell commands.'}
+                {shellMode === 'restricted' && 'Only explicitly allowed commands can run. Blocked list always takes priority.'}
+                {shellMode === 'full' && 'Any command is allowed except those explicitly blocked.'}
+              </span>
+            </div>
+
+            {shellMode === 'restricted' && (
+              <div className={styles.gridTwo}>
+                <div className={styles.field}>
+                  <ListInputField
+                    id="agent-shell-allow"
+                    label="Allowed Commands"
+                    value={allowedCommandDraft}
+                    onChange={setAllowedCommandDraft}
+                    onAdd={() => {
+                      setAllowedCommands((current) => addUniqueItem(current, allowedCommandDraft));
+                      setAllowedCommandDraft('');
+                    }}
+                    items={allowedCommands}
+                    onRemove={(item) => setAllowedCommands((current) => current.filter((value) => value !== item))}
+                    placeholder="e.g. kubectl get"
+                    disabled={saving}
+                    hint={'Prefix match \u2014 e.g. "kubectl get" allows "kubectl get pods". Empty list means no commands allowed.'}
+                  />
+                </div>
+
+                <div className={styles.field}>
+                  <ListInputField
+                    id="agent-shell-block"
+                    label="Blocked Commands"
+                    value={blockedCommandDraft}
+                    onChange={setBlockedCommandDraft}
+                    onAdd={() => {
+                      setBlockedCommands((current) => addUniqueItem(current, blockedCommandDraft));
+                      setBlockedCommandDraft('');
+                    }}
+                    items={blockedCommands}
+                    onRemove={(item) => setBlockedCommands((current) => current.filter((value) => value !== item))}
+                    placeholder="e.g. rm"
+                    disabled={saving}
+                    variant="danger"
+                    hint="Prefix match. Blocked always wins over allowed."
+                  />
+                </div>
+              </div>
+            )}
+
+            {shellMode === 'full' && (
+              <ListInputField
+                id="agent-shell-block-full"
+                label="Blocked Commands"
+                value={blockedCommandDraft}
+                onChange={setBlockedCommandDraft}
+                onAdd={() => {
+                  setBlockedCommands((current) => addUniqueItem(current, blockedCommandDraft));
+                  setBlockedCommandDraft('');
+                }}
+                items={blockedCommands}
+                onRemove={(item) => setBlockedCommands((current) => current.filter((value) => value !== item))}
+                placeholder="e.g. rm"
+                disabled={saving}
+                variant="danger"
+                hint={'Prefix match \u2014 e.g. "rm" blocks "rm -rf". These commands will always be rejected.'}
+              />
+            )}
           </div>
 
           {/* Actions */}

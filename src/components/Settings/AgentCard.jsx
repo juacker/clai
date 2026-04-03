@@ -109,6 +109,8 @@ const AgentCard = ({ agent, mcpServers = [], onEdit, onDelete, onToggleEnabled, 
   const selectedMcpServerNames = (agent.selectedMcpServerIds || [])
     .map((id) => mcpServers.find((server) => server.id === id)?.name)
     .filter(Boolean);
+  const filesystemMode = agent.execution?.filesystem?.mode || 'off';
+  const shellMode = agent.execution?.shell?.mode || 'off';
 
   return (
     <div className={styles.card}>
@@ -137,6 +139,9 @@ const AgentCard = ({ agent, mcpServers = [], onEdit, onDelete, onToggleEnabled, 
 
         <p className={styles.description}>
           MCP: {selectedMcpServerNames.length > 0 ? selectedMcpServerNames.join(', ') : 'None'}
+        </p>
+        <p className={styles.description}>
+          Local: FS {filesystemMode.replace('_', ' ')} · Shell {shellMode.replace('_', ' ')}
         </p>
       </div>
 

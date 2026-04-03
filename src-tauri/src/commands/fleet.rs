@@ -3,6 +3,7 @@ use tauri::State;
 
 use crate::assistant::repository;
 use crate::assistant::types::{AssistantMessage, ContentPart, MessageRole, RunStatus};
+use crate::config::ExecutionCapabilityConfig;
 use crate::db::DbPool;
 use crate::AppState;
 
@@ -22,6 +23,7 @@ pub struct FleetSummary {
 pub enum FleetAgentStatus {
     Running,
     Ok,
+    Warning,
     Error,
     Idle,
     Disabled,
@@ -45,6 +47,7 @@ pub struct FleetAgentSnapshot {
     pub status: FleetAgentStatus,
     pub selected_mcp_server_ids: Vec<String>,
     pub selected_mcp_server_names: Vec<String>,
+    pub execution: ExecutionCapabilityConfig,
     pub tab_id: Option<String>,
     pub session_id: Option<String>,
     pub last_started_at: Option<i64>,
@@ -174,6 +177,7 @@ pub async fn fleet_get_snapshot(
         } else if let Some(run) = &last_run {
             match run.status {
                 RunStatus::Completed => FleetAgentStatus::Ok,
+                RunStatus::CompletedWithWarnings => FleetAgentStatus::Warning,
                 RunStatus::Failed | RunStatus::Cancelled => FleetAgentStatus::Error,
                 // The scheduler is the source of truth for whether an agent is
                 // actively running.  If we reach this branch, is_running is false,
@@ -202,6 +206,7 @@ pub async fn fleet_get_snapshot(
             status,
             selected_mcp_server_ids: agent.selected_mcp_server_ids,
             selected_mcp_server_names: mcp_names,
+            execution: agent.execution,
             tab_id,
             session_id: session.as_ref().map(|value| value.id.clone()),
             last_started_at: last_run.as_ref().map(|run| run.started_at),

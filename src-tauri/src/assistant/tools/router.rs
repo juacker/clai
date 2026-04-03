@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 use crate::assistant::engine::{bridge_agent_id, AssistantDeps};
+use crate::assistant::tools::local;
 use crate::mcp::bridge::JsBridge;
 use crate::AppState;
 
@@ -15,6 +16,9 @@ pub async fn execute_tool(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     match tool_name {
+        name if name.starts_with("fs.") || name.starts_with("bash.") => {
+            local::execute_local_tool(context, name, params).await
+        }
         name if name.starts_with("dashboard.")
             || name.starts_with("anomalies.")
             || name.starts_with("tabs.")

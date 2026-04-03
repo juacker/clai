@@ -100,6 +100,50 @@
   gap: 6px;
 }
 
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 10px;
+  background: var(--color-bg-secondary, #F6F4F2);
+}
+
+.sectionTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.sectionDescription {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+}
+
+.fixedGrantCard {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fixedGrantTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.fixedGrantText {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+}
+
 .label {
   font-size: 13px;
   font-weight: 500;
@@ -186,6 +230,131 @@
 
 .checkboxOption input {
   margin: 0;
+}
+
+.gridTwo {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.listInputRow {
+  display: flex;
+  gap: 8px;
+}
+
+.selectSmall {
+  padding: 10px 32px 10px 12px;
+  min-width: 120px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.selectSmall:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-alpha-20);
+}
+
+.selectSmall:disabled {
+  background-color: var(--color-bg-secondary);
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.chipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-light);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.chip code {
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 11px;
+  color: var(--color-text-primary);
+}
+
+.chipDanger {
+  background: var(--color-critical-alpha-10, rgba(220, 38, 38, 0.06));
+  border-color: var(--color-critical-alpha-30, rgba(220, 38, 38, 0.2));
+}
+
+.chipDanger code {
+  color: var(--color-critical, #DC2626);
+}
+
+.chipMeta {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  letter-spacing: 0.04em;
+}
+
+.chipRemove {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  font-size: 15px;
+}
+
+.chipRemove:hover:not(:disabled) {
+  color: var(--color-critical, #DC2626);
+}
+
+.chipRemove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.addButton {
+  appearance: none;
+  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-primary);
+  color: var(--color-text-secondary);
+  border-radius: 8px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.addButton:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-medium);
+  color: var(--color-text-primary);
+}
+
+.addButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Actions */
@@ -283,6 +452,14 @@
 
   .actions {
     flex-direction: column-reverse;
+  }
+
+  .gridTwo {
+    grid-template-columns: 1fr;
+  }
+
+  .listInputRow {
+    flex-direction: column;
   }
 
   .cancelButton,

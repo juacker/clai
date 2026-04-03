@@ -9,6 +9,21 @@ fn default_true() -> bool {
     true
 }
 
+fn default_restricted_shell_blocklist() -> Vec<String> {
+    vec![
+        "rm".to_string(),
+        "sudo".to_string(),
+        "chmod".to_string(),
+        "chown".to_string(),
+        "dd".to_string(),
+        "mkfs".to_string(),
+        "mount".to_string(),
+        "umount".to_string(),
+        "shutdown".to_string(),
+        "reboot".to_string(),
+    ]
+}
+
 // =============================================================================
 // AI Provider
 // =============================================================================
@@ -157,6 +172,70 @@ pub struct McpServerConfig {
     pub updated_at: String,
 }
 
+// =============================================================================
+// Local Execution Capability Config
+// =============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FilesystemPathAccess {
+    ReadOnly,
+    ReadWrite,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FilesystemPathGrant {
+    pub path: String,
+    pub access: FilesystemPathAccess,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellAccessMode {
+    #[default]
+    Off,
+    Restricted,
+    Full,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FilesystemCapabilityConfig {
+    #[serde(default)]
+    pub extra_paths: Vec<FilesystemPathGrant>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellCapabilityConfig {
+    #[serde(default)]
+    pub mode: ShellAccessMode,
+    #[serde(default)]
+    pub allowed_command_prefixes: Vec<String>,
+    #[serde(default = "default_restricted_shell_blocklist")]
+    pub blocked_command_prefixes: Vec<String>,
+}
+
+impl Default for ShellCapabilityConfig {
+    fn default() -> Self {
+        Self {
+            mode: ShellAccessMode::Off,
+            allowed_command_prefixes: Vec::new(),
+            blocked_command_prefixes: default_restricted_shell_blocklist(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionCapabilityConfig {
+    #[serde(default)]
+    pub filesystem: FilesystemCapabilityConfig,
+    #[serde(default)]
+    pub shell: ShellCapabilityConfig,
+}
+
 impl McpServerConfig {
     /// Creates a new MCP server with a generated UUID.
     pub fn new(name: String, transport: McpServerTransport) -> Self {
@@ -204,6 +283,10 @@ pub struct AgentConfig {
     #[serde(default)]
     pub selected_mcp_server_ids: Vec<String>,
 
+    /// Local execution capability policy for this automation.
+    #[serde(default)]
+    pub execution: ExecutionCapabilityConfig,
+
     /// When the automation was created (ISO 8601).
     pub created_at: String,
 
@@ -240,6 +323,7 @@ impl AgentConfig {
             interval_minutes: 5,
             enabled: false,
             selected_mcp_server_ids: vec![],
+            execution: ExecutionCapabilityConfig::default(),
             created_at: now.clone(),
             updated_at: now,
         }
@@ -255,6 +339,7 @@ impl AgentConfig {
             interval_minutes,
             enabled: false,
             selected_mcp_server_ids: vec![],
+            execution: ExecutionCapabilityConfig::default(),
             created_at: now.clone(),
             updated_at: now,
         }
@@ -267,7 +352,12 @@ impl AgentConfig {
 
     /// Returns the static list of required built-in tool namespaces.
     pub fn required_tools(&self) -> Vec<&'static str> {
-        vec!["netdata", "dashboard", "tabs"]
+        let mut tools = vec!["netdata", "dashboard", "tabs"];
+        tools.push("fs");
+        if !matches!(self.execution.shell.mode, ShellAccessMode::Off) {
+            tools.push("bash");
+        }
+        tools
     }
 
     /// Generates the system prompt from the description using the template.
@@ -350,6 +440,8 @@ mod tests {
         assert_eq!(agent.name, "Infrastructure Health Monitor");
         assert_eq!(agent.interval_minutes, 5);
         assert!(agent.selected_mcp_server_ids.is_empty());
+        assert!(matches!(agent.execution.shell.mode, ShellAccessMode::Off));
+        assert!(agent.execution.filesystem.extra_paths.is_empty());
     }
 
     #[test]
@@ -363,6 +455,7 @@ mod tests {
         assert_eq!(agent1.name, "Agent 1");
         assert_eq!(agent2.interval_minutes, 15);
         assert!(agent1.selected_mcp_server_ids.is_empty());
+        assert!(agent1.execution.filesystem.extra_paths.is_empty());
     }
 
     #[test]
@@ -373,7 +466,19 @@ mod tests {
         assert!(tools.contains(&"netdata"));
         assert!(tools.contains(&"dashboard"));
         assert!(tools.contains(&"tabs"));
-        assert_eq!(tools.len(), 3);
+        assert!(tools.contains(&"fs"));
+        assert_eq!(tools.len(), 4);
+    }
+
+    #[test]
+    fn test_agent_required_tools_include_local_execution_when_enabled() {
+        let mut agent = AgentConfig::default_agent();
+        agent.execution.shell.mode = ShellAccessMode::Restricted;
+
+        let tools = agent.required_tools();
+
+        assert!(tools.contains(&"fs"));
+        assert!(tools.contains(&"bash"));
     }
 
     #[test]
@@ -403,6 +508,7 @@ mod tests {
         assert_eq!(parsed.id, agent.id);
         assert_eq!(parsed.name, agent.name);
         assert_eq!(parsed.selected_mcp_server_ids, agent.selected_mcp_server_ids);
+        assert_eq!(parsed.execution, agent.execution);
     }
 
     #[test]

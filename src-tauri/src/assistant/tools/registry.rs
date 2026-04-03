@@ -1,4 +1,5 @@
 use crate::assistant::types::{SessionContext, ToolDefinition};
+use crate::config::ShellAccessMode;
 use crate::mcp::tools::{
     anomalies::OpenAnomaliesParams,
     canvas::{
@@ -11,7 +12,7 @@ use crate::mcp::tools::{
 
 /// Returns all tool definitions available for the given session context.
 pub fn available_tools(
-    _context: &SessionContext,
+    context: &SessionContext,
     external_tools: &[ToolDefinition],
     dashboard_enabled: bool,
 ) -> Vec<ToolDefinition> {
@@ -94,6 +95,52 @@ pub fn available_tools(
         "canvas.clearCanvas",
         "Remove all nodes and edges from the canvas.",
     ));
+
+    if context.agent_workspace_id.is_some() {
+        tools.push(ToolDefinition {
+            name: "fs.read".to_string(),
+            description: "Read a text file from the agent workspace or from an additional allowed filesystem path.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "offset": { "type": "integer", "minimum": 0 },
+                    "limit": { "type": "integer", "minimum": 1 }
+                },
+                "required": ["path"]
+            }),
+        });
+        tools.push(ToolDefinition {
+            name: "fs.write".to_string(),
+            description: "Write a text file to the agent workspace or to an additional writable filesystem path. Creates parent directories when requested.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "content": { "type": "string" },
+                    "createParents": { "type": "boolean" }
+                },
+                "required": ["path", "content"]
+            }),
+        });
+    }
+
+    if context.agent_workspace_id.is_some() && !matches!(context.execution.shell.mode, ShellAccessMode::Off) {
+        tools.push(ToolDefinition {
+            name: "bash.exec".to_string(),
+            description: "Run a shell command inside this automation's allowed working directory. Use this for local command execution and data processing when MCP tools are not the right fit.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string" },
+                    "cwd": { "type": "string" },
+                    "timeoutMs": { "type": "integer", "minimum": 1 },
+                    "maxOutputChars": { "type": "integer", "minimum": 1 }
+                },
+                "required": ["command"]
+            }),
+        });
+    }
 
     tools.extend(external_tools.iter().cloned());
 

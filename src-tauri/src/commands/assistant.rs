@@ -145,10 +145,30 @@ pub async fn assistant_send_message(
     message: String,
     pool: State<'_, DbPool>,
     app: AppHandle,
+    state: State<'_, AppState>,
 ) -> Result<AssistantSendMessageResult, String> {
-    let session = repository::get_session(pool.inner(), &session_id)
+    let mut session = repository::get_session(pool.inner(), &session_id)
         .await?
         .ok_or_else(|| format!("Assistant session not found: {}", session_id))?;
+
+    // If tied to an automation, sync execution config with the latest agent config
+    // so that config changes take effect immediately (not just after a scheduled run).
+    let needs_execution_update = {
+        if let Some(automation_id) = session.context.automation_id.as_deref() {
+            let config_manager = state.config_manager.lock().unwrap();
+            config_manager
+                .get_agent(automation_id)
+                .filter(|agent| agent.execution != session.context.execution)
+                .map(|agent| agent.execution.clone())
+        } else {
+            None
+        }
+    };
+    if let Some(fresh_execution) = needs_execution_update {
+        session.context.execution = fresh_execution;
+        session.updated_at = chrono::Utc::now().timestamp_millis();
+        session = repository::update_session(pool.inner(), &session).await?;
+    }
 
     let assistant_message = repository::create_message(
         pool.inner(),
