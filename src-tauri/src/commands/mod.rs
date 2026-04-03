@@ -8,6 +8,7 @@ pub mod api;
 pub mod assistant;
 pub mod auth;
 pub mod bridge;
+pub mod fleet;
 pub mod mcp_servers;
 pub mod provider;
 pub mod provider_sessions;

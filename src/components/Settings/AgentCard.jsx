@@ -122,7 +122,7 @@ const AgentCard = ({ agent, mcpServers = [], onEdit, onDelete, onToggleEnabled, 
             className={`${styles.statusToggle} ${isEnabled ? styles.statusToggleOn : styles.statusToggleOff}`}
             onClick={onToggleEnabled}
             disabled={isToggling}
-            title={isEnabled ? 'Disable automation' : 'Enable automation'}
+            title={isEnabled ? 'Disable scheduled agent' : 'Enable scheduled agent'}
           >
             {isToggling ? <LoadingIcon /> : <PowerIcon />}
             <span>{isEnabled ? 'Enabled' : 'Disabled'}</span>

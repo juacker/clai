@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useContext, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useCommand } from '../../contexts/CommandContext';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import { useChatManager } from '../../contexts/ChatManagerContext';
@@ -14,6 +15,8 @@ const TerminalEmulator = ({ onSendToChat }) => {
   const { executeCommand, commandHistory } = useCommand();
   const { handleLayoutCommand, getActiveTab } = useTabManager();
   const { setActiveContext, toggleChat, openChat, isCurrentChatOpen } = useChatManager();
+  const location = useLocation();
+  const navigate = useNavigate();
   // Try to get tab context, but don't throw error if not available
   const tabContext = useContext(TabContext);
   const [inputValue, setInputValue] = useState('');
@@ -31,6 +34,7 @@ const TerminalEmulator = ({ onSendToChat }) => {
 
   // Check if desktop chat panel is open
   const isChatOpen = isCurrentChatOpen();
+  const isFleetRoute = location.pathname === '/fleet';
 
   // Maximum number of messages to keep
   const MAX_MESSAGES = 5;
@@ -147,9 +151,9 @@ const TerminalEmulator = ({ onSendToChat }) => {
     // Check if input starts with "/" - it's a command
     const isSlashCommand = trimmed.startsWith('/');
 
-    // If NOT a slash command, send to chat (auto-open if needed)
+    // If NOT a slash command, send to chat (auto-open sidebar unless on Fleet)
     if (!isSlashCommand) {
-      if (!isChatOpen) {
+      if (!isChatOpen && location.pathname !== '/fleet') {
         openChat();
       }
       if (onSendToChat) {
@@ -299,15 +303,49 @@ const TerminalEmulator = ({ onSendToChat }) => {
     setIsSettingsOpen(true);
   };
 
+  const handleModeToggle = (event) => {
+    event.stopPropagation();
+    navigate(isFleetRoute ? '/' : '/fleet');
+  };
+
   return (
     <div ref={terminalRef} className={`${styles.terminal} ${isChatOpen ? styles.chatOpen : ''}`} onClick={handleTerminalClick}>
-      {/* Context Panel - shows capability badges */}
-      <div className={styles.contextPanelWrapper}>
-        <ContextPanel />
-      </div>
+      {/* Context Panel - shows capability badges (hidden on Fleet route) */}
+      {location.pathname !== '/fleet' && (
+        <div className={styles.contextPanelWrapper}>
+          <ContextPanel />
+        </div>
+      )}
 
       {/* Input Line - Now at the top for better UX */}
       <div className={styles.terminalContent}>
+        <button
+          type="button"
+          className={styles.modeButton}
+          onClick={handleModeToggle}
+          title={isFleetRoute ? 'Go to workspace' : 'Open fleet'}
+          aria-label={isFleetRoute ? 'Go to workspace' : 'Open fleet'}
+        >
+          <span className={styles.modeButtonIcon} aria-hidden="true">
+            {isFleetRoute ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="7" height="7" rx="1.5" />
+                <rect x="14" y="4" width="7" height="7" rx="1.5" />
+                <rect x="3" y="13" width="7" height="7" rx="1.5" />
+                <rect x="14" y="13" width="7" height="7" rx="1.5" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 18a2 2 0 1 0-2-2 2 2 0 0 0 2 2Z" />
+                <path d="M7 18a2 2 0 1 0-2-2 2 2 0 0 0 2 2Z" />
+                <path d="M12 8a2 2 0 1 0-2-2 2 2 0 0 0 2 2Z" />
+                <path d="M7 14v-1a5 5 0 0 1 10 0v1" />
+              </svg>
+            )}
+          </span>
+          <span className={styles.modeButtonLabel}>{isFleetRoute ? 'Workspace' : 'Fleet'}</span>
+        </button>
+
         <button
           type="button"
           className={styles.settingsButton}
@@ -347,12 +385,13 @@ const TerminalEmulator = ({ onSendToChat }) => {
 
         {/* Keyboard shortcut badge for toggling chat */}
         <button
-          className={styles.shortcutBadge}
+          className={`${styles.shortcutBadge} ${isFleetRoute ? styles.shortcutBadgeDisabled : ''}`}
           onClick={(e) => {
             e.stopPropagation();
-            toggleChat();
+            if (!isFleetRoute) toggleChat();
           }}
-          title="Toggle chat panel"
+          disabled={isFleetRoute}
+          title={isFleetRoute ? 'Chat panel is not available in Fleet' : 'Toggle chat panel'}
         >
           <span className={styles.shortcutKey}>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}</span>
           <span className={styles.shortcutKey}>⇧</span>

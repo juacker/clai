@@ -150,7 +150,7 @@ const ContextPanel = () => {
                 clickable={!isAgentManagedTab}
                 titleOverride={
                   isAgentManagedTab
-                    ? `${server.name}: managed by automation`
+                    ? `${server.name}: managed by scheduled agent`
                     : `${server.name}: ${isEnabled ? 'click to disable for this tab' : 'click to enable for this tab'}`
                 }
               />

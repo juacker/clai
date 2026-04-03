@@ -180,7 +180,7 @@ const ProviderSettings = () => {
       <div className={styles.sectionHeader}>
         <h3 className={styles.sectionTitle}>AI Provider</h3>
         <p className={styles.sectionDescription}>
-          Select which AI CLI to use for chat and scheduled automations.
+          Select which AI CLI to use for chat and scheduled agents.
           {availableCount === 0 && (
             <span className={styles.noProviders}>
               {' '}No providers available. Install an AI CLI to get started.
@@ -285,7 +285,7 @@ const ProviderSettings = () => {
 
       <div className={styles.hint}>
         <p>
-          Scheduled automations use your selected AI CLI to run monitoring and orchestration tasks.
+          Scheduled agents use your selected AI CLI to run monitoring and orchestration tasks.
           Make sure the CLI is installed and configured with the credentials it needs.
         </p>
       </div>

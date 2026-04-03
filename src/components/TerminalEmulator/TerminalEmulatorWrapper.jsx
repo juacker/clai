@@ -6,9 +6,11 @@
  */
 
 import React, { useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import { TabContextProvider } from '../../contexts/TabContext';
 import { useChatManager } from '../../contexts/ChatManagerContext';
+import { useFleet } from '../../contexts/FleetContext';
 import { useAssistantSession, useAssistantStore, assistantClient } from '../../assistant';
 import TerminalEmulator from './TerminalEmulator';
 
@@ -19,8 +21,10 @@ const getEnabledMcpServerIds = (tab) => {
 };
 
 const TerminalEmulatorWrapper = () => {
+  const location = useLocation();
   const { tabs, activeTabId, updateTabContext } = useTabManager();
   const { openChat } = useChatManager();
+  const { isFleetRoute, selectedAgent, refresh: refreshFleet } = useFleet();
   const { ensureSession } = useAssistantSession(activeTabId);
 
   // Get active tab
@@ -52,6 +56,54 @@ const TerminalEmulatorWrapper = () => {
    */
   const handleSendToAgent = useCallback(
     async (query) => {
+      if (location.pathname === '/fleet' && isFleetRoute) {
+        if (!selectedAgent) {
+          return { error: 'Select an agent in Fleet before sending a message.' };
+        }
+
+        const providerSession = await getProviderSession();
+        if (!providerSession) {
+          return {
+            error: 'Connect an assistant provider in Settings before sending prompts.',
+          };
+        }
+
+        try {
+          const model = (await assistantClient.getDefaultModel().catch(() => null)) || 'gpt-4o-mini';
+          let sessionId = selectedAgent.sessionId;
+
+          if (!sessionId) {
+            const createdSession = await assistantClient.createSession({
+              tabId: selectedAgent.tabId || null,
+              kind: 'background_job',
+              title: selectedAgent.name,
+              providerId: providerSession.providerId,
+              modelId: model,
+              context: {
+                tabId: selectedAgent.tabId || null,
+                mcpServerIds: selectedAgent.selectedMcpServerIds || [],
+                automationId: selectedAgent.agentId,
+                automationName: selectedAgent.name,
+                automationDescription: selectedAgent.description || null,
+              },
+            });
+            sessionId = createdSession.id;
+            useAssistantStore.getState().initSession(createdSession);
+            await refreshFleet().catch(() => {});
+          }
+
+          const result = await assistantClient.sendMessage(sessionId, query);
+          const store = useAssistantStore.getState();
+          store.addMessage(sessionId, result.message);
+          return {};
+        } catch (err) {
+          console.error('[TerminalEmulatorWrapper] Fleet assistant error:', err);
+          return {
+            error: typeof err === 'string' ? err : (err?.message || 'Assistant request failed.'),
+          };
+        }
+      }
+
       if (!activeTab) {
         console.warn('[TerminalEmulatorWrapper] No active tab');
         return { error: 'No active tab available.' };
@@ -86,7 +138,16 @@ const TerminalEmulatorWrapper = () => {
         };
       }
     },
-    [activeTab, openChat, getProviderSession, ensureSession]
+    [
+      activeTab,
+      ensureSession,
+      getProviderSession,
+      isFleetRoute,
+      location.pathname,
+      openChat,
+      refreshFleet,
+      selectedAgent,
+    ]
   );
 
   // If no active tab, render terminal without context

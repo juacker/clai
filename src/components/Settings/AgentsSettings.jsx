@@ -180,7 +180,7 @@ const AgentsSettings = () => {
       <div className={styles.container}>
         <div className={styles.loadingState}>
           <LoadingIcon />
-          <span>Loading automations...</span>
+          <span>Loading scheduled agents...</span>
         </div>
       </div>
     );
@@ -190,14 +190,14 @@ const AgentsSettings = () => {
     <div className={styles.container}>
       <div className={styles.header}>
         <div className={styles.headerText}>
-          <h3 className={styles.title}>Automations</h3>
+          <h3 className={styles.title}>Scheduled Agents</h3>
           <p className={styles.description}>
-            Create scheduled automations with custom instructions, target scope, and MCP capabilities.
+            Create scheduled agents with custom instructions, target scope, and MCP capabilities.
           </p>
         </div>
         <button className={styles.addButton} onClick={handleCreate}>
           <PlusIcon />
-          <span>Add Automation</span>
+          <span>Add Scheduled Agent</span>
         </button>
       </div>
 
@@ -219,13 +219,13 @@ const AgentsSettings = () => {
               <circle cx="16" cy="16" r="1" fill="currentColor" />
             </svg>
           </div>
-          <h4 className={styles.emptyTitle}>No automations configured</h4>
+          <h4 className={styles.emptyTitle}>No scheduled agents configured</h4>
           <p className={styles.emptyDescription}>
-            Create your first automation to run on a schedule with the MCP tools you attach to it.
+            Create your first scheduled agent to run on a recurring interval with the MCP tools you attach to it.
           </p>
           <button className={styles.emptyButton} onClick={handleCreate}>
             <PlusIcon />
-            <span>Create Automation</span>
+            <span>Create Scheduled Agent</span>
           </button>
         </div>
       ) : (
@@ -247,7 +247,7 @@ const AgentsSettings = () => {
 
       <div className={styles.hint}>
         <p>
-          Automations run independently when enabled. Attach MCP servers here, and let the model
+          Scheduled agents run independently when enabled. Attach MCP servers here, and let the agent
           discover any target space or room it needs through those tools.
         </p>
       </div>

@@ -7,6 +7,7 @@ import { TabManagerProvider } from '../contexts/TabManagerContext';
 import { CommandMessagingProvider } from '../contexts/CommandMessagingContext';
 import { ChatManagerProvider } from '../contexts/ChatManagerContext';
 import { AgentActivityProvider } from '../contexts/AgentActivityContext';
+import { FleetProvider } from '../contexts/FleetContext';
 import { useAgentBridge } from '../agents';
 import { useAssistantEvents } from '../assistant';
 import styles from './MainLayout.module.css';
@@ -36,13 +37,15 @@ const MainLayout = () => {
             <AssistantEventListener>
               <CommandMessagingProvider>
                 <ChatManagerProvider>
-                  <div className={styles.mainLayout}>
-                    <DesktopChatPanel />
-                    <TerminalEmulatorWrapper />
-                    <div className={styles.contentArea}>
-                      <Outlet />
+                  <FleetProvider>
+                    <div className={styles.mainLayout}>
+                      <DesktopChatPanel />
+                      <TerminalEmulatorWrapper />
+                      <div className={styles.contentArea}>
+                        <Outlet />
+                      </div>
                     </div>
-                  </div>
+                  </FleetProvider>
                 </ChatManagerProvider>
               </CommandMessagingProvider>
             </AssistantEventListener>

@@ -1,0 +1,690 @@
+/**
+ * Fleet View Styles
+ * Control plane for supervising the full agent fleet
+ *
+ * Design: Premium glass panels, indigo accents, card-based grid with
+ * status-aware coloring using the CLAI design system tokens.
+ */
+
+.fleetPage {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 24px;
+  overflow: hidden;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+/* ============================================
+   HEADER
+   ============================================ */
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.titleBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--badge-radius);
+  background: var(--color-primary-alpha-08);
+  color: var(--color-primary);
+  letter-spacing: 0.02em;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  max-width: 600px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.primaryButton {
+  padding: 7px 14px;
+  background: var(--gradient-primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-on-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-primary);
+  white-space: nowrap;
+}
+
+.primaryButton:hover {
+  box-shadow: var(--shadow-primary-glow);
+  transform: translateY(-1px);
+}
+
+
+/* ============================================
+   SUMMARY STRIP
+   ============================================ */
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.summaryCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+
+/* Top accent line on summary cards */
+.summaryCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-border-light);
+  transition: background var(--transition-fast);
+}
+
+.summaryCardTotal::before { background: var(--gradient-primary); }
+.summaryCardEnabled::before { background: var(--gradient-accent); }
+.summaryCardRunning::before { background: var(--color-info); }
+.summaryCardError::before { background: var(--color-critical); }
+.summaryCardIdle::before { background: var(--color-warning); }
+.summaryCardDisabled::before { background: var(--color-border-medium); }
+
+.summaryLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.summaryValue {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-text-primary);
+}
+
+.summaryValueTotal { color: var(--color-primary); }
+.summaryValueEnabled { color: var(--color-accent-dark); }
+.summaryValueRunning { color: var(--color-info); }
+.summaryValueError { color: var(--color-critical); }
+.summaryValueIdle { color: var(--color-warning-dark); }
+.summaryValueDisabled { color: var(--color-text-tertiary); }
+
+/* ============================================
+   CONTENT GRID (cards + detail)
+   ============================================ */
+
+.content {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(340px, 1.4fr) minmax(300px, 1fr);
+  gap: 16px;
+  overflow: hidden;
+}
+
+/* ============================================
+   AGENT CARD GRID
+   ============================================ */
+
+.cardGrid {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  align-content: start;
+  padding-right: 4px;
+}
+
+.agentCard {
+  position: relative;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--card-radius);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  overflow: hidden;
+}
+
+/* Left accent border */
+.agentCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--color-primary);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.agentCard:hover {
+  border-color: var(--color-border-medium);
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
+}
+
+.agentCard:hover::before {
+  opacity: 1;
+}
+
+.agentCardSelected {
+  border-color: var(--color-primary-alpha-30);
+  box-shadow: var(--shadow-primary-glow);
+}
+
+.agentCardSelected::before {
+  opacity: 1;
+  background: var(--gradient-primary);
+}
+
+/* Card header */
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitleBlock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.enabledState {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Card metadata grid */
+.metaGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.metaGrid span {
+  white-space: nowrap;
+}
+
+.metaGrid strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+/* Mini run ribbon inside card */
+.miniRibbon {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.miniSegment {
+  flex: 1;
+  min-width: 4px;
+  max-width: 14px;
+  height: 6px;
+  border-radius: 2px;
+}
+
+/* MCP server badges */
+.mcpBadges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mcpBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: var(--badge-radius);
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--color-accent-alpha-08);
+  color: var(--color-accent-dark);
+  border: 1px solid var(--color-accent-alpha-20);
+}
+
+/* Card error preview */
+.errorPreview {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-critical);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ============================================
+   STATUS PILLS (semantic colors)
+   ============================================ */
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: var(--badge-radius);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.status_running {
+  background: var(--color-info-bg);
+  color: var(--color-info-dark);
+  border: 1px solid var(--color-info-border);
+}
+
+.status_ok,
+.status_completed {
+  background: var(--color-healthy-bg);
+  color: var(--color-healthy-dark);
+  border: 1px solid var(--color-healthy-border);
+}
+
+.status_error,
+.status_failed,
+.status_cancelled {
+  background: var(--color-critical-bg);
+  color: var(--color-critical-dark);
+  border: 1px solid var(--color-critical-border);
+}
+
+.status_idle {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-dark);
+  border: 1px solid var(--color-warning-border);
+}
+
+.status_disabled {
+  background: var(--color-overlay-04);
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border-light);
+}
+
+/* ============================================
+   DETAIL PANE
+   ============================================ */
+
+.detailPane {
+  position: relative;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: var(--glass-bg-tinted);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  box-shadow: var(--shadow-md);
+}
+
+/* Top gradient accent line */
+.detailPane::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gradient-primary);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.detailHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detailTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.detailDescription {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px;
+  background: var(--color-overlay-04);
+  border-radius: var(--radius-md);
+}
+
+.detailDescription h1,
+.detailDescription h2,
+.detailDescription h3 {
+  font-size: 14px;
+  margin: 12px 0 6px;
+  color: var(--color-text-primary);
+}
+
+.detailDescription p {
+  margin: 0 0 8px;
+}
+
+.detailDescription ul,
+.detailDescription ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.detailActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secondaryButton {
+  padding: 6px 14px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-medium);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-xs);
+  white-space: nowrap;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  border-color: var(--color-primary-alpha-30);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.secondaryButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Detail section tabs */
+.detailTabs {
+  display: flex;
+  gap: 2px;
+  background: var(--color-bg-tertiary);
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+
+.detailTab {
+  padding: 5px 14px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.detailTab:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.detailTabActive {
+  background: var(--color-bg-elevated);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
+}
+
+/* ============================================
+   RUN RIBBON
+   ============================================ */
+
+.ribbonRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--color-overlay-04);
+  border-radius: var(--radius-md);
+}
+
+.ribbonLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.ribbon {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ribbonSegment {
+  flex: 1;
+  min-width: 6px;
+  max-width: 18px;
+  height: 16px;
+  border-radius: 3px;
+  transition: transform var(--transition-fast), opacity var(--transition-fast);
+  cursor: default;
+}
+
+.ribbonSegment:hover {
+  transform: scaleY(1.4);
+  opacity: 0.85;
+}
+
+.ribbonCompleted {
+  background: var(--color-healthy);
+}
+
+.ribbonFailed {
+  background: var(--color-critical);
+}
+
+.ribbonCancelled {
+  background: var(--color-warning);
+}
+
+.ribbonRunning {
+  background: var(--color-info);
+  animation: ribbonPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes ribbonPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.ribbonCount {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.ribbonEmpty {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* ============================================
+   DETAIL SECTIONS
+   ============================================ */
+
+.detailSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ============================================
+   EMPTY / ERROR STATES
+   ============================================ */
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: 32px 20px;
+  text-align: center;
+  grid-column: 1 / -1;
+}
+
+.emptyStateTitle {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.emptyStateText {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  max-width: 360px;
+  line-height: 1.5;
+}
+
+.emptyDetail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 24px;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+.errorBanner {
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--color-critical);
+  background: var(--color-critical-bg);
+  border: 1px solid var(--color-critical-border);
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
+@media (max-width: 1100px) {
+  .summaryGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .content {
+    grid-template-columns: 1fr;
+  }
+
+  .detailPane {
+    max-height: 50vh;
+  }
+}
+
+@media (max-width: 720px) {
+  .fleetPage {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .summaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .title {
+    font-size: 18px;
+  }
+}

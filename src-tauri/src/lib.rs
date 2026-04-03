@@ -223,6 +223,7 @@ pub fn run() {
             // Agent tool bridge commands
             commands::bridge::agent_tool_result,
             commands::bridge::agent_bridge_ready,
+            commands::fleet::fleet_get_snapshot,
             // Workspace state persistence commands
             commands::workspace::load_workspace_state,
             commands::workspace::save_workspace_state,
