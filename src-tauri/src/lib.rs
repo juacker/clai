@@ -146,6 +146,10 @@ pub fn run() {
                 match db::init_db().await {
                     Ok(pool) => {
                         tracing::info!("Database initialized successfully");
+                        // Recover any runs/tool calls left stuck from a previous crash
+                        if let Err(e) = assistant::repository::recover_stale_runs(&pool).await {
+                            tracing::warn!("Failed to recover stale runs: {}", e);
+                        }
                         app_handle.manage(pool);
                     }
                     Err(e) => {
@@ -224,6 +228,7 @@ pub fn run() {
             commands::bridge::agent_tool_result,
             commands::bridge::agent_bridge_ready,
             commands::fleet::fleet_get_snapshot,
+            commands::fleet::fleet_run_now,
             // Workspace state persistence commands
             commands::workspace::load_workspace_state,
             commands::workspace::save_workspace_state,

@@ -32,13 +32,171 @@ const getToolUses = (message) => {
 };
 
 /**
+ * Clean MCP-style tool names: "mcp.<uuid>.get_metric_data" → "get_metric_data"
+ */
+const cleanToolName = (name) => {
+  if (!name) return name;
+  // Match mcp.<uuid-or-id>.<actual_tool_name>
+  const match = name.match(/^mcp\.[^.]+\.(.+)$/);
+  return match ? match[1] : name;
+};
+
+/**
+ * Check if an assistant message contains only tool calls (no text).
+ */
+const isToolOnlyMessage = (message) => {
+  if (message.role !== 'assistant') return false;
+  const text = getTextContent(message);
+  const tools = getToolUses(message);
+  return !text.trim() && tools.length > 0;
+};
+
+/**
+ * Group consecutive tool-only assistant messages into merged blocks.
+ * Returns an array of render items:
+ * - { type: 'message', message } for normal messages
+ * - { type: 'tool-group', messages: [...], toolUses: [...] } for merged tool-only turns
+ */
+const groupMessages = (messages) => {
+  const result = [];
+  let i = 0;
+
+  while (i < messages.length) {
+    const msg = messages[i];
+
+    if (isToolOnlyMessage(msg)) {
+      // Collect consecutive tool-only assistant messages
+      const group = [msg];
+      let j = i + 1;
+      while (j < messages.length) {
+        // Skip tool-result messages (role: tool) between assistant turns
+        if (messages[j].role === 'tool') {
+          j++;
+          continue;
+        }
+        if (isToolOnlyMessage(messages[j])) {
+          group.push(messages[j]);
+          j++;
+        } else {
+          break;
+        }
+      }
+
+      if (group.length > 1) {
+        // Merge into a single tool group
+        const allToolUses = group.flatMap((m) => getToolUses(m));
+        result.push({
+          type: 'tool-group',
+          id: group.map((m) => m.id).join('-'),
+          createdAt: group[0].createdAt,
+          messages: group,
+          toolUses: allToolUses,
+        });
+      } else {
+        // Single tool-only message — render as normal
+        result.push({ type: 'message', message: msg });
+      }
+      i = j;
+    } else {
+      result.push({ type: 'message', message: msg });
+      i++;
+    }
+  }
+
+  return result;
+};
+
+/**
+ * Render a tool result value intelligently:
+ * - MCP content arrays: render text parts as markdown
+ * - Strings: render as markdown (may contain tables, lists, etc.)
+ * - Objects/arrays: pretty-print as JSON
+ */
+/**
+ * Extract displayable text from an MCP-style result.
+ * MCP results can be:
+ * - An envelope object: { content: [{ type: "text", text: "..." }], text: "...", ... }
+ * - A content array directly: [{ type: "text", text: "..." }]
+ * - A plain string
+ * - A generic JSON object
+ */
+const extractMcpText = (result) => {
+  if (!result || typeof result !== 'object') return null;
+
+  // Envelope object with content array
+  if (result.content && Array.isArray(result.content)) {
+    const textParts = result.content
+      .filter((p) => p && p.type === 'text' && typeof p.text === 'string')
+      .map((p) => p.text);
+    if (textParts.length > 0) return textParts.join('\n\n');
+  }
+
+  // Envelope object with top-level text field
+  if (typeof result.text === 'string' && result.text.trim()) {
+    return result.text;
+  }
+
+  // Direct content array
+  if (Array.isArray(result)) {
+    const textParts = result
+      .filter((p) => p && p.type === 'text' && typeof p.text === 'string')
+      .map((p) => p.text);
+    if (textParts.length > 0) return textParts.join('\n\n');
+  }
+
+  return null;
+};
+
+const renderToolResult = (result) => {
+  if (result == null) return null;
+
+  // Try MCP text extraction first (handles envelope objects and content arrays)
+  const mcpText = typeof result === 'object' ? extractMcpText(result) : null;
+  if (mcpText) {
+    return <MarkdownMessage content={mcpText} isStreaming={false} />;
+  }
+
+  // String: render as markdown (detect JSON strings)
+  if (typeof result === 'string') {
+    const trimmed = result.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return <MarkdownMessage content={'```json\n' + JSON.stringify(parsed, null, 2) + '\n```'} isStreaming={false} />;
+      } catch { /* not JSON, render as markdown */ }
+    }
+    return <MarkdownMessage content={result} isStreaming={false} />;
+  }
+
+  // Object/array without MCP text: pretty-print as JSON
+  if (typeof result === 'object') {
+    return <MarkdownMessage content={'```json\n' + JSON.stringify(result, null, 2) + '\n```'} isStreaming={false} />;
+  }
+
+  return <span>{String(result)}</span>;
+};
+
+/**
+ * Format tool parameters for display.
+ * Returns null if params are empty/null.
+ */
+const formatParams = (params) => {
+  if (!params) return null;
+  if (typeof params === 'object' && Object.keys(params).length === 0) return null;
+  if (typeof params === 'string') {
+    try {
+      const parsed = JSON.parse(params);
+      if (typeof parsed === 'object' && Object.keys(parsed).length === 0) return null;
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return params;
+    }
+  }
+  return JSON.stringify(params, null, 2);
+};
+
+/**
  * ChatMessageList - Renders a list of assistant messages with markdown and tool calls
- *
- * @param {Object} props
- * @param {Array} props.messages - Message objects with id, role, content, createdAt
- * @param {Object} [props.streamingText] - Map of messageId → current streaming text
- * @param {boolean} [props.isStreaming] - Whether a message is currently streaming
- * @param {Array} [props.toolCalls] - Tool call objects with id, status, result, error
  */
 const ChatMessageList = ({
   messages,
@@ -78,20 +236,30 @@ const ChatMessageList = ({
     }
   }, [messages, isStreaming, streamingText, toolCalls]);
 
+  const grouped = groupMessages(messages);
+
   return (
     <div
       ref={containerRef}
       className={styles.activityList}
       onScroll={handleScroll}
     >
-      {messages.map((message) => (
-        <MessageBlock
-          key={message.id}
-          message={message}
-          streamingText={streamingText[message.id]}
-          toolCalls={toolCalls}
-        />
-      ))}
+      {grouped.map((item) =>
+        item.type === 'tool-group' ? (
+          <MergedToolGroup
+            key={item.id}
+            item={item}
+            toolCalls={toolCalls}
+          />
+        ) : (
+          <MessageBlock
+            key={item.message.id}
+            message={item.message}
+            streamingText={streamingText[item.message.id]}
+            toolCalls={toolCalls}
+          />
+        )
+      )}
 
       {isStreaming && (
         <div className={styles.runningIndicator}>
@@ -131,6 +299,20 @@ const MessageBlock = memo(({ message, streamingText, toolCalls }) => {
     const isCurrentlyStreaming = !!streamingText;
     const toolUses = getToolUses(message);
 
+    // Build enriched tool use list with params from store
+    const enrichedToolUses = toolUses.map((tu) => {
+      const tc = toolCalls.find((t) => t.id === tu.tool_call_id);
+      return {
+        toolCallId: tu.tool_call_id,
+        toolName: cleanToolName(tu.tool_name),
+        arguments: tu.arguments,
+        status: tc?.status || 'running',
+        params: tc?.params,
+        result: tc?.result,
+        error: tc?.error,
+      };
+    });
+
     return (
       <div className={styles.assistantMessage}>
         <div className={styles.messageHeader}>
@@ -139,7 +321,7 @@ const MessageBlock = memo(({ message, streamingText, toolCalls }) => {
             alt="Clai"
             className={styles.providerIcon}
           />
-          <span className={styles.messageRoleText}>Assistant</span>
+          <span className={styles.messageRoleText}>Clai</span>
           {createdAt && <span className={styles.messageTimestamp}>{formatTimestamp(createdAt)}</span>}
         </div>
         <div className={styles.messageContent}>
@@ -149,20 +331,9 @@ const MessageBlock = memo(({ message, streamingText, toolCalls }) => {
               isStreaming={isCurrentlyStreaming}
             />
           )}
-          {toolUses.map((tu) => {
-            const toolCallId = tu.tool_call_id;
-            const toolName = tu.tool_name;
-            const tc = toolCalls.find((t) => t.id === toolCallId);
-            return (
-              <ToolCallBlock
-                key={toolCallId}
-                toolName={toolName}
-                status={tc?.status || 'running'}
-                result={tc?.result}
-                error={tc?.error}
-              />
-            );
-          })}
+          {enrichedToolUses.length > 0 && (
+            <ToolCallGroup toolUses={enrichedToolUses} />
+          )}
         </div>
       </div>
     );
@@ -172,14 +343,130 @@ const MessageBlock = memo(({ message, streamingText, toolCalls }) => {
   return null;
 });
 
-const ToolCallBlock = memo(({ toolName, status, result, error }) => {
+/**
+ * MergedToolGroup — renders tool calls from multiple consecutive assistant turns
+ * as a single collapsed group, avoiding repeated "CLAI" headers for tool-only turns.
+ */
+const MergedToolGroup = memo(({ item, toolCalls }) => {
+  const enrichedToolUses = item.toolUses.map((tu) => {
+    const tc = toolCalls.find((t) => t.id === tu.tool_call_id);
+    return {
+      toolCallId: tu.tool_call_id,
+      toolName: cleanToolName(tu.tool_name),
+      arguments: tu.arguments,
+      status: tc?.status || 'running',
+      params: tc?.params,
+      result: tc?.result,
+      error: tc?.error,
+    };
+  });
+
+  return (
+    <div className={styles.assistantMessage}>
+      <div className={styles.messageHeader}>
+        <img src="/icon.svg" alt="Clai" className={styles.providerIcon} />
+        <span className={styles.messageRoleText}>Clai</span>
+        {item.createdAt && <span className={styles.messageTimestamp}>{formatTimestamp(item.createdAt)}</span>}
+      </div>
+      <div className={styles.messageContent}>
+        <ToolCallGroup toolUses={enrichedToolUses} />
+      </div>
+    </div>
+  );
+});
+
+/**
+ * ToolCallGroup — collapses multiple tool calls into a compact summary.
+ * Single tool call: shown inline (always visible header).
+ * Multiple tool calls: collapsed behind a summary row.
+ */
+const ToolCallGroup = memo(({ toolUses }) => {
+  const [isGroupExpanded, setIsGroupExpanded] = useState(false);
+
+  if (toolUses.length === 0) return null;
+
+  // Single tool call — render inline, no grouping needed
+  if (toolUses.length === 1) {
+    const tu = toolUses[0];
+    return (
+      <ToolCallBlock
+        key={tu.toolCallId}
+        toolName={tu.toolName}
+        params={tu.params || tu.arguments}
+        status={tu.status}
+        result={tu.result}
+        error={tu.error}
+      />
+    );
+  }
+
+  // Multiple tool calls — group with summary
+  const completedCount = toolUses.filter((t) => t.status === 'completed').length;
+  const failedCount = toolUses.filter((t) => t.status === 'failed').length;
+  const runningCount = toolUses.length - completedCount - failedCount;
+
+  const summaryParts = [];
+  if (completedCount > 0) summaryParts.push(`${completedCount} complete`);
+  if (failedCount > 0) summaryParts.push(`${failedCount} failed`);
+  if (runningCount > 0) summaryParts.push(`${runningCount} running`);
+
+  return (
+    <div className={styles.toolGroup}>
+      <div
+        className={styles.toolGroupHeader}
+        onClick={() => setIsGroupExpanded((prev) => !prev)}
+      >
+        <div className={styles.toolHeaderLeft}>
+          <span className={styles.toolIconEmoji}>
+            {failedCount > 0 ? '✗' : runningCount > 0 ? '⚙' : '✓'}
+          </span>
+          <span className={styles.toolName}>
+            {toolUses.length} tool calls
+          </span>
+          <span className={styles.toolGroupSummary}>
+            {summaryParts.join(' · ')}
+          </span>
+        </div>
+        <div className={styles.toolHeaderRight}>
+          <span className={`${styles.expandIcon} ${isGroupExpanded ? styles.expanded : ''}`}>
+            ▼
+          </span>
+        </div>
+      </div>
+
+      {isGroupExpanded && (
+        <div className={styles.toolGroupBody}>
+          {toolUses.map((tu) => (
+            <ToolCallBlock
+              key={tu.toolCallId}
+              toolName={tu.toolName}
+              params={tu.params || tu.arguments}
+              status={tu.status}
+              result={tu.result}
+              error={tu.error}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
+/**
+ * ToolCallBlock — renders a single tool call with status, params, and result
+ */
+const ToolCallBlock = memo(({ toolName, params, status, result, error }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState('output');
 
   const handleToggle = useCallback(() => {
     setIsExpanded((prev) => !prev);
   }, []);
 
   const statusDisplay = status === 'completed' ? 'complete' : status === 'failed' ? 'error' : 'pending';
+  const formattedParams = formatParams(params);
+  const hasInput = !!formattedParams;
+  const hasOutput = result != null || !!error || status === 'running';
 
   return (
     <div className={styles.toolBlock}>
@@ -200,30 +487,57 @@ const ToolCallBlock = memo(({ toolName, status, result, error }) => {
 
       {isExpanded && (
         <div className={styles.toolContent}>
-          {result && (
-            <div className={styles.toolSection}>
-              <div className={styles.toolSectionTitle}>Result</div>
-              <div className={styles.toolResult}>
-                <MarkdownMessage
-                  content={typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
-                  isStreaming={false}
-                />
-              </div>
+          {(hasInput || hasOutput) && (
+            <div className={styles.toolTabs}>
+              {hasOutput && (
+                <button
+                  type="button"
+                  className={`${styles.toolTab} ${activeTab === 'output' ? styles.toolTabActive : ''}`}
+                  onClick={() => setActiveTab('output')}
+                >
+                  Output
+                </button>
+              )}
+              {hasInput && (
+                <button
+                  type="button"
+                  className={`${styles.toolTab} ${activeTab === 'input' ? styles.toolTabActive : ''}`}
+                  onClick={() => setActiveTab('input')}
+                >
+                  Input
+                </button>
+              )}
             </div>
           )}
-          {error && (
-            <div className={styles.toolSection}>
-              <div className={styles.toolSectionTitle}>Error</div>
-              <div className={styles.toolResult}>
-                <span style={{ color: 'var(--color-critical)' }}>{error}</span>
-              </div>
+
+          {activeTab === 'input' && hasInput && (
+            <div className={styles.toolResult}>
+              <MarkdownMessage
+                content={'```json\n' + formattedParams + '\n```'}
+                isStreaming={false}
+              />
             </div>
           )}
-          {!result && !error && status === 'running' && (
-            <div className={styles.loadingState}>
-              <span className={styles.spinner}></span>
-              <span>Executing...</span>
-            </div>
+
+          {activeTab === 'output' && (
+            <>
+              {result != null && (
+                <div className={styles.toolResult}>
+                  {renderToolResult(result)}
+                </div>
+              )}
+              {error && (
+                <div className={styles.toolResult}>
+                  <span style={{ color: 'var(--color-critical)' }}>{error}</span>
+                </div>
+              )}
+              {!result && !error && status === 'running' && (
+                <div className={styles.loadingState}>
+                  <span className={styles.spinner}></span>
+                  <span>Executing...</span>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

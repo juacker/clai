@@ -4,7 +4,8 @@ import { useFleet } from '../contexts/FleetContext';
 import { useTabManager } from '../contexts/TabManagerContext';
 import { useChatManager } from '../contexts/ChatManagerContext';
 import { assistantClient, useAssistantStore } from '../assistant';
-import { createAgent, updateAgent, getMcpServers } from '../api/client';
+import { createAgent, updateAgent, getMcpServers, setAgentEnabled } from '../api/client';
+import { fleetRunNow } from '../fleet/client';
 import ChatMessageList from '../components/AssistantChat/ChatMessageList';
 import MarkdownMessage from '../components/Chat/MarkdownMessage';
 import AgentFormModal from '../components/Settings/AgentFormModal';
@@ -140,7 +141,7 @@ const Fleet = () => {
     error,
     refresh,
   } = useFleet();
-  const { tabs, switchToTab } = useTabManager();
+  const { tabs, switchToTab, createTab, updateTabContext } = useTabManager();
   const { closeChat, isCurrentChatOpen } = useChatManager();
 
   // Close the sidebar chat when entering Fleet
@@ -193,19 +194,52 @@ const Fleet = () => {
     };
   }, [selectedAgent?.sessionId]);
 
-  const handleOpenWorkspace = () => {
-    if (!selectedAgent?.tabId) {
+  const handleOpenWorkspace = useCallback(() => {
+    if (!selectedAgent) return;
+
+    // Try existing tab first
+    const tabExists = selectedAgent.tabId && tabs.some((tab) => tab.id === selectedAgent.tabId);
+    if (tabExists) {
+      switchToTab(selectedAgent.tabId);
+      navigate('/');
       return;
     }
 
-    const tabExists = tabs.some((tab) => tab.id === selectedAgent.tabId);
-    if (!tabExists) {
-      return;
-    }
-
-    switchToTab(selectedAgent.tabId);
+    // Recreate the agent workspace tab
+    const newTab = createTab(`🤖 ${selectedAgent.name}`);
+    updateTabContext(newTab.id, {
+      mcpServers: {
+        attachedServerIds: selectedAgent.selectedMcpServerIds || [],
+        disabledServerIds: [],
+      },
+      agent: {
+        agentId: selectedAgent.agentId,
+        agentName: selectedAgent.name,
+      },
+    });
+    switchToTab(newTab.id);
     navigate('/');
-  };
+  }, [selectedAgent, tabs, switchToTab, createTab, updateTabContext, navigate]);
+
+  const handleToggleEnabled = useCallback(async (agentId, currentlyEnabled) => {
+    try {
+      await setAgentEnabled(agentId, !currentlyEnabled);
+      refresh();
+    } catch (err) {
+      console.error('[Fleet] Toggle enabled failed:', err);
+    }
+  }, [refresh]);
+
+  const handleRunNow = useCallback(async () => {
+    if (!selectedAgent) return;
+    try {
+      await fleetRunNow(selectedAgent.agentId);
+      // Give the scheduler a moment to pick it up, then refresh
+      setTimeout(() => refresh(), 2000);
+    } catch (err) {
+      console.error('[Fleet] Run now failed:', err);
+    }
+  }, [selectedAgent, refresh]);
 
   const openCreateForm = useCallback(async () => {
     try {
@@ -307,7 +341,18 @@ const Fleet = () => {
                       {agent.status.replace('_', ' ')}
                     </span>
                   </div>
-                  <span className={styles.enabledState}>{agent.enabled ? 'Enabled' : 'Disabled'}</span>
+                  <span
+                    className={`${styles.enabledToggle} ${agent.enabled ? styles.enabledToggleOn : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleEnabled(agent.agentId, agent.enabled);
+                    }}
+                    role="switch"
+                    aria-checked={agent.enabled}
+                    title={agent.enabled ? 'Click to disable' : 'Click to enable'}
+                  >
+                    {agent.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
                 </div>
 
                 <div className={styles.metaGrid}>
@@ -354,6 +399,14 @@ const Fleet = () => {
                 <div className={styles.detailActions}>
                   <button
                     type="button"
+                    className={styles.accentButton}
+                    onClick={handleRunNow}
+                    disabled={selectedAgent.status === 'running' || selectedAgent.status === 'disabled'}
+                  >
+                    Run Now
+                  </button>
+                  <button
+                    type="button"
                     className={styles.secondaryButton}
                     onClick={openEditForm}
                   >
@@ -362,7 +415,6 @@ const Fleet = () => {
                   <button
                     type="button"
                     className={styles.secondaryButton}
-                    disabled={!selectedAgent.tabId || !tabs.some((tab) => tab.id === selectedAgent.tabId)}
                     onClick={handleOpenWorkspace}
                   >
                     Open Workspace

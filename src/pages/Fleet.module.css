@@ -247,12 +247,32 @@
   text-overflow: ellipsis;
 }
 
-.enabledState {
+.enabledToggle {
   font-size: 10px;
   font-weight: 600;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: var(--badge-radius);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: 1px solid transparent;
+}
+
+.enabledToggle:hover {
+  background: var(--color-overlay-06);
+  border-color: var(--color-border-light);
+}
+
+.enabledToggleOn {
+  color: var(--color-accent-dark);
+}
+
+.enabledToggleOn:hover {
+  background: var(--color-critical-bg);
+  border-color: var(--color-critical-border);
+  color: var(--color-critical);
 }
 
 /* Card metadata grid */
@@ -451,6 +471,32 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.accentButton {
+  padding: 6px 14px;
+  background: var(--gradient-accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-on-accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-accent);
+  white-space: nowrap;
+}
+
+.accentButton:hover:not(:disabled) {
+  box-shadow: var(--shadow-accent-glow);
+  transform: translateY(-1px);
+}
+
+.accentButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .secondaryButton {

@@ -285,6 +285,46 @@
   color: var(--color-primary);
 }
 
+/* Tool Call Group — collapsible container for multiple tool calls in one turn */
+.toolGroup {
+  margin-top: 12px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.toolGroupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--color-overlay-04);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.toolGroupHeader:hover {
+  background: var(--color-overlay-08);
+}
+
+.toolGroupSummary {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-left: 4px;
+}
+
+.toolGroupBody {
+  padding: 6px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toolGroupBody .toolBlock {
+  margin-top: 0;
+}
+
 /* Tool Block */
 .toolBlock {
   margin-top: 12px;
@@ -347,8 +387,42 @@
 }
 
 .toolContent {
-  padding: 14px;
+  padding: 10px 14px;
   border-top: 1px solid var(--glass-border);
+}
+
+.toolTabs {
+  display: flex;
+  gap: 2px;
+  background: var(--color-bg-tertiary);
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  align-self: flex-start;
+  margin-bottom: 8px;
+}
+
+.toolTab {
+  padding: 3px 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.toolTab:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.toolTabActive {
+  background: var(--color-bg-elevated);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
 }
 
 .toolSection {

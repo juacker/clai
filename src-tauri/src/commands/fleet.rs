@@ -242,3 +242,32 @@ pub async fn fleet_get_snapshot(
         agents: items,
     })
 }
+
+#[tauri::command]
+pub async fn fleet_run_now(
+    agent_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    // Verify the agent exists and is enabled
+    {
+        let config_manager = state
+            .config_manager
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let agent = config_manager
+            .get_agents()
+            .into_iter()
+            .find(|a| a.id == agent_id)
+            .ok_or_else(|| format!("Agent not found: {}", agent_id))?;
+        if !agent.enabled {
+            return Err("Agent is disabled. Enable it first.".to_string());
+        }
+    }
+
+    let mut scheduler = state.scheduler.lock().await;
+    if scheduler.force_ready(&agent_id) {
+        Ok(())
+    } else {
+        Err("Agent is currently running or has no scheduler instance.".to_string())
+    }
+}

@@ -242,6 +242,19 @@ impl Scheduler {
         self.instances.get_mut(instance_id)
     }
 
+    /// Forces an agent to be ready for immediate execution by clearing its
+    /// next_run_at. The runner loop will pick it up on its next tick.
+    /// Returns true if the instance was found and updated.
+    pub fn force_ready(&mut self, agent_id: &str) -> bool {
+        for instance in self.instances.values_mut() {
+            if instance.agent_id == agent_id && instance.enabled && !instance.is_running {
+                instance.next_run_at = None;
+                return true;
+            }
+        }
+        false
+    }
+
     /// Gets all instances for a space.
     pub fn get_instances_for_space(&self, space_id: &str) -> Vec<&AgentInstance> {
         self.instances

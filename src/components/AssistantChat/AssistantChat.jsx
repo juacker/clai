@@ -74,7 +74,7 @@ const AssistantChat = ({ tabId }) => {
     return (
       <div className={styles.agentChat}>
         <div className={styles.chatToolbar}>
-          <div className={styles.toolbarTitle}>Assistant</div>
+          <div className={styles.toolbarTitle}>Clai</div>
           <button
             type="button"
             className={styles.chatActionButton}
@@ -99,7 +99,7 @@ const AssistantChat = ({ tabId }) => {
   return (
     <div className={styles.agentChat}>
       <div className={styles.chatToolbar}>
-        <div className={styles.toolbarTitle}>Assistant</div>
+        <div className={styles.toolbarTitle}>Clai</div>
         <button
           type="button"
           className={styles.chatActionButton}

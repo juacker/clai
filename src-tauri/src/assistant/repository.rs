@@ -770,3 +770,42 @@ async fn touch_session(pool: &DbPool, session_id: &str) -> Result<(), String> {
 
     Ok(())
 }
+
+/// Recover stale runs and tool calls left in non-terminal states from a previous
+/// crash or restart.  Marks them as failed so they don't appear stuck forever.
+pub async fn recover_stale_runs(pool: &DbPool) -> Result<u64, String> {
+    let now = now_ms();
+
+    let run_result = sqlx::query(
+        r#"
+        UPDATE assistant_runs
+        SET status = '"failed"', error = 'App restarted while running', completed_at = ?
+        WHERE status IN ('"queued"', '"running"', '"waiting_for_tool"')
+        "#,
+    )
+    .bind(now)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to recover stale runs: {}", e))?;
+
+    let tc_result = sqlx::query(
+        r#"
+        UPDATE assistant_tool_calls
+        SET status = '"failed"', error = 'App restarted while running'
+        WHERE status IN ('"pending"', '"running"')
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to recover stale tool calls: {}", e))?;
+
+    let total = run_result.rows_affected() + tc_result.rows_affected();
+    if total > 0 {
+        tracing::info!(
+            "Recovered {} stale runs and {} stale tool calls from previous session",
+            run_result.rows_affected(),
+            tc_result.rows_affected()
+        );
+    }
+    Ok(total)
+}
