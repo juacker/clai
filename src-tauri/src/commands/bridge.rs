@@ -1,8 +1,8 @@
 //! JS bridge Tauri commands.
 //!
-//! This module provides the Tauri command for JavaScript to send tool
-//! execution results back to Rust.
+//! This module provides Tauri commands for the JavaScript tool bridge.
 
+use crate::mcp::bridge::mark_bridge_ready;
 use crate::mcp::{complete_pending_request, ToolResponse};
 
 /// Complete a pending agent tool request.
@@ -44,4 +44,10 @@ use crate::mcp::{complete_pending_request, ToolResponse};
 #[tauri::command]
 pub fn agent_tool_result(response: ToolResponse) -> Result<(), String> {
     complete_pending_request(response)
+}
+
+/// Mark the frontend agent bridge as ready to receive tool requests.
+#[tauri::command]
+pub fn agent_bridge_ready() {
+    mark_bridge_ready();
 }

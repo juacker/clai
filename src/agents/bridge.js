@@ -420,6 +420,8 @@ export const initAgentBridge = async () => {
       handleStreamEvent(event.payload);
     });
 
+    await invoke('agent_bridge_ready');
+
     console.log('[AgentBridge] Initialized, listening for tool requests and streams');
   } catch (err) {
     console.error('[AgentBridge] Failed to initialize:', err);

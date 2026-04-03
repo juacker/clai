@@ -47,6 +47,7 @@ use crate::assistant::repository::{self, CreateSessionParams};
 use crate::assistant::runtime;
 use crate::assistant::types::{RunTrigger, SessionContext, SessionKind};
 use crate::db::DbPool;
+use crate::mcp::bridge::is_bridge_ready;
 use crate::mcp::bridge::JsBridge;
 use crate::AppState;
 
@@ -60,6 +61,10 @@ const CHECK_INTERVAL_SECS: u64 = 5;
 const TAB_PERSISTENCE_TIMEOUT_MS: u64 = 3_000;
 /// Poll interval while waiting for a tab row to appear in SQLite.
 const TAB_PERSISTENCE_POLL_INTERVAL_MS: u64 = 100;
+/// How long to wait for the frontend bridge to initialize after app startup.
+const BRIDGE_READY_TIMEOUT_MS: u64 = 10_000;
+/// Poll interval while waiting for the frontend bridge to initialize.
+const BRIDGE_READY_POLL_INTERVAL_MS: u64 = 100;
 
 // =============================================================================
 // Runner
@@ -251,6 +256,12 @@ async fn run_next_agent(
     .await?;
     let preferred_tab_id = existing_session.as_ref().and_then(|session| session.tab_id.clone());
 
+    wait_for_bridge_ready(
+        Duration::from_millis(BRIDGE_READY_TIMEOUT_MS),
+        Duration::from_millis(BRIDGE_READY_POLL_INTERVAL_MS),
+    )
+    .await?;
+
     // Ensure the scheduled agent has its tab before running.
     let bridge = JsBridge::new(app_handle.clone());
     let tab_id = bridge
@@ -347,6 +358,27 @@ async fn run_next_agent(
     }
 
     Ok(())
+}
+
+async fn wait_for_bridge_ready(
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<(), RunnerError> {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        if is_bridge_ready() {
+            return Ok(());
+        }
+
+        if Instant::now() >= deadline {
+            return Err(RunnerError::TabSetupFailed(
+                "Frontend agent bridge is not ready yet".to_string(),
+            ));
+        }
+
+        sleep(poll_interval).await;
+    }
 }
 
 // =============================================================================

@@ -48,6 +48,7 @@
 //! instances to share the same pending request storage.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
@@ -167,10 +168,23 @@ type PendingMap = HashMap<String, oneshot::Sender<ToolResponse>>;
 /// This is shared across all `JsBridge` instances so that the Tauri command
 /// can complete requests regardless of which bridge instance made them.
 static PENDING_REQUESTS: OnceLock<Mutex<PendingMap>> = OnceLock::new();
+static BRIDGE_READY: OnceLock<AtomicBool> = OnceLock::new();
 
 /// Get the global pending requests map, initializing if necessary.
 fn pending_requests() -> &'static Mutex<PendingMap> {
     PENDING_REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn bridge_ready_flag() -> &'static AtomicBool {
+    BRIDGE_READY.get_or_init(|| AtomicBool::new(false))
+}
+
+pub fn mark_bridge_ready() {
+    bridge_ready_flag().store(true, Ordering::SeqCst);
+}
+
+pub fn is_bridge_ready() -> bool {
+    bridge_ready_flag().load(Ordering::SeqCst)
 }
 
 /// Complete a pending tool request from the Tauri command.
