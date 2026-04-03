@@ -423,7 +423,7 @@ mod tests {
         config.agents.push(AgentConfig::default_agent());
 
         let json = serde_json::to_string_pretty(&config).unwrap();
-        assert!(json.contains("Claude"));
+        assert!(json.contains("claude"));
         assert!(json.contains(DEFAULT_AGENT_ID));
 
         let parsed: ClaiConfig = serde_json::from_str(&json).unwrap();

@@ -981,12 +981,16 @@ mod tests {
     #[test]
     fn test_add_chart_params_deserialization() {
         let json = serde_json::json!({
+            "spaceId": "space-1",
+            "roomId": "room-1",
             "context": "system.cpu",
             "groupBy": ["node"],
             "filterBy": {"node": ["server1"]}
         });
 
         let params: AddChartParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.space_id, "space-1");
+        assert_eq!(params.room_id, "room-1");
         assert_eq!(params.context, "system.cpu");
         assert_eq!(params.group_by, Some(vec!["node".to_string()]));
         assert!(params.filter_by.is_some());

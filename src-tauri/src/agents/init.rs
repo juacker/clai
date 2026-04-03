@@ -103,7 +103,7 @@ mod tests {
         assert!(!definition.prompt.is_empty());
         assert_eq!(
             definition.required_tools,
-            vec!["netdata", "dashboard", "tabs"]
+            vec!["netdata", "dashboard", "tabs", "fs"]
         );
     }
 

@@ -587,6 +587,8 @@ mod tests {
     fn test_add_chart_node_params() {
         let json = json!({
             "commandId": "canvas_123",
+            "spaceId": "space-1",
+            "roomId": "room-1",
             "x": 100.0,
             "y": 200.0,
             "context": "system.cpu",
@@ -596,6 +598,8 @@ mod tests {
 
         let params: AddChartNodeParams = serde_json::from_value(json).unwrap();
         assert_eq!(params.command_id, "canvas_123");
+        assert_eq!(params.space_id, "space-1");
+        assert_eq!(params.room_id, "room-1");
         assert_eq!(params.x, 100.0);
         assert_eq!(params.y, 200.0);
         assert_eq!(params.context, "system.cpu");
