@@ -505,6 +505,8 @@ mod tests {
             agent_id: "anomaly_investigator".to_string(),
             space_id: "space-456".to_string(),
             room_id: "room-789".to_string(),
+            tab_id: None,
+            mcp_server_ids: vec![],
             tool: "canvas.addChart".to_string(),
             params: serde_json::json!({ "context": "system.cpu" }),
         };
