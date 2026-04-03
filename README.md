@@ -20,7 +20,7 @@
 
 - **MCP-Native Assistant** - Attach MCP servers to a tab and the assistant can use their tools directly. Tabs scope capability access explicitly.
 
-- **Scheduled Automations** - Create enabled/disabled automations that run on a schedule using your configured AI provider and selected MCP servers.
+- **Scheduled Automations** - Create enabled/disabled automations that run on a schedule using your configured assistant provider and selected MCP servers.
 
 - **Monitoring Workflows** - The assistant can inspect metrics, anomalies, alerts, and logs through attached MCP servers, then turn findings into workspace artifacts.
 
@@ -30,7 +30,7 @@
 
 - **Tabbed Capability Scopes** - Normal tabs start with no MCP access until you attach servers. Automation tabs inherit the MCP allowlist from the automation config.
 
-- **Provider Flexibility** - Run with OpenCode, Claude Code, Gemini CLI, or Codex as the AI backend.
+- **Provider Flexibility** - Connect an OpenAI-compatible provider and model in Settings, including OpenAI, together.ai, Groq, and local compatible endpoints.
 
 ## Installation
 
@@ -44,12 +44,11 @@ Download the latest release for your platform from the [Releases page](https://g
 
 ## Getting Started
 
-1. **Install an AI provider CLI** - OpenCode, Claude Code, Gemini CLI, or Codex
-2. **Configure your provider** - Set the provider in CLAI settings
-3. **Add MCP servers** - Register local or remote MCP servers in Settings
-4. **Attach MCP servers to a tab** - Use the `Add MCP` badge in the tab context bar
-5. **Start orchestrating** - Ask the assistant to inspect tools, fetch data, open panels, or build visualizations
-6. **Create scheduled automations** - Enable automations that run periodically with their own MCP allowlist
+1. **Connect an assistant provider** - In Settings, connect an OpenAI-compatible provider and choose a default model
+2. **Add MCP servers** - Register local or remote MCP servers in Settings
+3. **Attach MCP servers to a tab** - Use the `Add MCP` badge in the tab context bar
+4. **Start orchestrating** - Ask the assistant to inspect tools, fetch data, open panels, or build visualizations
+5. **Create scheduled automations** - Enable automations that run periodically with their own MCP allowlist
 
 ## MCP Model
 
@@ -61,16 +60,25 @@ CLAI is built around explicit capability scoping:
 - **Built-in tools** focus on workspace orchestration like tabs, canvas, dashboard, and anomalies panels
 - **Domain tools** should come from MCP servers whenever possible
 
-## AI Provider Setup
+## Assistant Provider Setup
 
-To run assistant automations, install one of these CLI tools:
+CLAI uses a configured assistant provider plus a default model for chat, Fleet interventions, and scheduled automations.
 
-- **[OpenCode](https://opencode.ai)** - `opencode` CLI
-- **[Claude Code](https://claude.ai/code)** - `claude` CLI
-- **[Gemini CLI](https://github.com/google-gemini/gemini-cli)** - `gemini` CLI
-- **[Codex](https://github.com/openai/codex)** - `codex` CLI
+In Settings:
 
-Configure the provider in the app settings, then create or enable scheduled automations as needed.
+- connect an **OpenAI-compatible** provider using an API key
+- optionally set a custom base URL for compatible providers
+- choose the default model for new assistant sessions and automations
+
+This works with:
+
+- **OpenAI**
+- **together.ai**
+- **Groq**
+- **local OpenAI-compatible endpoints**
+- **other compatible providers**
+
+Once the provider is connected, you can create tabs, attach MCP servers, and enable scheduled automations.
 
 ## Netdata Integration
 
