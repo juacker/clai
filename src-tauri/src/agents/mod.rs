@@ -10,14 +10,14 @@
 //! │                        AGENT SYSTEM                             │
 //! │                                                                 │
 //! │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
-//! │  │  Definition  │───▶│   Instance   │───▶│  CLI Runner  │     │
-//! │  │  (template)  │    │  (runtime)   │    │  (AI CLI)    │     │
+//! │  │  Definition  │───▶│   Instance   │───▶│ Assistant    │     │
+//! │  │  (template)  │    │  (runtime)   │    │  Runtime     │     │
 //! │  └──────────────┘    └──────────────┘    └──────────────┘     │
 //! │                              │                   │              │
 //! │                              ▼                   ▼              │
 //! │                      ┌──────────────┐    ┌──────────────┐     │
-//! │                      │  Scheduler   │    │  MCP Server  │     │
-//! │                      │ (when to run)│    │  (tools)     │     │
+//! │                      │  Scheduler   │    │  JS Bridge / │     │
+//! │                      │ (when to run)│    │  MCP clients │     │
 //! │                      └──────────────┘    └──────────────┘     │
 //! └─────────────────────────────────────────────────────────────────┘
 //! ```
@@ -27,15 +27,15 @@
 //! - **types** - Core type definitions (AgentDefinition, AgentInstance)
 //! - **template** - Prompt template generation from agent descriptions
 //! - **scheduler** - Manages when agents should run (one at a time)
-//! - **cli_runner** - Spawns AI CLIs with MCP server
 //! - **runner** - Background loop that checks scheduler and runs agents
 //! - **init** - Scheduler initialization and instance management
+//! - **tmp** - Startup cleanup for ephemeral runtime files
 
-pub mod cli_runner;
 pub mod init;
 pub mod runner;
 pub mod scheduler;
 pub mod template;
+pub mod tmp;
 pub mod types;
 
 // Re-export main types for convenience
@@ -47,5 +47,5 @@ pub use scheduler::{create_shared_scheduler, SchedulerState, SharedScheduler};
 // Runner export (used by lib.rs)
 pub use runner::start_agent_runner;
 
-// CLI runner exports (cleanup on startup)
-pub use cli_runner::clear_tmp_dir;
+// Startup cleanup helpers
+pub use tmp::clear_tmp_dir;

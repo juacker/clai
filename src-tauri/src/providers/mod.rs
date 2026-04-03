@@ -141,45 +141,6 @@ fn command_exists_at_path(path: &str) -> bool {
     }
 }
 
-/// Resolves the full path to a command.
-/// First checks PATH via `which`, then falls back to common user binary locations.
-/// Returns the full path if found, or just the command name if not (will fail at runtime).
-pub fn resolve_command_path(cmd: &str) -> String {
-    #[cfg(target_os = "windows")]
-    let check_cmd = "where";
-
-    #[cfg(not(target_os = "windows"))]
-    let check_cmd = "which";
-
-    // First try the standard PATH lookup
-    let mut command = get_host_command(check_cmd);
-    command.arg(cmd);
-
-    if let Ok(output) = command.output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            // `which` may return multiple paths, take the first line
-            if let Some(first_path) = path.lines().next() {
-                return first_path.to_string();
-            }
-        }
-    }
-
-    // Fall back to checking common user binary paths
-    #[cfg(not(target_os = "windows"))]
-    if let Some(home) = get_home_dir() {
-        for dir in USER_BIN_PATHS {
-            let path = format!("{}/{}/{}", home, dir, cmd);
-            if command_exists_at_path(&path) {
-                return path;
-            }
-        }
-    }
-
-    // Not found - return just the command name (will fail at runtime)
-    cmd.to_string()
-}
-
 /// Checks if a command exists on the system.
 /// First checks PATH, then falls back to common user binary locations.
 fn command_exists(cmd: &str) -> bool {

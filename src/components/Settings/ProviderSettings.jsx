@@ -285,8 +285,8 @@ const ProviderSettings = () => {
 
       <div className={styles.hint}>
         <p>
-          Auto-pilot uses your selected AI CLI to analyze infrastructure and provide insights.
-          Make sure the CLI is installed and configured with your API key.
+          Scheduled automations use your selected AI CLI to run monitoring and orchestration tasks.
+          Make sure the CLI is installed and configured with the credentials it needs.
         </p>
       </div>
     </div>

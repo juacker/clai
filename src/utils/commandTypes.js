@@ -23,7 +23,6 @@ export const COMMAND_STATUS = {
 export const SYSTEM_COMMANDS = {
   CLEAR: 'clear',
   HELP: 'help',
-  VERSION: 'version',
   CTX: 'ctx'
 };
 

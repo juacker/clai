@@ -2,7 +2,7 @@
 //!
 //! This module provides the background loop that:
 //! 1. Periodically checks the scheduler for ready agents
-//! 2. Executes agents using the configured AI CLI
+//! 2. Executes automations through the assistant runtime
 //! 3. Handles completion and errors
 //!
 //! # Starting the Runner
@@ -26,7 +26,7 @@
 //! │      get definition + instance                                   │
 //! │           │                                                      │
 //! │           ▼                                                      │
-//! │      run_ai_cli(provider, prompt, api, ...)                      │
+//! │      engine::run_session_turn(...)                               │
 //! │           │                                                      │
 //! │           ▼                                                      │
 //! │      scheduler.complete_agent(success)                           │

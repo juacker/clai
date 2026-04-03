@@ -24,19 +24,23 @@ const Help = () => {
           {/* Left column - Commands */}
           <div className={styles.column}>
             <h3 className={styles.sectionTitle}>Terminal</h3>
-            <div className={styles.chatRow}><span className={styles.chatHighlight}>Just type to chat with AI</span></div>
-            <div className={styles.commandRow}><code>/ctx</code> <span>Show/set custom tab context</span></div>
+            <div className={styles.chatRow}><span className={styles.chatHighlight}>Just type to chat with the assistant</span></div>
+            <div className={styles.commandRow}><code>/ctx</code> <span>Show current tab context</span></div>
+            <div className={styles.commandRow}><code>/ctx set &lt;key&gt; &lt;value&gt;</code> <span>Set custom tab context</span></div>
+            <div className={styles.commandRow}><code>/ctx add &lt;key&gt; &lt;value&gt;</code> <span>Add to a context value or list</span></div>
+            <div className={styles.commandRow}><code>/ctx del &lt;key&gt; [value]</code> <span>Delete a context key or list item</span></div>
             <div className={styles.commandRow}><code>/echo &lt;text&gt;</code> <span>Display text</span></div>
             <div className={styles.commandRow}><code>/help</code> <span>This reference</span></div>
-            <div className={styles.commandRow}><code>/dashboard</code> <span>Chart dashboard</span></div>
-            <div className={styles.commandRow}><code>/canvas</code> <span>Whiteboard</span></div>
-            <div className={styles.commandRow}><code>/anomalies --spaceId=&lt;id&gt; --roomId=&lt;id&gt;</code> <span>Anomalies panel</span></div>
-            <div className={styles.commandRow}><code>/reset-all</code> <span>Reset layout</span></div>
+            <div className={styles.commandRow}><code>/dashboard</code> <span>Open a dashboard tile</span></div>
+            <div className={styles.commandRow}><code>/canvas</code> <span>Open a canvas tile</span></div>
+            <div className={styles.commandRow}><code>/anomalies --spaceId=&lt;id&gt; --roomId=&lt;id&gt;</code> <span>Open anomalies for an explicit target when Netdata Cloud MCP is attached</span></div>
+            <div className={styles.commandRow}><code>/reset-all</code> <span>Reset the current workspace layout</span></div>
             <div className={styles.commandRow}><code>/tab</code> <span>New tab</span></div>
             <div className={styles.commandRow}><code>/tab close</code> / <code>rename</code> / <code>next</code> / <code>prev</code> / <code>list</code></div>
             <div className={styles.commandRow}><code>/tile split-v</code> <span>left|right</span></div>
             <div className={styles.commandRow}><code>/tile split-h</code> <span>top/bottom</span></div>
             <div className={styles.commandRow}><code>/tile close</code> / <code>next</code> / <code>prev</code></div>
+            <div className={styles.commandRow}><span>MCP servers are attached from the context bar, not through terminal commands.</span></div>
           </div>
 
           {/* Right column - Shortcuts */}

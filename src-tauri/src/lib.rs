@@ -10,12 +10,10 @@
 //! # Automation Architecture
 //!
 //! When an automation is enabled, the app runs it through the assistant engine:
-//! 1. Start an HTTP MCP server on localhost (127.0.0.1:PORT)
-//! 2. Spawn an AI CLI (Claude Code, Gemini CLI, or Codex) with the server URL
-//! 3. The AI CLI connects and uses the available built-in and MCP tools
-//! 4. When complete, the server shuts down
-//!
-//! See `agents::cli_runner` for the execution flow.
+//! 1. The scheduler picks the next ready automation
+//! 2. The runner prepares a dedicated workspace tab and background session
+//! 3. The assistant runtime executes a scheduled turn with built-in and MCP tools
+//! 4. The scheduler records completion and schedules the next run
 //!
 //! # Rust Learning: Module System
 //!

@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
-use crate::assistant::{providers as assistant_providers, repository as assistant_repository};
+use crate::assistant::repository as assistant_repository;
 use crate::config::AgentConfig;
 use crate::db::DbPool;
 use crate::AppState;
@@ -270,16 +270,8 @@ async fn load_assistant_provider_info(
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false);
     let configured = provider_session.is_some() && has_model;
-    let name = provider_session.as_ref().map(|session| {
-        assistant_providers::get_provider_descriptor(&session.provider_id)
-            .map(|descriptor| descriptor.display_name)
-            .unwrap_or_else(|| session.provider_id.clone())
-    });
-
     Ok(crate::config::ProviderInfo {
         configured,
-        name,
-        provider: None,
     })
 }
 

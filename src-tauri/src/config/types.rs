@@ -315,19 +315,6 @@ pub struct ClaiConfig {
 #[derive(Debug, Clone)]
 pub struct ProviderInfo {
     pub configured: bool,
-    pub name: Option<String>,
-    pub provider: Option<AiProvider>,
-}
-
-impl ProviderInfo {
-    /// Creates provider info from an optional AiProvider.
-    pub fn from_provider(provider: Option<&AiProvider>) -> Self {
-        Self {
-            configured: provider.is_some(),
-            name: provider.map(|p| p.display_name().to_string()),
-            provider: provider.cloned(),
-        }
-    }
 }
 
 // =============================================================================
@@ -353,17 +340,6 @@ mod tests {
         assert!(matches!(parsed.ai_provider, Some(AiProvider::Claude { .. })));
         assert_eq!(parsed.assistant_default_model.as_deref(), Some("gpt-5"));
         assert_eq!(parsed.agents.len(), 1);
-    }
-
-    #[test]
-    fn test_provider_info_from_provider() {
-        let info = ProviderInfo::from_provider(Some(&AiProvider::Claude { model: None }));
-        assert!(info.configured);
-        assert_eq!(info.name, Some("Claude Code".to_string()));
-
-        let info = ProviderInfo::from_provider(None);
-        assert!(!info.configured);
-        assert!(info.name.is_none());
     }
 
     #[test]
