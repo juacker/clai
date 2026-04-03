@@ -14,6 +14,8 @@
   A desktop multi-agent orchestration and monitoring app with MCP-native tools, shared workspaces, and scheduled automations.
 </p>
 
+<img width="1920" height="1125" alt="image" src="https://github.com/user-attachments/assets/95facd8d-d08c-40c1-8aad-b8f39d2d1d87" />
+
 ## Features
 
 - **MCP-Native Assistant** - Attach MCP servers to a tab and the assistant can use their tools directly. Tabs scope capability access explicitly.
