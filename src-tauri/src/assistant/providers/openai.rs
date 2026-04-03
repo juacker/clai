@@ -163,7 +163,7 @@ fn build_request_body(request: &CompletionRequest) -> serde_json::Value {
     let messages: Vec<serde_json::Value> = request
         .messages
         .iter()
-        .map(|msg| build_message(msg))
+        .map(build_message)
         .collect();
 
     let mut body = json!({
@@ -375,7 +375,7 @@ fn sse_to_provider_events(
             }
         }
     })
-    .flat_map(|events| futures::stream::iter(events))
+    .flat_map(futures::stream::iter)
 }
 
 /// Parse a single SSE frame into ProviderEvent values.

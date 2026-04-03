@@ -124,17 +124,11 @@ struct ManagedMcpServer {
 ///
 /// The manager owns configured servers and, in future slices, will own active
 /// client transports plus cached `tools/list` results.
+#[derive(Default)]
 pub struct McpClientManager {
     servers: HashMap<String, ManagedMcpServer>,
 }
 
-impl Default for McpClientManager {
-    fn default() -> Self {
-        Self {
-            servers: HashMap::new(),
-        }
-    }
-}
 
 impl McpClientManager {
     pub fn new() -> Self {

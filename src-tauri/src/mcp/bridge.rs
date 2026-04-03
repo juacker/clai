@@ -420,6 +420,7 @@ impl JsBridge {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn call_tool_with_context(
         &self,
         agent_id: &str,

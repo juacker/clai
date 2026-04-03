@@ -501,7 +501,7 @@ fn build_system_prompt(
         for td in tool_defs {
             prompt.push_str(&format!("- `{}`: {}\n", td.name, td.description));
         }
-        prompt.push_str("\n");
+        prompt.push('\n');
     }
 
     // Tool usage guidance

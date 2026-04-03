@@ -457,6 +457,7 @@ async fn wait_for_persisted_tab(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn ensure_background_session(
     app_handle: &AppHandle,
     pool: &DbPool,
