@@ -1,11 +1,26 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import TabView from '../components/TabView/TabView';
 import { useTabManager } from '../contexts/TabManagerContext';
 import { useChatManager } from '../contexts/ChatManagerContext';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { getAgents } from '../api/client';
 import styles from './Home.module.css';
 
 const Home = () => {
+  const navigate = useNavigate();
+  const checkedRef = useRef(false);
+
+  // On first mount, redirect to Fleet if agents are configured
+  useEffect(() => {
+    if (checkedRef.current) return;
+    checkedRef.current = true;
+    getAgents().then((agents) => {
+      if (agents && agents.length > 0) {
+        navigate('/fleet', { replace: true });
+      }
+    }).catch(() => {});
+  }, [navigate]);
   // Get tab and tile management functions from context
   const {
     switchToTabByIndex,

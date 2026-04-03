@@ -11,26 +11,32 @@
 </p>
 
 <p align="center">
-  A desktop multi-agent orchestration and monitoring app with MCP-native tools, shared workspaces, and scheduled automations.
+  A desktop multi-agent orchestration app with MCP-native tools, local execution capabilities, shared workspaces, and scheduled automations.
 </p>
 
 <img width="1920" height="1125" alt="image" src="https://github.com/user-attachments/assets/95facd8d-d08c-40c1-8aad-b8f39d2d1d87" />
 
 ## Features
 
-- **MCP-Native Assistant** - Attach MCP servers to a tab and the assistant can use their tools directly. Tabs scope capability access explicitly.
+- **MCP-Native Assistant** - Attach MCP servers to a tab and the assistant uses their tools directly. Each tab scopes its own capability access.
 
-- **Scheduled Automations** - Create enabled/disabled automations that run on a schedule using your configured assistant provider and selected MCP servers.
+- **Scheduled Automations** - Create automations that run on a schedule with their own MCP servers, filesystem grants, and shell policies.
 
-- **Monitoring Workflows** - The assistant can inspect metrics, anomalies, alerts, and logs through attached MCP servers, then turn findings into workspace artifacts.
+- **Local Execution** - Agents get a private workspace directory and can optionally read/write additional paths and run shell commands, controlled by per-agent allow/block lists.
 
-- **Workspace Orchestration** - The assistant can open anomalies panels, split tiles, add canvas nodes, and create dashboard charts as part of a workflow.
+- **Shell Access Modes** - Three modes per agent: *Off* (no shell), *Restricted* (only explicitly allowed command prefixes can run), and *Full* (anything not blocked). Prefix matching supports subcommands — allowing `kubectl get` permits `kubectl get pods` but not `kubectl delete`.
 
-- **Canvas and Dashboards** - Automations and chat sessions can create visual artifacts directly in the workspace with explicit targets.
+- **Run Notices** - When an agent hits a policy denial, the run completes with an amber "warnings" state instead of failing silently. The Fleet view surfaces these so you can adjust permissions.
 
-- **Tabbed Capability Scopes** - Normal tabs start with no MCP access until you attach servers. Automation tabs inherit the MCP allowlist from the automation config.
+- **Workspace Orchestration** - The assistant can split tiles, add canvas nodes, open anomalies panels, and create dashboard charts as part of a workflow.
 
-- **Provider Flexibility** - Connect an OpenAI-compatible provider and model in Settings, including OpenAI, together.ai, Groq, and local compatible endpoints.
+- **Canvas and Dashboards** - Automations and chat sessions create visual artifacts directly in the workspace with explicit targets.
+
+- **Tabbed Capability Scopes** - Normal tabs start with no MCP access until you attach servers. Automation tabs inherit their MCP and execution config.
+
+- **Provider Flexibility** - Connect any OpenAI-compatible provider and model, including OpenAI, together.ai, Groq, and local endpoints.
+
+> **Important: local execution is not sandboxed.** Shell commands run as your OS user with full privileges. The allow/block lists control *which commands* the agent can invoke, but do not restrict *what those commands can access* — if you allow `cat`, the agent can read any file your user can, not just the paths in the grant list. Path grants only apply to the built-in `fs.read`/`fs.write` tools, not to shell commands. LLMs can also chain commands in unexpected ways. Always use *Restricted* mode with a minimal allow list, and review run notices to catch anything you didn't anticipate.
 
 ## Installation
 
@@ -44,49 +50,45 @@ Download the latest release for your platform from the [Releases page](https://g
 
 ## Getting Started
 
-1. **Connect an assistant provider** - In Settings, connect an OpenAI-compatible provider and choose a default model
+1. **Connect a provider** - In Settings, add an OpenAI-compatible provider and choose a default model
 2. **Add MCP servers** - Register local or remote MCP servers in Settings
-3. **Attach MCP servers to a tab** - Use the `Add MCP` badge in the tab context bar
-4. **Start orchestrating** - Ask the assistant to inspect tools, fetch data, open panels, or build visualizations
-5. **Create scheduled automations** - Enable automations that run periodically with their own MCP allowlist
+3. **Attach servers to a tab** - Use the `Add MCP` badge in the tab context bar to grant tools
+4. **Chat or orchestrate** - Ask the assistant to inspect tools, fetch data, open panels, or build visualizations
+5. **Create agents** - Set up scheduled automations with their own MCP servers and local execution policies
+6. **Configure local execution** - Grant filesystem paths and shell access per agent, starting with Restricted mode
 
-## MCP Model
+## Capability Model
 
-CLAI is built around explicit capability scoping:
+CLAI scopes every capability explicitly:
 
-- **Global MCP server config** lives in Settings
-- **Normal tabs** only get access to MCP servers you attach explicitly
-- **Scheduled automations** use the MCP servers selected in their automation config
-- **Built-in tools** focus on workspace orchestration like tabs, canvas, dashboard, and anomalies panels
-- **Domain tools** should come from MCP servers whenever possible
+- **MCP servers** are configured globally in Settings, then attached per tab or per automation
+- **Normal tabs** have no MCP access until you attach servers
+- **Automations** use the MCP servers and execution policy from their config
+- **Built-in tools** handle workspace orchestration — tabs, canvas, dashboards, anomalies panels
+- **Local execution** is per agent: a private workspace directory, optional extra path grants (read-only or read-write), and shell access with prefix-based allow/block lists
+- **Domain tools** come from MCP servers
 
-## Assistant Provider Setup
+## Provider Setup
 
-CLAI uses a configured assistant provider plus a default model for chat, Fleet interventions, and scheduled automations.
+CLAI uses a configured provider plus a default model for chat, Fleet interventions, and scheduled automations.
 
 In Settings:
 
 - connect an **OpenAI-compatible** provider using an API key
 - optionally set a custom base URL for compatible providers
-- choose the default model for new assistant sessions and automations
+- choose the default model for assistant sessions and automations
 
-This works with:
+Compatible with **OpenAI**, **together.ai**, **Groq**, **local OpenAI-compatible endpoints**, and other compatible providers.
 
-- **OpenAI**
-- **together.ai**
-- **Groq**
-- **local OpenAI-compatible endpoints**
-- **other compatible providers**
+## Netdata Cloud Integration
 
-Once the provider is connected, you can create tabs, attach MCP servers, and enable scheduled automations.
+Adding a [Netdata Cloud](https://www.netdata.cloud) MCP server unlocks extra workspace tools:
 
-## Netdata Integration
+- **Dashboard charts** — the assistant can add live metric charts directly to the workspace
+- **Anomaly panels** — open dedicated anomaly investigation views for any monitored node
+- **Canvas visualizations** — build visual topologies with metric chart nodes, status badges, and markdown
 
-Netdata is now treated as an integration, not the default product model.
-
-- Use a Netdata MCP server when you want the assistant to discover spaces, rooms, nodes, metrics, and related tools
-- `dashboard.addChart`, `canvas.addChart`, and `anomalies.open` are exposed only when a Netdata-capable MCP server is available for the session
-- Chart and anomalies flows use explicit `spaceId` / `roomId` targets instead of hidden tab context
+These tools (`dashboard.addChart`, `canvas.addChart`, `anomalies.open`) appear automatically when a Netdata-capable MCP server is attached to the session.
 
 ## Development
 
@@ -99,20 +101,18 @@ npm install
 # Run the desktop app in development
 make dev
 
-# Verify frontend and Rust builds
+# Verify builds
 npm run build
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
-## Current Architecture
+## Architecture
 
 - **Frontend**: React + Tauri
 - **Workspace runtime**: tabs, split tiles, canvas, dashboards, anomalies panels
-- **Assistant runtime**: session-scoped built-ins plus selected MCP tools
-- **Automation runtime**: one scheduled instance per enabled automation
-- **MCP support**: per-server config, optional bearer auth, HTTP and stdio clients
-
-The product direction is a general multi-agent orchestration and monitoring app rather than a Netdata-specific desktop app.
+- **Assistant runtime**: session-scoped built-ins + MCP tools, optional fs/shell access
+- **Automation runtime**: scheduled agents with private workspaces and execution policies
+- **MCP support**: per-server config, optional bearer auth, HTTP and stdio transports
 
 ## License
 
