@@ -106,11 +106,10 @@ fn execute_fs_read(
     params: FsReadParams,
 ) -> Result<serde_json::Value, String> {
     let grants = filesystem_grants(context)?;
-    let path = resolve_allowed_existing_path(&params.path, &grants, false).map_err(|e| {
+    let path = resolve_allowed_existing_path(&params.path, &grants, false).inspect_err(|e| {
         if e.contains("outside the agent's allowed filesystem grants") || e.contains("not writable") {
             context.add_notice(RunNoticeKind::PathDenied, e.clone());
         }
-        e
     })?;
     let content = fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
@@ -138,11 +137,10 @@ fn execute_fs_write(
     params: FsWriteParams,
 ) -> Result<serde_json::Value, String> {
     let grants = filesystem_grants(context)?;
-    let path = resolve_allowed_path(&params.path, &grants, true).map_err(|e| {
+    let path = resolve_allowed_path(&params.path, &grants, true).inspect_err(|e| {
         if e.contains("outside the agent's allowed filesystem grants") || e.contains("not writable") {
             context.add_notice(RunNoticeKind::PathDenied, e.clone());
         }
-        e
     })?;
 
     if params.create_parents {
