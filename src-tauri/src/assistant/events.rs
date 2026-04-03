@@ -11,7 +11,7 @@ pub const ASSISTANT_EVENT_NAME: &str = "assistant://event";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum AssistantUiEvent {
-    SessionCreated { session: AssistantSession },
+    SessionCreated { session: Box<AssistantSession> },
     MessageCreated { message: AssistantMessage },
     RunQueued { run: AssistantRun },
     RunStarted { run: AssistantRun },

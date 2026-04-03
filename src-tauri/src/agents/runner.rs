@@ -529,7 +529,7 @@ async fn ensure_background_session(
             &session,
             None,
             AssistantUiEvent::SessionCreated {
-                session: session.clone(),
+                session: Box::new(session.clone()),
             },
         )
         .map_err(RunnerError::AssistantSession)?;
@@ -556,7 +556,7 @@ async fn ensure_background_session(
         &session,
         None,
         AssistantUiEvent::SessionCreated {
-            session: session.clone(),
+            session: Box::new(session.clone()),
         },
     )
     .map_err(RunnerError::AssistantSession)?;

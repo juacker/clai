@@ -75,7 +75,7 @@ pub async fn assistant_create_session(
         &session,
         None,
         AssistantUiEvent::SessionCreated {
-            session: session.clone(),
+            session: Box::new(session.clone()),
         },
     )?;
 
