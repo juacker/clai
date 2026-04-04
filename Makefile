@@ -1,7 +1,7 @@
 .PHONY: help dev build fmt fmt-check lint check test ci release release-retry tag-delete
 
-# CalVer: YYYY.M.D
-CALVER := $(shell date '+%Y.%-m.%-d')
+# CalVer: YY.M.D (2-digit year to stay within MSI version limit of 255 per component)
+CALVER := $(shell date '+%-y.%-m.%-d')
 # Get current version from package.json
 VERSION := $(shell node -p "require('./package.json').version")
 # Get latest tag
@@ -35,7 +35,7 @@ test: ## Run cargo tests
 
 ci: fmt-check lint test ## Run all CI checks locally (fmt + lint + test)
 
-# Release management (CalVer: YYYY.M.D)
+# Release management (CalVer: YY.M.D)
 
 release: ## Create a release using today's date as version
 	@if git rev-parse "v$(CALVER)" >/dev/null 2>&1; then \
