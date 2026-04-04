@@ -453,36 +453,37 @@ fn glob_allowed_paths(
         require_literal_leading_dot: false,
     };
 
-    let mut entries = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    let mut ctx = GlobWalkContext {
+        matcher,
+        options,
+        absolute_pattern,
+        limit,
+        seen: std::collections::HashSet::new(),
+        matches: Vec::new(),
+    };
 
     for grant in grants {
-        if collect_glob_matches(
-            &grant.root,
-            &grant.root,
-            &matcher,
-            options,
-            absolute_pattern,
-            limit,
-            &mut seen,
-            &mut entries,
-        )? {
-            return Ok((entries, true));
+        if collect_glob_matches(&grant.root, &grant.root, &mut ctx)? {
+            return Ok((ctx.matches, true));
         }
     }
 
-    Ok((entries, false))
+    Ok((ctx.matches, false))
+}
+
+struct GlobWalkContext {
+    matcher: Pattern,
+    options: MatchOptions,
+    absolute_pattern: bool,
+    limit: usize,
+    seen: std::collections::HashSet<PathBuf>,
+    matches: Vec<FilesystemEntry>,
 }
 
 fn collect_glob_matches(
     root: &Path,
     current: &Path,
-    matcher: &Pattern,
-    options: MatchOptions,
-    absolute_pattern: bool,
-    limit: usize,
-    seen: &mut std::collections::HashSet<PathBuf>,
-    matches: &mut Vec<FilesystemEntry>,
+    ctx: &mut GlobWalkContext,
 ) -> Result<bool, String> {
     let mut dir_entries = fs::read_dir(current)
         .map_err(|e| format!("Failed to list {}: {}", current.display(), e))?
@@ -495,7 +496,7 @@ fn collect_glob_matches(
         let file_type = entry
             .file_type()
             .map_err(|e| format!("Failed to inspect {}: {}", path.display(), e))?;
-        let candidate = if absolute_pattern {
+        let candidate = if ctx.absolute_pattern {
             path_to_match_string(&path)
         } else {
             let relative_path = path.strip_prefix(root).map_err(|e| {
@@ -508,28 +509,17 @@ fn collect_glob_matches(
             path_to_match_string(relative_path)
         };
 
-        if matcher.matches_with(&candidate, options) && seen.insert(path.clone()) {
-            matches.push(FilesystemEntry {
+        if ctx.matcher.matches_with(&candidate, ctx.options) && ctx.seen.insert(path.clone()) {
+            ctx.matches.push(FilesystemEntry {
                 path: path.clone(),
                 kind: classify_file_type(&file_type),
             });
-            if matches.len() >= limit {
+            if ctx.matches.len() >= ctx.limit {
                 return Ok(true);
             }
         }
 
-        if file_type.is_dir()
-            && collect_glob_matches(
-                root,
-                &path,
-                matcher,
-                options,
-                absolute_pattern,
-                limit,
-                seen,
-                matches,
-            )?
-        {
+        if file_type.is_dir() && collect_glob_matches(root, &path, ctx)? {
             return Ok(true);
         }
     }
@@ -725,9 +715,7 @@ fn literal_path_prefix(pattern: &str) -> Option<PathBuf> {
         saw_literal_segment = true;
     }
 
-    if is_absolute {
-        Some(prefix)
-    } else if saw_literal_segment {
+    if is_absolute || saw_literal_segment {
         Some(prefix)
     } else {
         None
