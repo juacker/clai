@@ -1,5 +1,7 @@
-.PHONY: help dev build fmt fmt-check lint check test ci release-retry release-patch release-minor release-major tag-delete
+.PHONY: help dev build fmt fmt-check lint check test ci release release-retry tag-delete
 
+# CalVer: YYYY.M.D
+CALVER := $(shell date '+%Y.%-m.%-d')
 # Get current version from package.json
 VERSION := $(shell node -p "require('./package.json').version")
 # Get latest tag
@@ -33,7 +35,24 @@ test: ## Run cargo tests
 
 ci: fmt-check lint test ## Run all CI checks locally (fmt + lint + test)
 
-# Release management
+# Release management (CalVer: YYYY.M.D)
+
+release: ## Create a release using today's date as version
+	@if [ "$(VERSION)" = "$(CALVER)" ]; then \
+		echo "Version $(CALVER) is already set. Use 'make release-retry' to re-tag."; \
+		exit 1; \
+	fi
+	@echo "Releasing v$(CALVER)..."
+	@sed -i 's/"version": "[^"]*"/"version": "$(CALVER)"/' package.json && \
+	sed -i 's/"version": "[^"]*"/"version": "$(CALVER)"/' src-tauri/tauri.conf.json && \
+	sed -i 's/^version = "[^"]*"/version = "$(CALVER)"/' src-tauri/Cargo.toml && \
+	npm install --package-lock-only && \
+	cd src-tauri && cargo update -p clai && cd .. && \
+	git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json && \
+	git commit -m "Release v$(CALVER)" && \
+	git tag "v$(CALVER)" && \
+	git push && git push --tags && \
+	echo "✓ Released v$(CALVER)"
 
 release-retry: ## Retry the last release (recreate same tag)
 	@echo "Retrying release $(LATEST_TAG)..."
@@ -42,49 +61,6 @@ release-retry: ## Retry the last release (recreate same tag)
 	git tag $(LATEST_TAG)
 	git push --tags
 	@echo "✓ Tag $(LATEST_TAG) recreated and pushed"
-
-release-patch: ## Create a patch release (0.0.x)
-	@$(MAKE) _release TYPE=patch
-
-release-minor: ## Create a minor release (0.x.0)
-	@$(MAKE) _release TYPE=minor
-
-release-major: ## Create a major release (x.0.0)
-	@$(MAKE) _release TYPE=major
-
-release-beta: ## Create a beta release (v0.3.1-beta.1, v0.3.1-beta.2, etc.)
-	@CURRENT_VERSION="$(VERSION)"; \
-	if git rev-parse "v$$CURRENT_VERSION" >/dev/null 2>&1; then \
-		echo "Stable v$$CURRENT_VERSION exists, bumping patch version..."; \
-		npm version patch --no-git-tag-version && \
-		NEW_VERSION=$$(node -p "require('./package.json').version") && \
-		sed -i 's/"version": "[^"]*"/"version": "'$$NEW_VERSION'"/' src-tauri/tauri.conf.json && \
-		sed -i 's/^version = "[^"]*"/version = "'$$NEW_VERSION'"/' src-tauri/Cargo.toml; \
-	else \
-		echo "No stable v$$CURRENT_VERSION yet, reusing version..."; \
-		NEW_VERSION="$$CURRENT_VERSION"; \
-	fi && \
-	LAST_BETA=$$(git tag -l "v$$NEW_VERSION-beta.*" | sort -V | tail -1 | grep -oE '[0-9]+$$' || echo 0) && \
-	NEXT_BETA=$$((LAST_BETA + 1)) && \
-	NEW_TAG="v$$NEW_VERSION-beta.$$NEXT_BETA" && \
-	echo "Creating beta release $$NEW_TAG..." && \
-	git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml 2>/dev/null || true && \
-	git diff --cached --quiet || git commit -m "Beta $$NEW_TAG" && \
-	git tag $$NEW_TAG && \
-	git push && git push --tags && \
-	echo "✓ Beta $$NEW_TAG created and pushed"
-
-_release:
-	@echo "Creating $(TYPE) release..."
-	@npm version $(TYPE) --no-git-tag-version && \
-	NEW_VERSION=$$(node -p "require('./package.json').version") && \
-	sed -i 's/"version": "[^"]*"/"version": "'$$NEW_VERSION'"/' src-tauri/tauri.conf.json && \
-	sed -i 's/^version = "[^"]*"/version = "'$$NEW_VERSION'"/' src-tauri/Cargo.toml && \
-	git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml && \
-	git commit -m "Release v$$NEW_VERSION" && \
-	git tag "v$$NEW_VERSION" && \
-	git push && git push --tags && \
-	echo "✓ Released v$$NEW_VERSION"
 
 tag-delete: ## Delete a tag locally and remotely (usage: make tag-delete TAG=v0.1.0)
 	@if [ -z "$(TAG)" ]; then echo "Usage: make tag-delete TAG=v0.1.0"; exit 1; fi
