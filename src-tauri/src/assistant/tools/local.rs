@@ -557,10 +557,11 @@ fn ensure_agent_workspace_root(context: &ToolExecutionContext) -> Result<PathBuf
     let workspace_root = agent_workspace_root_for_id(automation_id)
         .ok_or_else(|| "Failed to resolve platform data directory".to_string())?;
 
-    // Create workspace root and pre-seed .clai/memory/ so agents can use it
-    // immediately without spending a tool call to discover it doesn't exist.
+    // Create workspace root and pre-seed .clai/memory/ (including journal/)
+    // so agents can use it immediately without spending a tool call.
     let memory_dir = workspace_root.join(".clai").join("memory");
-    fs::create_dir_all(&memory_dir).map_err(|e| {
+    let journal_dir = memory_dir.join("journal");
+    fs::create_dir_all(&journal_dir).map_err(|e| {
         format!(
             "Failed to create agent workspace {}: {}",
             workspace_root.display(),

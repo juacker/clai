@@ -662,9 +662,25 @@ fn build_system_prompt(
 
         prompt.push_str(
             "\n## Agent Memory\n\
-             The `.clai/memory/` directory inside your workspace is pre-created and ready to use as durable memory across runs.\n\n\
+             The `.clai/memory/` directory inside your workspace is pre-created and ready to use as durable memory across runs.\n\
+             Memory has three layers, each with a distinct purpose:\n\n\
+             ### 1. State — short-horizon working memory (`state.md`)\n\
+             Current focus, pending actions, open questions, and outcome of the last run.\n\
+             Replaced (not appended) every run — this is what you are thinking about *right now*.\n\n\
+             ### 2. Knowledge — curated durable heuristics (`knowledge.md`)\n\
+             Patterns, baselines, and lessons that remain valid across multiple runs.\n\
+             Each entry should have a confidence tag and supporting evidence:\n\
+             - `hypothesis` — observed once, not yet confirmed.\n\
+             - `provisional` — observed multiple times or partially corroborated.\n\
+             - `confirmed` — verified through repeated observation or explicit validation.\n\
+             Remove or downgrade entries when contradicted by fresh evidence.\n\n\
+             ### 3. Journal — append-only audit trail (`journal/{date}.md`)\n\
+             One file per calendar day. Append timestamped entries for significant decisions, actions, and observations.\n\
+             Journals are write-once: never edit past entries, only append new ones.\n\n\
+             ### Additional files\n\
+             - `index.md` — catalog of all memory files with one-line summaries. Read this first to decide what else to read. Update it whenever you create, rename, or delete a memory file.\n\
+             - `checkpoints/<task>.md` — for multi-step work that spans several runs.\n\n\
              ### File conventions\n\
-             - Prefer a small set of stable Markdown files: `status.md`, `facts.md`, and `checkpoints/<task>.md`.\n\
              - Each memory file should start with YAML frontmatter:\n\
              ```\n\
              ---\n\
@@ -673,20 +689,23 @@ fn build_system_prompt(
              ---\n\
              ```\n\
              - Keep each file under ~200 lines. When a file grows past this, prune stale entries or split into focused files.\n\
-             - Use `fs.list` or `fs.glob` to inspect existing memory files, then read only what matters.\n\
-             - Update memory after meaningful findings or state changes. Avoid noisy append-only logs.\n\
-             - Replace outdated sections rather than appending indefinitely.\n\n",
+             - Replace outdated sections rather than appending indefinitely (except in `journal/`).\n\n",
         );
 
         match trigger {
             RunTrigger::Scheduled | RunTrigger::ManualAutomation => {
                 prompt.push_str(
-                    "### Memory in autonomous runs\n\
-                     - Start by reading `.clai/memory/status.md` (if it exists) to resume context from the previous run.\n\
-                     - After completing your pass, update `status.md` with a concise summary of findings and next steps.\n\
-                     - Use `facts.md` for durable knowledge that spans multiple runs (e.g., known baselines, recurring patterns).\n\
-                     - Use `checkpoints/<task>.md` for multi-step work that may span several runs.\n\
-                     - Prune stale entries: if a fact or checkpoint is no longer relevant, remove it.\n",
+                    "### Startup protocol (autonomous runs)\n\
+                     1. Read `index.md` (if it exists) to see what memory is available.\n\
+                     2. Read `state.md` to resume context from the previous run.\n\
+                     3. Read `knowledge.md` only if the current task needs historical patterns.\n\
+                     4. Do your work.\n\
+                     5. Update `state.md` with current focus and outcome.\n\
+                     6. Append a journal entry to `journal/{today}.md`.\n\
+                     7. If you discovered a durable pattern, add it to `knowledge.md` with the appropriate confidence level.\n\
+                     8. If any analysis you produced is worth preserving, file it as a checkpoint or knowledge entry — don't let valuable findings vanish into chat history.\n\
+                     9. Update `index.md` if you created or removed any files.\n\
+                     10. Prune stale entries: if a knowledge entry or checkpoint is no longer relevant, remove it.\n",
                 );
             }
             RunTrigger::UserMessage | RunTrigger::Retry => {
@@ -694,16 +713,23 @@ fn build_system_prompt(
                     "### Memory in user-driven runs\n\
                      - Do NOT read memory unless the user's request specifically needs historical context.\n\
                      - Focus on the user's latest message. Memory is supporting context, not the starting point.\n\
-                     - If you discover something worth remembering for future runs, write it to the appropriate memory file.\n",
+                     - If you discover something worth remembering for future runs, write it to the appropriate memory file.\n\
+                     - If the user's request produces a durable finding, consider filing it into knowledge or a checkpoint.\n",
                 );
             }
         }
 
         prompt.push_str(
-            "\n### Guardrails\n\
+            "\n### Hierarchy of truth\n\
+             When sources conflict, trust the higher-ranked source and update the lower one:\n\
+             1. User instruction or human directive (highest)\n\
+             2. Live tool output (fresh data from the current run)\n\
+             3. Agent knowledge (`knowledge.md`)\n\
+             4. Agent state (`state.md`, lowest)\n\n\
+             ### Guardrails\n\
              - Treat memory as fallible working notes, not ground truth. Re-check time-sensitive facts with tools before acting.\n\
-             - If memory conflicts with live tool output or explicit user instructions, trust the fresh source.\n\
-             - Do not store secrets in memory unless the operator explicitly configured a path for that purpose.\n",
+             - Do not store secrets in memory unless the operator explicitly configured a path for that purpose.\n\
+             - Knowledge is not a dashboard — don't duplicate transient metrics there. State is not knowledge — don't put durable heuristics in `state.md`.\n",
         );
     }
 
@@ -736,17 +762,31 @@ mod tests {
 
         assert!(text.contains("## Agent Memory"));
         assert!(text.contains("`.clai/memory/`"));
-        assert!(text.contains("`status.md`"));
-        assert!(text.contains("`facts.md`"));
-        assert!(text.contains("Treat memory as fallible working notes"));
+        // Three-layer memory model
+        assert!(text.contains("`state.md`"));
+        assert!(text.contains("`knowledge.md`"));
+        assert!(text.contains("`journal/{date}.md`"));
+        assert!(text.contains("`index.md`"));
+        // Knowledge confidence levels
+        assert!(text.contains("`hypothesis`"));
+        assert!(text.contains("`provisional`"));
+        assert!(text.contains("`confirmed`"));
         // Schema convention
         assert!(text.contains("updated_at:"));
         assert!(text.contains("summary:"));
         // Size hint
         assert!(text.contains("~200 lines"));
-        // Autonomous-specific guidance
-        assert!(text.contains("### Memory in autonomous runs"));
-        assert!(text.contains("Start by reading `.clai/memory/status.md`"));
+        // Hierarchy of truth
+        assert!(text.contains("### Hierarchy of truth"));
+        assert!(text.contains("User instruction or human directive"));
+        assert!(text.contains("Live tool output"));
+        // Guardrails
+        assert!(text.contains("Treat memory as fallible working notes"));
+        assert!(text.contains("Knowledge is not a dashboard"));
+        // Autonomous startup protocol
+        assert!(text.contains("### Startup protocol (autonomous runs)"));
+        assert!(text.contains("Read `index.md`"));
+        assert!(text.contains("Read `state.md`"));
     }
 
     #[test]
@@ -851,9 +891,12 @@ mod tests {
 
         assert!(text.contains("## Run Mode"));
         assert!(text.contains("This is an autonomous automation pass."));
-        assert!(text.contains("### Memory in autonomous runs"));
-        assert!(text.contains("Start by reading `.clai/memory/status.md`"));
+        assert!(text.contains("### Startup protocol (autonomous runs)"));
+        assert!(text.contains("Read `index.md`"));
+        assert!(text.contains("Read `state.md`"));
+        assert!(text.contains("Append a journal entry"));
         assert!(text.contains("Prune stale entries"));
+        assert!(text.contains("don't let valuable findings vanish into chat history"));
     }
 
     #[test]
@@ -894,8 +937,14 @@ mod tests {
                 "Missing guardrails for {:?}",
                 trigger
             );
+            assert!(
+                text.contains("### Hierarchy of truth"),
+                "Missing hierarchy of truth for {:?}",
+                trigger
+            );
             assert!(text.contains("Treat memory as fallible working notes"));
             assert!(text.contains("Do not store secrets in memory"));
+            assert!(text.contains("Knowledge is not a dashboard"));
         }
     }
 }
