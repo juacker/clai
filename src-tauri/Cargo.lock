@@ -562,6 +562,7 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "futures",
+ "glob",
  "keyring",
  "reqwest",
  "rmcp",

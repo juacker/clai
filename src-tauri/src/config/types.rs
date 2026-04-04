@@ -360,11 +360,6 @@ impl AgentConfig {
         tools
     }
 
-    /// Generates the system prompt from the description using the template.
-    pub fn generate_prompt(&self) -> String {
-        crate::agents::template::generate_prompt(&self.description)
-    }
-
     /// Updates the global enabled state.
     pub fn set_enabled(&mut self, enabled: bool) -> bool {
         if self.enabled != enabled {

@@ -166,7 +166,31 @@ pub async fn run_session_turn(
 
     // === Tool execution loop ===
     // Build system prompt (prepended to every API call, not persisted)
-    let system_message = build_system_prompt(&session.context, &tool_defs);
+    let system_message = build_system_prompt(&session.context, &tool_defs, &input.trigger);
+
+    // Persist the trigger message as a run boundary marker so the LLM can see
+    // where one run ends and the next begins. Without this, the LLM sees old
+    // tool results from prior runs and may skip re-running tools.
+    if let Some(trigger_content) = build_trigger_message(&session, &input.trigger) {
+        let boundary_msg = repository::create_message(
+            &deps.pool,
+            CreateMessageParams {
+                session_id: session.id.clone(),
+                role: trigger_content.role.clone(),
+                content: trigger_content.content.clone(),
+                provider_metadata: None,
+            },
+        )
+        .await?;
+        let _ = emit_event(
+            &deps.app,
+            &session,
+            Some(&run_id),
+            AssistantUiEvent::MessageCreated {
+                message: boundary_msg,
+            },
+        );
+    }
 
     for iteration in 0..MAX_TOOL_ITERATIONS {
         if input.cancel_token.is_cancelled() {
@@ -174,15 +198,10 @@ pub async fn run_session_turn(
             return Ok(());
         }
 
-        // Load fresh message history each iteration
+        // Load fresh message history each iteration (includes the persisted trigger)
         let messages = repository::list_messages(&deps.pool, &session.id).await?;
 
         let mut provider_messages = vec![system_message.clone()];
-        if iteration == 0 {
-            if let Some(trigger_message) = build_trigger_message(&session, &input.trigger) {
-                provider_messages.push(trigger_message);
-            }
-        }
         provider_messages.extend(messages.iter().map(|msg| ProviderInputMessage {
             role: msg.role.clone(),
             content: msg.content.clone(),
@@ -392,6 +411,8 @@ pub async fn run_session_turn(
                         None,
                     )
                     .await?;
+                    let tool_started_at = updated.started_at;
+                    let tool_completed_at = updated.completed_at;
 
                     let _ = emit_event(
                         &deps.app,
@@ -409,6 +430,8 @@ pub async fn run_session_turn(
                             content: vec![ContentPart::ToolResult {
                                 tool_call_id: tc.tool_call_id.clone(),
                                 payload: result,
+                                started_at: Some(tool_started_at),
+                                completed_at: tool_completed_at,
                             }],
                             provider_metadata: None,
                         },
@@ -433,6 +456,8 @@ pub async fn run_session_turn(
                         Some(&error),
                     )
                     .await?;
+                    let tool_started_at = updated.started_at;
+                    let tool_completed_at = updated.completed_at;
 
                     let _ = emit_event(
                         &deps.app,
@@ -451,6 +476,8 @@ pub async fn run_session_turn(
                             content: vec![ContentPart::ToolResult {
                                 tool_call_id: tc.tool_call_id.clone(),
                                 payload: error_payload,
+                                started_at: Some(tool_started_at),
+                                completed_at: tool_completed_at,
                             }],
                             provider_metadata: None,
                         },
@@ -497,14 +524,23 @@ fn usage_none() -> Option<&'static RunUsage> {
 fn build_system_prompt(
     context: &crate::assistant::types::SessionContext,
     tool_defs: &[crate::assistant::types::ToolDefinition],
+    trigger: &RunTrigger,
 ) -> ProviderInputMessage {
     let tool_names: Vec<&str> = tool_defs.iter().map(|t| t.name.as_str()).collect();
+    let current_datetime = chrono::Local::now()
+        .format("%Y-%m-%d %H:%M:%S %:z")
+        .to_string();
 
     let mut prompt = String::from(
         "You are CLAI, a workspace assistant and multi-agent orchestration tool built into a desktop app. \
          You help users inspect available capabilities, choose the right tools for the job, update the workspace, \
          and explain outcomes clearly.\n\n",
     );
+
+    prompt.push_str(&format!(
+        "Current local date and time: `{}`.\n\n",
+        current_datetime
+    ));
 
     if !tool_names.is_empty() {
         prompt.push_str("You have the following tools available:\n");
@@ -518,11 +554,14 @@ fn build_system_prompt(
     prompt.push_str(
         "## Tool Usage Guidelines\n\
          - First inspect what is available in this session and choose the smallest set of tools needed.\n\
-         - When using canvas or dashboard tools, first call `tabs.getTileLayout` to discover \
-           available commandIds. Canvas and dashboard tools require a `commandId` parameter.\n\
          - Use the configured MCP tools available in this session for domain-specific work.\n\
          - Use `fs.*` and `bash.*` only when those local execution capabilities are exposed in this session.\n\
-         - Use `tabs.splitTile` to create new panels before adding charts or content.\n\
+         - Prior tool outputs in the conversation may be stale. Treat them as historical context, not guaranteed current state.\n\
+         - Evaluate whether prior tool outputs are still fresh enough for the current decision. When information can expire or change over time (for example issues, alerts, metrics, repo state, or external system status), re-run the relevant tools if freshness matters.\n\
+         - Chat is the default output channel. Use normal assistant replies for status, findings, and conclusions.\n\
+         - Use canvas, dashboard, and tabs tools only when a workspace artifact will materially improve understanding or preserve useful state.\n\
+         - When using canvas or dashboard tools, first call `tabs.getTileLayout` to discover \
+           available commandIds. Only use `tabs.splitTile` when no suitable panel already exists.\n\
          - Prefer updating existing workspace artifacts over duplicating them.\n\
          - Be concise and direct in your responses. Prefer concrete actions and evidence over vague summaries.\n",
     );
@@ -534,6 +573,21 @@ fn build_system_prompt(
         );
     }
 
+    prompt.push_str("\n## Run Mode\n");
+    match trigger {
+        RunTrigger::Scheduled | RunTrigger::ManualAutomation => {
+            prompt.push_str(
+                "This is an autonomous automation pass. You should inspect the current state, \
+                 decide what needs to be refreshed, and communicate the result clearly.\n",
+            );
+        }
+        RunTrigger::UserMessage | RunTrigger::Retry => {
+            prompt.push_str(
+                "This is a user-driven run. Prioritize the user's latest message and use prior context only as support.\n",
+            );
+        }
+    }
+
     if let Some(automation_name) = context.automation_name.as_deref() {
         prompt.push_str("\n## Automation Context\n");
         prompt.push_str(&format!(
@@ -541,8 +595,9 @@ fn build_system_prompt(
             automation_name
         ));
         prompt.push_str(
-            "Your assistant text is visible to the user in chat. Use normal assistant replies for \
-             summaries and explanations; use dashboard/canvas/tabs tools to update the tab itself.\n\
+            "Your assistant text is visible to the user in chat. Treat chat as the primary way to communicate progress and outcomes.\n\
+             Use dashboard/canvas/tabs tools only when they add durable value to the workspace.\n\
+             For routine scheduled passes, a concise chat update is often sufficient.\n\
              Prefer updating existing visuals over recreating duplicate panels when the topic is unchanged.\n",
         );
 
@@ -604,11 +659,244 @@ fn build_system_prompt(
                 context.execution.shell.allowed_command_prefixes.join(", ")
             ));
         }
+
+        prompt.push_str(
+            "\n## Agent Memory\n\
+             The `.clai/memory/` directory inside your workspace is pre-created and ready to use as durable memory across runs.\n\n\
+             ### File conventions\n\
+             - Prefer a small set of stable Markdown files: `status.md`, `facts.md`, and `checkpoints/<task>.md`.\n\
+             - Each memory file should start with YAML frontmatter:\n\
+             ```\n\
+             ---\n\
+             updated_at: YYYY-MM-DDTHH:MM:SS\n\
+             summary: one-line description of this file's purpose\n\
+             ---\n\
+             ```\n\
+             - Keep each file under ~200 lines. When a file grows past this, prune stale entries or split into focused files.\n\
+             - Use `fs.list` or `fs.glob` to inspect existing memory files, then read only what matters.\n\
+             - Update memory after meaningful findings or state changes. Avoid noisy append-only logs.\n\
+             - Replace outdated sections rather than appending indefinitely.\n\n",
+        );
+
+        match trigger {
+            RunTrigger::Scheduled | RunTrigger::ManualAutomation => {
+                prompt.push_str(
+                    "### Memory in autonomous runs\n\
+                     - Start by reading `.clai/memory/status.md` (if it exists) to resume context from the previous run.\n\
+                     - After completing your pass, update `status.md` with a concise summary of findings and next steps.\n\
+                     - Use `facts.md` for durable knowledge that spans multiple runs (e.g., known baselines, recurring patterns).\n\
+                     - Use `checkpoints/<task>.md` for multi-step work that may span several runs.\n\
+                     - Prune stale entries: if a fact or checkpoint is no longer relevant, remove it.\n",
+                );
+            }
+            RunTrigger::UserMessage | RunTrigger::Retry => {
+                prompt.push_str(
+                    "### Memory in user-driven runs\n\
+                     - Do NOT read memory unless the user's request specifically needs historical context.\n\
+                     - Focus on the user's latest message. Memory is supporting context, not the starting point.\n\
+                     - If you discover something worth remembering for future runs, write it to the appropriate memory file.\n",
+                );
+            }
+        }
+
+        prompt.push_str(
+            "\n### Guardrails\n\
+             - Treat memory as fallible working notes, not ground truth. Re-check time-sensitive facts with tools before acting.\n\
+             - If memory conflicts with live tool output or explicit user instructions, trust the fresh source.\n\
+             - Do not store secrets in memory unless the operator explicitly configured a path for that purpose.\n",
+        );
     }
 
     ProviderInputMessage {
         role: MessageRole::System,
         content: vec![ContentPart::Text { text: prompt }],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::assistant::types::ContentPart;
+    use crate::assistant::types::SessionContext;
+    use crate::config::{ExecutionCapabilityConfig, ShellAccessMode};
+
+    #[test]
+    fn build_system_prompt_includes_agent_memory_guidance_for_automations() {
+        let context = SessionContext {
+            agent_workspace_id: Some("agent-123".to_string()),
+            execution: ExecutionCapabilityConfig::default(),
+            ..Default::default()
+        };
+
+        let message = build_system_prompt(&context, &[], &RunTrigger::Scheduled);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        assert!(text.contains("## Agent Memory"));
+        assert!(text.contains("`.clai/memory/`"));
+        assert!(text.contains("`status.md`"));
+        assert!(text.contains("`facts.md`"));
+        assert!(text.contains("Treat memory as fallible working notes"));
+        // Schema convention
+        assert!(text.contains("updated_at:"));
+        assert!(text.contains("summary:"));
+        // Size hint
+        assert!(text.contains("~200 lines"));
+        // Autonomous-specific guidance
+        assert!(text.contains("### Memory in autonomous runs"));
+        assert!(text.contains("Start by reading `.clai/memory/status.md`"));
+    }
+
+    #[test]
+    fn build_system_prompt_omits_agent_memory_guidance_without_workspace() {
+        let context = SessionContext::default();
+
+        let message = build_system_prompt(&context, &[], &RunTrigger::Scheduled);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        assert!(!text.contains("## Agent Memory"));
+    }
+
+    #[test]
+    fn build_system_prompt_describes_shell_mode_alongside_memory_guidance() {
+        let mut execution = ExecutionCapabilityConfig::default();
+        execution.shell.mode = ShellAccessMode::Restricted;
+        execution.shell.allowed_command_prefixes = vec!["rg".to_string(), "git status".to_string()];
+
+        let context = SessionContext {
+            agent_workspace_id: Some("agent-123".to_string()),
+            execution,
+            ..Default::default()
+        };
+
+        let message = build_system_prompt(&context, &[], &RunTrigger::Scheduled);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        assert!(text.contains("- Shell mode: restricted"));
+        assert!(text.contains("- Allowed command prefixes: rg, git status"));
+        assert!(text.contains("## Agent Memory"));
+    }
+
+    #[test]
+    fn build_system_prompt_makes_chat_the_primary_output_channel() {
+        let context = SessionContext {
+            automation_name: Some("Health Monitor".to_string()),
+            ..Default::default()
+        };
+
+        let message = build_system_prompt(&context, &[], &RunTrigger::Scheduled);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        assert!(text.contains("Chat is the default output channel."));
+        assert!(
+            text.contains("Treat chat as the primary way to communicate progress and outcomes.")
+        );
+        assert!(text
+            .contains("For routine scheduled passes, a concise chat update is often sufficient."));
+    }
+
+    #[test]
+    fn build_system_prompt_includes_current_datetime() {
+        let context = SessionContext::default();
+
+        let message = build_system_prompt(&context, &[], &RunTrigger::Scheduled);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        assert!(text.contains("Current local date and time: `"));
+    }
+
+    #[test]
+    fn build_system_prompt_warns_that_prior_tool_results_may_be_stale() {
+        let context = SessionContext::default();
+
+        let message = build_system_prompt(&context, &[], &RunTrigger::Scheduled);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        assert!(text.contains("Prior tool outputs in the conversation may be stale."));
+        assert!(text.contains(
+            "Evaluate whether prior tool outputs are still fresh enough for the current decision."
+        ));
+        assert!(text.contains("re-run the relevant tools if freshness matters."));
+    }
+
+    #[test]
+    fn build_system_prompt_describes_autonomous_run_mode() {
+        let context = SessionContext {
+            agent_workspace_id: Some("agent-123".to_string()),
+            ..Default::default()
+        };
+
+        let message = build_system_prompt(&context, &[], &RunTrigger::Scheduled);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        assert!(text.contains("## Run Mode"));
+        assert!(text.contains("This is an autonomous automation pass."));
+        assert!(text.contains("### Memory in autonomous runs"));
+        assert!(text.contains("Start by reading `.clai/memory/status.md`"));
+        assert!(text.contains("Prune stale entries"));
+    }
+
+    #[test]
+    fn build_system_prompt_describes_user_driven_run_mode() {
+        let context = SessionContext {
+            agent_workspace_id: Some("agent-123".to_string()),
+            ..Default::default()
+        };
+
+        let message = build_system_prompt(&context, &[], &RunTrigger::UserMessage);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        assert!(text.contains("## Run Mode"));
+        assert!(text.contains("This is a user-driven run."));
+        assert!(text.contains("### Memory in user-driven runs"));
+        assert!(text.contains("Do NOT read memory unless"));
+    }
+
+    #[test]
+    fn build_system_prompt_memory_guardrails_present_in_both_modes() {
+        let context = SessionContext {
+            agent_workspace_id: Some("agent-123".to_string()),
+            ..Default::default()
+        };
+
+        for trigger in &[RunTrigger::Scheduled, RunTrigger::UserMessage] {
+            let message = build_system_prompt(&context, &[], trigger);
+            let text = match &message.content[0] {
+                ContentPart::Text { text } => text,
+                other => panic!("expected text content, got {:?}", other),
+            };
+
+            assert!(
+                text.contains("### Guardrails"),
+                "Missing guardrails for {:?}",
+                trigger
+            );
+            assert!(text.contains("Treat memory as fallible working notes"));
+            assert!(text.contains("Do not store secrets in memory"));
+        }
     }
 }
 
@@ -621,16 +909,25 @@ fn build_trigger_message(
         .automation_name
         .as_deref()
         .unwrap_or("automation");
+    let now = chrono::Local::now()
+        .format("%Y-%m-%d %H:%M:%S %:z")
+        .to_string();
 
     let text = match trigger {
         RunTrigger::Scheduled => Some(format!(
-            "Run the next scheduled pass for {} now. Inspect the current state, \
-             update the tab as needed, and end with a concise status update.",
-            automation_name
+            "--- New scheduled run at {} ---\n\
+             Tool outputs above this marker are from previous runs.\n\
+             Evaluate whether they are still fresh enough for the current pass and re-run tools when needed.\n\n\
+             Run the next scheduled pass for {} now. Inspect the current state, \
+             update the workspace as needed, and end with a concise status update.",
+            now, automation_name
         )),
         RunTrigger::ManualAutomation => Some(format!(
-            "Run the automation {} now and report the current findings.",
-            automation_name
+            "--- Manual run at {} ---\n\
+             Tool outputs above this marker are from previous runs.\n\
+             Evaluate whether they are still fresh enough and re-run tools when needed.\n\n\
+             Run the automation {} now and report the current findings.",
+            now, automation_name
         )),
         RunTrigger::UserMessage | RunTrigger::Retry => None,
     }?;

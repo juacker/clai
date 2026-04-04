@@ -288,7 +288,6 @@ fn build_agent_definition(agent: &AgentConfig) -> crate::agents::AgentDefinition
         (agent.interval_minutes as u64) * 60 * 1000,
     )
     .with_description(&agent.description)
-    .with_prompt(&agent.generate_prompt())
     .with_tools(agent.required_tools())
 }
 

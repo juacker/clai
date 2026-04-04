@@ -25,7 +25,6 @@
 //! # Components
 //!
 //! - **types** - Core type definitions (AgentDefinition, AgentInstance)
-//! - **template** - Prompt template generation from agent descriptions
 //! - **scheduler** - Manages when agents should run (one at a time)
 //! - **runner** - Background loop that checks scheduler and runs agents
 //! - **init** - Scheduler initialization and instance management
@@ -34,7 +33,6 @@
 pub mod init;
 pub mod runner;
 pub mod scheduler;
-pub mod template;
 pub mod tmp;
 pub mod types;
 

@@ -202,7 +202,7 @@ const Fleet = () => {
     const tabExists = selectedAgent.tabId && tabs.some((tab) => tab.id === selectedAgent.tabId);
     if (tabExists) {
       switchToTab(selectedAgent.tabId);
-      navigate('/');
+      navigate('/', { state: { skipFleetRedirect: true } });
       return;
     }
 
@@ -219,7 +219,7 @@ const Fleet = () => {
       },
     });
     switchToTab(newTab.id);
-    navigate('/');
+    navigate('/', { state: { skipFleetRedirect: true } });
   }, [selectedAgent, tabs, switchToTab, createTab, updateTabContext, navigate]);
 
   const handleToggleEnabled = useCallback(async (agentId, currentlyEnabled) => {

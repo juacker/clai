@@ -12,7 +12,7 @@ use std::time::Instant;
 /// Runtime definition of an agent.
 ///
 /// This is the processed/compiled version of an AgentConfig from the config file.
-/// It includes the generated prompt and is used by the scheduler and executor.
+/// It is used by the scheduler and executor.
 ///
 /// # Fields
 ///
@@ -20,7 +20,6 @@ use std::time::Instant;
 /// - `name`: Human-readable name for UI
 /// - `description`: Description of what this agent does
 /// - `interval_ms`: How often to run (in milliseconds)
-/// - `prompt`: System prompt for the AI (generated from description)
 /// - `required_tools`: Tool namespaces this agent needs (e.g., ["netdata", "canvas"])
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentDefinition {
@@ -36,14 +35,6 @@ pub struct AgentDefinition {
 
     /// How often to run this agent (in milliseconds).
     pub interval_ms: u64,
-
-    /// System prompt for the AI.
-    ///
-    /// This is the main instruction set that tells the AI what to do.
-    /// It should describe the agent's purpose, available tools, and
-    /// expected behavior.
-    #[serde(default)]
-    pub prompt: String,
 
     /// List of tool namespaces this agent needs (e.g., ["netdata", "canvas", "tabs"]).
     ///
@@ -61,7 +52,6 @@ impl AgentDefinition {
             name: name.to_string(),
             description: String::new(),
             interval_ms,
-            prompt: String::new(),
             required_tools: vec![],
         }
     }
@@ -69,12 +59,6 @@ impl AgentDefinition {
     /// Sets the description.
     pub fn with_description(mut self, description: &str) -> Self {
         self.description = description.to_string();
-        self
-    }
-
-    /// Sets the system prompt for the AI.
-    pub fn with_prompt(mut self, prompt: &str) -> Self {
-        self.prompt = prompt.to_string();
         self
     }
 

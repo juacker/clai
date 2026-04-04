@@ -14,7 +14,6 @@ fn agent_config_to_definition(config: &AgentConfig) -> AgentDefinition {
         (config.interval_minutes as u64) * 60 * 1000,
     )
     .with_description(&config.description)
-    .with_prompt(&config.generate_prompt())
     .with_tools(config.required_tools())
 }
 
@@ -100,7 +99,6 @@ mod tests {
         assert_eq!(definition.id, agent.id);
         assert_eq!(definition.name, "Test Agent");
         assert_eq!(definition.interval_ms, 5 * 60 * 1000);
-        assert!(!definition.prompt.is_empty());
         assert_eq!(
             definition.required_tools,
             vec!["netdata", "dashboard", "tabs", "fs"]

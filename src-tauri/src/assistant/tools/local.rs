@@ -1,3 +1,4 @@
+use glob::{MatchOptions, Pattern};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
@@ -18,6 +19,10 @@ const APP_IDENTIFIER: &str = "clai";
 const AGENT_WORKSPACES_DIR: &str = "agent-workspaces";
 const DEFAULT_FILE_READ_LIMIT: usize = 20_000;
 const MAX_FILE_READ_LIMIT: usize = 200_000;
+const DEFAULT_FS_LIST_LIMIT: usize = 200;
+const MAX_FS_LIST_LIMIT: usize = 2_000;
+const DEFAULT_FS_GLOB_LIMIT: usize = 200;
+const MAX_FS_GLOB_LIMIT: usize = 2_000;
 const DEFAULT_BASH_TIMEOUT_MS: u64 = 30_000;
 const MAX_BASH_TIMEOUT_MS: u64 = 120_000;
 const DEFAULT_BASH_OUTPUT_LIMIT: usize = 20_000;
@@ -31,6 +36,25 @@ pub fn agent_workspace_root_for_id(agent_workspace_id: &str) -> Option<PathBuf> 
             .join(AGENT_WORKSPACES_DIR)
             .join(agent_workspace_id),
     )
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FsListParams {
+    #[serde(default = "default_current_path")]
+    path: String,
+    #[serde(default)]
+    recursive: bool,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FsGlobParams {
+    pattern: String,
+    #[serde(default)]
+    limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,12 +100,28 @@ struct ResolvedGrant {
     access: AccessKind,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FilesystemEntry {
+    path: PathBuf,
+    kind: &'static str,
+}
+
 pub async fn execute_local_tool(
     context: &ToolExecutionContext,
     tool_name: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     match tool_name {
+        "fs.list" => {
+            let params: FsListParams = serde_json::from_value(params)
+                .map_err(|e| format!("Invalid fs.list params: {}", e))?;
+            execute_fs_list(context, params)
+        }
+        "fs.glob" => {
+            let params: FsGlobParams = serde_json::from_value(params)
+                .map_err(|e| format!("Invalid fs.glob params: {}", e))?;
+            execute_fs_glob(context, params)
+        }
         "fs.read" => {
             let params: FsReadParams = serde_json::from_value(params)
                 .map_err(|e| format!("Invalid fs.read params: {}", e))?;
@@ -99,6 +139,60 @@ pub async fn execute_local_tool(
         }
         _ => Err(format!("Unknown local tool: {}", tool_name)),
     }
+}
+
+fn default_current_path() -> String {
+    ".".to_string()
+}
+
+fn execute_fs_list(
+    context: &ToolExecutionContext,
+    params: FsListParams,
+) -> Result<serde_json::Value, String> {
+    let grants = filesystem_grants(context)?;
+    let path = resolve_allowed_existing_path(&params.path, &grants, false).inspect_err(|e| {
+        if e.contains("outside the agent's allowed filesystem grants") || e.contains("not writable")
+        {
+            context.add_notice(RunNoticeKind::PathDenied, e.clone());
+        }
+    })?;
+    let limit = params
+        .limit
+        .unwrap_or(DEFAULT_FS_LIST_LIMIT)
+        .min(MAX_FS_LIST_LIMIT);
+    let (entries, truncated) = list_entries_at_path(&path, params.recursive, limit)?;
+
+    Ok(serde_json::json!({
+        "path": path.display().to_string(),
+        "entries": serialize_entries(&entries),
+        "recursive": params.recursive,
+        "truncated": truncated,
+        "limit": limit
+    }))
+}
+
+fn execute_fs_glob(
+    context: &ToolExecutionContext,
+    params: FsGlobParams,
+) -> Result<serde_json::Value, String> {
+    let grants = filesystem_grants(context)?;
+    let limit = params
+        .limit
+        .unwrap_or(DEFAULT_FS_GLOB_LIMIT)
+        .min(MAX_FS_GLOB_LIMIT);
+    let (entries, truncated) =
+        glob_allowed_paths(&params.pattern, &grants, limit).inspect_err(|e| {
+            if e.contains("outside the agent's allowed filesystem grants") {
+                context.add_notice(RunNoticeKind::PathDenied, e.clone());
+            }
+        })?;
+
+    Ok(serde_json::json!({
+        "pattern": params.pattern,
+        "matches": serialize_entries(&entries),
+        "truncated": truncated,
+        "limit": limit
+    }))
 }
 
 fn execute_fs_read(
@@ -276,6 +370,173 @@ fn filesystem_grants(context: &ToolExecutionContext) -> Result<Vec<ResolvedGrant
     Ok(grants)
 }
 
+fn list_entries_at_path(
+    path: &Path,
+    recursive: bool,
+    limit: usize,
+) -> Result<(Vec<FilesystemEntry>, bool), String> {
+    let mut entries = Vec::new();
+
+    if path.is_dir() {
+        let truncated = collect_dir_entries(path, recursive, limit, &mut entries)?;
+        Ok((entries, truncated))
+    } else {
+        Ok((vec![describe_path(path)?], false))
+    }
+}
+
+fn collect_dir_entries(
+    dir: &Path,
+    recursive: bool,
+    limit: usize,
+    entries: &mut Vec<FilesystemEntry>,
+) -> Result<bool, String> {
+    let mut dir_entries = fs::read_dir(dir)
+        .map_err(|e| format!("Failed to list {}: {}", dir.display(), e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to list {}: {}", dir.display(), e))?;
+    dir_entries.sort_by_key(|entry| entry.path());
+
+    for entry in dir_entries {
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("Failed to inspect {}: {}", path.display(), e))?;
+        entries.push(FilesystemEntry {
+            path: path.clone(),
+            kind: classify_file_type(&file_type),
+        });
+
+        if entries.len() >= limit {
+            return Ok(true);
+        }
+
+        if recursive && file_type.is_dir() && collect_dir_entries(&path, true, limit, entries)? {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn glob_allowed_paths(
+    pattern: &str,
+    grants: &[ResolvedGrant],
+    limit: usize,
+) -> Result<(Vec<FilesystemEntry>, bool), String> {
+    let normalized_pattern = normalize_pattern_string(pattern);
+    if normalized_pattern.is_empty() {
+        return Err("Glob pattern cannot be empty".to_string());
+    }
+
+    let matcher =
+        Pattern::new(&normalized_pattern).map_err(|e| format!("Invalid glob pattern: {}", e))?;
+    let absolute_pattern = Path::new(&normalized_pattern).is_absolute();
+
+    if absolute_pattern {
+        if let Some(prefix) = literal_path_prefix(&normalized_pattern) {
+            let intersects_grants = grants
+                .iter()
+                .any(|grant| path_prefix_intersects(&prefix, &grant.root));
+            if !intersects_grants {
+                return Err(format!(
+                    "Pattern {} is outside the agent's allowed filesystem grants",
+                    normalized_pattern
+                ));
+            }
+        }
+    }
+
+    let options = MatchOptions {
+        case_sensitive: !cfg!(windows),
+        require_literal_separator: true,
+        require_literal_leading_dot: false,
+    };
+
+    let mut entries = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for grant in grants {
+        if collect_glob_matches(
+            &grant.root,
+            &grant.root,
+            &matcher,
+            options,
+            absolute_pattern,
+            limit,
+            &mut seen,
+            &mut entries,
+        )? {
+            return Ok((entries, true));
+        }
+    }
+
+    Ok((entries, false))
+}
+
+fn collect_glob_matches(
+    root: &Path,
+    current: &Path,
+    matcher: &Pattern,
+    options: MatchOptions,
+    absolute_pattern: bool,
+    limit: usize,
+    seen: &mut std::collections::HashSet<PathBuf>,
+    matches: &mut Vec<FilesystemEntry>,
+) -> Result<bool, String> {
+    let mut dir_entries = fs::read_dir(current)
+        .map_err(|e| format!("Failed to list {}: {}", current.display(), e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to list {}: {}", current.display(), e))?;
+    dir_entries.sort_by_key(|entry| entry.path());
+
+    for entry in dir_entries {
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("Failed to inspect {}: {}", path.display(), e))?;
+        let candidate = if absolute_pattern {
+            path_to_match_string(&path)
+        } else {
+            let relative_path = path.strip_prefix(root).map_err(|e| {
+                format!(
+                    "Failed to resolve relative path for {}: {}",
+                    path.display(),
+                    e
+                )
+            })?;
+            path_to_match_string(relative_path)
+        };
+
+        if matcher.matches_with(&candidate, options) && seen.insert(path.clone()) {
+            matches.push(FilesystemEntry {
+                path: path.clone(),
+                kind: classify_file_type(&file_type),
+            });
+            if matches.len() >= limit {
+                return Ok(true);
+            }
+        }
+
+        if file_type.is_dir()
+            && collect_glob_matches(
+                root,
+                &path,
+                matcher,
+                options,
+                absolute_pattern,
+                limit,
+                seen,
+                matches,
+            )?
+        {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
 fn resolve_grant(grant: &FilesystemPathGrant) -> Result<ResolvedGrant, String> {
     Ok(ResolvedGrant {
         root: resolve_configured_path(&grant.path)?,
@@ -296,7 +557,10 @@ fn ensure_agent_workspace_root(context: &ToolExecutionContext) -> Result<PathBuf
     let workspace_root = agent_workspace_root_for_id(automation_id)
         .ok_or_else(|| "Failed to resolve platform data directory".to_string())?;
 
-    fs::create_dir_all(&workspace_root).map_err(|e| {
+    // Create workspace root and pre-seed .clai/memory/ so agents can use it
+    // immediately without spending a tool call to discover it doesn't exist.
+    let memory_dir = workspace_root.join(".clai").join("memory");
+    fs::create_dir_all(&memory_dir).map_err(|e| {
         format!(
             "Failed to create agent workspace {}: {}",
             workspace_root.display(),
@@ -402,6 +666,85 @@ fn normalize_path(path: PathBuf) -> PathBuf {
     normalized
 }
 
+fn classify_file_type(file_type: &fs::FileType) -> &'static str {
+    if file_type.is_dir() {
+        "directory"
+    } else if file_type.is_file() {
+        "file"
+    } else if file_type.is_symlink() {
+        "symlink"
+    } else {
+        "other"
+    }
+}
+
+fn describe_path(path: &Path) -> Result<FilesystemEntry, String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|e| format!("Failed to inspect {}: {}", path.display(), e))?;
+    Ok(FilesystemEntry {
+        path: path.to_path_buf(),
+        kind: classify_file_type(&metadata.file_type()),
+    })
+}
+
+fn serialize_entries(entries: &[FilesystemEntry]) -> Vec<serde_json::Value> {
+    entries
+        .iter()
+        .map(|entry| {
+            serde_json::json!({
+                "path": entry.path.display().to_string(),
+                "kind": entry.kind
+            })
+        })
+        .collect()
+}
+
+fn normalize_pattern_string(pattern: &str) -> String {
+    pattern.trim().replace('\\', "/")
+}
+
+fn literal_path_prefix(pattern: &str) -> Option<PathBuf> {
+    let normalized = normalize_pattern_string(pattern);
+    let is_absolute = normalized.starts_with('/');
+    let mut prefix = if is_absolute {
+        PathBuf::from(std::path::MAIN_SEPARATOR_STR)
+    } else {
+        PathBuf::new()
+    };
+    let mut saw_literal_segment = false;
+
+    for segment in normalized.split('/') {
+        if segment.is_empty() {
+            continue;
+        }
+        if segment_contains_glob(segment) {
+            break;
+        }
+        prefix.push(segment);
+        saw_literal_segment = true;
+    }
+
+    if is_absolute {
+        Some(prefix)
+    } else if saw_literal_segment {
+        Some(prefix)
+    } else {
+        None
+    }
+}
+
+fn segment_contains_glob(segment: &str) -> bool {
+    segment.contains('*') || segment.contains('?') || segment.contains('[') || segment.contains('{')
+}
+
+fn path_prefix_intersects(a: &Path, b: &Path) -> bool {
+    a.starts_with(b) || b.starts_with(a)
+}
+
+fn path_to_match_string(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 /// Why a command was denied.
 enum CommandDenial {
     /// The command prefix is in the explicit block list — expected, no notice needed.
@@ -490,4 +833,112 @@ fn truncate_string(text: String, limit: usize) -> String {
         return text;
     }
     chars[..limit].iter().collect::<String>() + "\n…[truncated]"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn grant_for(path: &Path) -> ResolvedGrant {
+        ResolvedGrant {
+            root: path.to_path_buf(),
+            access: AccessKind::ReadWrite,
+        }
+    }
+
+    #[test]
+    fn fs_list_returns_sorted_entries_and_recursive_children() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        fs::write(root.join("b.txt"), "b").unwrap();
+        fs::write(root.join("a.txt"), "a").unwrap();
+        fs::create_dir(root.join("notes")).unwrap();
+        fs::write(root.join("notes").join("todo.md"), "todo").unwrap();
+
+        let (top_level, truncated) = list_entries_at_path(root, false, 10).unwrap();
+        let top_level_paths: Vec<String> = top_level
+            .iter()
+            .map(|entry| {
+                entry
+                    .path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+
+        assert_eq!(top_level_paths, vec!["a.txt", "b.txt", "notes"]);
+        assert!(!truncated);
+
+        let (recursive, recursive_truncated) = list_entries_at_path(root, true, 10).unwrap();
+        let recursive_paths: Vec<String> = recursive
+            .iter()
+            .map(|entry| {
+                entry
+                    .path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+
+        assert_eq!(
+            recursive_paths,
+            vec!["a.txt", "b.txt", "notes", "notes/todo.md"]
+        );
+        assert!(!recursive_truncated);
+    }
+
+    #[test]
+    fn fs_glob_matches_relative_patterns_within_allowed_grants() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join(".clai").join("memory").join("checkpoints")).unwrap();
+        fs::write(root.join(".clai").join("memory").join("status.md"), "ok").unwrap();
+        fs::write(root.join(".clai").join("memory").join("facts.json"), "{}").unwrap();
+        fs::write(
+            root.join(".clai")
+                .join("memory")
+                .join("checkpoints")
+                .join("restart.md"),
+            "resume",
+        )
+        .unwrap();
+
+        let (matches, truncated) =
+            glob_allowed_paths(".clai/memory/**/*.md", &[grant_for(root)], 10).unwrap();
+        let matched_paths: Vec<String> = matches
+            .iter()
+            .map(|entry| {
+                entry
+                    .path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+
+        assert_eq!(
+            matched_paths,
+            vec![
+                ".clai/memory/checkpoints/restart.md",
+                ".clai/memory/status.md"
+            ]
+        );
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn fs_glob_rejects_absolute_patterns_outside_allowed_grants() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+
+        let error = glob_allowed_paths("/etc/**/*.conf", &[grant_for(root)], 10).unwrap_err();
+
+        assert!(error.contains("outside the agent's allowed filesystem grants"));
+    }
 }

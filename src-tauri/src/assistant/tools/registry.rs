@@ -98,6 +98,30 @@ pub fn available_tools(
 
     if context.agent_workspace_id.is_some() {
         tools.push(ToolDefinition {
+            name: "fs.list".to_string(),
+            description: "List files and directories under the agent workspace or another allowed filesystem path. Supports optional recursive traversal with a hard result limit.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "recursive": { "type": "boolean" },
+                    "limit": { "type": "integer", "minimum": 1 }
+                }
+            }),
+        });
+        tools.push(ToolDefinition {
+            name: "fs.glob".to_string(),
+            description: "Find files or directories matching a glob pattern within the agent workspace or another allowed filesystem path.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string" },
+                    "limit": { "type": "integer", "minimum": 1 }
+                },
+                "required": ["pattern"]
+            }),
+        });
+        tools.push(ToolDefinition {
             name: "fs.read".to_string(),
             description: "Read a text file from the agent workspace or from an additional allowed filesystem path.".to_string(),
             input_schema: serde_json::json!({

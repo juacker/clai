@@ -220,13 +220,20 @@ fn build_message(msg: &crate::assistant::types::ProviderInputMessage) -> serde_j
     if let Some(ContentPart::ToolResult {
         tool_call_id,
         payload,
+        started_at,
+        completed_at,
     }) = msg.content.first()
     {
         if msg.role == MessageRole::Tool {
+            let content = serde_json::json!({
+                "startedAt": started_at.and_then(format_timestamp_millis_as_rfc3339),
+                "completedAt": completed_at.and_then(format_timestamp_millis_as_rfc3339),
+                "payload": payload,
+            });
             return json!({
                 "role": "tool",
                 "tool_call_id": tool_call_id,
-                "content": payload.to_string(),
+                "content": content.to_string(),
             });
         }
     }
@@ -287,6 +294,10 @@ fn build_message(msg: &crate::assistant::types::ProviderInputMessage) -> serde_j
         "role": role,
         "content": content,
     })
+}
+
+fn format_timestamp_millis_as_rfc3339(timestamp_ms: i64) -> Option<String> {
+    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(timestamp_ms).map(|dt| dt.to_rfc3339())
 }
 
 // =============================================================================
@@ -519,5 +530,38 @@ fn flush_tool_calls(
                 params,
             },
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::assistant::types::{ContentPart, MessageRole, ProviderInputMessage};
+
+    #[test]
+    fn build_message_includes_tool_result_timestamps() {
+        let msg = ProviderInputMessage {
+            role: MessageRole::Tool,
+            content: vec![ContentPart::ToolResult {
+                tool_call_id: "call_123".to_string(),
+                payload: serde_json::json!({ "openIssues": 0 }),
+                started_at: Some(1_700_000_000_000),
+                completed_at: Some(1_700_000_000_250),
+            }],
+        };
+
+        let built = build_message(&msg);
+        assert_eq!(built["role"], "tool");
+        assert_eq!(built["tool_call_id"], "call_123");
+
+        let content = built["content"]
+            .as_str()
+            .expect("tool content should be a string");
+        let parsed: serde_json::Value =
+            serde_json::from_str(content).expect("tool content should be valid json");
+
+        assert_eq!(parsed["startedAt"], "2023-11-14T22:13:20+00:00");
+        assert_eq!(parsed["completedAt"], "2023-11-14T22:13:20.250+00:00");
+        assert_eq!(parsed["payload"]["openIssues"], 0);
     }
 }

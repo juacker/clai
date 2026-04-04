@@ -136,6 +136,10 @@ pub enum ContentPart {
     ToolResult {
         tool_call_id: ToolCallId,
         payload: serde_json::Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        started_at: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        completed_at: Option<i64>,
     },
 }
 

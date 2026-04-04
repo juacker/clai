@@ -7,7 +7,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import MarkdownMessage from '../Chat/MarkdownMessage';
-import styles from '../AgentChat/AgentChat.module.css';
+import styles from './AssistantChat.module.css';
 
 const EMPTY_STREAMING = {};
 const EMPTY_TOOL_CALLS = [];
@@ -282,6 +282,11 @@ const MessageBlock = memo(({ message, streamingText, toolCalls }) => {
   if (role === 'user') {
     const textContent = getTextContent(message);
     if (!textContent) return null;
+
+    // Hide run boundary markers (persisted trigger messages for the LLM, not for the user)
+    if (textContent.startsWith('--- New scheduled run at') || textContent.startsWith('--- Manual run at')) {
+      return null;
+    }
 
     return (
       <div className={styles.userMessage}>

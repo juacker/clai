@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { assistantClient, useAssistantSession } from '../../assistant';
 import useAssistantStore from '../../assistant/sessionStore';
 import ChatMessageList from './ChatMessageList';
-import styles from '../AgentChat/AgentChat.module.css';
+import styles from './AssistantChat.module.css';
 
 const EMPTY_TOOL_CALLS = [];
 

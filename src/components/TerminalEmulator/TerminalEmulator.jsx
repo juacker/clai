@@ -305,7 +305,9 @@ const TerminalEmulator = ({ onSendToChat }) => {
 
   const handleModeToggle = (event) => {
     event.stopPropagation();
-    navigate(isFleetRoute ? '/' : '/fleet');
+    navigate(isFleetRoute ? '/' : '/fleet', isFleetRoute
+      ? { state: { skipFleetRedirect: true } }
+      : undefined);
   };
 
   return (
