@@ -46,8 +46,8 @@
   </screenshots>
 
   <releases>
-    <release version="0.4.0" date="2026-04-01">
-      <description><p>Latest release with MCP-native tools and workspace orchestration.</p></description>
+    <release version="2026.4.4" date="2026-04-04">
+      <description><p>Agent memory system, web search/fetch tools, run boundary markers, and Fleet chat input.</p></description>
     </release>
   </releases>
 

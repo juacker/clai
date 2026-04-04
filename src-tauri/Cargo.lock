@@ -555,7 +555,7 @@ dependencies = [
 
 [[package]]
 name = "clai"
-version = "0.4.0"
+version = "2026.4.4"
 dependencies = [
  "async-trait",
  "axum",
