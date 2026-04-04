@@ -38,29 +38,31 @@ ci: fmt-check lint test ## Run all CI checks locally (fmt + lint + test)
 # Release management (CalVer: YYYY.M.D)
 
 release: ## Create a release using today's date as version
-	@if [ "$(VERSION)" = "$(CALVER)" ]; then \
-		echo "Version $(CALVER) is already set. Use 'make release-retry' to re-tag."; \
+	@if git rev-parse "v$(CALVER)" >/dev/null 2>&1; then \
+		echo "Tag v$(CALVER) already exists. Use 'make release-retry' to recreate it."; \
 		exit 1; \
 	fi
 	@echo "Releasing v$(CALVER)..."
-	@sed -i 's/"version": "[^"]*"/"version": "$(CALVER)"/' package.json && \
-	sed -i 's/"version": "[^"]*"/"version": "$(CALVER)"/' src-tauri/tauri.conf.json && \
-	sed -i 's/^version = "[^"]*"/version = "$(CALVER)"/' src-tauri/Cargo.toml && \
-	npm install --package-lock-only && \
-	cd src-tauri && cargo update -p clai && cd .. && \
-	git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json && \
-	git commit -m "Release v$(CALVER)" && \
-	git tag "v$(CALVER)" && \
+	@if [ "$(VERSION)" != "$(CALVER)" ]; then \
+		sed -i 's/"version": "[^"]*"/"version": "$(CALVER)"/' package.json && \
+		sed -i 's/"version": "[^"]*"/"version": "$(CALVER)"/' src-tauri/tauri.conf.json && \
+		sed -i 's/^version = "[^"]*"/version = "$(CALVER)"/' src-tauri/Cargo.toml && \
+		npm install --package-lock-only && \
+		cd src-tauri && cargo update -p clai && cd .. && \
+		git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json && \
+		git commit -m "Release v$(CALVER)"; \
+	fi
+	@git tag "v$(CALVER)" && \
 	git push && git push --tags && \
 	echo "✓ Released v$(CALVER)"
 
-release-retry: ## Retry the last release (recreate same tag)
-	@echo "Retrying release $(LATEST_TAG)..."
-	git tag -d $(LATEST_TAG) 2>/dev/null || true
-	git push origin :$(LATEST_TAG) 2>/dev/null || true
-	git tag $(LATEST_TAG)
+release-retry: ## Retry the current release (recreate tag for v$(VERSION))
+	@echo "Retrying release v$(VERSION)..."
+	git tag -d "v$(VERSION)" 2>/dev/null || true
+	git push origin ":v$(VERSION)" 2>/dev/null || true
+	git tag "v$(VERSION)"
 	git push --tags
-	@echo "✓ Tag $(LATEST_TAG) recreated and pushed"
+	@echo "✓ Tag v$(VERSION) recreated and pushed"
 
 tag-delete: ## Delete a tag locally and remotely (usage: make tag-delete TAG=v0.1.0)
 	@if [ -z "$(TAG)" ]; then echo "Usage: make tag-delete TAG=v0.1.0"; exit 1; fi
