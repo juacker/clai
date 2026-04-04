@@ -660,6 +660,10 @@ fn build_system_prompt(
             ));
         }
 
+        if context.execution.web.enabled {
+            prompt.push_str("- Web access: enabled (`web.search` and `web.fetch` available)\n");
+        }
+
         prompt.push_str(
             "\n## Agent Memory\n\
              The `.clai/memory/` directory inside your workspace is pre-created and ready to use as durable memory across runs.\n\

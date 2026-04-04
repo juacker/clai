@@ -27,6 +27,13 @@ const DEFAULT_BASH_TIMEOUT_MS: u64 = 30_000;
 const MAX_BASH_TIMEOUT_MS: u64 = 120_000;
 const DEFAULT_BASH_OUTPUT_LIMIT: usize = 20_000;
 const MAX_BASH_OUTPUT_LIMIT: usize = 200_000;
+const DEFAULT_WEB_FETCH_CONTENT_LIMIT: usize = 20_000;
+const MAX_WEB_FETCH_CONTENT_LIMIT: usize = 100_000;
+const DEFAULT_WEB_FETCH_TIMEOUT_MS: u64 = 15_000;
+const MAX_WEB_FETCH_TIMEOUT_MS: u64 = 30_000;
+const DEFAULT_WEB_SEARCH_MAX_RESULTS: usize = 10;
+const MAX_WEB_SEARCH_MAX_RESULTS: usize = 20;
+const WEB_SEARCH_TIMEOUT_MS: u64 = 10_000;
 
 pub fn agent_workspace_root_for_id(agent_workspace_id: &str) -> Option<PathBuf> {
     let data_dir = dirs::data_dir()?;
@@ -88,6 +95,24 @@ struct BashExecParams {
     max_output_chars: Option<usize>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WebSearchParams {
+    query: String,
+    #[serde(default)]
+    max_results: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WebFetchParams {
+    url: String,
+    #[serde(default)]
+    max_content_chars: Option<usize>,
+    #[serde(default)]
+    timeout_ms: Option<u64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AccessKind {
     ReadOnly,
@@ -136,6 +161,16 @@ pub async fn execute_local_tool(
             let params: BashExecParams = serde_json::from_value(params)
                 .map_err(|e| format!("Invalid bash.exec params: {}", e))?;
             execute_bash_exec(context, params).await
+        }
+        "web.search" => {
+            let params: WebSearchParams = serde_json::from_value(params)
+                .map_err(|e| format!("Invalid web.search params: {}", e))?;
+            execute_web_search(params).await
+        }
+        "web.fetch" => {
+            let params: WebFetchParams = serde_json::from_value(params)
+                .map_err(|e| format!("Invalid web.fetch params: {}", e))?;
+            execute_web_fetch(params).await
         }
         _ => Err(format!("Unknown local tool: {}", tool_name)),
     }
@@ -824,6 +859,273 @@ fn truncate_string(text: String, limit: usize) -> String {
     chars[..limit].iter().collect::<String>() + "\n…[truncated]"
 }
 
+// =============================================================================
+// Web tools
+// =============================================================================
+
+async fn execute_web_search(params: WebSearchParams) -> Result<serde_json::Value, String> {
+    let max_results = params
+        .max_results
+        .unwrap_or(DEFAULT_WEB_SEARCH_MAX_RESULTS)
+        .min(MAX_WEB_SEARCH_MAX_RESULTS);
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(WEB_SEARCH_TIMEOUT_MS))
+        .redirect(reqwest::redirect::Policy::limited(3))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let response = client
+        .get("https://html.duckduckgo.com/html/")
+        .query(&[("q", &params.query)])
+        .header("User-Agent", "CLAI/1.0")
+        .send()
+        .await
+        .map_err(|e| format!("Web search request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Web search returned HTTP {}",
+            response.status().as_u16()
+        ));
+    }
+
+    let html = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read search response: {}", e))?;
+
+    let results = parse_duckduckgo_results(&html, max_results);
+
+    Ok(serde_json::json!({
+        "query": params.query,
+        "results": results,
+        "resultCount": results.len()
+    }))
+}
+
+fn parse_duckduckgo_results(html: &str, max_results: usize) -> Vec<serde_json::Value> {
+    use scraper::{Html, Selector};
+
+    let document = Html::parse_document(html);
+    let result_selector = Selector::parse(".result").unwrap();
+    let link_selector = Selector::parse(".result__a").unwrap();
+    let snippet_selector = Selector::parse(".result__snippet").unwrap();
+
+    let mut results = Vec::new();
+
+    for element in document.select(&result_selector) {
+        if results.len() >= max_results {
+            break;
+        }
+
+        let link = match element.select(&link_selector).next() {
+            Some(a) => a,
+            None => continue,
+        };
+
+        let title = link.text().collect::<String>().trim().to_string();
+        if title.is_empty() {
+            continue;
+        }
+
+        // DuckDuckGo HTML wraps URLs through a redirect; extract the actual URL
+        let href = link.value().attr("href").unwrap_or_default();
+        let url = extract_ddg_url(href);
+        if url.is_empty() {
+            continue;
+        }
+
+        let snippet = element
+            .select(&snippet_selector)
+            .next()
+            .map(|el| el.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+
+        results.push(serde_json::json!({
+            "title": title,
+            "url": url,
+            "snippet": snippet
+        }));
+    }
+
+    results
+}
+
+/// Extract the actual URL from DuckDuckGo's redirect wrapper.
+/// DDG HTML results use hrefs like `//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com&rut=...`
+fn extract_ddg_url(href: &str) -> String {
+    if let Some(pos) = href.find("uddg=") {
+        let encoded = &href[pos + 5..];
+        let encoded = encoded.split('&').next().unwrap_or(encoded);
+        urldecode(encoded)
+    } else if href.starts_with("http") {
+        href.to_string()
+    } else {
+        String::new()
+    }
+}
+
+/// Minimal percent-decoding for URL extraction.
+fn urldecode(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let hi = chars.next().unwrap_or(b'0');
+            let lo = chars.next().unwrap_or(b'0');
+            if let (Some(h), Some(l)) = (hex_val(hi), hex_val(lo)) {
+                result.push((h << 4 | l) as char);
+            } else {
+                result.push('%');
+                result.push(hi as char);
+                result.push(lo as char);
+            }
+        } else if b == b'+' {
+            result.push(' ');
+        } else {
+            result.push(b as char);
+        }
+    }
+    result
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+async fn execute_web_fetch(params: WebFetchParams) -> Result<serde_json::Value, String> {
+    let content_limit = params
+        .max_content_chars
+        .unwrap_or(DEFAULT_WEB_FETCH_CONTENT_LIMIT)
+        .min(MAX_WEB_FETCH_CONTENT_LIMIT);
+    let timeout_ms = params
+        .timeout_ms
+        .unwrap_or(DEFAULT_WEB_FETCH_TIMEOUT_MS)
+        .min(MAX_WEB_FETCH_TIMEOUT_MS);
+
+    // Basic URL validation
+    let url = params.url.trim();
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("URL must start with http:// or https://".to_string());
+    }
+
+    // Block private/local IPs to prevent SSRF
+    if is_private_url(url) {
+        return Err("Fetching private/local URLs is not allowed".to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(timeout_ms))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let response = client
+        .get(url)
+        .header("User-Agent", "CLAI/1.0")
+        .header("Accept", "text/html, text/plain, application/xhtml+xml")
+        .send()
+        .await
+        .map_err(|e| format!("Fetch failed: {}", e))?;
+
+    let status = response.status().as_u16();
+    if !response.status().is_success() {
+        return Err(format!("Fetch returned HTTP {}", status));
+    }
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+
+    // Convert HTML to markdown, or return plain text as-is
+    let markdown = if content_type.contains("text/html") || content_type.contains("xhtml") {
+        html_to_markdown(&body)
+    } else {
+        body
+    };
+
+    let truncated = markdown.len() > content_limit;
+    let content = if truncated {
+        let chars: Vec<char> = markdown.chars().collect();
+        let end = content_limit.min(chars.len());
+        chars[..end].iter().collect::<String>()
+    } else {
+        markdown
+    };
+
+    Ok(serde_json::json!({
+        "url": url,
+        "contentType": content_type,
+        "content": content,
+        "truncated": truncated,
+        "contentLength": content.len()
+    }))
+}
+
+fn html_to_markdown(html: &str) -> String {
+    htmd::convert(html).unwrap_or_else(|_| {
+        // Fallback: strip tags with scraper and return plain text
+        let document = scraper::Html::parse_document(html);
+        document.root_element().text().collect::<String>()
+    })
+}
+
+/// Check if a URL points to a private/local address (SSRF protection).
+fn is_private_url(url: &str) -> bool {
+    // Extract host from URL
+    let host = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("");
+
+    matches!(
+        host,
+        "localhost"
+            | "127.0.0.1"
+            | "0.0.0.0"
+            | "::1"
+            | "[::1]"
+    ) || host.starts_with("10.")
+        || host.starts_with("192.168.")
+        || host.starts_with("172.16.")
+        || host.starts_with("172.17.")
+        || host.starts_with("172.18.")
+        || host.starts_with("172.19.")
+        || host.starts_with("172.20.")
+        || host.starts_with("172.21.")
+        || host.starts_with("172.22.")
+        || host.starts_with("172.23.")
+        || host.starts_with("172.24.")
+        || host.starts_with("172.25.")
+        || host.starts_with("172.26.")
+        || host.starts_with("172.27.")
+        || host.starts_with("172.28.")
+        || host.starts_with("172.29.")
+        || host.starts_with("172.30.")
+        || host.starts_with("172.31.")
+        || host.ends_with(".local")
+        || host.ends_with(".internal")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -929,5 +1231,117 @@ mod tests {
         let error = glob_allowed_paths("/etc/**/*.conf", &[grant_for(root)], 10).unwrap_err();
 
         assert!(error.contains("outside the agent's allowed filesystem grants"));
+    }
+
+    #[test]
+    fn extract_ddg_url_decodes_redirect_wrapper() {
+        let href = "//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpage&rut=abc123";
+        assert_eq!(extract_ddg_url(href), "https://example.com/page");
+    }
+
+    #[test]
+    fn extract_ddg_url_passes_through_direct_urls() {
+        assert_eq!(
+            extract_ddg_url("https://example.com"),
+            "https://example.com"
+        );
+    }
+
+    #[test]
+    fn extract_ddg_url_returns_empty_for_unknown_format() {
+        assert_eq!(extract_ddg_url("/some/relative/path"), "");
+    }
+
+    #[test]
+    fn urldecode_handles_percent_encoding() {
+        assert_eq!(urldecode("hello%20world"), "hello world");
+        assert_eq!(urldecode("https%3A%2F%2Fexample.com"), "https://example.com");
+        assert_eq!(urldecode("a+b"), "a b");
+        assert_eq!(urldecode("plain"), "plain");
+    }
+
+    #[test]
+    fn is_private_url_blocks_local_addresses() {
+        assert!(is_private_url("http://localhost/foo"));
+        assert!(is_private_url("http://127.0.0.1:8080/api"));
+        assert!(is_private_url("http://192.168.1.1/"));
+        assert!(is_private_url("http://10.0.0.1/"));
+        assert!(is_private_url("http://172.16.0.1/"));
+        assert!(is_private_url("http://myhost.local/"));
+        assert!(is_private_url("http://service.internal/"));
+    }
+
+    #[test]
+    fn is_private_url_allows_public_addresses() {
+        assert!(!is_private_url("https://example.com/"));
+        assert!(!is_private_url("https://docs.rust-lang.org/"));
+        assert!(!is_private_url("http://8.8.8.8/"));
+    }
+
+    #[test]
+    fn parse_duckduckgo_results_extracts_from_html() {
+        let html = r#"
+        <div class="result">
+            <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Frust-lang.org&rut=x">Rust Language</a>
+            <a class="result__snippet">A systems programming language</a>
+        </div>
+        <div class="result">
+            <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdocs.rs&rut=y">Docs.rs</a>
+            <a class="result__snippet">Rust package documentation</a>
+        </div>
+        "#;
+
+        let results = parse_duckduckgo_results(html, 10);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0]["title"], "Rust Language");
+        assert_eq!(results[0]["url"], "https://rust-lang.org");
+        assert_eq!(results[1]["title"], "Docs.rs");
+    }
+
+    #[test]
+    fn parse_duckduckgo_results_respects_max_results() {
+        let html = r#"
+        <div class="result">
+            <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fa.com&rut=x">A</a>
+        </div>
+        <div class="result">
+            <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fb.com&rut=y">B</a>
+        </div>
+        "#;
+
+        let results = parse_duckduckgo_results(html, 1);
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn html_to_markdown_converts_basic_html() {
+        let html = "<html><body><h1>Title</h1><p>Hello <strong>world</strong></p></body></html>";
+        let md = html_to_markdown(html);
+        assert!(md.contains("Title"));
+        assert!(md.contains("**world**"));
+    }
+
+    #[tokio::test]
+    async fn web_fetch_rejects_non_http_urls() {
+        let params = WebFetchParams {
+            url: "ftp://example.com/file".to_string(),
+            max_content_chars: None,
+            timeout_ms: None,
+        };
+        let result = execute_web_fetch(params).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("http:// or https://"));
+    }
+
+    #[tokio::test]
+    async fn web_fetch_rejects_private_urls() {
+        let params = WebFetchParams {
+            url: "http://192.168.1.1/admin".to_string(),
+            max_content_chars: None,
+            timeout_ms: None,
+        };
+        let result = execute_web_fetch(params).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("private/local"));
     }
 }

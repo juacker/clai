@@ -168,6 +168,39 @@ pub fn available_tools(
         });
     }
 
+    // Web tools: always available in regular sessions, opt-in for agent sessions
+    let web_enabled = match context.agent_workspace_id.as_ref() {
+        Some(_) => context.execution.web.enabled,
+        None => true,
+    };
+    if web_enabled {
+        tools.push(ToolDefinition {
+            name: "web.search".to_string(),
+            description: "Search the web using DuckDuckGo and return a list of results with titles, URLs, and snippets.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "The search query" },
+                    "maxResults": { "type": "integer", "minimum": 1, "maximum": 20, "description": "Maximum number of results to return (default 10)" }
+                },
+                "required": ["query"]
+            }),
+        });
+        tools.push(ToolDefinition {
+            name: "web.fetch".to_string(),
+            description: "Fetch a web page and return its content as markdown. Useful for reading documentation, articles, or any web content.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "description": "The URL to fetch" },
+                    "maxContentChars": { "type": "integer", "minimum": 1, "description": "Maximum characters of content to return (default 20000)" },
+                    "timeoutMs": { "type": "integer", "minimum": 1, "description": "Request timeout in milliseconds (default 15000)" }
+                },
+                "required": ["url"]
+            }),
+        });
+    }
+
     tools.extend(external_tools.iter().cloned());
 
     tools

@@ -18,6 +18,9 @@ const defaultExecution = () => ({
     allowedCommandPrefixes: [],
     blockedCommandPrefixes: ['rm', 'sudo', 'chmod', 'chown', 'dd', 'mkfs', 'mount', 'umount', 'shutdown', 'reboot'],
   },
+  web: {
+    enabled: false,
+  },
 });
 
 const normalizeItems = (items = []) => items.map((item) => item.trim()).filter(Boolean);
@@ -135,6 +138,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
   const [blockedCommands, setBlockedCommands] = useState(defaultExecution().shell.blockedCommandPrefixes);
   const [allowedCommandDraft, setAllowedCommandDraft] = useState('');
   const [blockedCommandDraft, setBlockedCommandDraft] = useState('');
+  const [webEnabled, setWebEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -155,6 +159,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
         setBlockedCommands(normalizeItems(execution.shell?.blockedCommandPrefixes || defaultExecution().shell.blockedCommandPrefixes));
         setAllowedCommandDraft('');
         setBlockedCommandDraft('');
+        setWebEnabled(execution.web?.enabled || false);
       } else {
         setName('');
         setDescription('');
@@ -168,6 +173,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
         setBlockedCommands(defaultExecution().shell.blockedCommandPrefixes);
         setAllowedCommandDraft('');
         setBlockedCommandDraft('');
+        setWebEnabled(false);
       }
       setError(null);
     }
@@ -240,6 +246,9 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
             mode: shellMode,
             allowedCommandPrefixes: allowedCommands,
             blockedCommandPrefixes: blockedCommands,
+          },
+          web: {
+            enabled: webEnabled,
           },
         },
       });
@@ -550,6 +559,30 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
                 hint={'Prefix match \u2014 e.g. "rm" blocks "rm -rf". These commands will always be rejected.'}
               />
             )}
+
+            <div className={styles.field}>
+              <label className={styles.label}>Web Access</label>
+              <label className={styles.toggleRow}>
+                <span className={styles.toggleLabel}>
+                  Allow web search and page fetching
+                </span>
+                <span className={`${styles.toggle} ${webEnabled ? styles.toggleOn : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={webEnabled}
+                    onChange={(e) => setWebEnabled(e.target.checked)}
+                    disabled={saving}
+                    className={styles.toggleInput}
+                  />
+                  <span className={styles.toggleTrack}>
+                    <span className={styles.toggleThumb} />
+                  </span>
+                </span>
+              </label>
+              <span className={styles.hint}>
+                Enables <code>web.search</code> (DuckDuckGo) and <code>web.fetch</code> (read any public URL as markdown).
+              </span>
+            </div>
           </div>
 
           {/* Actions */}

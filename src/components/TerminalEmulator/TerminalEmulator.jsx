@@ -373,12 +373,11 @@ const TerminalEmulator = ({ onSendToChat }) => {
             ref={inputRef}
             rows={1}
             className={styles.terminalInput}
-            value={isFleetRoute ? '' : inputValue}
-            onChange={(e) => !isFleetRoute && setInputValue(e.target.value)}
-            onKeyDown={isFleetRoute ? undefined : handleKeyDown}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
             onClick={(e) => e.stopPropagation()}
-            placeholder={isFleetRoute ? 'Switch to Workspace to chat...' : 'Type to chat, or /help for commands...'}
-            readOnly={isFleetRoute}
+            placeholder={isFleetRoute ? 'Message the selected agent...' : 'Type to chat, or /help for commands...'}
             spellCheck={false}
             autoComplete="off"
             autoCorrect="off"

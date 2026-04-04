@@ -83,6 +83,8 @@ tokio-util = { version = "0.7", features = ["rt"] }
 
 # SQLite database for workspace state persistence
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+scraper = "0.26.0"
+htmd = "0.5.4"
 
 [dev-dependencies]
 # Temporary directories for testing

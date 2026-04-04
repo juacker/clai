@@ -229,11 +229,20 @@ impl Default for ShellCapabilityConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct WebCapabilityConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ExecutionCapabilityConfig {
     #[serde(default)]
     pub filesystem: FilesystemCapabilityConfig,
     #[serde(default)]
     pub shell: ShellCapabilityConfig,
+    #[serde(default)]
+    pub web: WebCapabilityConfig,
 }
 
 impl McpServerConfig {
@@ -357,6 +366,9 @@ impl AgentConfig {
         if !matches!(self.execution.shell.mode, ShellAccessMode::Off) {
             tools.push("bash");
         }
+        if self.execution.web.enabled {
+            tools.push("web");
+        }
         tools
     }
 
@@ -477,6 +489,19 @@ mod tests {
 
         assert!(tools.contains(&"fs"));
         assert!(tools.contains(&"bash"));
+    }
+
+    #[test]
+    fn test_agent_required_tools_include_web_when_enabled() {
+        let mut agent = AgentConfig::default_agent();
+        agent.execution.web.enabled = true;
+
+        let tools = agent.required_tools();
+        assert!(tools.contains(&"web"));
+
+        agent.execution.web.enabled = false;
+        let tools = agent.required_tools();
+        assert!(!tools.contains(&"web"));
     }
 
     #[test]
