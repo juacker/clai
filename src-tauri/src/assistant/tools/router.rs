@@ -16,7 +16,10 @@ pub async fn execute_tool(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     match tool_name {
-        name if name.starts_with("fs.") || name.starts_with("bash.") || name.starts_with("web.") => {
+        name if name.starts_with("fs.")
+            || name.starts_with("bash.")
+            || name.starts_with("web.") =>
+        {
             local::execute_local_tool(context, name, params).await
         }
         name if name.starts_with("dashboard.")

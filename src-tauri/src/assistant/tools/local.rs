@@ -1099,11 +1099,7 @@ fn is_private_url(url: &str) -> bool {
 
     matches!(
         host,
-        "localhost"
-            | "127.0.0.1"
-            | "0.0.0.0"
-            | "::1"
-            | "[::1]"
+        "localhost" | "127.0.0.1" | "0.0.0.0" | "::1" | "[::1]"
     ) || host.starts_with("10.")
         || host.starts_with("192.168.")
         || host.starts_with("172.16.")
@@ -1255,7 +1251,10 @@ mod tests {
     #[test]
     fn urldecode_handles_percent_encoding() {
         assert_eq!(urldecode("hello%20world"), "hello world");
-        assert_eq!(urldecode("https%3A%2F%2Fexample.com"), "https://example.com");
+        assert_eq!(
+            urldecode("https%3A%2F%2Fexample.com"),
+            "https://example.com"
+        );
         assert_eq!(urldecode("a+b"), "a b");
         assert_eq!(urldecode("plain"), "plain");
     }
