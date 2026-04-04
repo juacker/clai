@@ -36,6 +36,8 @@ modules:
       - install -Dm755 src-tauri/target/release/clai ${FLATPAK_DEST}/bin/clai
       - install -Dm644 src-tauri/icons/128x128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/com.juacker.clai.png
       - install -Dm644 flatpak/com.juacker.clai.desktop ${FLATPAK_DEST}/share/applications/com.juacker.clai.desktop
+      - install -Dm644 flatpak/com.juacker.clai.metainfo.xml ${FLATPAK_DEST}/share/metainfo/com.juacker.clai.metainfo.xml
+      - install -Dm644 public/icon.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/com.juacker.clai.svg
     sources:
       - type: dir
         path: ..

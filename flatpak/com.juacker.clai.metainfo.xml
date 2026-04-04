@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.juacker.clai</id>
+  <name>CLAI</name>
+  <summary>Desktop multi-agent orchestration app with MCP-native tools</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <developer id="com.juacker">
+    <name>juacker</name>
+  </developer>
+
+  <description>
+    <p>
+      CLAI is a desktop application for orchestrating and monitoring AI agents
+      with MCP-native tool integration. It provides a unified interface for
+      managing multiple AI providers, scheduled automations, local execution
+      with shell access controls, and workspace orchestration with canvas
+      and dashboards.
+    </p>
+    <p>
+      Features include tabbed capability scopes, per-agent filesystem and shell
+      policies, run notices for policy denials, and support for any
+      OpenAI-compatible provider.
+    </p>
+  </description>
+
+  <url type="homepage">https://github.com/juacker/clai</url>
+  <url type="bugtracker">https://github.com/juacker/clai/issues</url>
+  <url type="vcs-browser">https://github.com/juacker/clai</url>
+
+  <launchable type="desktop-id">com.juacker.clai.desktop</launchable>
+
+  <content_rating type="oars-1.1" />
+
+  <branding>
+    <color type="primary" scheme_preference="light">#f0f4ff</color>
+    <color type="primary" scheme_preference="dark">#1a1a2e</color>
+  </branding>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://github.com/user-attachments/assets/95facd8d-d08c-40c1-8aad-b8f39d2d1d87</image>
+      <caption>Main workspace with agent chat and orchestration tools</caption>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.4.0" date="2026-04-01">
+      <description><p>Latest release with MCP-native tools and workspace orchestration.</p></description>
+    </release>
+  </releases>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+</component>

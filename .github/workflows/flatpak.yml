@@ -66,10 +66,14 @@ jobs:
           mkdir -p flatpak-build/files/bin
           mkdir -p flatpak-build/files/share/applications
           mkdir -p flatpak-build/files/share/icons/hicolor/128x128/apps
+          mkdir -p flatpak-build/files/share/icons/hicolor/scalable/apps
+          mkdir -p flatpak-build/files/share/metainfo
 
           cp usr/bin/clai flatpak-build/files/bin/
           cp flatpak/com.juacker.clai.desktop flatpak-build/files/share/applications/
           cp src-tauri/icons/128x128.png flatpak-build/files/share/icons/hicolor/128x128/apps/com.juacker.clai.png
+          cp public/icon.svg flatpak-build/files/share/icons/hicolor/scalable/apps/com.juacker.clai.svg
+          cp flatpak/com.juacker.clai.metainfo.xml flatpak-build/files/share/metainfo/
 
           # Finalize the build
           flatpak build-finish flatpak-build \
