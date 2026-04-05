@@ -42,6 +42,7 @@ const DEFAULT_TAB_CONTEXT = {
     attachedServerIds: [],
     disabledServerIds: [],
   },
+  assistantConnectionId: null,
   customContext: {},
 };
 

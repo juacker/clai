@@ -195,8 +195,6 @@ pub fn run() {
             commands::assistant::assistant_send_message,
             commands::assistant::assistant_retry_run,
             commands::assistant::assistant_cancel_run,
-            commands::assistant::assistant_get_default_model,
-            commands::assistant::assistant_set_default_model,
             // Agent commands
             commands::agents::get_agents,
             commands::agents::get_agent,
@@ -217,13 +215,15 @@ pub fn run() {
             commands::provider::get_available_ai_providers,
             commands::provider::validate_ai_provider,
             commands::provider::get_provider_models,
-            // Provider session commands for app-owned assistant runtime
-            commands::provider_sessions::provider_list_available,
-            commands::provider_sessions::provider_connect_api_key,
-            commands::provider_sessions::provider_disconnect,
-            commands::provider_sessions::provider_get_active_session,
-            commands::provider_sessions::provider_list_sessions,
-            commands::provider_sessions::provider_list_models,
+            // Provider connection commands for app-owned assistant runtime
+            commands::provider_connections::provider_connection_list_available,
+            commands::provider_connections::provider_connection_create,
+            commands::provider_connections::provider_connection_update,
+            commands::provider_connections::provider_connection_delete,
+            commands::provider_connections::provider_connection_get,
+            commands::provider_connections::provider_connection_list,
+            commands::provider_connections::provider_connection_list_models,
+            commands::provider_connections::provider_connection_test,
             // Agent tool bridge commands
             commands::bridge::agent_tool_result,
             commands::bridge::agent_bridge_ready,

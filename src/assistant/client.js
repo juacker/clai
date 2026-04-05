@@ -26,8 +26,8 @@ export async function loadSessionMessages(sessionId) {
   return invoke('assistant_load_session_messages', { sessionId });
 }
 
-export async function sendMessage(sessionId, message) {
-  return invoke('assistant_send_message', { sessionId, message });
+export async function sendMessage(sessionId, message, connectionId) {
+  return invoke('assistant_send_message', { sessionId, message, connectionId });
 }
 
 export async function listRuns(sessionId) {
@@ -43,34 +43,42 @@ export async function listToolCalls(sessionId, runId = null) {
   });
 }
 
-export async function retryRun(runId) {
-  return invoke('assistant_retry_run', { runId });
+export async function retryRun(runId, connectionId) {
+  return invoke('assistant_retry_run', { runId, connectionId });
 }
 
 export async function cancelRun(runId) {
   return invoke('assistant_cancel_run', { runId });
 }
 
-export async function listProviderSessions() {
-  return invoke('provider_list_sessions');
+export async function listProviderConnections() {
+  return invoke('provider_connection_list');
 }
 
-export async function getActiveProviderSession() {
-  return invoke('provider_get_active_session');
+export async function getProviderConnection(id) {
+  return invoke('provider_connection_get', { id });
 }
 
-export async function listProviderModels(providerId) {
-  return invoke('provider_list_models', { providerId });
+export async function createProviderConnection(request) {
+  return invoke('provider_connection_create', { request });
 }
 
-export async function getDefaultModel() {
-  return invoke('assistant_get_default_model');
+export async function updateProviderConnection(request) {
+  return invoke('provider_connection_update', { request });
 }
 
-export async function setDefaultModel(modelId) {
-  return invoke('assistant_set_default_model', {
-    request: {
-      modelId,
-    },
-  });
+export async function deleteProviderConnection(id) {
+  return invoke('provider_connection_delete', { id });
+}
+
+export async function listProviderModels(id) {
+  return invoke('provider_connection_list_models', { id });
+}
+
+export async function testProviderConnection(id) {
+  return invoke('provider_connection_test', { id });
+}
+
+export async function listAvailableProviderAdapters() {
+  return invoke('provider_connection_list_available');
 }

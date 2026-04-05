@@ -114,8 +114,6 @@ pub struct AssistantSession {
     pub kind: SessionKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    pub provider_id: String,
-    pub model_id: String,
     pub context: SessionContext,
     pub created_at: i64,
     pub updated_at: i64,
@@ -175,6 +173,7 @@ pub struct AssistantRun {
     pub session_id: SessionId,
     pub status: RunStatus,
     pub trigger: RunTrigger,
+    pub connection_id: String,
     pub provider_id: String,
     pub model_id: String,
     pub started_at: i64,
@@ -217,16 +216,18 @@ pub struct ToolInvocation {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProviderSession {
+pub struct ProviderConnection {
+    pub id: String,
+    pub name: String,
     pub provider_id: String,
     pub auth_mode: AuthMode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
     pub secret_ref: String,
+    pub model_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_label: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub expires_at: Option<i64>,
+    pub enabled: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }

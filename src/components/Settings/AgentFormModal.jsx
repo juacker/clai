@@ -4,7 +4,7 @@
  * Modal form for creating and editing agents.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import IntervalSelect from './IntervalSelect';
 import styles from './AgentFormModal.module.css';
@@ -123,13 +123,15 @@ const ListInputField = ({
  * @param {Function} props.onSubmit - Callback with form data
  * @param {Object} props.agent - Agent to edit (null for create)
  */
-const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) => {
+const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], providerConnections = [] }) => {
   const isEditing = !!agent;
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [intervalMinutes, setIntervalMinutes] = useState(30);
   const [selectedMcpServerIds, setSelectedMcpServerIds] = useState([]);
+  const [providerConnectionIds, setProviderConnectionIds] = useState([]);
+  const [providerConnectionDraft, setProviderConnectionDraft] = useState('');
   const [extraPathGrants, setExtraPathGrants] = useState([]);
   const [extraPathDraft, setExtraPathDraft] = useState('');
   const [extraPathAccess, setExtraPathAccess] = useState('read_only');
@@ -142,6 +144,16 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
+  const enabledProviderConnections = useMemo(
+    () => providerConnections.filter((connection) => connection.enabled),
+    [providerConnections]
+  );
+
+  const availableProviderConnections = useMemo(
+    () => enabledProviderConnections.filter((connection) => !providerConnectionIds.includes(connection.id)),
+    [enabledProviderConnections, providerConnectionIds]
+  );
+
   // Reset form when modal opens/closes or agent changes
   useEffect(() => {
     if (isOpen) {
@@ -151,6 +163,8 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
         setDescription(agent.description || '');
         setIntervalMinutes(agent.intervalMinutes || 30);
         setSelectedMcpServerIds(agent.selectedMcpServerIds || []);
+        setProviderConnectionIds(agent.providerConnectionIds || []);
+        setProviderConnectionDraft('');
         setExtraPathGrants(normalizePathGrants(execution.filesystem?.extraPaths || []));
         setExtraPathDraft('');
         setExtraPathAccess('read_only');
@@ -165,6 +179,8 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
         setDescription('');
         setIntervalMinutes(30);
         setSelectedMcpServerIds([]);
+        setProviderConnectionIds([]);
+        setProviderConnectionDraft('');
         setExtraPathGrants([]);
         setExtraPathDraft('');
         setExtraPathAccess('read_only');
@@ -178,6 +194,18 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
       setError(null);
     }
   }, [isOpen, agent]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    if (providerConnectionDraft && availableProviderConnections.some((connection) => connection.id === providerConnectionDraft)) {
+      return;
+    }
+
+    setProviderConnectionDraft(availableProviderConnections[0]?.id || '');
+  }, [availableProviderConnections, isOpen, providerConnectionDraft]);
 
   // Handle escape key
   useEffect(() => {
@@ -230,6 +258,11 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
       return;
     }
 
+    if (providerConnectionIds.length === 0) {
+      setError('Select at least one provider connection');
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -238,6 +271,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
         description: description.trim(),
         intervalMinutes: Number(intervalMinutes),
         selectedMcpServerIds,
+        providerConnectionIds,
         execution: {
           filesystem: {
             extraPaths: extraPathGrants,
@@ -379,6 +413,135 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [] }) =
             )}
             <span className={styles.hint}>
               Selected servers will be attached to the agent session when it runs.
+            </span>
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="agent-provider-connection">
+              Provider Connections <span className={styles.required}>*</span>
+            </label>
+            {enabledProviderConnections.length === 0 ? (
+              <div className={styles.hint}>
+                No enabled provider connections configured yet. Add them in Settings first.
+              </div>
+            ) : (
+              <>
+                <div className={styles.listInputRow}>
+                  <select
+                    id="agent-provider-connection"
+                    className={styles.select}
+                    value={providerConnectionDraft}
+                    onChange={(e) => setProviderConnectionDraft(e.target.value)}
+                    disabled={saving || availableProviderConnections.length === 0}
+                  >
+                    {availableProviderConnections.length === 0 ? (
+                      <option value="">All enabled connections already selected</option>
+                    ) : null}
+                    {availableProviderConnections
+                      .map((connection) => (
+                        <option key={connection.id} value={connection.id}>
+                          {connection.name} ({connection.modelId})
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    className={styles.addButton}
+                    onClick={() => {
+                      if (!providerConnectionDraft) return;
+                      setProviderConnectionIds((current) => [...current, providerConnectionDraft]);
+                      setProviderConnectionDraft('');
+                    }}
+                    disabled={saving || !providerConnectionDraft}
+                  >
+                    Add
+                  </button>
+                </div>
+                {providerConnectionIds.length > 0 && (
+                  <div className={styles.providerConnectionList}>
+                    {providerConnectionIds.map((connectionId, index) => {
+                      const connection = providerConnections.find((item) => item.id === connectionId);
+                      const label = connection ? connection.name : connectionId;
+                      const meta = index === 0 ? 'primary' : `fallback ${index}`;
+                      const statusLabel = !connection
+                        ? 'missing'
+                        : !connection.enabled
+                          ? 'disabled'
+                          : null;
+                      return (
+                        <div key={connectionId} className={styles.providerConnectionItem}>
+                          <div className={styles.providerConnectionDetails}>
+                            <div className={styles.providerConnectionHeader}>
+                              <span className={styles.providerConnectionName}>{label}</span>
+                              <span className={styles.chipMeta}>{meta}</span>
+                              {statusLabel ? (
+                                <span className={styles.providerConnectionStatus}>{statusLabel}</span>
+                              ) : null}
+                            </div>
+                            {connection ? (
+                              <div className={styles.providerConnectionSubtext}>
+                                {connection.providerId} · {connection.modelId}
+                                {connection.accountLabel ? ` · ${connection.accountLabel}` : ''}
+                              </div>
+                            ) : (
+                              <div className={styles.providerConnectionSubtext}>
+                                This connection is no longer configured.
+                              </div>
+                            )}
+                          </div>
+                          <div className={styles.providerConnectionActions}>
+                            {index > 0 && (
+                              <button
+                                type="button"
+                                className={styles.chipRemove}
+                                onClick={() => setProviderConnectionIds((current) => {
+                                  const next = [...current];
+                                  [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                                  return next;
+                                })}
+                                disabled={saving}
+                                aria-label={`Move ${label} up`}
+                                title="Move up"
+                              >
+                                ↑
+                              </button>
+                            )}
+                            {index < providerConnectionIds.length - 1 && (
+                              <button
+                                type="button"
+                                className={styles.chipRemove}
+                                onClick={() => setProviderConnectionIds((current) => {
+                                  const next = [...current];
+                                  [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                                  return next;
+                                })}
+                                disabled={saving}
+                                aria-label={`Move ${label} down`}
+                                title="Move down"
+                              >
+                                ↓
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className={styles.chipRemove}
+                              onClick={() => setProviderConnectionIds((current) => current.filter((value) => value !== connectionId))}
+                              disabled={saving}
+                              aria-label={`Remove ${label}`}
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+            <span className={styles.hint}>
+              The first connection is primary. Additional connections are used as ordered fallbacks.
             </span>
           </div>
 

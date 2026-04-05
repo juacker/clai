@@ -132,6 +132,7 @@ const Fleet = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState(null);
   const [mcpServers, setMcpServers] = useState([]);
+  const [providerConnections, setProviderConnections] = useState([]);
   const {
     summary,
     agents,
@@ -242,31 +243,41 @@ const Fleet = () => {
     }
   }, [selectedAgent, refresh]);
 
+  const loadFormDependencies = useCallback(async () => {
+    const [serversResult, connectionsResult] = await Promise.allSettled([
+      getMcpServers(),
+      assistantClient.listProviderConnections(),
+    ]);
+
+    if (serversResult.status === 'fulfilled') {
+      setMcpServers(serversResult.value || []);
+    }
+
+    if (connectionsResult.status === 'fulfilled') {
+      setProviderConnections(connectionsResult.value || []);
+    }
+  }, []);
+
   const openCreateForm = useCallback(async () => {
-    try {
-      const servers = await getMcpServers();
-      setMcpServers(servers || []);
-    } catch { /* proceed without servers */ }
+    await loadFormDependencies();
     setEditingAgent(null);
     setIsFormOpen(true);
-  }, []);
+  }, [loadFormDependencies]);
 
   const openEditForm = useCallback(async () => {
     if (!selectedAgent) return;
-    try {
-      const servers = await getMcpServers();
-      setMcpServers(servers || []);
-    } catch { /* proceed without servers */ }
+    await loadFormDependencies();
     setEditingAgent({
       id: selectedAgent.agentId,
       name: selectedAgent.name,
       description: selectedAgent.description,
       intervalMinutes: selectedAgent.intervalMinutes,
       selectedMcpServerIds: selectedAgent.selectedMcpServerIds || [],
+      providerConnectionIds: selectedAgent.providerConnectionIds || [],
       execution: selectedAgent.execution || undefined,
     });
     setIsFormOpen(true);
-  }, [selectedAgent]);
+  }, [loadFormDependencies, selectedAgent]);
 
   const handleFormSubmit = useCallback(async (formData) => {
     if (editingAgent) {
@@ -366,9 +377,12 @@ const Fleet = () => {
 
                 <MiniRibbon entries={agent.recentRunStatuses} />
 
-                {agent.selectedMcpServerNames && agent.selectedMcpServerNames.length > 0 && (
+                {(agent.providerConnectionNames?.length > 0 || agent.selectedMcpServerNames?.length > 0) && (
                   <div className={styles.mcpBadges}>
-                    {agent.selectedMcpServerNames.map((name) => (
+                    {agent.providerConnectionNames?.map((name) => (
+                      <span key={name} className={styles.providerBadge}>{name}</span>
+                    ))}
+                    {agent.selectedMcpServerNames?.map((name) => (
                       <span key={name} className={styles.mcpBadge}>{name}</span>
                     ))}
                   </div>
@@ -493,6 +507,7 @@ const Fleet = () => {
         onSubmit={handleFormSubmit}
         agent={editingAgent}
         mcpServers={mcpServers}
+        providerConnections={providerConnections}
       />
     </div>
   );

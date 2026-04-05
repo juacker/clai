@@ -22,8 +22,6 @@ pub struct CreateAssistantSessionRequest {
     pub kind: Option<SessionKind>,
     #[serde(default)]
     pub title: Option<String>,
-    pub provider_id: String,
-    pub model_id: String,
     #[serde(default)]
     pub context: SessionContext,
 }
@@ -44,13 +42,6 @@ pub struct ListToolCallsRequest {
     pub run_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetAssistantDefaultModelRequest {
-    #[serde(default)]
-    pub model_id: Option<String>,
-}
-
 #[tauri::command]
 pub async fn assistant_create_session(
     request: CreateAssistantSessionRequest,
@@ -63,8 +54,6 @@ pub async fn assistant_create_session(
             tab_id: request.tab_id,
             kind: request.kind.unwrap_or(SessionKind::Interactive),
             title: request.title,
-            provider_id: request.provider_id,
-            model_id: request.model_id,
             context: request.context,
         },
     )
@@ -143,6 +132,7 @@ pub async fn assistant_list_tool_calls(
 pub async fn assistant_send_message(
     session_id: String,
     message: String,
+    connection_id: String,
     pool: State<'_, DbPool>,
     app: AppHandle,
     state: State<'_, AppState>,
@@ -181,14 +171,19 @@ pub async fn assistant_send_message(
     )
     .await?;
 
+    let connection = repository::get_provider_connection(pool.inner(), &connection_id)
+        .await?
+        .ok_or_else(|| format!("Provider connection not found: {}", connection_id))?;
+
     let run = repository::create_run(
         pool.inner(),
         CreateRunParams {
             session_id: session.id.clone(),
             status: RunStatus::Queued,
             trigger: RunTrigger::UserMessage,
-            provider_id: session.provider_id.clone(),
-            model_id: session.model_id.clone(),
+            connection_id: connection_id.clone(),
+            provider_id: connection.provider_id.clone(),
+            model_id: connection.model_id.clone(),
             usage: None,
             error: None,
         },
@@ -216,6 +211,7 @@ pub async fn assistant_send_message(
         session.id.clone(),
         run.id.clone(),
         RunTrigger::UserMessage,
+        connection_id,
     );
 
     Ok(AssistantSendMessageResult {
@@ -228,6 +224,7 @@ pub async fn assistant_send_message(
 #[tauri::command]
 pub async fn assistant_retry_run(
     run_id: String,
+    connection_id: String,
     pool: State<'_, DbPool>,
     app: AppHandle,
 ) -> Result<AssistantRun, String> {
@@ -239,14 +236,19 @@ pub async fn assistant_retry_run(
         .await?
         .ok_or_else(|| format!("Assistant session not found: {}", previous_run.session_id))?;
 
+    let connection = repository::get_provider_connection(pool.inner(), &connection_id)
+        .await?
+        .ok_or_else(|| format!("Provider connection not found: {}", connection_id))?;
+
     let run = repository::create_run(
         pool.inner(),
         CreateRunParams {
             session_id: session.id.clone(),
             status: RunStatus::Queued,
             trigger: RunTrigger::Retry,
-            provider_id: session.provider_id.clone(),
-            model_id: session.model_id.clone(),
+            connection_id: connection_id.clone(),
+            provider_id: connection.provider_id.clone(),
+            model_id: connection.model_id.clone(),
             usage: None,
             error: None,
         },
@@ -266,6 +268,7 @@ pub async fn assistant_retry_run(
         session.id,
         run.id.clone(),
         RunTrigger::Retry,
+        connection_id,
     );
 
     Ok(run)
@@ -311,44 +314,13 @@ pub async fn assistant_cancel_run(
     Ok(cancelled)
 }
 
-#[tauri::command]
-pub fn assistant_get_default_model(state: State<'_, AppState>) -> Result<Option<String>, String> {
-    let config_manager = state
-        .config_manager
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-
-    Ok(config_manager.get_assistant_default_model())
-}
-
-#[tauri::command]
-pub fn assistant_set_default_model(
-    request: SetAssistantDefaultModelRequest,
-    state: State<'_, AppState>,
-) -> Result<Option<String>, String> {
-    let model_id = request
-        .model_id
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-
-    let config_manager = state
-        .config_manager
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-
-    config_manager
-        .set_assistant_default_model(model_id.clone())
-        .map_err(|e| format!("Failed to save assistant default model: {}", e))?;
-
-    Ok(model_id)
-}
-
 fn spawn_run_task(
     pool: DbPool,
     app: AppHandle,
     session_id: String,
     run_id: String,
     trigger: RunTrigger,
+    connection_id: String,
 ) {
     let cancel_token = runtime::register_run(&run_id);
     tauri::async_runtime::spawn(async move {
@@ -357,6 +329,7 @@ fn spawn_run_task(
             session_id,
             run_id: Some(run_id.clone()),
             trigger,
+            connection_id,
             cancel_token,
         };
         if let Err(e) = engine::run_session_turn(&deps, input).await {

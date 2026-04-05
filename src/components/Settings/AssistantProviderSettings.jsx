@@ -1,28 +1,9 @@
-/**
- * AssistantProviderSettings Component
- *
- * Configures the assistant engine's OpenAI-compatible provider connection.
- * Allows entering an API key, optional base URL, and model ID.
- */
-
-import React, { useState, useEffect, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { assistantClient } from '../../assistant';
+import { getAgents } from '../../api/client';
 import styles from './ProviderSettings.module.css';
 
-const STORAGE_KEY_MODEL = 'assistant-default-model';
-
-export function getStoredModel() {
-  return localStorage.getItem(STORAGE_KEY_MODEL) || '';
-}
-
-function setStoredModel(model) {
-  if (model) {
-    localStorage.setItem(STORAGE_KEY_MODEL, model);
-  } else {
-    localStorage.removeItem(STORAGE_KEY_MODEL);
-  }
-}
+const CONNECTIONS_CHANGED_EVENT = 'assistant-provider-connections-changed';
 
 const LoadingIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={styles.spinner}>
@@ -58,50 +39,111 @@ const labelStyle = {
   marginBottom: '6px',
 };
 
+const secondaryButtonStyle = {
+  appearance: 'none',
+  border: '1px solid var(--color-border-medium)',
+  background: 'var(--color-bg-elevated)',
+  color: 'var(--color-text-secondary)',
+  borderRadius: '8px',
+  padding: '6px 10px',
+  fontSize: '12px',
+  fontWeight: 600,
+  cursor: 'pointer',
+};
+
+const initialForm = {
+  id: null,
+  name: '',
+  providerId: 'openai',
+  apiKey: '',
+  baseUrl: '',
+  modelId: '',
+  enabled: true,
+};
+
 const AssistantProviderSettings = () => {
-  const [providerSession, setProviderSession] = useState(null);
+  const [connections, setConnections] = useState([]);
+  const [agents, setAgents] = useState([]);
+  const [adapters, setAdapters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
+  const [testingId, setTestingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(initialForm);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  // Form state
-  const [apiKey, setApiKey] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [modelId, setModelId] = useState('');
-
-  // Load current state
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [sessions, defaultModel] = await Promise.all([
-          invoke('provider_list_sessions'),
-          assistantClient.getDefaultModel().catch(() => null),
-        ]);
-        if (sessions.length > 0) {
-          setProviderSession(sessions[0]);
-          setBaseUrl(sessions[0].baseUrl || '');
-        }
-        const resolvedModel = defaultModel || getStoredModel();
-        setModelId(resolvedModel);
-        setStoredModel(resolvedModel);
-      } catch (err) {
-        console.error('[AssistantProviderSettings] Failed to load:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [nextConnections, nextAgents, nextAdapters] = await Promise.all([
+        assistantClient.listProviderConnections(),
+        getAgents(),
+        assistantClient.listAvailableProviderAdapters().catch(() => []),
+      ]);
+      setConnections(nextConnections || []);
+      setAgents(nextAgents || []);
+      setAdapters(nextAdapters || []);
+      setError(null);
+    } catch (err) {
+      console.error('[AssistantProviderSettings] Failed to load:', err);
+      setError('Failed to load provider connections.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleConnect = useCallback(async () => {
-    if (!apiKey.trim()) {
-      setError('Please enter an API key.');
+  useEffect(() => {
+    loadData();
+    window.addEventListener(CONNECTIONS_CHANGED_EVENT, loadData);
+    return () => window.removeEventListener(CONNECTIONS_CHANGED_EVENT, loadData);
+  }, [loadData]);
+
+  const dependencyCounts = useMemo(() => {
+    const counts = new Map();
+    for (const agent of agents) {
+      for (const connectionId of agent.providerConnectionIds || []) {
+        counts.set(connectionId, (counts.get(connectionId) || 0) + 1);
+      }
+    }
+    return counts;
+  }, [agents]);
+
+  const resetForm = useCallback(() => {
+    setEditingId(null);
+    setForm({
+      ...initialForm,
+      providerId: adapters[0]?.id || 'openai',
+    });
+  }, [adapters]);
+
+  const beginEdit = useCallback((connection) => {
+    setEditingId(connection.id);
+    setForm({
+      id: connection.id,
+      name: connection.name,
+      providerId: connection.providerId,
+      apiKey: '',
+      baseUrl: connection.baseUrl || '',
+      modelId: connection.modelId,
+      enabled: connection.enabled,
+    });
+    setError(null);
+    setSuccess(null);
+  }, []);
+
+  const handleSubmit = useCallback(async () => {
+    if (!form.name.trim()) {
+      setError('Connection name is required.');
       return;
     }
-    if (!modelId.trim()) {
-      setError('Please enter a model name.');
+    if (!form.modelId.trim()) {
+      setError('Model ID is required.');
+      return;
+    }
+    if (!editingId && !form.apiKey.trim()) {
+      setError('API key is required for new connections.');
       return;
     }
 
@@ -110,93 +152,99 @@ const AssistantProviderSettings = () => {
     setSuccess(null);
 
     try {
-      const request = {
-        providerId: 'openai',
-        apiKey: apiKey.trim(),
-        baseUrl: baseUrl.trim() || null,
-        accountLabel: null,
-      };
+      if (editingId) {
+        await assistantClient.updateProviderConnection({
+          id: form.id,
+          name: form.name.trim(),
+          providerId: form.providerId,
+          apiKey: form.apiKey.trim() || null,
+          baseUrl: form.baseUrl.trim() || null,
+          modelId: form.modelId.trim(),
+          enabled: form.enabled,
+        });
+        setSuccess('Connection updated.');
+      } else {
+        await assistantClient.createProviderConnection({
+          name: form.name.trim(),
+          providerId: form.providerId,
+          apiKey: form.apiKey.trim(),
+          baseUrl: form.baseUrl.trim() || null,
+          modelId: form.modelId.trim(),
+        });
+        setSuccess('Connection created.');
+      }
 
-      const session = await invoke('provider_connect_api_key', { request });
-      await assistantClient.setDefaultModel(modelId.trim());
-      setProviderSession(session);
-      setStoredModel(modelId.trim());
-      setApiKey('');
-      setSuccess('Connected successfully.');
-      setTimeout(() => setSuccess(null), 3000);
+      resetForm();
+      await loadData();
+      window.dispatchEvent(new CustomEvent(CONNECTIONS_CHANGED_EVENT));
     } catch (err) {
-      console.error('[AssistantProviderSettings] Connect failed:', err);
-      setError(typeof err === 'string' ? err : 'Failed to connect. Check your API key.');
+      console.error('[AssistantProviderSettings] Save failed:', err);
+      setError(typeof err === 'string' ? err : (err?.message || 'Failed to save provider connection.'));
     } finally {
       setSaving(false);
     }
-  }, [apiKey, baseUrl, modelId]);
+  }, [editingId, form, loadData, resetForm]);
 
-  const handleDisconnect = useCallback(async () => {
-    if (!providerSession) return;
+  const handleDelete = useCallback(async (connection) => {
+    if (!window.confirm(`Delete provider connection "${connection.name}"?`)) {
+      return;
+    }
 
-    setDisconnecting(true);
+    setDeletingId(connection.id);
     setError(null);
     setSuccess(null);
-
     try {
-      await invoke('provider_disconnect', { providerId: providerSession.providerId });
-      await assistantClient.setDefaultModel(null);
-      setProviderSession(null);
-      setBaseUrl('');
-      setStoredModel('');
-      setModelId('');
-      setSuccess('Disconnected.');
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err) {
-      console.error('[AssistantProviderSettings] Disconnect failed:', err);
-      setError('Failed to disconnect.');
-    } finally {
-      setDisconnecting(false);
-    }
-  }, [providerSession]);
-
-  const handleModelSave = useCallback(() => {
-    const save = async () => {
-      try {
-        await assistantClient.setDefaultModel(modelId.trim() || null);
-        setStoredModel(modelId.trim());
-        setSuccess('Model updated.');
-        setTimeout(() => setSuccess(null), 3000);
-      } catch (err) {
-        console.error('[AssistantProviderSettings] Failed to save model:', err);
-        setError('Failed to save model.');
+      await assistantClient.deleteProviderConnection(connection.id);
+      if (editingId === connection.id) {
+        resetForm();
       }
-    };
-    save();
-  }, [modelId]);
-
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && !saving) {
-      handleConnect();
+      await loadData();
+      window.dispatchEvent(new CustomEvent(CONNECTIONS_CHANGED_EVENT));
+      setSuccess('Connection deleted.');
+    } catch (err) {
+      console.error('[AssistantProviderSettings] Delete failed:', err);
+      setError(typeof err === 'string' ? err : (err?.message || 'Failed to delete provider connection.'));
+    } finally {
+      setDeletingId(null);
     }
-  }, [handleConnect, saving]);
+  }, [editingId, loadData, resetForm]);
+
+  const handleTest = useCallback(async (connectionId) => {
+    setTestingId(connectionId);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await assistantClient.testProviderConnection(connectionId);
+      if (result.success) {
+        setSuccess('Connection test succeeded.');
+      } else {
+        setError(result.error || 'Connection test failed.');
+      }
+    } catch (err) {
+      console.error('[AssistantProviderSettings] Test failed:', err);
+      setError(typeof err === 'string' ? err : (err?.message || 'Failed to test provider connection.'));
+    } finally {
+      setTestingId(null);
+    }
+  }, []);
 
   if (loading) {
     return (
       <div className={styles.container}>
         <div className={styles.loadingState}>
           <LoadingIcon />
-          <span>Loading provider settings...</span>
+          <span>Loading provider connections...</span>
         </div>
       </div>
     );
   }
 
-  const isConnected = !!providerSession;
-
   return (
     <div className={styles.container}>
       <div className={styles.sectionHeader}>
-        <h3 className={styles.sectionTitle}>Assistant Provider</h3>
+        <h3 className={styles.sectionTitle}>Assistant Provider Connections</h3>
         <p className={styles.sectionDescription}>
-          Connect an OpenAI-compatible API to power the assistant engine.
-          Works with OpenAI, together.ai, Groq, local servers, and any compatible endpoint.
+          Configure one or more OpenAI-compatible connections for the assistant runtime and scheduled agents.
         </p>
       </div>
 
@@ -223,146 +271,177 @@ const AssistantProviderSettings = () => {
         </div>
       )}
 
-      {isConnected ? (
-        /* Connected state */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div className={styles.providerList}>
-            <div className={`${styles.providerItem} ${styles.selected}`}>
-              <div className={styles.providerInfo}>
-                <div className={styles.providerMain}>
-                  <span className={styles.providerName}>OpenAI-Compatible</span>
-                </div>
-                <span className={styles.providerCommand}>
-                  <code>{providerSession.baseUrl || 'api.openai.com'}</code>
-                </span>
+      <div className={styles.providerList}>
+        {connections.map((connection) => (
+          <div
+            key={connection.id}
+            className={`${styles.providerItem} ${editingId === connection.id ? styles.selected : ''} ${!connection.enabled ? styles.unavailable : ''}`}
+            onClick={() => beginEdit(connection)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                beginEdit(connection);
+              }
+            }}
+          >
+            <div className={styles.providerInfo}>
+              <div className={styles.providerMain}>
+                <span className={styles.providerName}>{connection.name}</span>
+                <span className={styles.providerVersion}>{connection.enabled ? 'enabled' : 'disabled'}</span>
               </div>
-              <span className={styles.checkIcon}>
-                <CheckIcon />
+              <span className={styles.providerCommand}>
+                <code>{connection.modelId}</code> • <code>{connection.baseUrl || 'api.openai.com/v1'}</code>
+              </span>
+              <span className={styles.providerCommand}>
+                used by {dependencyCounts.get(connection.id) || 0} agent(s)
               </span>
             </div>
-          </div>
-
-          {/* Model selector — editable when connected */}
-          <div>
-            <label style={labelStyle}>Model</label>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <input
-                type="text"
-                value={modelId}
-                onChange={(e) => setModelId(e.target.value)}
-                onBlur={handleModelSave}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleModelSave(); }}
-                placeholder="e.g. gpt-4o, claude-3-sonnet, meta-llama/..."
-                style={{ ...inputStyle, flex: 1 }}
-              />
+            <div style={{ display: 'flex', gap: '8px', marginLeft: '12px' }}>
+              <button
+                type="button"
+                style={secondaryButtonStyle}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleTest(connection.id);
+                }}
+                disabled={testingId === connection.id}
+              >
+                {testingId === connection.id ? 'Testing…' : 'Test'}
+              </button>
+              <button
+                type="button"
+                style={secondaryButtonStyle}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleDelete(connection);
+                }}
+                disabled={deletingId === connection.id}
+              >
+                {deletingId === connection.id ? 'Deleting…' : 'Delete'}
+              </button>
             </div>
-            <p style={{
-              fontSize: '11px',
-              color: 'var(--color-text-tertiary)',
-              margin: '4px 0 0 4px',
-            }}>
-              The model ID your provider supports. Changes apply to new sessions.
-            </p>
           </div>
+        ))}
+      </div>
 
-          <button
-            onClick={handleDisconnect}
-            disabled={disconnecting}
-            style={{
-              width: '100%',
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontFamily: 'inherit',
-              color: 'var(--color-critical, #DC2626)',
-              background: 'transparent',
-              border: '1px solid var(--color-critical, #DC2626)',
-              borderRadius: '8px',
-              cursor: disconnecting ? 'not-allowed' : 'pointer',
-              opacity: disconnecting ? 0.6 : 1,
-              transition: 'all 0.15s ease',
-              marginTop: '4px',
-            }}
-          >
-            {disconnecting ? 'Disconnecting...' : 'Disconnect'}
-          </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border-light)', borderRadius: '10px', background: 'var(--color-bg-primary)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+          <div>
+            <div className={styles.sectionTitle} style={{ fontSize: '14px', marginBottom: '4px' }}>
+              {editingId ? 'Edit Connection' : 'Add Connection'}
+            </div>
+            <div className={styles.sectionDescription}>
+              {editingId ? 'Update the selected provider connection.' : 'Create a new provider connection.'}
+            </div>
+          </div>
+          {editingId && (
+            <button type="button" style={secondaryButtonStyle} onClick={resetForm} disabled={saving}>
+              Cancel
+            </button>
+          )}
         </div>
-      ) : (
-        /* Not connected — show form */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <label style={labelStyle}>
-              API Key <span style={{ color: 'var(--color-critical, #DC2626)' }}>*</span>
-            </label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="sk-..."
-              style={inputStyle}
-            />
-          </div>
 
-          <div>
-            <label style={labelStyle}>
-              Model <span style={{ color: 'var(--color-critical, #DC2626)' }}>*</span>
-            </label>
-            <input
-              type="text"
-              value={modelId}
-              onChange={(e) => setModelId(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="e.g. gpt-4o-mini, meta-llama/Llama-3-70b, ..."
-              style={inputStyle}
-            />
-          </div>
-
-          <div>
-            <label style={labelStyle}>
-              Base URL <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)' }}>(optional)</span>
-            </label>
-            <input
-              type="text"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="https://api.openai.com/v1"
-              style={inputStyle}
-            />
-            <p style={{
-              fontSize: '11px',
-              color: 'var(--color-text-tertiary)',
-              margin: '4px 0 0 4px',
-            }}>
-              Leave empty for OpenAI. Set for compatible providers (e.g., together.ai, Groq, local).
-            </p>
-          </div>
-
-          <button
-            onClick={handleConnect}
-            disabled={saving || !apiKey.trim() || !modelId.trim()}
-            style={{
-              width: '100%',
-              padding: '10px 16px',
-              fontSize: '14px',
-              fontWeight: 500,
-              fontFamily: 'inherit',
-              color: '#fff',
-              background: saving || !apiKey.trim() || !modelId.trim() ? 'var(--color-text-tertiary)' : 'var(--color-primary, #6366f1)',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: saving || !apiKey.trim() || !modelId.trim() ? 'not-allowed' : 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            {saving ? 'Connecting...' : 'Connect'}
-          </button>
+        <div>
+          <label style={labelStyle}>Connection Name</label>
+          <input
+            type="text"
+            value={form.name}
+            onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
+            placeholder="e.g. Personal OpenAI"
+            style={inputStyle}
+          />
         </div>
-      )}
+
+        <div>
+          <label style={labelStyle}>Provider Adapter</label>
+          <select
+            className={styles.select}
+            value={form.providerId}
+            onChange={(e) => setForm((current) => ({ ...current, providerId: e.target.value }))}
+            disabled={saving || editingId !== null}
+          >
+            {(adapters.length > 0 ? adapters : [{ id: 'openai', displayName: 'OpenAI-Compatible' }]).map((adapter) => (
+              <option key={adapter.id} value={adapter.id}>
+                {adapter.displayName}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label style={labelStyle}>
+            API Key {!editingId && <span style={{ color: 'var(--color-critical, #DC2626)' }}>*</span>}
+          </label>
+          <input
+            type="password"
+            value={form.apiKey}
+            onChange={(e) => setForm((current) => ({ ...current, apiKey: e.target.value }))}
+            placeholder={editingId ? 'Leave blank to keep existing key' : 'sk-...'}
+            style={inputStyle}
+          />
+        </div>
+
+        <div>
+          <label style={labelStyle}>
+            Model ID <span style={{ color: 'var(--color-critical, #DC2626)' }}>*</span>
+          </label>
+          <input
+            type="text"
+            value={form.modelId}
+            onChange={(e) => setForm((current) => ({ ...current, modelId: e.target.value }))}
+            placeholder="e.g. gpt-4o-mini"
+            style={inputStyle}
+          />
+        </div>
+
+        <div>
+          <label style={labelStyle}>Base URL</label>
+          <input
+            type="text"
+            value={form.baseUrl}
+            onChange={(e) => setForm((current) => ({ ...current, baseUrl: e.target.value }))}
+            placeholder="https://api.openai.com/v1"
+            style={inputStyle}
+          />
+        </div>
+
+        {editingId && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+            <input
+              type="checkbox"
+              checked={form.enabled}
+              onChange={(e) => setForm((current) => ({ ...current, enabled: e.target.checked }))}
+            />
+            Enabled
+          </label>
+        )}
+
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={saving}
+          style={{
+            width: '100%',
+            padding: '10px 16px',
+            fontSize: '14px',
+            fontWeight: 500,
+            fontFamily: 'inherit',
+            color: '#fff',
+            background: saving ? 'var(--color-text-tertiary)' : 'var(--color-primary, #6366f1)',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: saving ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {saving ? 'Saving…' : editingId ? 'Save Connection' : 'Add Connection'}
+        </button>
+      </div>
 
       <div className={styles.hint}>
         <p>
-          Your API key is stored securely in your OS keychain — it is never saved to disk or sent anywhere except the configured endpoint.
+          Provider credentials are stored securely in your OS keychain. The first enabled connection becomes the default for non-agent tabs until the user switches it from the tab context.
         </p>
       </div>
     </div>

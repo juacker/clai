@@ -2,12 +2,14 @@ import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import { getMcpServers } from '../../api/client';
+import { assistantClient } from '../../assistant';
 import ContextBadge from './ContextBadge';
 import McpServerAvatar from './McpServerAvatar';
 import McpServerSelector from './McpServerSelector';
 import styles from './ContextPanel.module.css';
 
 const MCP_SERVERS_CHANGED_EVENT = 'mcp-servers-changed';
+const CONNECTIONS_CHANGED_EVENT = 'assistant-provider-connections-changed';
 
 const getAttachedMcpServerIds = (context) =>
   context?.mcpServers?.attachedServerIds || context?.mcpServers?.selectedServerIds || [];
@@ -23,6 +25,7 @@ const ContextPanel = () => {
   const { getActiveTab, updateTabContext } = useTabManager();
   const [showMcpSelector, setShowMcpSelector] = useState(false);
   const [availableMcpServers, setAvailableMcpServers] = useState([]);
+  const [providerConnections, setProviderConnections] = useState([]);
 
   const activeTab = getActiveTab();
   const tabContext = activeTab?.context;
@@ -31,29 +34,41 @@ const ContextPanel = () => {
   const disabledMcpServerIds = getDisabledMcpServerIds(tabContext);
   const enabledMcpServerIds = getEnabledMcpServerIds(tabContext);
   const isAgentManagedTab = Boolean(tabContext?.agent?.agentId);
+  const enabledProviderConnections = useMemo(
+    () => providerConnections.filter((connection) => connection.enabled),
+    [providerConnections]
+  );
+  const selectedAssistantConnectionId = tabContext?.assistantConnectionId || enabledProviderConnections[0]?.id || '';
 
   useEffect(() => {
     let cancelled = false;
 
-    const loadMcpServers = async () => {
+    const loadContextData = async () => {
       try {
-        const servers = await getMcpServers();
+        const [servers, connections] = await Promise.all([
+          getMcpServers(),
+          assistantClient.listProviderConnections().catch(() => []),
+        ]);
         if (!cancelled) {
           setAvailableMcpServers(servers || []);
+          setProviderConnections(connections || []);
         }
       } catch {
         if (!cancelled) {
           setAvailableMcpServers([]);
+          setProviderConnections([]);
         }
       }
     };
 
-    loadMcpServers();
-    window.addEventListener(MCP_SERVERS_CHANGED_EVENT, loadMcpServers);
+    loadContextData();
+    window.addEventListener(MCP_SERVERS_CHANGED_EVENT, loadContextData);
+    window.addEventListener(CONNECTIONS_CHANGED_EVENT, loadContextData);
 
     return () => {
       cancelled = true;
-      window.removeEventListener(MCP_SERVERS_CHANGED_EVENT, loadMcpServers);
+      window.removeEventListener(MCP_SERVERS_CHANGED_EVENT, loadContextData);
+      window.removeEventListener(CONNECTIONS_CHANGED_EVENT, loadContextData);
     };
   }, []);
 
@@ -72,6 +87,19 @@ const ContextPanel = () => {
 
   const hasCustomContext = Object.keys(customContext).length > 0;
   const hasMcpContext = attachedMcpServerIds.length > 0 || configuredMcpServers.length > 0;
+  const hasAssistantContext = !isAgentManagedTab && enabledProviderConnections.length > 0;
+
+  useEffect(() => {
+    if (!activeTab || isAgentManagedTab || enabledProviderConnections.length === 0) {
+      return;
+    }
+
+    if (!tabContext?.assistantConnectionId) {
+      updateTabContext(activeTab.id, {
+        assistantConnectionId: enabledProviderConnections[0].id,
+      });
+    }
+  }, [activeTab, enabledProviderConnections, isAgentManagedTab, tabContext?.assistantConnectionId, updateTabContext]);
 
   const handleAddMcpServer = useCallback((serverId) => {
     if (!activeTab || isAgentManagedTab) return;
@@ -115,7 +143,7 @@ const ContextPanel = () => {
     });
   }, [activeTab, attachedMcpServerIds, disabledMcpServerIds, isAgentManagedTab, updateTabContext]);
 
-  if (!hasCustomContext && !hasMcpContext) {
+  if (!hasCustomContext && !hasMcpContext && !hasAssistantContext) {
     return null;
   }
 
@@ -123,6 +151,35 @@ const ContextPanel = () => {
     <>
       <div className={styles.contextPanel}>
         <div className={styles.contextContainer}>
+          {hasAssistantContext && (
+            <label className={styles.providerPicker}>
+              <svg className={styles.providerIcon} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+              <select
+                className={styles.providerSelect}
+                value={selectedAssistantConnectionId}
+                onChange={(event) => {
+                  if (!activeTab) return;
+                  updateTabContext(activeTab.id, {
+                    assistantConnectionId: event.target.value,
+                  });
+                }}
+              >
+                {enabledProviderConnections.map((connection) => (
+                  <option key={connection.id} value={connection.id}>
+                    {connection.name} — {connection.modelId}
+                  </option>
+                ))}
+              </select>
+              <svg className={styles.providerChevron} width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </label>
+          )}
+
           {hasMcpContext && !isAgentManagedTab && (
             <ContextBadge
               type="mcp"

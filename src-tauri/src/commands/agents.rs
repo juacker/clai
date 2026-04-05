@@ -24,6 +24,8 @@ pub struct CreateAgentRequest {
     #[serde(default)]
     pub selected_mcp_server_ids: Vec<String>,
     #[serde(default)]
+    pub provider_connection_ids: Vec<String>,
+    #[serde(default)]
     pub execution: ExecutionCapabilityConfig,
 }
 
@@ -37,6 +39,8 @@ pub struct UpdateAgentRequest {
     pub interval_minutes: u32,
     #[serde(default)]
     pub selected_mcp_server_ids: Vec<String>,
+    #[serde(default)]
+    pub provider_connection_ids: Vec<String>,
     #[serde(default)]
     pub execution: ExecutionCapabilityConfig,
 }
@@ -59,6 +63,7 @@ pub struct AgentResponse {
     pub interval_minutes: u32,
     pub enabled: bool,
     pub selected_mcp_server_ids: Vec<String>,
+    pub provider_connection_ids: Vec<String>,
     pub execution: ExecutionCapabilityConfig,
     pub created_at: String,
     pub updated_at: String,
@@ -75,6 +80,7 @@ impl From<AgentConfig> for AgentResponse {
             interval_minutes: agent.interval_minutes,
             enabled: agent.enabled,
             selected_mcp_server_ids: agent.selected_mcp_server_ids,
+            provider_connection_ids: agent.provider_connection_ids,
             execution: agent.execution,
             created_at: agent.created_at,
             updated_at: agent.updated_at,
@@ -121,24 +127,34 @@ pub fn get_agent(id: String, state: State<'_, AppState>) -> Result<Option<AgentR
 ///
 /// Returns the created agent with its generated UUID.
 #[tauri::command]
-pub fn create_agent(
+pub async fn create_agent(
     request: CreateAgentRequest,
     state: State<'_, AppState>,
+    pool: State<'_, DbPool>,
 ) -> Result<AgentResponse, String> {
+    {
+        let config_manager = state
+            .config_manager
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+
+        validate_mcp_server_ids(
+            &config_manager,
+            &request.selected_mcp_server_ids,
+            "create agent",
+        )?;
+    }
+    validate_provider_connection_ids(pool.inner(), &request.provider_connection_ids).await?;
+
+    let mut agent = AgentConfig::new(request.name, request.description, request.interval_minutes);
+    agent.selected_mcp_server_ids = request.selected_mcp_server_ids;
+    agent.provider_connection_ids = request.provider_connection_ids;
+    agent.execution = request.execution;
+
     let config_manager = state
         .config_manager
         .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
-
-    validate_mcp_server_ids(
-        &config_manager,
-        &request.selected_mcp_server_ids,
-        "create agent",
-    )?;
-
-    let mut agent = AgentConfig::new(request.name, request.description, request.interval_minutes);
-    agent.selected_mcp_server_ids = request.selected_mcp_server_ids;
-    agent.execution = request.execution;
 
     config_manager
         .add_agent(agent.clone())
@@ -149,25 +165,37 @@ pub fn create_agent(
 
 /// Updates an existing agent.
 #[tauri::command]
-pub fn update_agent(
+pub async fn update_agent(
     request: UpdateAgentRequest,
     state: State<'_, AppState>,
+    pool: State<'_, DbPool>,
 ) -> Result<AgentResponse, String> {
+    {
+        let config_manager = state
+            .config_manager
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+
+        if config_manager.get_agent(&request.id).is_none() {
+            return Err(format!("Agent not found: {}", request.id));
+        }
+
+        validate_mcp_server_ids(
+            &config_manager,
+            &request.selected_mcp_server_ids,
+            "update agent",
+        )?;
+    }
+    validate_provider_connection_ids(pool.inner(), &request.provider_connection_ids).await?;
+
     let config_manager = state
         .config_manager
         .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
 
-    // Verify agent exists
     if config_manager.get_agent(&request.id).is_none() {
         return Err(format!("Agent not found: {}", request.id));
     }
-
-    validate_mcp_server_ids(
-        &config_manager,
-        &request.selected_mcp_server_ids,
-        "update agent",
-    )?;
 
     config_manager
         .update_agent(&request.id, |agent| {
@@ -175,6 +203,7 @@ pub fn update_agent(
             agent.description = request.description.clone();
             agent.interval_minutes = request.interval_minutes;
             agent.selected_mcp_server_ids = request.selected_mcp_server_ids.clone();
+            agent.provider_connection_ids = request.provider_connection_ids.clone();
             agent.execution = request.execution.clone();
         })
         .map_err(|e| format!("Failed to update agent: {}", e))?;
@@ -197,20 +226,16 @@ pub async fn set_agent_enabled(
         let pool = app.try_state::<DbPool>().ok_or_else(|| {
             "Assistant database is not ready yet. Try again in a moment.".to_string()
         })?;
-        let default_model = {
+        let agent = {
             let config_manager = state
                 .config_manager
                 .lock()
                 .map_err(|e| format!("Lock error: {}", e))?;
-            config_manager.get_assistant_default_model()
+            config_manager
+                .get_agent(&request.id)
+                .ok_or_else(|| format!("Agent not found: {}", request.id))?
         };
-        let provider_info =
-            load_assistant_provider_info(pool.inner(), default_model.as_deref()).await?;
-        if !provider_info.configured {
-            return Err(
-                "Configure the assistant provider and default model in Settings first.".to_string(),
-            );
-        }
+        validate_agent_provider_connections(pool.inner(), &agent).await?;
     }
 
     let agent = {
@@ -265,20 +290,39 @@ pub async fn delete_agent(id: String, state: State<'_, AppState>) -> Result<(), 
     Ok(())
 }
 
-async fn load_assistant_provider_info(
+async fn validate_agent_provider_connections(
     pool: &DbPool,
-    default_model: Option<&str>,
-) -> Result<crate::config::ProviderInfo, String> {
-    let provider_session = assistant_repository::list_provider_sessions(pool)
-        .await?
-        .into_iter()
-        .next();
+    agent: &AgentConfig,
+) -> Result<(), String> {
+    if agent.provider_connection_ids.is_empty() {
+        return Err("Select at least one provider connection for this agent.".to_string());
+    }
 
-    let has_model = default_model
-        .map(|value| !value.trim().is_empty())
-        .unwrap_or(false);
-    let configured = provider_session.is_some() && has_model;
-    Ok(crate::config::ProviderInfo { configured })
+    let connections = assistant_repository::list_provider_connections(pool).await?;
+    let has_enabled = agent.provider_connection_ids.iter().any(|id| {
+        connections
+            .iter()
+            .any(|connection| connection.id == *id && connection.enabled)
+    });
+
+    if !has_enabled {
+        return Err("This agent has no enabled provider connections.".to_string());
+    }
+
+    Ok(())
+}
+
+async fn validate_provider_connection_ids(
+    pool: &DbPool,
+    connection_ids: &[String],
+) -> Result<(), String> {
+    let connections = assistant_repository::list_provider_connections(pool).await?;
+    for connection_id in connection_ids {
+        if !connections.iter().any(|connection| connection.id == *connection_id) {
+            return Err(format!("Unknown provider connection: {}", connection_id));
+        }
+    }
+    Ok(())
 }
 
 fn build_agent_definition(agent: &AgentConfig) -> crate::agents::AgentDefinition {

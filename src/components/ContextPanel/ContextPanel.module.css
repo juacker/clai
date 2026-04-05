@@ -35,6 +35,48 @@
   scroll-behavior: smooth;
 }
 
+.providerPicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px 6px 8px;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.06);
+  color: var(--color-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.providerPicker:hover {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+.providerIcon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.providerSelect {
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 10px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0;
+}
+
+.providerChevron {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
 .contextContainer::-webkit-scrollbar {
   display: none;
 }

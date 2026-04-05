@@ -5,6 +5,7 @@ import ChatMessageList from './ChatMessageList';
 import styles from './AssistantChat.module.css';
 
 const EMPTY_TOOL_CALLS = [];
+const CONNECTIONS_CHANGED_EVENT = 'assistant-provider-connections-changed';
 
 /**
  * AssistantChat Component
@@ -33,9 +34,9 @@ const AssistantChat = ({ tabId }) => {
 
     const loadProviderStatus = async () => {
       try {
-        const sessions = await assistantClient.listProviderSessions();
+        const sessions = await assistantClient.listProviderConnections();
         if (!cancelled) {
-          setProviderConfigured(sessions.length > 0);
+          setProviderConfigured(sessions.some((connection) => connection.enabled));
         }
       } catch {
         if (!cancelled) {
@@ -45,9 +46,11 @@ const AssistantChat = ({ tabId }) => {
     };
 
     loadProviderStatus();
+    window.addEventListener(CONNECTIONS_CHANGED_EVENT, loadProviderStatus);
 
     return () => {
       cancelled = true;
+      window.removeEventListener(CONNECTIONS_CHANGED_EVENT, loadProviderStatus);
     };
   }, [sessionId]);
 

@@ -47,6 +47,8 @@ pub struct FleetAgentSnapshot {
     pub status: FleetAgentStatus,
     pub selected_mcp_server_ids: Vec<String>,
     pub selected_mcp_server_names: Vec<String>,
+    pub provider_connection_ids: Vec<String>,
+    pub provider_connection_names: Vec<String>,
     pub execution: ExecutionCapabilityConfig,
     pub tab_id: Option<String>,
     pub session_id: Option<String>,
@@ -106,6 +108,12 @@ pub async fn fleet_get_snapshot(
     let mcp_name_map: std::collections::HashMap<&str, &str> = mcp_servers
         .iter()
         .map(|s| (s.id.as_str(), s.name.as_str()))
+        .collect();
+
+    let connections = repository::list_provider_connections(pool.inner()).await?;
+    let connection_name_map: std::collections::HashMap<&str, &str> = connections
+        .iter()
+        .map(|c| (c.id.as_str(), c.name.as_str()))
         .collect();
 
     let sessions = repository::list_sessions(pool.inner(), None).await?;
@@ -202,6 +210,12 @@ pub async fn fleet_get_snapshot(
             .filter_map(|id| mcp_name_map.get(id.as_str()).map(|n| n.to_string()))
             .collect();
 
+        let connection_names: Vec<String> = agent
+            .provider_connection_ids
+            .iter()
+            .filter_map(|id| connection_name_map.get(id.as_str()).map(|n| n.to_string()))
+            .collect();
+
         items.push(FleetAgentSnapshot {
             agent_id: agent.id,
             name: agent.name,
@@ -211,6 +225,8 @@ pub async fn fleet_get_snapshot(
             status,
             selected_mcp_server_ids: agent.selected_mcp_server_ids,
             selected_mcp_server_names: mcp_names,
+            provider_connection_ids: agent.provider_connection_ids,
+            provider_connection_names: connection_names,
             execution: agent.execution,
             tab_id,
             session_id: session.as_ref().map(|value| value.id.clone()),

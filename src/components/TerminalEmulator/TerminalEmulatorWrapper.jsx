@@ -12,6 +12,7 @@ import { TabContextProvider } from '../../contexts/TabContext';
 import { useChatManager } from '../../contexts/ChatManagerContext';
 import { useFleet } from '../../contexts/FleetContext';
 import { useAssistantSession, useAssistantStore, assistantClient } from '../../assistant';
+import { getAgent } from '../../api/client';
 import TerminalEmulator from './TerminalEmulator';
 
 const getEnabledMcpServerIds = (tab) => {
@@ -42,14 +43,38 @@ const TerminalEmulatorWrapper = () => {
    * Always fetches fresh — the invoke is fast and the user may have
    * connected/disconnected a provider since the last check.
    */
-  const getProviderSession = useCallback(async () => {
+  const getEnabledProviderConnections = useCallback(async () => {
     try {
-      const sessions = await assistantClient.listProviderSessions();
-      return sessions.length > 0 ? sessions[0] : null;
+      const sessions = await assistantClient.listProviderConnections();
+      return (sessions || []).filter((connection) => connection.enabled);
     } catch {
-      return null;
+      return [];
     }
   }, []);
+
+  const resolveTabConnectionId = useCallback(async (tab) => {
+    if (!tab) {
+      return null;
+    }
+
+    const agentId = tab.context?.agent?.agentId;
+    if (agentId) {
+      const agent = await getAgent(agentId).catch(() => null);
+      return agent?.providerConnectionIds?.[0] || null;
+    }
+
+    const connections = await getEnabledProviderConnections();
+    if (connections.length === 0) {
+      return null;
+    }
+
+    const existingId = tab.context?.assistantConnectionId;
+    const selected = connections.find((connection) => connection.id === existingId) || connections[0];
+    if (selected.id !== existingId) {
+      updateTabContext(tab.id, { assistantConnectionId: selected.id });
+    }
+    return selected.id;
+  }, [getEnabledProviderConnections, updateTabContext]);
 
   /**
    * Handle sending a query through the assistant engine.
@@ -61,15 +86,14 @@ const TerminalEmulatorWrapper = () => {
           return { error: 'Select an agent in Fleet before sending a message.' };
         }
 
-        const providerSession = await getProviderSession();
-        if (!providerSession) {
+        const connectionId = selectedAgent.providerConnectionIds?.[0] || null;
+        if (!connectionId) {
           return {
-            error: 'Connect an assistant provider in Settings before sending prompts.',
+            error: 'Select a provider connection for this agent in Settings before sending prompts.',
           };
         }
 
         try {
-          const model = (await assistantClient.getDefaultModel().catch(() => null)) || 'gpt-4o-mini';
           let sessionId = selectedAgent.sessionId;
 
           if (!sessionId) {
@@ -77,8 +101,6 @@ const TerminalEmulatorWrapper = () => {
               tabId: selectedAgent.tabId || null,
               kind: 'background_job',
               title: selectedAgent.name,
-              providerId: providerSession.providerId,
-              modelId: model,
               context: {
                 tabId: selectedAgent.tabId || null,
                 mcpServerIds: selectedAgent.selectedMcpServerIds || [],
@@ -94,7 +116,7 @@ const TerminalEmulatorWrapper = () => {
             await refreshFleet().catch(() => {});
           }
 
-          const result = await assistantClient.sendMessage(sessionId, query);
+          const result = await assistantClient.sendMessage(sessionId, query, connectionId);
           const store = useAssistantStore.getState();
           store.addMessage(sessionId, result.message);
           return {};
@@ -111,25 +133,20 @@ const TerminalEmulatorWrapper = () => {
         return { error: 'No active tab available.' };
       }
 
-      const providerSession = await getProviderSession();
-      if (!providerSession) {
+      const connectionId = await resolveTabConnectionId(activeTab);
+      if (!connectionId) {
         openChat();
         return {
-          error: 'Connect an assistant provider in Settings before sending prompts.',
+          error: 'Add an enabled assistant provider connection in Settings before sending prompts.',
         };
       }
 
       openChat();
 
       try {
-        const model = (await assistantClient.getDefaultModel().catch(() => null)) || 'gpt-4o-mini';
         const mcpServerIds = getEnabledMcpServerIds(activeTab);
-        const sessionId = await ensureSession(
-          providerSession.providerId,
-          model,
-          { mcpServerIds }
-        );
-        const result = await assistantClient.sendMessage(sessionId, query);
+        const sessionId = await ensureSession({ mcpServerIds });
+        const result = await assistantClient.sendMessage(sessionId, query, connectionId);
         const store = useAssistantStore.getState();
         store.addMessage(sessionId, result.message);
         return {};
@@ -143,7 +160,7 @@ const TerminalEmulatorWrapper = () => {
     [
       activeTab,
       ensureSession,
-      getProviderSession,
+      resolveTabConnectionId,
       isFleetRoute,
       location.pathname,
       openChat,

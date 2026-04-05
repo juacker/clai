@@ -7,7 +7,7 @@ use futures::Stream;
 use thiserror::Error;
 
 use crate::assistant::types::{
-    CompletionRequest, ModelInfo, ProtocolFamily, ProviderEvent, ProviderSession,
+    CompletionRequest, ModelInfo, ProtocolFamily, ProviderConnection, ProviderEvent,
 };
 
 #[derive(Debug, Error)]
@@ -27,14 +27,14 @@ pub trait ProviderAdapter: Send + Sync {
 
     async fn list_models(
         &self,
-        _session: &ProviderSession,
+        _connection: &ProviderConnection,
     ) -> Result<Vec<ModelInfo>, ProviderError> {
         Err(ProviderError::NotImplemented)
     }
 
     async fn stream_completion(
         &self,
-        _session: &ProviderSession,
+        _connection: &ProviderConnection,
         _request: CompletionRequest,
     ) -> Result<
         Pin<Box<dyn Stream<Item = Result<ProviderEvent, ProviderError>> + Send>>,

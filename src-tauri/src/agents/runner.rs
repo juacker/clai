@@ -43,9 +43,12 @@ use uuid::Uuid;
 use crate::agents::{SchedulerState, SharedScheduler};
 use crate::assistant::engine::{self, AssistantDeps, RunTurnInput};
 use crate::assistant::events::{emit_event, AssistantUiEvent};
-use crate::assistant::repository::{self, CreateSessionParams};
+use crate::assistant::repository::{self, CreateRunParams, CreateSessionParams};
 use crate::assistant::runtime;
-use crate::assistant::types::{RunTrigger, SessionContext, SessionKind};
+use crate::assistant::types::{
+    AssistantRun, ContentPart, MessageRole, ProviderConnection, RunTrigger, RunStatus,
+    SessionContext, SessionKind,
+};
 use crate::db::DbPool;
 use crate::mcp::bridge::is_bridge_ready;
 use crate::mcp::bridge::JsBridge;
@@ -124,32 +127,6 @@ async fn run_next_agent(
         Some(pool) => pool.inner().clone(),
         None => {
             tracing::debug!("Assistant database not ready yet, skipping agent check");
-            return Ok(());
-        }
-    };
-
-    let provider_session = match repository::list_provider_sessions(&pool)
-        .await
-        .map_err(RunnerError::AssistantPersistence)?
-        .into_iter()
-        .next()
-    {
-        Some(session) => session,
-        None => {
-            tracing::debug!("No assistant provider configured, skipping agent check");
-            return Ok(());
-        }
-    };
-
-    let model_id = {
-        let config = state.config_manager.lock().unwrap();
-        config.get_assistant_default_model()
-    };
-
-    let model_id = match model_id {
-        Some(model) if !model.trim().is_empty() => model,
-        _ => {
-            tracing::debug!("No assistant default model configured, skipping agent check");
             return Ok(());
         }
     };
@@ -237,10 +214,10 @@ async fn run_next_agent(
 
     tracing::debug!(agent_name = %agent_config.name, "Got agent config");
 
+    let connections = resolve_agent_connections(&pool, &agent_config).await?;
+
     let existing_session = find_background_session(
         &pool,
-        &provider_session.provider_id,
-        &model_id,
         &agent_config,
         if space_id.is_empty() {
             None
@@ -298,8 +275,6 @@ async fn run_next_agent(
     let session = ensure_background_session(
         app_handle,
         &pool,
-        &provider_session.provider_id,
-        &model_id,
         &agent_config,
         &space_id,
         &room_id,
@@ -307,27 +282,14 @@ async fn run_next_agent(
     )
     .await?;
 
-    tracing::info!(
-        session_id = %session.id,
-        provider_id = %provider_session.provider_id,
-        model_id = %model_id,
-        "Starting scheduled assistant run"
-    );
-
-    let runtime_run_id = format!("scheduled:{}:{}", instance_id, Uuid::new_v4());
-    let cancel_token = runtime::register_run(&runtime_run_id);
-    let deps = AssistantDeps {
-        pool: pool.clone(),
-        app: app_handle.clone(),
-    };
-    let input = RunTurnInput {
-        session_id: session.id.clone(),
-        run_id: None,
-        trigger: RunTrigger::Scheduled,
-        cancel_token,
-    };
-    let result = engine::run_session_turn(&deps, input).await;
-    runtime::unregister_run(&runtime_run_id);
+    let result = run_scheduled_agent_with_fallback(
+        app_handle,
+        &pool,
+        &instance_id,
+        &session,
+        &connections,
+    )
+    .await;
 
     // Mark agent complete
     let success = match &result {
@@ -402,6 +364,8 @@ pub enum RunnerError {
     AssistantPersistence(String),
     /// Failed to create or restore an assistant session.
     AssistantSession(String),
+    /// No usable provider connections are configured for the agent.
+    NoProviderConfigured(String),
 }
 
 impl std::fmt::Display for RunnerError {
@@ -417,6 +381,7 @@ impl std::fmt::Display for RunnerError {
                 write!(f, "Assistant persistence failed: {}", msg)
             }
             RunnerError::AssistantSession(msg) => write!(f, "Assistant session failed: {}", msg),
+            RunnerError::NoProviderConfigured(msg) => write!(f, "No provider configured: {}", msg),
         }
     }
 }
@@ -463,8 +428,6 @@ async fn wait_for_persisted_tab(
 async fn ensure_background_session(
     app_handle: &AppHandle,
     pool: &DbPool,
-    provider_id: &str,
-    model_id: &str,
     agent_config: &crate::config::AgentConfig,
     space_id: &str,
     room_id: &str,
@@ -501,8 +464,6 @@ async fn ensure_background_session(
 
     let existing = find_background_session(
         pool,
-        provider_id,
-        model_id,
         agent_config,
         session_space_id.as_deref(),
         session_room_id.as_deref(),
@@ -545,8 +506,6 @@ async fn ensure_background_session(
             tab_id: Some(tab_id.to_string()),
             kind: SessionKind::BackgroundJob,
             title: Some(agent_config.name.clone()),
-            provider_id: provider_id.to_string(),
-            model_id: model_id.to_string(),
             context: desired_context,
         },
     )
@@ -568,8 +527,6 @@ async fn ensure_background_session(
 
 async fn find_background_session(
     pool: &DbPool,
-    provider_id: &str,
-    model_id: &str,
     agent_config: &crate::config::AgentConfig,
     space_id: Option<&str>,
     room_id: Option<&str>,
@@ -583,12 +540,158 @@ async fn find_background_session(
         .into_iter()
         .find(|session| {
             session.kind == SessionKind::BackgroundJob
-                && session.provider_id == provider_id
-                && session.model_id == model_id
                 && session.context.space_id == session_space_id
                 && session.context.room_id == session_room_id
                 && session.context.automation_id.as_deref() == Some(agent_config.id.as_str())
         }))
+}
+
+async fn resolve_agent_connections(
+    pool: &DbPool,
+    agent_config: &crate::config::AgentConfig,
+) -> Result<Vec<ProviderConnection>, RunnerError> {
+    let all_connections = repository::list_provider_connections(pool)
+        .await
+        .map_err(RunnerError::AssistantPersistence)?;
+
+    let mut resolved = Vec::new();
+    for connection_id in &agent_config.provider_connection_ids {
+        match all_connections.iter().find(|connection| connection.id == *connection_id) {
+            Some(connection) if connection.enabled => resolved.push(connection.clone()),
+            Some(connection) => {
+                tracing::warn!(
+                    agent_id = %agent_config.id,
+                    connection_id = %connection.id,
+                    "Skipping disabled provider connection"
+                );
+            }
+            None => {
+                tracing::warn!(
+                    agent_id = %agent_config.id,
+                    connection_id = %connection_id,
+                    "Skipping missing provider connection"
+                );
+            }
+        }
+    }
+
+    if resolved.is_empty() {
+        return Err(RunnerError::NoProviderConfigured(agent_config.id.clone()));
+    }
+
+    Ok(resolved)
+}
+
+async fn run_scheduled_agent_with_fallback(
+    app_handle: &AppHandle,
+    pool: &DbPool,
+    instance_id: &str,
+    session: &crate::assistant::types::AssistantSession,
+    connections: &[ProviderConnection],
+) -> Result<(), RunnerError> {
+    let deps = AssistantDeps {
+        pool: pool.clone(),
+        app: app_handle.clone(),
+    };
+    let mut last_error: Option<String> = None;
+
+    for (index, connection) in connections.iter().enumerate() {
+        tracing::info!(
+            session_id = %session.id,
+            connection_id = %connection.id,
+            provider_id = %connection.provider_id,
+            model_id = %connection.model_id,
+            fallback_index = index,
+            "Starting scheduled assistant run"
+        );
+
+        let run = repository::create_run(
+            pool,
+            CreateRunParams {
+                session_id: session.id.clone(),
+                status: RunStatus::Queued,
+                trigger: RunTrigger::Scheduled,
+                connection_id: connection.id.clone(),
+                provider_id: connection.provider_id.clone(),
+                model_id: connection.model_id.clone(),
+                usage: None,
+                error: None,
+            },
+        )
+        .await
+        .map_err(RunnerError::AssistantPersistence)?;
+
+        let runtime_run_id = format!("scheduled:{}:{}", instance_id, Uuid::new_v4());
+        let cancel_token = runtime::register_run(&runtime_run_id);
+        let input = RunTurnInput {
+            session_id: session.id.clone(),
+            run_id: Some(run.id.clone()),
+            trigger: RunTrigger::Scheduled,
+            connection_id: connection.id.clone(),
+            cancel_token,
+        };
+        let result = engine::run_session_turn(&deps, input).await;
+        runtime::unregister_run(&runtime_run_id);
+
+        match result {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let error_text = error.to_string();
+                last_error = Some(error_text.clone());
+                let can_fallback =
+                    run_allows_fallback(pool, session.id.as_str(), &run).await?;
+
+                tracing::warn!(
+                    run_id = %run.id,
+                    connection_id = %connection.id,
+                    can_fallback,
+                    error = %error_text,
+                    "Scheduled assistant run failed"
+                );
+
+                if !can_fallback {
+                    break;
+                }
+            }
+        }
+    }
+
+    Err(RunnerError::AssistantSession(
+        last_error.unwrap_or_else(|| "scheduled run failed".to_string()),
+    ))
+}
+
+async fn run_allows_fallback(
+    pool: &DbPool,
+    session_id: &str,
+    run: &AssistantRun,
+) -> Result<bool, RunnerError> {
+    let tool_calls = repository::list_tool_calls(pool, session_id, Some(&run.id))
+        .await
+        .map_err(RunnerError::AssistantPersistence)?;
+    if !tool_calls.is_empty() {
+        return Ok(false);
+    }
+
+    let messages = repository::list_messages(pool, session_id)
+        .await
+        .map_err(RunnerError::AssistantPersistence)?;
+    let completed_at = run.completed_at.unwrap_or(i64::MAX);
+    let has_assistant_output = messages.iter().any(|message| {
+        message.role == MessageRole::Assistant
+            && message.created_at >= run.started_at
+            && message.created_at <= completed_at
+            && message_contains_output(&message.content)
+    });
+
+    Ok(!has_assistant_output)
+}
+
+fn message_contains_output(content: &[ContentPart]) -> bool {
+    content.iter().any(|part| match part {
+        ContentPart::Text { text } => !text.trim().is_empty(),
+        ContentPart::ToolUse { .. } | ContentPart::ToolResult { .. } => true,
+    })
 }
 
 // =============================================================================

@@ -1,0 +1,225 @@
+use serde::{Deserialize, Serialize};
+use tauri::State;
+
+use crate::assistant::auth::ProviderSecretStorage;
+use crate::assistant::providers;
+use crate::assistant::repository;
+use crate::assistant::repository::{
+    CreateProviderConnectionParams, UpdateProviderConnectionParams,
+};
+use crate::assistant::types::{AuthMode, ModelInfo, ProviderConnection, ProviderDescriptor};
+use crate::db::DbPool;
+use crate::AppState;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateProviderConnectionRequest {
+    pub name: String,
+    pub provider_id: String,
+    pub api_key: String,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    pub model_id: String,
+    #[serde(default)]
+    pub account_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProviderConnectionRequest {
+    pub id: String,
+    pub name: String,
+    pub provider_id: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    pub model_id: String,
+    #[serde(default)]
+    pub account_label: Option<String>,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestResult {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn provider_connection_list_available() -> Result<Vec<ProviderDescriptor>, String> {
+    Ok(providers::supported_providers())
+}
+
+#[tauri::command]
+pub async fn provider_connection_create(
+    request: CreateProviderConnectionRequest,
+    pool: State<'_, DbPool>,
+) -> Result<ProviderConnection, String> {
+    let descriptor = providers::get_provider_descriptor(&request.provider_id)
+        .ok_or_else(|| format!("Unsupported provider: {}", request.provider_id))?;
+
+    if !descriptor
+        .supported_auth_modes
+        .contains(&AuthMode::DeveloperApiKey)
+    {
+        return Err(format!(
+            "Provider '{}' does not support developer API keys",
+            request.provider_id
+        ));
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let secret_ref = format!("provider-connection::{}", id);
+    ProviderSecretStorage::set_secret(&secret_ref, request.api_key.trim())
+        .map_err(|e| format!("Failed to store provider credential: {}", e))?;
+
+    repository::create_provider_connection(
+        pool.inner(),
+        CreateProviderConnectionParams {
+            id,
+            name: request.name.trim().to_string(),
+            provider_id: request.provider_id,
+            auth_mode: AuthMode::DeveloperApiKey,
+            base_url: request.base_url.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+            secret_ref,
+            model_id: request.model_id.trim().to_string(),
+            account_label: request.account_label.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+            enabled: true,
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn provider_connection_update(
+    request: UpdateProviderConnectionRequest,
+    pool: State<'_, DbPool>,
+) -> Result<ProviderConnection, String> {
+    let existing = repository::get_provider_connection(pool.inner(), &request.id)
+        .await?
+        .ok_or_else(|| format!("Provider connection not found: {}", request.id))?;
+
+    let descriptor = providers::get_provider_descriptor(&request.provider_id)
+        .ok_or_else(|| format!("Unsupported provider: {}", request.provider_id))?;
+
+    if !descriptor
+        .supported_auth_modes
+        .contains(&AuthMode::DeveloperApiKey)
+    {
+        return Err(format!(
+            "Provider '{}' does not support developer API keys",
+            request.provider_id
+        ));
+    }
+
+    if let Some(api_key) = request.api_key.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        ProviderSecretStorage::set_secret(&existing.secret_ref, api_key)
+            .map_err(|e| format!("Failed to store provider credential: {}", e))?;
+    }
+
+    repository::update_provider_connection(
+        pool.inner(),
+        UpdateProviderConnectionParams {
+            id: request.id,
+            name: request.name.trim().to_string(),
+            provider_id: request.provider_id,
+            auth_mode: AuthMode::DeveloperApiKey,
+            base_url: request.base_url.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+            secret_ref: existing.secret_ref,
+            model_id: request.model_id.trim().to_string(),
+            account_label: request.account_label.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+            enabled: request.enabled,
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn provider_connection_delete(
+    id: String,
+    pool: State<'_, DbPool>,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let dependents: Vec<String> = {
+        let config_manager = state
+            .config_manager
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        config_manager
+            .get_agents()
+            .into_iter()
+            .filter(|agent| agent.provider_connection_ids.iter().any(|value| value == &id))
+            .map(|agent| agent.name)
+            .collect()
+    };
+
+    if !dependents.is_empty() {
+        return Err(format!(
+            "Cannot delete provider connection while used by {} agent(s)",
+            dependents.len()
+        ));
+    }
+
+    if let Some(connection) = repository::get_provider_connection(pool.inner(), &id).await? {
+        ProviderSecretStorage::clear_secret(&connection.secret_ref)
+            .map_err(|e| format!("Failed to clear provider credential: {}", e))?;
+    }
+
+    repository::delete_provider_connection(pool.inner(), &id).await
+}
+
+#[tauri::command]
+pub async fn provider_connection_get(
+    id: String,
+    pool: State<'_, DbPool>,
+) -> Result<Option<ProviderConnection>, String> {
+    repository::get_provider_connection(pool.inner(), &id).await
+}
+
+#[tauri::command]
+pub async fn provider_connection_list(
+    pool: State<'_, DbPool>,
+) -> Result<Vec<ProviderConnection>, String> {
+    repository::list_provider_connections(pool.inner()).await
+}
+
+#[tauri::command]
+pub async fn provider_connection_list_models(
+    id: String,
+    pool: State<'_, DbPool>,
+) -> Result<Vec<ModelInfo>, String> {
+    let connection = repository::get_provider_connection(pool.inner(), &id)
+        .await?
+        .ok_or_else(|| format!("Provider connection not found: {}", id))?;
+
+    let adapter = providers::resolve_adapter(&connection.provider_id).map_err(|e| e.to_string())?;
+    adapter
+        .list_models(&connection)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn provider_connection_test(
+    id: String,
+    pool: State<'_, DbPool>,
+) -> Result<TestResult, String> {
+    let connection = repository::get_provider_connection(pool.inner(), &id)
+        .await?
+        .ok_or_else(|| format!("Provider connection not found: {}", id))?;
+
+    let adapter = providers::resolve_adapter(&connection.provider_id).map_err(|e| e.to_string())?;
+    match adapter.list_models(&connection).await {
+        Ok(_) => Ok(TestResult {
+            success: true,
+            error: None,
+        }),
+        Err(error) => Ok(TestResult {
+            success: false,
+            error: Some(error.to_string()),
+        }),
+    }
+}

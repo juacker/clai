@@ -8,7 +8,7 @@ pub mod types;
 pub use types::{
     AgentConfig, AiProvider, ClaiConfig, ExecutionCapabilityConfig, FilesystemPathAccess,
     FilesystemPathGrant, McpServerAuth, McpServerConfig, McpServerIntegrationType,
-    McpServerTransport, ProviderInfo, ShellAccessMode,
+    McpServerTransport, ShellAccessMode,
 };
 
 use std::fs;
@@ -159,18 +159,6 @@ impl ConfigManager {
     /// Checks if an AI provider is configured.
     pub fn has_ai_provider(&self) -> bool {
         self.config.lock().unwrap().ai_provider.is_some()
-    }
-
-    /// Gets the default model for the app-owned assistant runtime.
-    pub fn get_assistant_default_model(&self) -> Option<String> {
-        self.config.lock().unwrap().assistant_default_model.clone()
-    }
-
-    /// Sets the default model for the app-owned assistant runtime.
-    pub fn set_assistant_default_model(&self, model: Option<String>) -> Result<(), ConfigError> {
-        self.update(|config| {
-            config.assistant_default_model = model;
-        })
     }
 
     /// Gets all configured MCP servers.
@@ -360,9 +348,6 @@ mod tests {
         manager
             .set_ai_provider(AiProvider::Claude { model: None })
             .unwrap();
-        manager
-            .set_assistant_default_model(Some("gpt-5".to_string()))
-            .unwrap();
 
         assert!(manager.config_path.exists());
 
@@ -371,7 +356,6 @@ mod tests {
             loaded.ai_provider,
             Some(AiProvider::Claude { .. })
         ));
-        assert_eq!(loaded.assistant_default_model.as_deref(), Some("gpt-5"));
     }
 
     #[test]

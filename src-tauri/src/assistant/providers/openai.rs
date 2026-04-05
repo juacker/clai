@@ -11,7 +11,7 @@ type Bytes = axum::body::Bytes;
 use crate::assistant::auth::secrets::ProviderSecretStorage;
 use crate::assistant::types::{
     AuthMode, CompletionRequest, ContentPart, MessageRole, ModelInfo, ProtocolFamily,
-    ProviderDescriptor, ProviderEvent, ProviderSession, RunUsage, ToolInvocationDraft,
+    ProviderConnection, ProviderDescriptor, ProviderEvent, RunUsage, ToolInvocationDraft,
 };
 
 use super::types::{ProviderAdapter, ProviderError};
@@ -42,11 +42,11 @@ impl ProviderAdapter for OpenAiAdapter {
 
     async fn list_models(
         &self,
-        session: &ProviderSession,
+        connection: &ProviderConnection,
     ) -> Result<Vec<ModelInfo>, ProviderError> {
-        let api_key = get_api_key(session)?;
+        let api_key = get_api_key(connection)?;
         let models_url = {
-            let base = session
+            let base = connection
                 .base_url
                 .as_deref()
                 .unwrap_or("https://api.openai.com/v1")
@@ -99,14 +99,14 @@ impl ProviderAdapter for OpenAiAdapter {
 
     async fn stream_completion(
         &self,
-        session: &ProviderSession,
+        connection: &ProviderConnection,
         request: CompletionRequest,
     ) -> Result<
         Pin<Box<dyn Stream<Item = Result<ProviderEvent, ProviderError>> + Send>>,
         ProviderError,
     > {
-        let api_key = get_api_key(session)?;
-        let url = completions_url(session);
+        let api_key = get_api_key(connection)?;
+        let url = completions_url(connection);
         let body = build_request_body(&request);
 
         let client = Client::new();
@@ -135,14 +135,14 @@ impl ProviderAdapter for OpenAiAdapter {
     }
 }
 
-fn get_api_key(session: &ProviderSession) -> Result<String, ProviderError> {
-    ProviderSecretStorage::get_secret(&session.secret_ref)
+fn get_api_key(connection: &ProviderConnection) -> Result<String, ProviderError> {
+    ProviderSecretStorage::get_secret(&connection.secret_ref)
         .map_err(|e| ProviderError::RequestFailed(format!("Failed to read API key: {}", e)))?
         .ok_or(ProviderError::NotConfigured)
 }
 
-fn completions_url(session: &ProviderSession) -> String {
-    let base = session
+fn completions_url(connection: &ProviderConnection) -> String {
+    let base = connection
         .base_url
         .as_deref()
         .unwrap_or("https://api.openai.com/v1")

@@ -278,6 +278,70 @@
   padding-top: 4px;
 }
 
+.providerConnectionList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.providerConnectionItem {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-secondary, #F6F4F2);
+}
+
+.providerConnectionDetails {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.providerConnectionHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.providerConnectionName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.providerConnectionSubtext {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-tertiary);
+}
+
+.providerConnectionStatus {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--color-critical-alpha-10, rgba(220, 38, 38, 0.08));
+  color: var(--color-critical, #DC2626);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.providerConnectionActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -523,6 +587,14 @@
 
   .listInputRow {
     flex-direction: column;
+  }
+
+  .providerConnectionItem {
+    flex-direction: column;
+  }
+
+  .providerConnectionActions {
+    justify-content: flex-end;
   }
 
   .cancelButton,

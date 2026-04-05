@@ -11,5 +11,5 @@ pub mod bridge;
 pub mod fleet;
 pub mod mcp_servers;
 pub mod provider;
-pub mod provider_sessions;
+pub mod provider_connections;
 pub mod workspace;

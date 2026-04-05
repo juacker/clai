@@ -292,6 +292,10 @@ pub struct AgentConfig {
     #[serde(default)]
     pub selected_mcp_server_ids: Vec<String>,
 
+    /// Ordered provider connections for this automation.
+    #[serde(default)]
+    pub provider_connection_ids: Vec<String>,
+
     /// Local execution capability policy for this automation.
     #[serde(default)]
     pub execution: ExecutionCapabilityConfig,
@@ -332,6 +336,7 @@ impl AgentConfig {
             interval_minutes: 5,
             enabled: false,
             selected_mcp_server_ids: vec![],
+            provider_connection_ids: vec![],
             execution: ExecutionCapabilityConfig::default(),
             created_at: now.clone(),
             updated_at: now,
@@ -348,6 +353,7 @@ impl AgentConfig {
             interval_minutes,
             enabled: false,
             selected_mcp_server_ids: vec![],
+            provider_connection_ids: vec![],
             execution: ExecutionCapabilityConfig::default(),
             created_at: now.clone(),
             updated_at: now,
@@ -395,7 +401,7 @@ pub struct ClaiConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_provider: Option<AiProvider>,
 
-    /// Default model for the app-owned assistant runtime.
+    /// Legacy default model used only to migrate existing assistant provider sessions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant_default_model: Option<String>,
 
@@ -406,12 +412,6 @@ pub struct ClaiConfig {
     /// User-configured MCP servers.
     #[serde(default)]
     pub mcp_servers: Vec<McpServerConfig>,
-}
-
-/// Provider information for settings/validation helpers.
-#[derive(Debug, Clone)]
-pub struct ProviderInfo {
-    pub configured: bool,
 }
 
 // =============================================================================
@@ -426,7 +426,6 @@ mod tests {
     fn test_clai_config_serialization() {
         let mut config = ClaiConfig::default();
         config.ai_provider = Some(AiProvider::Claude { model: None });
-        config.assistant_default_model = Some("gpt-5".to_string());
         config.agents.push(AgentConfig::default_agent());
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -438,7 +437,6 @@ mod tests {
             parsed.ai_provider,
             Some(AiProvider::Claude { .. })
         ));
-        assert_eq!(parsed.assistant_default_model.as_deref(), Some("gpt-5"));
         assert_eq!(parsed.agents.len(), 1);
     }
 
@@ -450,6 +448,7 @@ mod tests {
         assert_eq!(agent.name, "Infrastructure Health Monitor");
         assert_eq!(agent.interval_minutes, 5);
         assert!(agent.selected_mcp_server_ids.is_empty());
+        assert!(agent.provider_connection_ids.is_empty());
         assert!(matches!(agent.execution.shell.mode, ShellAccessMode::Off));
         assert!(agent.execution.filesystem.extra_paths.is_empty());
     }
@@ -465,6 +464,7 @@ mod tests {
         assert_eq!(agent1.name, "Agent 1");
         assert_eq!(agent2.interval_minutes, 15);
         assert!(agent1.selected_mcp_server_ids.is_empty());
+        assert!(agent1.provider_connection_ids.is_empty());
         assert!(agent1.execution.filesystem.extra_paths.is_empty());
     }
 
@@ -520,12 +520,14 @@ mod tests {
     fn test_agent_serialization() {
         let mut agent = AgentConfig::default_agent();
         agent.selected_mcp_server_ids = vec!["mcp-a".to_string(), "mcp-b".to_string()];
+        agent.provider_connection_ids = vec!["conn-a".to_string(), "conn-b".to_string()];
 
         let json = serde_json::to_string_pretty(&agent).unwrap();
 
         assert!(json.contains(&agent.id));
         assert!(json.contains("Infrastructure Health Monitor"));
         assert!(json.contains("mcp-a"));
+        assert!(json.contains("conn-a"));
 
         let parsed: AgentConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, agent.id);
@@ -533,6 +535,10 @@ mod tests {
         assert_eq!(
             parsed.selected_mcp_server_ids,
             agent.selected_mcp_server_ids
+        );
+        assert_eq!(
+            parsed.provider_connection_ids,
+            agent.provider_connection_ids
         );
         assert_eq!(parsed.execution, agent.execution);
     }

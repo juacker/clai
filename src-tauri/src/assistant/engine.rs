@@ -32,6 +32,7 @@ pub struct RunTurnInput {
     pub session_id: SessionId,
     pub run_id: Option<RunId>,
     pub trigger: RunTrigger,
+    pub connection_id: String,
     pub cancel_token: CancellationToken,
 }
 
@@ -41,6 +42,8 @@ pub enum AssistantEngineError {
     SessionNotFound(String),
     #[error("provider not configured: {0}")]
     ProviderNotConfigured(String),
+    #[error("run connection mismatch for run {0}")]
+    RunConnectionMismatch(String),
     #[error("provider error: {0}")]
     Provider(#[from] ProviderError),
     #[error("persistence error: {0}")]
@@ -62,14 +65,22 @@ pub async fn run_session_turn(
         .await?
         .ok_or_else(|| AssistantEngineError::SessionNotFound(input.session_id.clone()))?;
 
-    // Load provider session
-    let provider_session = repository::get_provider_session(&deps.pool, &session.provider_id)
+    // Load provider connection
+    let connection = repository::get_provider_connection(&deps.pool, &input.connection_id)
         .await?
-        .ok_or_else(|| AssistantEngineError::ProviderNotConfigured(session.provider_id.clone()))?;
+        .ok_or_else(|| AssistantEngineError::ProviderNotConfigured(input.connection_id.clone()))?;
 
     // Get or create the run
     let run_id = match &input.run_id {
-        Some(id) => id.clone(),
+        Some(id) => {
+            let existing_run = repository::get_run(&deps.pool, id)
+                .await?
+                .ok_or_else(|| AssistantEngineError::Persistence(format!("run not found: {}", id)))?;
+            if existing_run.connection_id != input.connection_id {
+                return Err(AssistantEngineError::RunConnectionMismatch(id.clone()));
+            }
+            id.clone()
+        }
         None => {
             let run = repository::create_run(
                 &deps.pool,
@@ -77,8 +88,9 @@ pub async fn run_session_turn(
                     session_id: session.id.clone(),
                     status: RunStatus::Queued,
                     trigger: input.trigger.clone(),
-                    provider_id: session.provider_id.clone(),
-                    model_id: session.model_id.clone(),
+                    connection_id: connection.id.clone(),
+                    provider_id: connection.provider_id.clone(),
+                    model_id: connection.model_id.clone(),
                     usage: None,
                     error: None,
                 },
@@ -103,7 +115,7 @@ pub async fn run_session_turn(
     }
 
     // Resolve adapter
-    let adapter = providers::resolve_adapter(&session.provider_id)?;
+    let adapter = providers::resolve_adapter(&connection.provider_id)?;
 
     // Get available tools for this session's context
     let (external_tools, dashboard_enabled) = {
@@ -210,7 +222,7 @@ pub async fn run_session_turn(
         let request = CompletionRequest {
             run_id: run_id.clone(),
             session_id: session.id.clone(),
-            model_id: session.model_id.clone(),
+            model_id: connection.model_id.clone(),
             messages: provider_messages,
             tools: tool_defs.clone(),
             temperature: None,
@@ -218,7 +230,7 @@ pub async fn run_session_turn(
         };
 
         // Call the provider
-        let stream_result = adapter.stream_completion(&provider_session, request).await;
+        let stream_result = adapter.stream_completion(&connection, request).await;
 
         let mut stream = match stream_result {
             Ok(s) => s,

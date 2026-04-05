@@ -29,16 +29,14 @@ export function useAssistantSession(tabId) {
    * Returns the session ID.
    */
   const ensureSession = useCallback(
-    async (providerId, modelId, context = {}) => {
+    async (context = {}) => {
       const store = useAssistantStore.getState();
 
-      // Match on provider, model, and MCP selection for interactive tabs.
+      // Match on MCP selection for interactive tabs.
       // Integration-specific targeting should be explicit in tool params, not hidden in tab context.
       const contextMcpServerIds = normalizeIdList(context.mcpServerIds || []);
 
       const sessionMatches = (s) =>
-        s.modelId === modelId &&
-        s.providerId === providerId &&
         JSON.stringify(normalizeIdList(s.context?.mcpServerIds || [])) ===
           JSON.stringify(contextMcpServerIds);
 
@@ -74,8 +72,6 @@ export function useAssistantSession(tabId) {
       // Create a new session
       const session = await client.createSession({
         tabId,
-        providerId,
-        modelId,
         context,
       });
       store.initSession(session);
@@ -90,10 +86,10 @@ export function useAssistantSession(tabId) {
    * The engine handles everything — events update the store.
    */
   const sendMessage = useCallback(
-    async (text) => {
+    async (text, connectionId) => {
       const sid = sessionIdRef.current;
       if (!sid) throw new Error('No active assistant session for this tab');
-      return client.sendMessage(sid, text);
+      return client.sendMessage(sid, text, connectionId);
     },
     []
   );

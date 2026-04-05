@@ -14,6 +14,7 @@ import {
   getMcpServers,
   setAgentEnabled,
 } from '../../api/client';
+import { assistantClient } from '../../assistant';
 import AgentCard from './AgentCard';
 import AgentFormModal from './AgentFormModal';
 import styles from './AgentsSettings.module.css';
@@ -55,6 +56,7 @@ const WarningIcon = () => (
 const AgentsSettings = () => {
   const [agents, setAgents] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
+  const [providerConnections, setProviderConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -72,12 +74,14 @@ const AgentsSettings = () => {
     setError(null);
 
     try {
-      const [agentsResult, mcpServersResult] = await Promise.all([
+      const [agentsResult, mcpServersResult, providerConnectionsResult] = await Promise.all([
         getAgents(),
         getMcpServers(),
+        assistantClient.listProviderConnections(),
       ]);
       setAgents(agentsResult || []);
       setMcpServers(mcpServersResult || []);
+      setProviderConnections(providerConnectionsResult || []);
     } catch (err) {
       console.error('[AgentsSettings] Failed to fetch data:', err);
       setError('Failed to load agents. Please try again.');
@@ -259,6 +263,7 @@ const AgentsSettings = () => {
         onSubmit={handleFormSubmit}
         agent={editingAgent}
         mcpServers={mcpServers}
+        providerConnections={providerConnections}
       />
     </div>
   );
