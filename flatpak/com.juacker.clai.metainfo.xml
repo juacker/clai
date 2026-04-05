@@ -46,6 +46,9 @@
   </screenshots>
 
   <releases>
+    <release version="2026.4.5" date="2026-04-05">
+      <description><p>Multiple providers support, npm vulnerability fixes, and formatting cleanup.</p></description>
+    </release>
     <release version="2026.4.4" date="2026-04-04">
       <description><p>Agent memory system, web search/fetch tools, run boundary markers, and Fleet chat input.</p></description>
     </release>

@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=CLAI
-Comment=Command Line AI Interface for Netdata
+Comment=Desktop multi-agent orchestration app with MCP-native tools
 Exec=clai
 Icon=com.juacker.clai
 Terminal=false
