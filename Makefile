@@ -47,7 +47,7 @@ release: ## Create a release using today's date as version
 		sed -i 's/"version": "[^"]*"/"version": "$(CALVER)"/' package.json && \
 		sed -i 's/"version": "[^"]*"/"version": "$(CALVER)"/' src-tauri/tauri.conf.json && \
 		sed -i 's/^version = "[^"]*"/version = "$(CALVER)"/' src-tauri/Cargo.toml && \
-		npm install --package-lock-only && \
+		npm install --package-lock-only && npm audit fix && \
 		cd src-tauri && cargo update -p clai && cd .. && \
 		git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json && \
 		git commit -m "Release v$(CALVER)"; \
