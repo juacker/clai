@@ -60,7 +60,7 @@ jobs:
       - name: Create Flatpak
         run: |
           # Initialize flatpak build directory
-          flatpak build-init flatpak-build com.juacker.clai org.gnome.Sdk//48 org.gnome.Platform//48
+          flatpak build-init flatpak-build io.github.juacker.clai org.gnome.Sdk//48 org.gnome.Platform//48
 
           # Copy files into the build
           mkdir -p flatpak-build/files/bin
@@ -70,10 +70,13 @@ jobs:
           mkdir -p flatpak-build/files/share/metainfo
 
           cp usr/bin/clai flatpak-build/files/bin/
-          cp flatpak/com.juacker.clai.desktop flatpak-build/files/share/applications/
-          cp src-tauri/icons/128x128.png flatpak-build/files/share/icons/hicolor/128x128/apps/com.juacker.clai.png
-          cp public/icon.svg flatpak-build/files/share/icons/hicolor/scalable/apps/com.juacker.clai.svg
-          cp flatpak/com.juacker.clai.metainfo.xml flatpak-build/files/share/metainfo/
+          cp flatpak/io.github.juacker.clai.desktop flatpak-build/files/share/applications/
+          cp src-tauri/icons/128x128.png flatpak-build/files/share/icons/hicolor/128x128/apps/io.github.juacker.clai.png
+          cp public/icon.svg flatpak-build/files/share/icons/hicolor/scalable/apps/io.github.juacker.clai.svg
+          cp flatpak/io.github.juacker.clai.metainfo.xml flatpak-build/files/share/metainfo/
+
+          mkdir -p flatpak-build/files/share/licenses/io.github.juacker.clai
+          cp LICENSE flatpak-build/files/share/licenses/io.github.juacker.clai/
 
           # Finalize the build
           flatpak build-finish flatpak-build \
@@ -82,15 +85,13 @@ jobs:
             --share=network \
             --socket=fallback-x11 \
             --socket=wayland \
-            --socket=session-bus \
             --device=dri \
             --filesystem=home \
-            --talk-name=org.freedesktop.Flatpak \
             --talk-name=org.freedesktop.secrets
 
           # Export and bundle
           flatpak build-export repo flatpak-build
-          flatpak build-bundle repo clai.flatpak com.juacker.clai
+          flatpak build-bundle repo clai.flatpak io.github.juacker.clai
 
       - name: Upload to Release
         uses: actions/github-script@v7
