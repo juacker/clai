@@ -318,7 +318,10 @@ async fn validate_provider_connection_ids(
 ) -> Result<(), String> {
     let connections = assistant_repository::list_provider_connections(pool).await?;
     for connection_id in connection_ids {
-        if !connections.iter().any(|connection| connection.id == *connection_id) {
+        if !connections
+            .iter()
+            .any(|connection| connection.id == *connection_id)
+        {
             return Err(format!("Unknown provider connection: {}", connection_id));
         }
     }

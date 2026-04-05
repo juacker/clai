@@ -83,10 +83,16 @@ pub async fn provider_connection_create(
             name: request.name.trim().to_string(),
             provider_id: request.provider_id,
             auth_mode: AuthMode::DeveloperApiKey,
-            base_url: request.base_url.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+            base_url: request
+                .base_url
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty()),
             secret_ref,
             model_id: request.model_id.trim().to_string(),
-            account_label: request.account_label.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+            account_label: request
+                .account_label
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty()),
             enabled: true,
         },
     )
@@ -115,7 +121,12 @@ pub async fn provider_connection_update(
         ));
     }
 
-    if let Some(api_key) = request.api_key.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    if let Some(api_key) = request
+        .api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         ProviderSecretStorage::set_secret(&existing.secret_ref, api_key)
             .map_err(|e| format!("Failed to store provider credential: {}", e))?;
     }
@@ -127,10 +138,16 @@ pub async fn provider_connection_update(
             name: request.name.trim().to_string(),
             provider_id: request.provider_id,
             auth_mode: AuthMode::DeveloperApiKey,
-            base_url: request.base_url.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+            base_url: request
+                .base_url
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty()),
             secret_ref: existing.secret_ref,
             model_id: request.model_id.trim().to_string(),
-            account_label: request.account_label.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+            account_label: request
+                .account_label
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty()),
             enabled: request.enabled,
         },
     )
@@ -151,7 +168,12 @@ pub async fn provider_connection_delete(
         config_manager
             .get_agents()
             .into_iter()
-            .filter(|agent| agent.provider_connection_ids.iter().any(|value| value == &id))
+            .filter(|agent| {
+                agent
+                    .provider_connection_ids
+                    .iter()
+                    .any(|value| value == &id)
+            })
             .map(|agent| agent.name)
             .collect()
     };

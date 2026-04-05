@@ -46,7 +46,7 @@ use crate::assistant::events::{emit_event, AssistantUiEvent};
 use crate::assistant::repository::{self, CreateRunParams, CreateSessionParams};
 use crate::assistant::runtime;
 use crate::assistant::types::{
-    AssistantRun, ContentPart, MessageRole, ProviderConnection, RunTrigger, RunStatus,
+    AssistantRun, ContentPart, MessageRole, ProviderConnection, RunStatus, RunTrigger,
     SessionContext, SessionKind,
 };
 use crate::db::DbPool;
@@ -282,14 +282,9 @@ async fn run_next_agent(
     )
     .await?;
 
-    let result = run_scheduled_agent_with_fallback(
-        app_handle,
-        &pool,
-        &instance_id,
-        &session,
-        &connections,
-    )
-    .await;
+    let result =
+        run_scheduled_agent_with_fallback(app_handle, &pool, &instance_id, &session, &connections)
+            .await;
 
     // Mark agent complete
     let success = match &result {
@@ -556,7 +551,10 @@ async fn resolve_agent_connections(
 
     let mut resolved = Vec::new();
     for connection_id in &agent_config.provider_connection_ids {
-        match all_connections.iter().find(|connection| connection.id == *connection_id) {
+        match all_connections
+            .iter()
+            .find(|connection| connection.id == *connection_id)
+        {
             Some(connection) if connection.enabled => resolved.push(connection.clone()),
             Some(connection) => {
                 tracing::warn!(
@@ -638,8 +636,7 @@ async fn run_scheduled_agent_with_fallback(
             Err(error) => {
                 let error_text = error.to_string();
                 last_error = Some(error_text.clone());
-                let can_fallback =
-                    run_allows_fallback(pool, session.id.as_str(), &run).await?;
+                let can_fallback = run_allows_fallback(pool, session.id.as_str(), &run).await?;
 
                 tracing::warn!(
                     run_id = %run.id,

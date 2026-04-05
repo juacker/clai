@@ -24,7 +24,8 @@ fn get_db_path() -> Result<PathBuf, String> {
 }
 
 fn get_legacy_config_path() -> Result<PathBuf, String> {
-    let config_dir = dirs::config_dir().ok_or_else(|| "Could not find config directory".to_string())?;
+    let config_dir =
+        dirs::config_dir().ok_or_else(|| "Could not find config directory".to_string())?;
     Ok(config_dir.join("clai").join("config.json"))
 }
 
@@ -34,10 +35,20 @@ fn read_legacy_default_model() -> Result<Option<String>, String> {
         return Ok(None);
     }
 
-    let contents = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read legacy config file {}: {}", path.display(), e))?;
-    let json: serde_json::Value = serde_json::from_str(&contents)
-        .map_err(|e| format!("Failed to parse legacy config file {}: {}", path.display(), e))?;
+    let contents = std::fs::read_to_string(&path).map_err(|e| {
+        format!(
+            "Failed to read legacy config file {}: {}",
+            path.display(),
+            e
+        )
+    })?;
+    let json: serde_json::Value = serde_json::from_str(&contents).map_err(|e| {
+        format!(
+            "Failed to parse legacy config file {}: {}",
+            path.display(),
+            e
+        )
+    })?;
 
     Ok(json
         .get("assistant_default_model")
@@ -147,12 +158,11 @@ async fn migrate_provider_connections(pool: &DbPool) -> Result<(), String> {
         return Ok(());
     }
 
-    let existing_connections = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM provider_connections",
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|e| format!("Failed to count provider connections: {}", e))?;
+    let existing_connections =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM provider_connections")
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("Failed to count provider connections: {}", e))?;
 
     if existing_connections > 0 {
         return Ok(());
@@ -300,7 +310,8 @@ async fn migrate_assistant_runs(pool: &DbPool) -> Result<(), String> {
         .await
         .map_err(|e| format!("Failed to create assistant_runs table: {}", e))?;
     } else {
-        let needs_rebuild = !table_references_target(pool, "assistant_runs", "assistant_sessions").await?;
+        let needs_rebuild =
+            !table_references_target(pool, "assistant_runs", "assistant_sessions").await?;
 
         if needs_rebuild {
             sqlx::query("ALTER TABLE assistant_runs RENAME TO assistant_runs_legacy")
@@ -330,16 +341,23 @@ async fn migrate_assistant_runs(pool: &DbPool) -> Result<(), String> {
             .await
             .map_err(|e| format!("Failed to recreate assistant_runs table: {}", e))?;
 
-            let legacy_connection_expr = if column_exists(pool, "assistant_runs_legacy", "connection_id").await? {
+            let legacy_connection_expr = if column_exists(
+                pool,
+                "assistant_runs_legacy",
+                "connection_id",
+            )
+            .await?
+            {
                 "COALESCE(connection_id, (SELECT pc.id FROM provider_connections pc WHERE pc.provider_id = assistant_runs_legacy.provider_id ORDER BY pc.created_at ASC LIMIT 1), '')"
             } else {
                 "COALESCE((SELECT pc.id FROM provider_connections pc WHERE pc.provider_id = assistant_runs_legacy.provider_id ORDER BY pc.created_at ASC LIMIT 1), '')"
             };
-            let legacy_notices_expr = if column_exists(pool, "assistant_runs_legacy", "notices_json").await? {
-                "notices_json"
-            } else {
-                "NULL"
-            };
+            let legacy_notices_expr =
+                if column_exists(pool, "assistant_runs_legacy", "notices_json").await? {
+                    "notices_json"
+                } else {
+                    "NULL"
+                };
 
             let copy_sql = format!(
                 r#"
@@ -515,13 +533,17 @@ async fn migrate_assistant_tool_calls(pool: &DbPool) -> Result<(), String> {
     } else {
         let fk_targets = foreign_key_targets(pool, "assistant_tool_calls").await?;
         let needs_rebuild = !fk_targets.iter().any(|target| target == "assistant_runs")
-            || !fk_targets.iter().any(|target| target == "assistant_sessions");
+            || !fk_targets
+                .iter()
+                .any(|target| target == "assistant_sessions");
 
         if needs_rebuild {
             sqlx::query("ALTER TABLE assistant_tool_calls RENAME TO assistant_tool_calls_legacy")
                 .execute(pool)
                 .await
-                .map_err(|e| format!("Failed to rename legacy assistant_tool_calls table: {}", e))?;
+                .map_err(|e| {
+                    format!("Failed to rename legacy assistant_tool_calls table: {}", e)
+                })?;
 
             sqlx::query(
                 r#"
@@ -855,22 +877,34 @@ mod tests {
         assert!(table_exists(&pool, "assistant_runs").await.unwrap());
         assert!(table_exists(&pool, "assistant_messages").await.unwrap());
         assert!(table_exists(&pool, "assistant_tool_calls").await.unwrap());
-        assert!(!table_exists(&pool, "assistant_sessions_legacy").await.unwrap());
+        assert!(!table_exists(&pool, "assistant_sessions_legacy")
+            .await
+            .unwrap());
         assert!(!table_exists(&pool, "assistant_runs_legacy").await.unwrap());
-        assert!(!table_exists(&pool, "assistant_messages_legacy").await.unwrap());
-        assert!(!table_exists(&pool, "assistant_tool_calls_legacy").await.unwrap());
+        assert!(!table_exists(&pool, "assistant_messages_legacy")
+            .await
+            .unwrap());
+        assert!(!table_exists(&pool, "assistant_tool_calls_legacy")
+            .await
+            .unwrap());
 
-        assert!(table_references_target(&pool, "assistant_runs", "assistant_sessions")
-            .await
-            .unwrap());
-        assert!(table_references_target(&pool, "assistant_messages", "assistant_sessions")
-            .await
-            .unwrap());
+        assert!(
+            table_references_target(&pool, "assistant_runs", "assistant_sessions")
+                .await
+                .unwrap()
+        );
+        assert!(
+            table_references_target(&pool, "assistant_messages", "assistant_sessions")
+                .await
+                .unwrap()
+        );
 
         let tool_call_targets = foreign_key_targets(&pool, "assistant_tool_calls")
             .await
             .unwrap();
-        assert!(tool_call_targets.iter().any(|target| target == "assistant_runs"));
+        assert!(tool_call_targets
+            .iter()
+            .any(|target| target == "assistant_runs"));
         assert!(tool_call_targets
             .iter()
             .any(|target| target == "assistant_sessions"));

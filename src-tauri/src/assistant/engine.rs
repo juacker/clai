@@ -73,9 +73,9 @@ pub async fn run_session_turn(
     // Get or create the run
     let run_id = match &input.run_id {
         Some(id) => {
-            let existing_run = repository::get_run(&deps.pool, id)
-                .await?
-                .ok_or_else(|| AssistantEngineError::Persistence(format!("run not found: {}", id)))?;
+            let existing_run = repository::get_run(&deps.pool, id).await?.ok_or_else(|| {
+                AssistantEngineError::Persistence(format!("run not found: {}", id))
+            })?;
             if existing_run.connection_id != input.connection_id {
                 return Err(AssistantEngineError::RunConnectionMismatch(id.clone()));
             }
