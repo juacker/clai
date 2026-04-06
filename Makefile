@@ -56,13 +56,14 @@ release: ## Create a release using today's date as version
 	git push && git push --tags && \
 	echo "✓ Released v$(CALVER)"
 
-release-retry: ## Retry the current release (recreate tag for v$(VERSION))
+release-retry: ## Retry the current release (recreate tag and delete old GitHub release)
 	@echo "Retrying release v$(VERSION)..."
+	gh release delete "v$(VERSION)" --yes --cleanup-tag 2>/dev/null || true
 	git tag -d "v$(VERSION)" 2>/dev/null || true
-	git push origin ":v$(VERSION)" 2>/dev/null || true
 	git tag "v$(VERSION)"
+	git push origin ":v$(VERSION)" 2>/dev/null || true
 	git push --tags
-	@echo "✓ Tag v$(VERSION) recreated and pushed"
+	@echo "✓ Tag v$(VERSION) recreated and pushed (old release deleted)"
 
 tag-delete: ## Delete a tag locally and remotely (usage: make tag-delete TAG=v0.1.0)
 	@if [ -z "$(TAG)" ]; then echo "Usage: make tag-delete TAG=v0.1.0"; exit 1; fi
