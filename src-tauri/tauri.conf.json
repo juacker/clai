@@ -14,7 +14,8 @@
       {
         "title": "CLAI",
         "width": 1280,
-        "height": 800
+        "height": 800,
+        "useHttpsScheme": false
       }
     ],
     "security": {
