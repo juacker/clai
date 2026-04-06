@@ -55,12 +55,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak
           sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak install -y flathub org.gnome.Platform//48 org.gnome.Sdk//48
+          sudo flatpak install -y flathub org.gnome.Platform//49 org.gnome.Sdk//49
 
       - name: Create Flatpak
         run: |
           # Initialize flatpak build directory
-          flatpak build-init flatpak-build io.github.juacker.clai org.gnome.Sdk//48 org.gnome.Platform//48
+          flatpak build-init flatpak-build io.github.juacker.clai org.gnome.Sdk//49 org.gnome.Platform//49
 
           # Copy files into the build
           mkdir -p flatpak-build/files/bin
