@@ -53,7 +53,7 @@ jobs:
       - name: Install Flatpak tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y flatpak
           sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           sudo flatpak install -y flathub org.gnome.Platform//48 org.gnome.Sdk//48
 
@@ -68,14 +68,13 @@ jobs:
           mkdir -p flatpak-build/files/share/icons/hicolor/128x128/apps
           mkdir -p flatpak-build/files/share/icons/hicolor/scalable/apps
           mkdir -p flatpak-build/files/share/metainfo
+          mkdir -p flatpak-build/files/share/licenses/io.github.juacker.clai
 
           cp usr/bin/clai flatpak-build/files/bin/
           cp flatpak/io.github.juacker.clai.desktop flatpak-build/files/share/applications/
           cp src-tauri/icons/128x128.png flatpak-build/files/share/icons/hicolor/128x128/apps/io.github.juacker.clai.png
           cp public/icon.svg flatpak-build/files/share/icons/hicolor/scalable/apps/io.github.juacker.clai.svg
           cp flatpak/io.github.juacker.clai.metainfo.xml flatpak-build/files/share/metainfo/
-
-          mkdir -p flatpak-build/files/share/licenses/io.github.juacker.clai
           cp LICENSE flatpak-build/files/share/licenses/io.github.juacker.clai/
 
           # Finalize the build

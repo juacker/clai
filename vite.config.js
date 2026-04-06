@@ -5,8 +5,19 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // Strip crossorigin attribute from scripts/links for WebKitGTK compatibility in Flatpak
+    {
+      name: "strip-crossorigin",
+      transformIndexHtml(html) {
+        return html.replace(/ crossorigin/g, "");
+      },
+    },
+  ],
   build: {
+    // Target Safari 15 to ensure compatibility with WebKitGTK in Flatpak runtimes
+    target: ["es2021", "safari15"],
     rollupOptions: {
       output: {
         manualChunks(id) {
