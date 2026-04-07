@@ -90,10 +90,7 @@ impl ProviderAdapter for AnthropicAdapter {
             .iter()
             .filter_map(|m| {
                 let id = m["id"].as_str()?.to_string();
-                let display_name = m["display_name"]
-                    .as_str()
-                    .unwrap_or(&id)
-                    .to_string();
+                let display_name = m["display_name"].as_str().unwrap_or(&id).to_string();
                 Some(ModelInfo {
                     id,
                     display_name,
@@ -227,9 +224,7 @@ fn build_request_body(request: &CompletionRequest) -> serde_json::Value {
 }
 
 /// Build a single Anthropic message. Tool results become role: "user" with tool_result content.
-fn build_message(
-    msg: &crate::assistant::types::ProviderInputMessage,
-) -> Option<serde_json::Value> {
+fn build_message(msg: &crate::assistant::types::ProviderInputMessage) -> Option<serde_json::Value> {
     match msg.role {
         MessageRole::System => None, // handled separately
         MessageRole::User => {
@@ -353,11 +348,8 @@ fn sse_to_provider_events(
                 let frame = state.buf[..pos].to_string();
                 state.buf = state.buf[pos + 2..].to_string();
 
-                let events = parse_sse_frame(
-                    &frame,
-                    &mut state.emitted_start,
-                    &mut state.tool_calls,
-                );
+                let events =
+                    parse_sse_frame(&frame, &mut state.emitted_start, &mut state.tool_calls);
                 if !events.is_empty() {
                     return Some((events, state));
                 }
@@ -510,8 +502,8 @@ fn parse_sse_frame(
             let index = json.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
             if index < tool_calls.len() && !tool_calls[index].id.is_empty() {
                 let tc = &tool_calls[index];
-                let params = serde_json::from_str::<serde_json::Value>(&tc.arguments)
-                    .unwrap_or(json!({}));
+                let params =
+                    serde_json::from_str::<serde_json::Value>(&tc.arguments).unwrap_or(json!({}));
                 events.push(Ok(ProviderEvent::ToolCallReady {
                     tool_call: ToolInvocationDraft {
                         tool_call_id: tc.id.clone(),
@@ -550,12 +542,8 @@ fn parse_sse_frame(
 
 fn parse_usage(usage_obj: &serde_json::Value) -> RunUsage {
     RunUsage {
-        input_tokens: usage_obj
-            .get("input_tokens")
-            .and_then(|v| v.as_u64()),
-        output_tokens: usage_obj
-            .get("output_tokens")
-            .and_then(|v| v.as_u64()),
+        input_tokens: usage_obj.get("input_tokens").and_then(|v| v.as_u64()),
+        output_tokens: usage_obj.get("output_tokens").and_then(|v| v.as_u64()),
         reasoning_tokens: None,
         total_tokens: None,
     }
