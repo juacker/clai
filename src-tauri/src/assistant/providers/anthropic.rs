@@ -316,7 +316,6 @@ fn text_content_parts(content: &[ContentPart]) -> Vec<serde_json::Value> {
 ///   event: message_delta
 ///   event: message_stop
 ///   event: ping
-
 struct SseState {
     stream: Pin<Box<dyn Stream<Item = reqwest::Result<Bytes>> + Send>>,
     buf: String,
