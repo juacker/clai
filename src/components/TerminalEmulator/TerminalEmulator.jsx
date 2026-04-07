@@ -7,6 +7,7 @@ import TabContext from '../../contexts/TabContext';
 import { parseCommand, isLayoutCommand } from '../../utils/commandParser';
 import { handleContextCommand, isContextCommand } from '../../utils/contextCommandHandler';
 import { isCommandSupported } from '../../utils/commandRegistry';
+import { useAssistantStore } from '../../assistant';
 import { createWorkspace } from '../../workspace/client';
 import WorkspaceContextBar from '../../workspace/components/WorkspaceContextBar';
 import ContextPanel from '../ContextPanel/ContextPanel';
@@ -42,9 +43,21 @@ const TerminalEmulator = ({ onSendToChat }) => {
   const currentWorkspaceId = workspaceRouteMatch ? decodeURIComponent(workspaceRouteMatch[1]) : null;
   // Hide ContextPanel on Fleet and workspace routes (workspace has its own context bar)
   const hideContextPanel = isFleetRoute || isWorkspaceRoute;
-  // Disable chat toggle on Fleet and workspace routes
-  // (general workspaces embed chat; agent workspaces use Ctrl+Shift+C)
-  const isDedicatedWorkspaceRoute = isFleetRoute || isWorkspaceRoute;
+
+  // Derive whether the current workspace is an agent workspace from the store.
+  // Agent sessions use kind='background_job'; general workspaces use 'interactive'.
+  const workspaceTabKey = currentWorkspaceId ? `workspace:${currentWorkspaceId}` : null;
+  const workspaceSessionId = useAssistantStore(
+    (state) => workspaceTabKey ? state.activeSessionByTab[workspaceTabKey] : null
+  );
+  const workspaceSessionKind = useAssistantStore(
+    (state) => workspaceSessionId ? state.sessions[workspaceSessionId]?.session?.kind : null
+  );
+  const isAgentWorkspace = isWorkspaceRoute && workspaceSessionKind === 'background_job';
+
+  // Chat toggle button is disabled on Fleet and general workspace routes
+  // (general workspaces embed chat directly). Agent workspaces enable it.
+  const chatToggleDisabled = isFleetRoute || (isWorkspaceRoute && !isAgentWorkspace);
 
   // Maximum number of messages to keep
   const MAX_MESSAGES = 5;
@@ -417,13 +430,13 @@ const TerminalEmulator = ({ onSendToChat }) => {
 
         {/* Keyboard shortcut badge for toggling chat */}
         <button
-          className={`${styles.shortcutBadge} ${isDedicatedWorkspaceRoute ? styles.shortcutBadgeDisabled : ''}`}
+          className={`${styles.shortcutBadge} ${chatToggleDisabled ? styles.shortcutBadgeDisabled : ''}`}
           onClick={(e) => {
             e.stopPropagation();
-            if (!isDedicatedWorkspaceRoute) toggleChat();
+            if (!chatToggleDisabled) toggleChat();
           }}
-          disabled={isDedicatedWorkspaceRoute}
-          title={isDedicatedWorkspaceRoute ? 'Chat panel is not available in this view' : 'Toggle chat panel'}
+          disabled={chatToggleDisabled}
+          title={chatToggleDisabled ? 'Chat panel is not available in this view' : 'Toggle chat panel'}
         >
           <span className={styles.shortcutKey}>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}</span>
           <span className={styles.shortcutKey}>⇧</span>

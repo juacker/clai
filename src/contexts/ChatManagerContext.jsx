@@ -149,7 +149,7 @@ export const ChatManagerProvider = ({ children }) => {
     closeChat,
     isCurrentChatOpen,
     getPanelState,
-    clearAllChats
+    clearAllChats,
   ]);
 
   return (
