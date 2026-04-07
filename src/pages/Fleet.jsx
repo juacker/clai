@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFleet } from '../contexts/FleetContext';
-import { useTabManager } from '../contexts/TabManagerContext';
 import { useChatManager } from '../contexts/ChatManagerContext';
 import { assistantClient, useAssistantStore } from '../assistant';
 import { createAgent, updateAgent, getMcpServers, setAgentEnabled } from '../api/client';
 import { fleetRunNow } from '../fleet/client';
+import { listWorkspaces, deleteWorkspace } from '../workspace/client';
 import ChatMessageList, { NoticesBanner } from '../components/AssistantChat/ChatMessageList';
 import MarkdownMessage from '../components/Chat/MarkdownMessage';
 import AgentFormModal from '../components/Settings/AgentFormModal';
@@ -133,6 +133,7 @@ const Fleet = () => {
   const [editingAgent, setEditingAgent] = useState(null);
   const [mcpServers, setMcpServers] = useState([]);
   const [providerConnections, setProviderConnections] = useState([]);
+  const [generalWorkspaces, setGeneralWorkspaces] = useState([]);
   const {
     summary,
     agents,
@@ -143,7 +144,6 @@ const Fleet = () => {
     error,
     refresh,
   } = useFleet();
-  const { tabs, switchToTab, createTab, updateTabContext } = useTabManager();
   const { closeChat, isCurrentChatOpen } = useChatManager();
 
   // Close the sidebar chat when entering Fleet
@@ -152,6 +152,20 @@ const Fleet = () => {
       closeChat();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load general workspaces
+  const loadWorkspaces = useCallback(async () => {
+    try {
+      const all = await listWorkspaces();
+      setGeneralWorkspaces(all.filter((w) => w.kind !== 'agent'));
+    } catch {
+      setGeneralWorkspaces([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWorkspaces();
+  }, [loadWorkspaces]);
   const sessionState = useAssistantStore((state) =>
     selectedAgent?.sessionId ? state.sessions[selectedAgent.sessionId] : null
   );
@@ -198,30 +212,8 @@ const Fleet = () => {
 
   const handleOpenWorkspace = useCallback(() => {
     if (!selectedAgent) return;
-
-    // Try existing tab first
-    const tabExists = selectedAgent.tabId && tabs.some((tab) => tab.id === selectedAgent.tabId);
-    if (tabExists) {
-      switchToTab(selectedAgent.tabId);
-      navigate('/', { state: { skipFleetRedirect: true } });
-      return;
-    }
-
-    // Recreate the agent workspace tab
-    const newTab = createTab(`🤖 ${selectedAgent.name}`);
-    updateTabContext(newTab.id, {
-      mcpServers: {
-        attachedServerIds: selectedAgent.selectedMcpServerIds || [],
-        disabledServerIds: [],
-      },
-      agent: {
-        agentId: selectedAgent.agentId,
-        agentName: selectedAgent.name,
-      },
-    });
-    switchToTab(newTab.id);
-    navigate('/', { state: { skipFleetRedirect: true } });
-  }, [selectedAgent, tabs, switchToTab, createTab, updateTabContext, navigate]);
+    navigate(`/workspace/${selectedAgent.agentId}`);
+  }, [selectedAgent, navigate]);
 
   const handleToggleEnabled = useCallback(async (agentId, currentlyEnabled) => {
     try {
@@ -405,6 +397,51 @@ const Fleet = () => {
                 + New Agent
               </button>
             </div>
+          )}
+
+          {generalWorkspaces.length > 0 && (
+            <>
+              <div className={styles.sectionDivider}>
+                <span className={styles.sectionDividerLabel}>Past Workspaces</span>
+                <span className={styles.sectionDividerCount}>{generalWorkspaces.length}</span>
+              </div>
+              {generalWorkspaces.map((ws) => (
+                <div
+                  key={ws.id}
+                  className={styles.workspaceCard}
+                  onClick={() => navigate(`/workspace/${ws.id}`)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/workspace/${ws.id}`); }}
+                >
+                  <div className={styles.cardHeader}>
+                    <div className={styles.cardTitleBlock}>
+                      <span className={styles.cardTitle}>{ws.title}</span>
+                      <span className={styles.workspaceBadge}>Workspace</span>
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.deleteBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteWorkspace(ws.id).then(() => loadWorkspaces());
+                      }}
+                      title="Delete workspace"
+                    >
+                      {'\u2715'}
+                    </button>
+                  </div>
+                  <div className={styles.metaGrid}>
+                    <span>{ws.messageCount} msgs</span>
+                    <span>{ws.artifactCount} artifacts</span>
+                    <span>{ws.memoryCount} memories</span>
+                  </div>
+                  <div className={styles.workspaceTime}>
+                    {formatTimestamp(ws.updatedAt || ws.createdAt)}
+                  </div>
+                </div>
+              ))}
+            </>
           )}
         </div>
 

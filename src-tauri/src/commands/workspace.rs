@@ -3,9 +3,18 @@
 //! These commands handle saving and loading the workspace state
 //! (tabs, commands, layout) to/from SQLite.
 
+use crate::assistant::repository;
+use crate::assistant::tools::local::agent_workspace_root_for_id;
+use crate::assistant::types::{
+    AssistantMessage, AssistantRun, AssistantSession, SessionContext, SessionKind, ToolInvocation,
+};
+use crate::config::{AgentConfig, ExecutionCapabilityConfig};
 use crate::db::DbPool;
+use crate::AppState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Component, Path, PathBuf};
 use tauri::State;
 
 /// Tab context payload.
@@ -67,6 +76,119 @@ pub struct WorkspaceState {
     pub commands: HashMap<String, Command>,
 }
 
+const DEFAULT_WORKSPACE_ID: &str = "default";
+const MAX_ENTRY_COUNT: usize = 500;
+const MAX_PREVIEW_CHARS: usize = 280;
+const MAX_FILE_CONTENT_BYTES: usize = 200_000;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceFileEntry {
+    pub path: String,
+    pub relative_path: String,
+    pub name: String,
+    pub viewer: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSnapshot {
+    pub workspace_id: String,
+    pub kind: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_path: Option<String>,
+    #[serde(default)]
+    pub provider_connection_ids: Vec<String>,
+    #[serde(default)]
+    pub provider_connection_names: Vec<String>,
+    #[serde(default)]
+    pub selected_mcp_server_ids: Vec<String>,
+    #[serde(default)]
+    pub selected_mcp_server_names: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session: Option<AssistantSession>,
+    #[serde(default)]
+    pub messages: Vec<AssistantMessage>,
+    #[serde(default)]
+    pub runs: Vec<AssistantRun>,
+    #[serde(default)]
+    pub tool_calls: Vec<ToolInvocation>,
+    #[serde(default)]
+    pub memories: Vec<WorkspaceFileEntry>,
+    #[serde(default)]
+    pub artifacts: Vec<WorkspaceFileEntry>,
+    // Agent schedule info (only for agent workspaces)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interval_minutes: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_run_in_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSessionBinding {
+    pub session: AssistantSession,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_connection_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceFileContent {
+    pub path: String,
+    pub viewer: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceReadFileRequest {
+    pub workspace_id: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDownloadRequest {
+    pub workspace_id: String,
+    pub path: String,
+    pub destination: String,
+}
+
+#[derive(Debug, Clone)]
+struct WorkspaceDescriptor {
+    workspace_id: String,
+    kind: String,
+    title: String,
+    agent_id: Option<String>,
+    root_path: Option<PathBuf>,
+    provider_connection_ids: Vec<String>,
+    selected_mcp_server_ids: Vec<String>,
+    selected_mcp_server_names: Vec<String>,
+    execution: ExecutionCapabilityConfig,
+    tool_scopes: Vec<String>,
+    automation_name: Option<String>,
+    automation_description: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct WorkspaceProviderSelection {
+    ids: Vec<String>,
+    names: Vec<String>,
+    preferred_connection_id: Option<String>,
+}
+
 // Type aliases for SQLite query results to satisfy clippy::type_complexity
 type TabRow = (String, String, String, String, Option<i64>, i64, i64);
 type CommandRow = (
@@ -79,6 +201,419 @@ type CommandRow = (
     i64,
     i64,
 );
+
+fn normalize_workspace_id(workspace_id: Option<String>) -> String {
+    workspace_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_WORKSPACE_ID.to_string())
+}
+
+fn normalize_path(path: PathBuf) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(Path::new(std::path::MAIN_SEPARATOR_STR)),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+    normalized
+}
+
+fn viewer_for_path(path: &Path) -> String {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if ext == "canvas" {
+        return "canvas".to_string();
+    }
+
+    if ext == "md" || ext == "markdown" {
+        return "markdown".to_string();
+    }
+
+    if ext == "json" || file_name.ends_with(".dashboard.json") {
+        return "json".to_string();
+    }
+
+    "text".to_string()
+}
+
+fn read_text_preview(path: &Path, max_bytes: usize, max_chars: usize) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    let bytes = if bytes.len() > max_bytes {
+        &bytes[..max_bytes]
+    } else {
+        &bytes[..]
+    };
+    let text = String::from_utf8(bytes.to_vec()).ok()?;
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut preview: String = trimmed.chars().take(max_chars).collect();
+    if trimmed.chars().count() > max_chars {
+        preview.push('…');
+    }
+    Some(preview)
+}
+
+fn file_updated_at(metadata: &fs::Metadata) -> Option<i64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|value| value.as_millis() as i64)
+}
+
+fn build_file_entry(root: &Path, path: &Path) -> Option<WorkspaceFileEntry> {
+    let metadata = fs::metadata(path).ok()?;
+    if !metadata.is_file() {
+        return None;
+    }
+
+    let relative_path = path.strip_prefix(root).ok()?.to_string_lossy().to_string();
+    Some(WorkspaceFileEntry {
+        path: relative_path.clone(),
+        relative_path,
+        name: path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .to_string(),
+        viewer: viewer_for_path(path),
+        size: Some(metadata.len()),
+        updated_at: file_updated_at(&metadata),
+        preview: read_text_preview(path, 2048, MAX_PREVIEW_CHARS),
+    })
+}
+
+fn collect_files(
+    current: &Path,
+    root: &Path,
+    entries: &mut Vec<WorkspaceFileEntry>,
+    skip_clai: bool,
+) -> Result<(), String> {
+    if entries.len() >= MAX_ENTRY_COUNT {
+        return Ok(());
+    }
+
+    let read_dir = match fs::read_dir(current) {
+        Ok(value) => value,
+        Err(error) => return Err(format!("Failed to read {}: {}", current.display(), error)),
+    };
+
+    for entry in read_dir {
+        if entries.len() >= MAX_ENTRY_COUNT {
+            break;
+        }
+
+        let entry =
+            entry.map_err(|error| format!("Failed to inspect directory entry: {}", error))?;
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("Failed to inspect {}: {}", path.display(), error))?;
+
+        if file_type.is_dir() {
+            if skip_clai && path.file_name().and_then(|value| value.to_str()) == Some(".clai") {
+                continue;
+            }
+            collect_files(&path, root, entries, skip_clai)?;
+            continue;
+        }
+
+        if let Some(file) = build_file_entry(root, &path) {
+            entries.push(file);
+        }
+    }
+
+    Ok(())
+}
+
+fn ensure_agent_workspace_root(root: &Path) -> Result<(), String> {
+    let memory_root = root.join(".clai").join("memory").join("journal");
+    fs::create_dir_all(&memory_root).map_err(|error| {
+        format!(
+            "Failed to prepare agent workspace {}: {}",
+            root.display(),
+            error
+        )
+    })
+}
+
+fn resolve_workspace_descriptor(
+    state: &AppState,
+    workspace_id: Option<String>,
+) -> Result<WorkspaceDescriptor, String> {
+    let workspace_id = normalize_workspace_id(workspace_id);
+
+    // Legacy "default" workspace — treat as a general workspace with no root
+    if workspace_id == DEFAULT_WORKSPACE_ID {
+        return Ok(WorkspaceDescriptor {
+            workspace_id,
+            kind: "generic".to_string(),
+            title: "General".to_string(),
+            agent_id: None,
+            root_path: None,
+            provider_connection_ids: Vec::new(),
+            selected_mcp_server_ids: Vec::new(),
+            selected_mcp_server_names: Vec::new(),
+            execution: ExecutionCapabilityConfig::default(),
+            tool_scopes: Vec::new(),
+            automation_name: None,
+            automation_description: None,
+        });
+    }
+
+    // Try agent config first
+    let config_manager = state
+        .config_manager
+        .lock()
+        .map_err(|error| format!("Lock error: {}", error))?;
+
+    if let Some(agent) = config_manager.get_agent(&workspace_id) {
+        let mcp_servers = config_manager.get_mcp_servers();
+        let selected_mcp_server_names = agent
+            .selected_mcp_server_ids
+            .iter()
+            .filter_map(|id| {
+                mcp_servers
+                    .iter()
+                    .find(|server| server.id == *id)
+                    .map(|server| server.name.clone())
+            })
+            .collect();
+        drop(config_manager);
+        return workspace_descriptor_from_agent(agent, selected_mcp_server_names);
+    }
+
+    drop(config_manager);
+
+    // Not an agent — treat as a general workspace with a filesystem root.
+    // The workspace may or may not have a row in the `workspaces` table yet
+    // (the row is created by workspace_create, but the descriptor works
+    // regardless so that workspace_get_snapshot and other commands can
+    // function for any UUID-shaped workspace ID).
+    let root_path = agent_workspace_root_for_id(&workspace_id)
+        .ok_or_else(|| format!("Could not resolve workspace root for {}", workspace_id))?;
+
+    let mut execution = ExecutionCapabilityConfig::default();
+    execution.web.enabled = true;
+
+    Ok(WorkspaceDescriptor {
+        workspace_id,
+        kind: "general".to_string(),
+        title: "Workspace".to_string(),
+        agent_id: None,
+        root_path: Some(root_path),
+        provider_connection_ids: Vec::new(),
+        selected_mcp_server_ids: Vec::new(),
+        selected_mcp_server_names: Vec::new(),
+        execution,
+        tool_scopes: vec!["fs".to_string(), "web".to_string()],
+        automation_name: None,
+        automation_description: None,
+    })
+}
+
+// Unreachable after the refactor above, but kept for reference during migration.
+// The original flow that only handled agents:
+#[allow(dead_code)]
+fn resolve_workspace_descriptor_agent_only(
+    state: &AppState,
+    workspace_id: &str,
+) -> Result<WorkspaceDescriptor, String> {
+    let config_manager = state
+        .config_manager
+        .lock()
+        .map_err(|error| format!("Lock error: {}", error))?;
+    let agent = config_manager
+        .get_agent(workspace_id)
+        .ok_or_else(|| format!("Workspace not found: {}", workspace_id))?;
+    let mcp_servers = config_manager.get_mcp_servers();
+    let selected_mcp_server_names = agent
+        .selected_mcp_server_ids
+        .iter()
+        .filter_map(|id| {
+            mcp_servers
+                .iter()
+                .find(|server| server.id == *id)
+                .map(|server| server.name.clone())
+        })
+        .collect();
+
+    workspace_descriptor_from_agent(agent, selected_mcp_server_names)
+}
+
+async fn resolve_workspace_provider_selection(
+    pool: &DbPool,
+    descriptor: &WorkspaceDescriptor,
+) -> Result<WorkspaceProviderSelection, String> {
+    let connections = repository::list_provider_connections(pool).await?;
+    let enabled_connections: Vec<_> = connections
+        .into_iter()
+        .filter(|connection| connection.enabled)
+        .collect();
+
+    if descriptor.agent_id.is_some() {
+        let filtered: Vec<_> = enabled_connections
+            .into_iter()
+            .filter(|connection| descriptor.provider_connection_ids.contains(&connection.id))
+            .collect();
+
+        return Ok(WorkspaceProviderSelection {
+            ids: filtered
+                .iter()
+                .map(|connection| connection.id.clone())
+                .collect(),
+            names: filtered
+                .iter()
+                .map(|connection| connection.name.clone())
+                .collect(),
+            preferred_connection_id: filtered.first().map(|connection| connection.id.clone()),
+        });
+    }
+
+    // Check for a user-selected preferred provider in the workspaces table
+    let preferred: Option<String> = sqlx::query_scalar(
+        "SELECT preferred_provider_connection_id FROM workspaces WHERE id = ? LIMIT 1",
+    )
+    .bind(&descriptor.workspace_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("Failed to check workspace provider preference: {}", e))?
+    .flatten();
+
+    let preferred_connection_id = preferred
+        .filter(|id| enabled_connections.iter().any(|c| c.id == *id))
+        .or_else(|| enabled_connections.first().map(|c| c.id.clone()));
+
+    Ok(WorkspaceProviderSelection {
+        ids: enabled_connections
+            .iter()
+            .map(|connection| connection.id.clone())
+            .collect(),
+        names: enabled_connections
+            .iter()
+            .map(|connection| connection.name.clone())
+            .collect(),
+        preferred_connection_id,
+    })
+}
+
+fn workspace_descriptor_from_agent(
+    agent: AgentConfig,
+    selected_mcp_server_names: Vec<String>,
+) -> Result<WorkspaceDescriptor, String> {
+    let root_path = agent_workspace_root_for_id(&agent.id)
+        .ok_or_else(|| format!("Could not resolve workspace root for agent {}", agent.id))?;
+
+    Ok(WorkspaceDescriptor {
+        workspace_id: agent.id.clone(),
+        kind: "agent".to_string(),
+        title: agent.name.clone(),
+        agent_id: Some(agent.id.clone()),
+        root_path: Some(root_path),
+        provider_connection_ids: agent.provider_connection_ids.clone(),
+        selected_mcp_server_ids: agent.selected_mcp_server_ids.clone(),
+        selected_mcp_server_names,
+        execution: agent.execution.clone(),
+        tool_scopes: agent
+            .required_tools()
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        automation_name: Some(agent.name),
+        automation_description: Some(agent.description),
+    })
+}
+
+async fn find_workspace_session(
+    pool: &DbPool,
+    descriptor: &WorkspaceDescriptor,
+) -> Result<Option<AssistantSession>, String> {
+    let sessions = repository::list_sessions(pool, None).await?;
+
+    Ok(sessions
+        .into_iter()
+        .filter(|session| {
+            session.context.workspace_id.as_deref() == Some(descriptor.workspace_id.as_str())
+                || descriptor
+                    .agent_id
+                    .as_deref()
+                    .map(|agent_id| {
+                        session.context.agent_workspace_id.as_deref() == Some(agent_id)
+                            || session.context.automation_id.as_deref() == Some(agent_id)
+                    })
+                    .unwrap_or(false)
+        })
+        .max_by_key(|session| session.updated_at))
+}
+
+fn desired_workspace_context(
+    descriptor: &WorkspaceDescriptor,
+    existing_session: Option<&AssistantSession>,
+) -> SessionContext {
+    // For general workspaces, MCP servers are user-managed on the session itself
+    // (via workspace_update_session_mcp), so preserve the existing session's MCP
+    // config instead of overwriting from the descriptor (which has empty defaults).
+    let mcp_server_ids = if descriptor.agent_id.is_some() {
+        // Agent workspaces: MCP comes from agent config (descriptor)
+        descriptor.selected_mcp_server_ids.clone()
+    } else if let Some(session) = existing_session {
+        // General workspaces: preserve session's MCP config
+        session.context.mcp_server_ids.clone()
+    } else {
+        descriptor.selected_mcp_server_ids.clone()
+    };
+
+    SessionContext {
+        space_id: existing_session.and_then(|session| session.context.space_id.clone()),
+        room_id: existing_session.and_then(|session| session.context.room_id.clone()),
+        workspace_id: Some(descriptor.workspace_id.clone()),
+        tab_id: existing_session.and_then(|session| session.tab_id.clone()),
+        tool_scopes: descriptor.tool_scopes.clone(),
+        mcp_server_ids,
+        execution: descriptor.execution.clone(),
+        netdata_conversation_id: existing_session
+            .and_then(|session| session.context.netdata_conversation_id.clone()),
+        automation_id: descriptor.agent_id.clone(),
+        agent_workspace_id: descriptor.agent_id.clone(),
+        automation_name: descriptor.automation_name.clone(),
+        automation_description: descriptor.automation_description.clone(),
+    }
+}
+
+fn resolve_workspace_file_path(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
+    let candidate = normalize_path(root.join(relative_path));
+    if !candidate.starts_with(root) {
+        return Err(format!(
+            "Path {} is outside the workspace root",
+            candidate.display()
+        ));
+    }
+    if !candidate.exists() {
+        return Err(format!("File not found: {}", candidate.display()));
+    }
+    if !candidate.is_file() {
+        return Err(format!("Not a file: {}", candidate.display()));
+    }
+    Ok(candidate)
+}
 
 /// Load workspace state from SQLite
 #[tauri::command]
@@ -326,4 +861,543 @@ pub async fn save_workspace_state(
 
     tracing::debug!("Workspace state saved successfully");
     Ok(())
+}
+
+#[tauri::command]
+pub async fn workspace_get_snapshot(
+    workspace_id: Option<String>,
+    state: State<'_, AppState>,
+    pool: State<'_, DbPool>,
+) -> Result<WorkspaceSnapshot, String> {
+    let descriptor = resolve_workspace_descriptor(state.inner(), workspace_id)?;
+    if let Some(root_path) = &descriptor.root_path {
+        ensure_agent_workspace_root(root_path)?;
+    }
+
+    let provider_selection =
+        resolve_workspace_provider_selection(pool.inner(), &descriptor).await?;
+
+    let session = find_workspace_session(pool.inner(), &descriptor).await?;
+    let (messages, runs, tool_calls) = if let Some(session) = &session {
+        (
+            repository::list_messages(pool.inner(), &session.id).await?,
+            repository::list_runs(pool.inner(), &session.id).await?,
+            repository::list_tool_calls(pool.inner(), &session.id, None).await?,
+        )
+    } else {
+        (Vec::new(), Vec::new(), Vec::new())
+    };
+
+    let (memories, artifacts) = if let Some(root_path) = &descriptor.root_path {
+        let memory_root = root_path.join(".clai").join("memory");
+        let mut memories = Vec::new();
+        if memory_root.exists() {
+            collect_files(&memory_root, root_path, &mut memories, false)?;
+        }
+
+        let mut artifacts = Vec::new();
+        collect_files(root_path, root_path, &mut artifacts, true)?;
+        (memories, artifacts)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+
+    // Resolve agent schedule info from config + scheduler
+    let (enabled, interval_minutes, next_run_in_seconds) =
+        if let Some(ref agent_id) = descriptor.agent_id {
+            let agent_enabled = {
+                let config = state
+                    .config_manager
+                    .lock()
+                    .map_err(|e| format!("Lock error: {}", e))?;
+                config
+                    .get_agent(agent_id)
+                    .map(|a| (a.enabled, a.interval_minutes))
+            };
+            let next_run = {
+                let scheduler = state.scheduler.lock().await;
+                let mut found = None;
+                for inst in scheduler.all_instances() {
+                    if inst.agent_id == *agent_id {
+                        found = Some(inst.seconds_until_next_run());
+                        break;
+                    }
+                }
+                found
+            };
+            match agent_enabled {
+                Some((en, interval)) => (Some(en), Some(interval), next_run),
+                None => (None, None, None),
+            }
+        } else {
+            (None, None, None)
+        };
+
+    Ok(WorkspaceSnapshot {
+        workspace_id: descriptor.workspace_id,
+        kind: descriptor.kind,
+        title: descriptor.title,
+        agent_id: descriptor.agent_id,
+        root_path: descriptor.root_path.map(|path| path.display().to_string()),
+        provider_connection_ids: provider_selection.ids,
+        provider_connection_names: provider_selection.names,
+        selected_mcp_server_ids: descriptor.selected_mcp_server_ids,
+        selected_mcp_server_names: descriptor.selected_mcp_server_names,
+        session,
+        messages,
+        runs,
+        tool_calls,
+        memories,
+        artifacts,
+        enabled,
+        interval_minutes,
+        next_run_in_seconds,
+    })
+}
+
+#[tauri::command]
+pub async fn workspace_get_or_create_session(
+    workspace_id: Option<String>,
+    state: State<'_, AppState>,
+    pool: State<'_, DbPool>,
+) -> Result<WorkspaceSessionBinding, String> {
+    let descriptor = resolve_workspace_descriptor(state.inner(), workspace_id)?;
+    if let Some(root_path) = &descriptor.root_path {
+        ensure_agent_workspace_root(root_path)?;
+    }
+
+    let provider_selection =
+        resolve_workspace_provider_selection(pool.inner(), &descriptor).await?;
+    let provider_connection_id = provider_selection.preferred_connection_id;
+    let existing = find_workspace_session(pool.inner(), &descriptor).await?;
+    let session = if let Some(existing) = existing {
+        let desired_context = desired_workspace_context(&descriptor, Some(&existing));
+        if existing.title.as_deref() != Some(descriptor.title.as_str())
+            || existing.context != desired_context
+        {
+            let mut updated = existing;
+            updated.title = Some(descriptor.title.clone());
+            updated.context = desired_context;
+            updated.updated_at = chrono::Utc::now().timestamp_millis();
+            repository::update_session(pool.inner(), &updated).await?
+        } else {
+            existing
+        }
+    } else {
+        repository::create_session(
+            pool.inner(),
+            repository::CreateSessionParams {
+                tab_id: None,
+                kind: if descriptor.agent_id.is_some() {
+                    SessionKind::BackgroundJob
+                } else {
+                    SessionKind::Interactive
+                },
+                title: Some(descriptor.title.clone()),
+                context: desired_workspace_context(&descriptor, None),
+            },
+        )
+        .await?
+    };
+
+    Ok(WorkspaceSessionBinding {
+        session,
+        provider_connection_id,
+    })
+}
+
+#[tauri::command]
+pub async fn workspace_read_file(
+    request: WorkspaceReadFileRequest,
+    state: State<'_, AppState>,
+) -> Result<WorkspaceFileContent, String> {
+    let descriptor =
+        resolve_workspace_descriptor(state.inner(), Some(request.workspace_id.clone()))?;
+    let root_path = descriptor
+        .root_path
+        .ok_or_else(|| "This workspace does not expose a filesystem root".to_string())?;
+
+    ensure_agent_workspace_root(&root_path)?;
+    let resolved = resolve_workspace_file_path(&root_path, &request.path)?;
+    let bytes = fs::read(&resolved)
+        .map_err(|error| format!("Failed to read {}: {}", resolved.display(), error))?;
+    let bytes = if bytes.len() > MAX_FILE_CONTENT_BYTES {
+        &bytes[..MAX_FILE_CONTENT_BYTES]
+    } else {
+        &bytes[..]
+    };
+    let content = String::from_utf8(bytes.to_vec())
+        .map_err(|_| format!("{} does not contain UTF-8 text", resolved.display()))?;
+
+    Ok(WorkspaceFileContent {
+        path: request.path,
+        viewer: viewer_for_path(&resolved),
+        content,
+    })
+}
+
+/// Copy a workspace file to a destination path chosen by the user.
+///
+/// The frontend is responsible for showing a save dialog via `@tauri-apps/plugin-dialog`
+/// and passing the chosen path here.
+#[tauri::command]
+pub async fn workspace_download_file(
+    request: WorkspaceDownloadRequest,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let descriptor =
+        resolve_workspace_descriptor(state.inner(), Some(request.workspace_id.clone()))?;
+    let root_path = descriptor
+        .root_path
+        .ok_or_else(|| "This workspace does not expose a filesystem root".to_string())?;
+
+    ensure_agent_workspace_root(&root_path)?;
+    let source = resolve_workspace_file_path(&root_path, &request.path)?;
+
+    let dest = PathBuf::from(&request.destination);
+    fs::copy(&source, &dest).map_err(|e| format!("Failed to save file: {}", e))?;
+
+    Ok(dest.to_string_lossy().to_string())
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceUpdateMcpRequest {
+    pub workspace_id: String,
+    pub mcp_server_ids: Vec<String>,
+}
+
+/// Update the MCP server IDs for a workspace session.
+///
+/// For the general workspace, this is the only way to configure MCP servers
+/// (agent workspaces get their MCP servers from the agent config).
+#[tauri::command]
+pub async fn workspace_update_session_mcp(
+    request: WorkspaceUpdateMcpRequest,
+    state: State<'_, AppState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let descriptor =
+        resolve_workspace_descriptor(state.inner(), Some(request.workspace_id.clone()))?;
+    let existing = find_workspace_session(pool.inner(), &descriptor).await?;
+
+    let session = if let Some(session) = existing {
+        session
+    } else {
+        // No session yet — create one so MCP preferences are persisted
+        // before the user sends their first message.
+        repository::create_session(
+            pool.inner(),
+            repository::CreateSessionParams {
+                tab_id: None,
+                kind: if descriptor.agent_id.is_some() {
+                    SessionKind::BackgroundJob
+                } else {
+                    SessionKind::Interactive
+                },
+                title: Some(descriptor.title.clone()),
+                context: desired_workspace_context(&descriptor, None),
+            },
+        )
+        .await?
+    };
+
+    let mut updated = session;
+    updated.context.mcp_server_ids = request.mcp_server_ids;
+    updated.updated_at = chrono::Utc::now().timestamp_millis();
+    repository::update_session(pool.inner(), &updated).await?;
+
+    Ok(())
+}
+
+/// Set the preferred provider connection for a general workspace.
+/// Upserts into the workspaces table so the preference survives across sessions.
+#[tauri::command]
+pub async fn workspace_set_provider(
+    workspace_id: String,
+    provider_connection_id: String,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let now = chrono::Utc::now().timestamp_millis();
+
+    // Upsert: insert if not exists, update if exists
+    sqlx::query(
+        r#"
+        INSERT INTO workspaces (id, kind, title, preferred_provider_connection_id, created_at, updated_at)
+        VALUES (?, 'general', 'Workspace', ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET preferred_provider_connection_id = ?, updated_at = ?
+        "#,
+    )
+    .bind(&workspace_id)
+    .bind(&provider_connection_id)
+    .bind(now)
+    .bind(now)
+    .bind(&provider_connection_id)
+    .bind(now)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| format!("Failed to set workspace provider: {}", e))?;
+
+    Ok(())
+}
+
+// =============================================================================
+// Workspace CRUD — create, list, delete general workspaces
+// =============================================================================
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceListEntry {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    pub enabled: bool,
+    pub message_count: i64,
+    pub artifact_count: i64,
+    pub memory_count: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// Create a new general workspace with a UUID and filesystem root.
+#[tauri::command]
+pub async fn workspace_create(
+    title: Option<String>,
+    pool: State<'_, DbPool>,
+) -> Result<String, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().timestamp_millis();
+    let display_title = title.unwrap_or_else(|| "New Workspace".to_string());
+
+    // Create filesystem root
+    let root = agent_workspace_root_for_id(&id)
+        .ok_or_else(|| "Could not resolve workspace root".to_string())?;
+    let memory_dir = root.join(".clai").join("memory").join("journal");
+    fs::create_dir_all(&memory_dir)
+        .map_err(|e| format!("Failed to create workspace directory: {}", e))?;
+
+    // Insert metadata row
+    sqlx::query(
+        "INSERT INTO workspaces (id, kind, title, created_at, updated_at) VALUES (?, 'general', ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(&display_title)
+    .bind(now)
+    .bind(now)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| format!("Failed to create workspace: {}", e))?;
+
+    tracing::info!(workspace_id = %id, title = %display_title, "Created new general workspace");
+
+    Ok(id)
+}
+
+/// List all workspaces — both agent (from config) and general (from SQLite).
+#[tauri::command]
+pub async fn workspace_list(
+    state: State<'_, AppState>,
+    pool: State<'_, DbPool>,
+) -> Result<Vec<WorkspaceListEntry>, String> {
+    let mut entries = Vec::new();
+
+    // 1. Agent workspaces from config — collect sync data first, then do async work
+    let agent_infos: Vec<_> = {
+        let config = state
+            .config_manager
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        config
+            .get_agents()
+            .into_iter()
+            .map(|agent| {
+                let root = agent_workspace_root_for_id(&agent.id);
+                let (artifact_count, memory_count) = root
+                    .as_ref()
+                    .map(|r| count_workspace_files(r))
+                    .unwrap_or((0, 0));
+                let created_at = agent
+                    .created_at
+                    .parse::<chrono::DateTime<chrono::Utc>>()
+                    .map(|dt| dt.timestamp_millis())
+                    .unwrap_or(0);
+                let updated_at = agent
+                    .updated_at
+                    .parse::<chrono::DateTime<chrono::Utc>>()
+                    .map(|dt| dt.timestamp_millis())
+                    .unwrap_or(0);
+                (
+                    agent.id.clone(),
+                    agent.name.clone(),
+                    agent.enabled,
+                    artifact_count,
+                    memory_count,
+                    created_at,
+                    updated_at,
+                )
+            })
+            .collect()
+    }; // config lock dropped here
+
+    for (id, name, enabled, artifact_count, memory_count, created_at, updated_at) in agent_infos {
+        let message_count = count_session_messages(pool.inner(), &id).await;
+        entries.push(WorkspaceListEntry {
+            id: id.clone(),
+            kind: "agent".to_string(),
+            title: name,
+            agent_id: Some(id),
+            enabled,
+            message_count,
+            artifact_count,
+            memory_count,
+            created_at,
+            updated_at,
+        });
+    }
+
+    // 2. General workspaces from SQLite
+    let rows: Vec<(String, String, Option<String>, i64, i64)> = sqlx::query_as(
+        "SELECT id, kind, title, created_at, updated_at FROM workspaces ORDER BY updated_at DESC",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("Failed to list workspaces: {}", e))?;
+
+    for (id, kind, title, created_at, updated_at) in rows {
+        let root = agent_workspace_root_for_id(&id);
+        let (artifact_count, memory_count) = root
+            .as_ref()
+            .map(|r| count_workspace_files(r))
+            .unwrap_or((0, 0));
+        let message_count = count_session_messages(pool.inner(), &id).await;
+
+        entries.push(WorkspaceListEntry {
+            id,
+            kind,
+            title: title.unwrap_or_else(|| "Untitled".to_string()),
+            agent_id: None,
+            enabled: true,
+            message_count,
+            artifact_count,
+            memory_count,
+            created_at,
+            updated_at,
+        });
+    }
+
+    // Sort all entries by updated_at descending
+    entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+
+    Ok(entries)
+}
+
+/// Delete a general workspace — removes metadata, session data, and filesystem root.
+#[tauri::command]
+pub async fn workspace_delete(workspace_id: String, pool: State<'_, DbPool>) -> Result<(), String> {
+    // Only allow deleting general workspaces (not agents)
+    let exists: bool =
+        sqlx::query_scalar::<_, i64>("SELECT 1 FROM workspaces WHERE id = ? LIMIT 1")
+            .bind(&workspace_id)
+            .fetch_optional(pool.inner())
+            .await
+            .map_err(|e| format!("Failed to check workspace: {}", e))?
+            .is_some();
+
+    if !exists {
+        return Err(format!(
+            "Workspace {} is not a general workspace or does not exist",
+            workspace_id
+        ));
+    }
+
+    // Delete associated sessions (cascades to messages, runs, tool_calls)
+    let sessions = repository::list_sessions(pool.inner(), None)
+        .await
+        .unwrap_or_default();
+    for session in sessions {
+        if session.context.workspace_id.as_deref() == Some(&workspace_id)
+            || session.context.agent_workspace_id.as_deref() == Some(&workspace_id)
+        {
+            let _ = repository::delete_session(pool.inner(), &session.id).await;
+        }
+    }
+
+    // Delete metadata row
+    sqlx::query("DELETE FROM workspaces WHERE id = ?")
+        .bind(&workspace_id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("Failed to delete workspace: {}", e))?;
+
+    // Delete filesystem root
+    if let Some(root) = agent_workspace_root_for_id(&workspace_id) {
+        if root.exists() {
+            let _ = fs::remove_dir_all(&root);
+        }
+    }
+
+    tracing::info!(workspace_id = %workspace_id, "Deleted general workspace");
+
+    Ok(())
+}
+
+/// Count artifacts and memories in a workspace's filesystem.
+fn count_workspace_files(root: &Path) -> (i64, i64) {
+    let memory_root = root.join(".clai").join("memory");
+    let memory_count = count_files_recursive(&memory_root);
+
+    let mut artifact_count: i64 = 0;
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.file_name().and_then(|n| n.to_str()) == Some(".clai") {
+                continue;
+            }
+            if path.is_dir() {
+                artifact_count += count_files_recursive(&path);
+            } else if path.is_file() {
+                artifact_count += 1;
+            }
+        }
+    }
+
+    (artifact_count, memory_count)
+}
+
+fn count_files_recursive(dir: &Path) -> i64 {
+    let mut count: i64 = 0;
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                count += count_files_recursive(&path);
+            } else if path.is_file() {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
+async fn count_session_messages(pool: &DbPool, workspace_id: &str) -> i64 {
+    let sessions = repository::list_sessions(pool, None)
+        .await
+        .unwrap_or_default();
+
+    let session = sessions.iter().find(|s| {
+        s.context.workspace_id.as_deref() == Some(workspace_id)
+            || s.context.agent_workspace_id.as_deref() == Some(workspace_id)
+            || s.context.automation_id.as_deref() == Some(workspace_id)
+    });
+
+    if let Some(session) = session {
+        repository::list_messages(pool, &session.id)
+            .await
+            .map(|msgs| msgs.len() as i64)
+            .unwrap_or(0)
+    } else {
+        0
+    }
 }

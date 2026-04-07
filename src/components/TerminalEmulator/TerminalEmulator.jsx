@@ -7,6 +7,8 @@ import TabContext from '../../contexts/TabContext';
 import { parseCommand, isLayoutCommand } from '../../utils/commandParser';
 import { handleContextCommand, isContextCommand } from '../../utils/contextCommandHandler';
 import { isCommandSupported } from '../../utils/commandRegistry';
+import { createWorkspace } from '../../workspace/client';
+import WorkspaceContextBar from '../../workspace/components/WorkspaceContextBar';
 import ContextPanel from '../ContextPanel/ContextPanel';
 import { SettingsModal } from '../Settings';
 import styles from './TerminalEmulator.module.css';
@@ -35,6 +37,14 @@ const TerminalEmulator = ({ onSendToChat }) => {
   // Check if desktop chat panel is open
   const isChatOpen = isCurrentChatOpen();
   const isFleetRoute = location.pathname === '/fleet';
+  const isWorkspaceRoute = location.pathname === '/workspace' || location.pathname.startsWith('/workspace/');
+  const workspaceRouteMatch = location.pathname.match(/^\/workspace\/([^/]+)\/?$/);
+  const currentWorkspaceId = workspaceRouteMatch ? decodeURIComponent(workspaceRouteMatch[1]) : null;
+  // Hide ContextPanel on Fleet and workspace routes (workspace has its own context bar)
+  const hideContextPanel = isFleetRoute || isWorkspaceRoute;
+  // Disable chat toggle on Fleet and workspace routes
+  // (general workspaces embed chat; agent workspaces use Ctrl+Shift+C)
+  const isDedicatedWorkspaceRoute = isFleetRoute || isWorkspaceRoute;
 
   // Maximum number of messages to keep
   const MAX_MESSAGES = 5;
@@ -151,9 +161,12 @@ const TerminalEmulator = ({ onSendToChat }) => {
     // Check if input starts with "/" - it's a command
     const isSlashCommand = trimmed.startsWith('/');
 
-    // If NOT a slash command, send to chat (auto-open sidebar unless on Fleet)
+    // If NOT a slash command, send to chat.
+    // Auto-open sidebar chat on non-Fleet, non-workspace routes.
+    // Workspace routes handle chat opening themselves (agent workspaces open the
+    // side panel, general workspaces embed chat in the page).
     if (!isSlashCommand) {
-      if (!isChatOpen && location.pathname !== '/fleet') {
+      if (!isChatOpen && !isFleetRoute && !isWorkspaceRoute) {
         openChat();
       }
       if (onSendToChat) {
@@ -303,19 +316,34 @@ const TerminalEmulator = ({ onSendToChat }) => {
     setIsSettingsOpen(true);
   };
 
-  const handleModeToggle = (event) => {
+  const handleModeToggle = async (event) => {
     event.stopPropagation();
-    navigate(isFleetRoute ? '/' : '/fleet', isFleetRoute
-      ? { state: { skipFleetRedirect: true } }
-      : undefined);
+    if (isFleetRoute) {
+      // Create a new workspace and navigate to it
+      try {
+        const id = await createWorkspace();
+        navigate(`/workspace/${id}`, { state: { skipFleetRedirect: true } });
+      } catch (err) {
+        console.error('[TerminalEmulator] Failed to create workspace:', err);
+      }
+    } else {
+      navigate('/fleet');
+    }
   };
 
   return (
     <div ref={terminalRef} className={`${styles.terminal} ${isChatOpen ? styles.chatOpen : ''}`} onClick={handleTerminalClick}>
-      {/* Context Panel - shows capability badges (hidden on Fleet route) */}
-      {location.pathname !== '/fleet' && (
+      {/* Context Panel - shows capability badges (hidden on Fleet and workspace routes) */}
+      {!hideContextPanel && (
         <div className={styles.contextPanelWrapper}>
           <ContextPanel />
+        </div>
+      )}
+
+      {/* Workspace context bar — MCP badges inside the terminal on workspace routes */}
+      {isWorkspaceRoute && currentWorkspaceId && (
+        <div className={styles.workspaceContextWrapper}>
+          <WorkspaceContextBar workspaceId={currentWorkspaceId} />
         </div>
       )}
 
@@ -325,16 +353,14 @@ const TerminalEmulator = ({ onSendToChat }) => {
           type="button"
           className={styles.modeButton}
           onClick={handleModeToggle}
-          title={isFleetRoute ? 'Go to workspace' : 'Open fleet'}
-          aria-label={isFleetRoute ? 'Go to workspace' : 'Open fleet'}
+          title={isFleetRoute ? 'New workspace' : 'Open fleet'}
+          aria-label={isFleetRoute ? 'New workspace' : 'Open fleet'}
         >
           <span className={styles.modeButtonIcon} aria-hidden="true">
             {isFleetRoute ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="7" height="7" rx="1.5" />
-                <rect x="14" y="4" width="7" height="7" rx="1.5" />
-                <rect x="3" y="13" width="7" height="7" rx="1.5" />
-                <rect x="14" y="13" width="7" height="7" rx="1.5" />
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
             ) : (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -345,7 +371,7 @@ const TerminalEmulator = ({ onSendToChat }) => {
               </svg>
             )}
           </span>
-          <span className={styles.modeButtonLabel}>{isFleetRoute ? 'Workspace' : 'Fleet'}</span>
+          <span className={styles.modeButtonLabel}>{isFleetRoute ? 'New Workspace' : 'Fleet'}</span>
         </button>
 
         <button
@@ -377,7 +403,11 @@ const TerminalEmulator = ({ onSendToChat }) => {
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onClick={(e) => e.stopPropagation()}
-            placeholder={isFleetRoute ? 'Message the selected agent...' : 'Type to chat, or /help for commands...'}
+            placeholder={isFleetRoute
+              ? 'Message the selected agent...'
+              : isWorkspaceRoute
+                ? 'Message this workspace...'
+                : 'Type to chat, or /help for commands...'}
             spellCheck={false}
             autoComplete="off"
             autoCorrect="off"
@@ -387,13 +417,13 @@ const TerminalEmulator = ({ onSendToChat }) => {
 
         {/* Keyboard shortcut badge for toggling chat */}
         <button
-          className={`${styles.shortcutBadge} ${isFleetRoute ? styles.shortcutBadgeDisabled : ''}`}
+          className={`${styles.shortcutBadge} ${isDedicatedWorkspaceRoute ? styles.shortcutBadgeDisabled : ''}`}
           onClick={(e) => {
             e.stopPropagation();
-            if (!isFleetRoute) toggleChat();
+            if (!isDedicatedWorkspaceRoute) toggleChat();
           }}
-          disabled={isFleetRoute}
-          title={isFleetRoute ? 'Chat panel is not available in Fleet' : 'Toggle chat panel'}
+          disabled={isDedicatedWorkspaceRoute}
+          title={isDedicatedWorkspaceRoute ? 'Chat panel is not available in this view' : 'Toggle chat panel'}
         >
           <span className={styles.shortcutKey}>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}</span>
           <span className={styles.shortcutKey}>⇧</span>

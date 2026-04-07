@@ -132,6 +132,7 @@ pub fn run() {
     // Build and run the Tauri application
     tauri::Builder::default()
         // Register Tauri plugins
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -232,6 +233,15 @@ pub fn run() {
             // Workspace state persistence commands
             commands::workspace::load_workspace_state,
             commands::workspace::save_workspace_state,
+            commands::workspace::workspace_get_snapshot,
+            commands::workspace::workspace_get_or_create_session,
+            commands::workspace::workspace_read_file,
+            commands::workspace::workspace_download_file,
+            commands::workspace::workspace_update_session_mcp,
+            commands::workspace::workspace_set_provider,
+            commands::workspace::workspace_create,
+            commands::workspace::workspace_list,
+            commands::workspace::workspace_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

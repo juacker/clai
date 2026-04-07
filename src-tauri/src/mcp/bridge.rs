@@ -183,10 +183,6 @@ pub fn mark_bridge_ready() {
     bridge_ready_flag().store(true, Ordering::SeqCst);
 }
 
-pub fn is_bridge_ready() -> bool {
-    bridge_ready_flag().load(Ordering::SeqCst)
-}
-
 /// Complete a pending tool request from the Tauri command.
 ///
 /// This function is called by the `agent_tool_result` Tauri command

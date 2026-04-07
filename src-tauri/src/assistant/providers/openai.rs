@@ -58,17 +58,32 @@ impl ProviderAdapter for OpenAiAdapter {
             }
         };
 
+        tracing::info!(
+            url = %models_url,
+            provider_id = %connection.provider_id,
+            "Fetching models from provider"
+        );
+
         let client = Client::new();
         let resp = client
-            .get(models_url)
+            .get(&models_url)
             .header("Authorization", format!("Bearer {}", api_key))
             .send()
             .await
-            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(url = %models_url, error = %e, "HTTP request failed");
+                ProviderError::RequestFailed(e.to_string())
+            })?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
+            tracing::error!(
+                url = %models_url,
+                status = %status,
+                body = %body,
+                "Provider returned error"
+            );
             return Err(ProviderError::RequestFailed(format!(
                 "HTTP {}: {}",
                 status, body

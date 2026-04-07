@@ -12,8 +12,8 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 20px 24px;
-  overflow: hidden;
+  padding: 20px 24px 80px;
+  overflow: auto;
   background: var(--color-bg-secondary);
   color: var(--color-text-primary);
 }
@@ -233,7 +233,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
   min-width: 0;
 }
 
@@ -755,4 +754,93 @@
   .title {
     font-size: 18px;
   }
+}
+
+/* ── Past Workspaces Section ─────────────────────────── */
+
+.sectionDivider {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 4px;
+}
+
+.sectionDividerLabel {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.sectionDividerCount {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  background: var(--color-overlay-06);
+}
+
+.workspaceCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-elevated);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.workspaceCard:hover {
+  border-color: var(--color-border-medium);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.workspaceBadge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-overlay-06);
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.workspaceTime {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.deleteBtn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.workspaceCard:hover .deleteBtn {
+  opacity: 1;
+}
+
+.deleteBtn:hover {
+  background: color-mix(in srgb, var(--color-critical) 12%, transparent);
+  color: var(--color-critical);
 }

@@ -37,9 +37,9 @@
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
-use tokio::time::{sleep, Instant};
 use uuid::Uuid;
 
+use crate::agents::designer;
 use crate::agents::{SchedulerState, SharedScheduler};
 use crate::assistant::engine::{self, AssistantDeps, RunTurnInput};
 use crate::assistant::events::{emit_event, AssistantUiEvent};
@@ -50,8 +50,6 @@ use crate::assistant::types::{
     SessionContext, SessionKind,
 };
 use crate::db::DbPool;
-use crate::mcp::bridge::is_bridge_ready;
-use crate::mcp::bridge::JsBridge;
 use crate::AppState;
 
 // =============================================================================
@@ -60,14 +58,6 @@ use crate::AppState;
 
 /// How often to check for ready agents (in seconds).
 const CHECK_INTERVAL_SECS: u64 = 5;
-/// How long to wait for a newly created agent tab to be persisted in SQLite.
-const TAB_PERSISTENCE_TIMEOUT_MS: u64 = 3_000;
-/// Poll interval while waiting for a tab row to appear in SQLite.
-const TAB_PERSISTENCE_POLL_INTERVAL_MS: u64 = 100;
-/// How long to wait for the frontend bridge to initialize after app startup.
-const BRIDGE_READY_TIMEOUT_MS: u64 = 10_000;
-/// Poll interval while waiting for the frontend bridge to initialize.
-const BRIDGE_READY_POLL_INTERVAL_MS: u64 = 100;
 
 // =============================================================================
 // Runner
@@ -235,40 +225,10 @@ async fn run_next_agent(
         .as_ref()
         .and_then(|session| session.tab_id.clone());
 
-    wait_for_bridge_ready(
-        Duration::from_millis(BRIDGE_READY_TIMEOUT_MS),
-        Duration::from_millis(BRIDGE_READY_POLL_INTERVAL_MS),
-    )
-    .await?;
-
-    // Ensure the scheduled agent has its tab before running.
-    let bridge = JsBridge::new(app_handle.clone());
-    let tab_id = bridge
-        .setup_agent_tab(
-            &agent_config.id,
-            &agent_config.name,
-            &space_id,
-            &room_id,
-            preferred_tab_id.as_deref(),
-            &agent_config.selected_mcp_server_ids,
-        )
-        .await
-        .map_err(|e| RunnerError::TabSetupFailed(e.to_string()))?;
-
-    tracing::debug!(tab_id = %tab_id, "Agent tab ready");
-
-    wait_for_persisted_tab(
-        &pool,
-        &tab_id,
-        Duration::from_millis(TAB_PERSISTENCE_TIMEOUT_MS),
-        Duration::from_millis(TAB_PERSISTENCE_POLL_INTERVAL_MS),
-    )
-    .await?;
-
     {
         let mut sched = scheduler.lock().await;
         if let Some(instance) = sched.get_instance_mut(&instance_id) {
-            instance.tab_id = Some(tab_id.clone());
+            instance.tab_id = preferred_tab_id.clone();
         }
     }
 
@@ -278,7 +238,7 @@ async fn run_next_agent(
         &agent_config,
         &space_id,
         &room_id,
-        &tab_id,
+        preferred_tab_id.as_deref(),
     )
     .await?;
 
@@ -297,6 +257,36 @@ async fn run_next_agent(
             false
         }
     };
+
+    // Run workspace designer after a successful agent run.
+    // This generates/evolves .clai/workspace.json for the workspace UI.
+    // Fire-and-forget: failures are logged but do not affect the run outcome.
+    if success {
+        let message_count = repository::list_messages(&pool, &session.id)
+            .await
+            .map(|msgs| msgs.len())
+            .unwrap_or(0);
+        let artifact_count = 0_usize; // Counted from filesystem by the designer itself
+        let designer_connection = connections.first().cloned();
+        if let Some(conn) = designer_connection {
+            let agent_id = agent_config.id.clone();
+            let agent_name = agent_config.name.clone();
+            let agent_desc = agent_config.description.clone();
+            let sess_id = session.id.clone();
+            tauri::async_runtime::spawn(async move {
+                designer::design_workspace(
+                    &agent_id,
+                    &agent_name,
+                    &agent_desc,
+                    &conn,
+                    &sess_id,
+                    message_count,
+                    artifact_count,
+                )
+                .await;
+            });
+        }
+    }
 
     // Update scheduler with interval from config
     let interval_ms = (agent_config.interval_minutes as u64) * 60 * 1000;
@@ -319,27 +309,6 @@ async fn run_next_agent(
     Ok(())
 }
 
-async fn wait_for_bridge_ready(
-    timeout: Duration,
-    poll_interval: Duration,
-) -> Result<(), RunnerError> {
-    let deadline = Instant::now() + timeout;
-
-    loop {
-        if is_bridge_ready() {
-            return Ok(());
-        }
-
-        if Instant::now() >= deadline {
-            return Err(RunnerError::TabSetupFailed(
-                "Frontend agent bridge is not ready yet".to_string(),
-            ));
-        }
-
-        sleep(poll_interval).await;
-    }
-}
-
 // =============================================================================
 // Errors
 // =============================================================================
@@ -351,16 +320,15 @@ pub enum RunnerError {
     InstanceNotFound(String),
     /// Agent config not found in ConfigManager.
     AgentNotFound(String),
-    /// Failed to setup agent tab.
-    TabSetupFailed(String),
-    /// Agent tab was created in the UI but not yet persisted in SQLite.
-    TabPersistenceFailed(String),
     /// Failed to persist or load assistant runtime data.
     AssistantPersistence(String),
     /// Failed to create or restore an assistant session.
     AssistantSession(String),
     /// No usable provider connections are configured for the agent.
     NoProviderConfigured(String),
+    /// Tab was not persisted within the expected timeout.
+    #[cfg(test)]
+    TabPersistenceFailed(String),
 }
 
 impl std::fmt::Display for RunnerError {
@@ -368,54 +336,48 @@ impl std::fmt::Display for RunnerError {
         match self {
             RunnerError::InstanceNotFound(id) => write!(f, "Agent instance not found: {}", id),
             RunnerError::AgentNotFound(id) => write!(f, "Agent config not found: {}", id),
-            RunnerError::TabSetupFailed(msg) => write!(f, "Failed to setup agent tab: {}", msg),
-            RunnerError::TabPersistenceFailed(msg) => {
-                write!(f, "Failed to persist agent tab: {}", msg)
-            }
             RunnerError::AssistantPersistence(msg) => {
                 write!(f, "Assistant persistence failed: {}", msg)
             }
             RunnerError::AssistantSession(msg) => write!(f, "Assistant session failed: {}", msg),
             RunnerError::NoProviderConfigured(msg) => write!(f, "No provider configured: {}", msg),
+            #[cfg(test)]
+            RunnerError::TabPersistenceFailed(msg) => {
+                write!(f, "Tab persistence timed out: {}", msg)
+            }
         }
     }
 }
 
 impl std::error::Error for RunnerError {}
 
+/// Poll the database until a tab row with the given `tab_id` exists,
+/// or return `TabPersistenceFailed` after `timeout` elapses.
+#[cfg(test)]
 async fn wait_for_persisted_tab(
-    pool: &DbPool,
+    pool: &sqlx::SqlitePool,
     tab_id: &str,
-    timeout: Duration,
-    poll_interval: Duration,
+    timeout: std::time::Duration,
+    poll_interval: std::time::Duration,
 ) -> Result<(), RunnerError> {
-    let deadline = Instant::now() + timeout;
-
+    let deadline = std::time::Instant::now() + timeout;
     loop {
-        let exists = sqlx::query_scalar::<_, i64>("SELECT 1 FROM tabs WHERE id = ? LIMIT 1")
+        let exists: bool = sqlx::query_scalar::<_, i64>("SELECT 1 FROM tabs WHERE id = ? LIMIT 1")
             .bind(tab_id)
             .fetch_optional(pool)
             .await
-            .map_err(|e| {
-                RunnerError::AssistantPersistence(format!(
-                    "Failed to verify persisted tab {}: {}",
-                    tab_id, e
-                ))
-            })?
+            .map_err(|e| RunnerError::TabPersistenceFailed(e.to_string()))?
             .is_some();
-
         if exists {
             return Ok(());
         }
-
-        if Instant::now() >= deadline {
+        if std::time::Instant::now() >= deadline {
             return Err(RunnerError::TabPersistenceFailed(format!(
-                "Timed out waiting for tab {} to be saved to SQLite",
-                tab_id
+                "Tab {} was not persisted within {:?}",
+                tab_id, timeout
             )));
         }
-
-        sleep(poll_interval).await;
+        tokio::time::sleep(poll_interval).await;
     }
 }
 
@@ -426,7 +388,7 @@ async fn ensure_background_session(
     agent_config: &crate::config::AgentConfig,
     space_id: &str,
     room_id: &str,
-    tab_id: &str,
+    tab_id: Option<&str>,
 ) -> Result<crate::assistant::types::AssistantSession, RunnerError> {
     let session_space_id = if space_id.is_empty() {
         None
@@ -441,8 +403,8 @@ async fn ensure_background_session(
     let desired_context = SessionContext {
         space_id: session_space_id.clone(),
         room_id: session_room_id.clone(),
-        workspace_id: None,
-        tab_id: Some(tab_id.to_string()),
+        workspace_id: Some(agent_config.id.clone()),
+        tab_id: tab_id.map(str::to_string),
         tool_scopes: agent_config
             .required_tools()
             .into_iter()
@@ -466,12 +428,12 @@ async fn ensure_background_session(
     .await?;
 
     if let Some(session) = existing {
-        let session = if session.tab_id.as_deref() != Some(tab_id)
+        let session = if session.tab_id.as_deref() != tab_id
             || session.title.as_deref() != Some(agent_config.name.as_str())
             || session.context != desired_context
         {
             let mut updated = session;
-            updated.tab_id = Some(tab_id.to_string());
+            updated.tab_id = tab_id.map(str::to_string);
             updated.title = Some(agent_config.name.clone());
             updated.context = desired_context.clone();
             updated.updated_at = chrono::Utc::now().timestamp_millis();
@@ -498,7 +460,7 @@ async fn ensure_background_session(
     let session = repository::create_session(
         pool,
         CreateSessionParams {
-            tab_id: Some(tab_id.to_string()),
+            tab_id: tab_id.map(str::to_string),
             kind: SessionKind::BackgroundJob,
             title: Some(agent_config.name.clone()),
             context: desired_context,
@@ -699,6 +661,7 @@ fn message_contains_output(content: &[ContentPart]) -> bool {
 mod tests {
     use super::*;
     use sqlx::sqlite::SqlitePoolOptions;
+    use tokio::time::sleep;
 
     #[test]
     fn test_runner_error_display() {

@@ -11,31 +11,21 @@
   flex: 1;
 }
 
-/* Desktop: Fixed positioning at bottom with gradient accent */
+/* Desktop: Fixed positioning at bottom as a floating card */
 @media (min-width: 769px) and (pointer: fine) {
   .terminal {
     position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80vw;
     z-index: 100;
-    background: var(--color-bg-primary);
-    border-top: 1px solid var(--color-border-light);
+    background: color-mix(in srgb, var(--color-bg-elevated) 92%, white);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-card);
     max-height: 50vh;
     flex: none;
-  }
-
-  /* Gradient accent line at top */
-  .terminal::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: var(--gradient-mixed);
-    opacity: 0.5;
-    z-index: 1;
   }
 }
 
@@ -58,12 +48,17 @@
   z-index: auto;
 }
 
+/* Workspace context bar inside terminal */
+.workspaceContextWrapper {
+  padding: 8px 14px 0;
+}
+
 /* Input Area - Primary terminal input with modern design */
 .terminalContent {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 16px 24px;
+  gap: 10px;
+  padding: 10px 14px;
   background: transparent;
 }
 
@@ -157,8 +152,8 @@
   min-width: 0;
   background: var(--color-overlay-02);
   border: 1px solid var(--color-border-light);
-  border-radius: 8px;
-  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
   transition: all 0.2s ease;
 }
 
@@ -185,7 +180,7 @@
   box-shadow: none !important;
   resize: none;
   overflow-y: hidden;
-  max-height: 150px;
+  max-height: 80px;
 }
 
 .terminalInput:focus {

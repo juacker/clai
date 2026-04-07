@@ -1,0 +1,51 @@
+.contextBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 4px;
+}
+
+.providerPicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-full);
+  background: var(--color-overlay-02);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.providerPicker:hover {
+  border-color: var(--color-border-medium);
+  background: var(--color-overlay-04);
+}
+
+.providerIcon {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+
+.providerSelect {
+  appearance: none;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  outline: none;
+  padding: 0;
+}
+
+.providerChevron {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+
+.emptyHint {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}

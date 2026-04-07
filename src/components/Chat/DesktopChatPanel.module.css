@@ -1,12 +1,10 @@
 /**
  * DesktopChatPanel Styles
  *
- * Mobile-first approach: Hidden on mobile, shown as fixed right panel on desktop
- * Follows project guidelines for platform-specific styling with light, elegant, modern design
+ * Floating card panel on the right side, matching the terminal's card style.
  */
 
 .desktopChatPanel {
-
   display: none;
 }
 
@@ -16,54 +14,36 @@
   overflow: hidden;
 }
 
-/* ============================================================================
-   3. TOUCH DEVICE DETECTION - Hide on touch devices
-   ============================================================================ */
-
-/* ============================================================================
-   4. NO HOVER CAPABILITY - Hide on devices without hover
-   ============================================================================ */
-
-/* ============================================================================
-   5. DESKTOP STYLES - Show as fixed right panel
-   ============================================================================ */
-
+/* Desktop: Floating card panel on the right */
 @media (min-width: 769px) and (pointer: fine) {
   .desktopChatPanel {
-    /* Display and positioning */
     display: block;
     position: fixed;
-    top: 44px; /* Below tab bar */
-    right: 0;
-    bottom: var(--terminal-height, 131px); /* Dynamically stop above terminal */
+    top: 12px;
+    right: 12px;
+    bottom: 80px;
 
-    /* Dimensions */
     width: 0;
     height: auto;
 
-    /* Tinted glass background */
-    background: var(--glass-bg-tinted);
-    border-left: 1px solid var(--glass-border-tinted);
+    background: color-mix(in srgb, var(--color-bg-elevated) 95%, white);
+    border: 1px solid transparent;
+    border-radius: var(--radius-xl);
+    box-shadow: none;
 
-    /* Layering */
     z-index: 101;
-
-    /* Smooth animation */
-    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-
-    /* Overflow */
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 0.3s ease,
+                box-shadow 0.3s ease;
     overflow: hidden;
   }
 
-  /* Open state - expand to full width with indigo shadow */
   .desktopChatPanel.open {
     width: 420px;
-    box-shadow:
-      -3px 0 6px -3px rgba(139, 92, 246, 0.25),
-      -8px 0 12px -6px rgba(139, 92, 246, 0.15);
+    border-color: var(--color-border-light);
+    box-shadow: var(--shadow-card);
   }
 
-  /* Chat container fills the panel with proper flex layout */
   .chatContainer {
     width: 100%;
     height: 100%;
@@ -74,36 +54,22 @@
     transition: opacity 0.2s ease 0.1s;
   }
 
-  /* Show chat content when panel is open */
   .desktopChatPanel.open .chatContainer {
     opacity: 1;
   }
 }
 
-/* ============================================================================
-   6. LARGE DESKTOP STYLES - Wider panel on larger screens
-   ============================================================================ */
-
 @media (min-width: 1200px) and (pointer: fine) {
   .desktopChatPanel.open {
-    width: 580px;
+    width: 520px;
   }
 }
-
-/* ============================================================================
-   7. EXTRA LARGE DESKTOP - Even wider for spacious displays
-   ============================================================================ */
 
 @media (min-width: 1600px) and (pointer: fine) {
   .desktopChatPanel.open {
-    width: 780px;
+    width: 680px;
   }
 }
-
-
-/* ============================================================================
-   9. REDUCED MOTION SUPPORT - Respect user preferences
-   ============================================================================ */
 
 @media (prefers-reduced-motion: reduce) {
   .desktopChatPanel {
@@ -114,10 +80,6 @@
     transition: none;
   }
 }
-
-/* ============================================================================
-   10. ACCESSIBILITY - Focus styles
-   ============================================================================ */
 
 .desktopChatPanel:focus-within {
   outline: none;

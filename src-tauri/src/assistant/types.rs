@@ -24,6 +24,17 @@ pub enum AuthMode {
     WorkspaceToken,
 }
 
+impl std::fmt::Display for AuthMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthMode::SubscriptionLogin => write!(f, "subscription_login"),
+            AuthMode::SubscriptionApiKey => write!(f, "subscription_api_key"),
+            AuthMode::DeveloperApiKey => write!(f, "developer_api_key"),
+            AuthMode::WorkspaceToken => write!(f, "workspace_token"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionKind {

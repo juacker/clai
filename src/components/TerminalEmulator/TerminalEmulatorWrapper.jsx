@@ -13,6 +13,7 @@ import { useChatManager } from '../../contexts/ChatManagerContext';
 import { useFleet } from '../../contexts/FleetContext';
 import { useAssistantSession, useAssistantStore, assistantClient } from '../../assistant';
 import { getAgent } from '../../api/client';
+import { getOrCreateWorkspaceSession } from '../../workspace/client';
 import TerminalEmulator from './TerminalEmulator';
 
 const getEnabledMcpServerIds = (tab) => {
@@ -27,6 +28,11 @@ const TerminalEmulatorWrapper = () => {
   const { openChat } = useChatManager();
   const { isFleetRoute, selectedAgent, refresh: refreshFleet } = useFleet();
   const { ensureSession } = useAssistantSession(activeTabId);
+  const workspaceRouteMatch = location.pathname.match(/^\/workspace(?:\/([^/]+))?\/?$/);
+  const isWorkspaceRoute = Boolean(workspaceRouteMatch);
+  const currentWorkspaceId = workspaceRouteMatch?.[1]
+    ? decodeURIComponent(workspaceRouteMatch[1])
+    : 'default';
 
   // Get active tab
   const activeTab = tabs.find(t => t.id === activeTabId);
@@ -102,6 +108,7 @@ const TerminalEmulatorWrapper = () => {
               kind: 'background_job',
               title: selectedAgent.name,
               context: {
+                workspaceId: selectedAgent.agentId,
                 tabId: selectedAgent.tabId || null,
                 mcpServerIds: selectedAgent.selectedMcpServerIds || [],
                 execution: selectedAgent.execution || undefined,
@@ -122,6 +129,40 @@ const TerminalEmulatorWrapper = () => {
           return {};
         } catch (err) {
           console.error('[TerminalEmulatorWrapper] Fleet assistant error:', err);
+          return {
+            error: typeof err === 'string' ? err : (err?.message || 'Assistant request failed.'),
+          };
+        }
+      }
+
+      if (isWorkspaceRoute) {
+        try {
+          const binding = await getOrCreateWorkspaceSession(currentWorkspaceId);
+          const connectionId = binding.providerConnectionId;
+          if (!connectionId) {
+            return {
+              error: 'Add an enabled assistant provider connection before sending prompts from this workspace.',
+            };
+          }
+
+          const store = useAssistantStore.getState();
+          store.initSession(binding.session);
+
+          // Bridge workspace session to the chat panel via a synthetic tab key
+          const workspaceTabKey = `workspace:${currentWorkspaceId}`;
+          store.setActiveSessionForTab(workspaceTabKey, binding.session.id);
+
+          // Only open the side panel for agent workspaces — general workspaces
+          // embed the chat directly in the page.
+          if (binding.session.kind === 'background_job') {
+            openChat();
+          }
+
+          const result = await assistantClient.sendMessage(binding.session.id, query, connectionId);
+          store.addMessage(binding.session.id, result.message);
+          return {};
+        } catch (err) {
+          console.error('[TerminalEmulatorWrapper] Workspace assistant error:', err);
           return {
             error: typeof err === 'string' ? err : (err?.message || 'Assistant request failed.'),
           };
@@ -166,6 +207,8 @@ const TerminalEmulatorWrapper = () => {
       openChat,
       refreshFleet,
       selectedAgent,
+      currentWorkspaceId,
+      isWorkspaceRoute,
     ]
   );
 

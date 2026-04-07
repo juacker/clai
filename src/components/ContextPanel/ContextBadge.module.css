@@ -135,9 +135,14 @@
 }
 
 .badgeMcpDisabled {
-  background: rgba(148, 163, 184, 0.10);
-  color: #64748b;
-  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(148, 163, 184, 0.06);
+  color: #94a3b8;
+  border-color: rgba(148, 163, 184, 0.18);
+  opacity: 0.55;
+}
+
+.badgeMcpDisabled .text {
+  text-decoration: line-through;
 }
 
 .badgeMcpDisabled .icon {

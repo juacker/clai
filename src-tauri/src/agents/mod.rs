@@ -30,6 +30,7 @@
 //! - **init** - Scheduler initialization and instance management
 //! - **tmp** - Startup cleanup for ephemeral runtime files
 
+pub mod designer;
 pub mod init;
 pub mod runner;
 pub mod scheduler;

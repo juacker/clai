@@ -13,7 +13,7 @@
   display: flex;
   flex-direction: column;
   /* Solid white background so transparency works properly */
-  background: var(--color-bg-primary);
+  background: var(--color-bg-secondary);
 }
 
 /* Content Area - takes remaining flex space after TerminalEmulator */
@@ -23,7 +23,7 @@
   min-height: 0;
   /* Leave space at bottom for TerminalEmulator (desktop only) */
   /* TerminalEmulator has max-height: 50vh, so we reserve space for it */
-  padding-bottom: var(--terminal-height, 130px); /* Dynamically adjust for terminal */
+  padding-bottom: var(--terminal-height, 80px); /* Space for floating terminal card */
 }
 
 /* Desktop: Add left padding to avoid overlap with chat panel */

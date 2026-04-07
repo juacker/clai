@@ -599,6 +599,49 @@ async fn migrate_assistant_tool_calls(pool: &DbPool) -> Result<(), String> {
     Ok(())
 }
 
+async fn migrate_workspaces(pool: &DbPool) -> Result<(), String> {
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS workspaces (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL DEFAULT 'general',
+            title TEXT,
+            preferred_provider_connection_id TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create workspaces table: {}", e))?;
+
+    // Add preferred_provider_connection_id column if missing (added after initial migration)
+    if !column_exists(pool, "workspaces", "preferred_provider_connection_id").await? {
+        sqlx::query("ALTER TABLE workspaces ADD COLUMN preferred_provider_connection_id TEXT")
+            .execute(pool)
+            .await
+            .map_err(|e| {
+                format!(
+                    "Failed to add workspaces.preferred_provider_connection_id: {}",
+                    e
+                )
+            })?;
+    }
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_workspaces_updated
+        ON workspaces(updated_at DESC)
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create workspaces index: {}", e))?;
+
+    Ok(())
+}
+
 /// Initialize the database connection pool and run migrations
 pub async fn init_db() -> Result<DbPool, String> {
     let db_path = get_db_path()?;
@@ -695,6 +738,8 @@ async fn run_migrations(pool: &DbPool) -> Result<(), String> {
     migrate_assistant_runs(pool).await?;
 
     migrate_assistant_tool_calls(pool).await?;
+
+    migrate_workspaces(pool).await?;
 
     for legacy_table in [
         "assistant_sessions_legacy",
