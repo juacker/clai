@@ -12,6 +12,7 @@ use crate::config::{AgentConfig, ExecutionCapabilityConfig};
 use crate::db::DbPool;
 use crate::AppState;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -63,6 +64,8 @@ pub struct Command {
     pub tile_id: String,
     pub created_at: i64,
     pub state: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<i64>,
 }
 
 /// Complete workspace state
@@ -166,6 +169,14 @@ pub struct WorkspaceDownloadRequest {
     pub destination: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceWriteFileRequest {
+    pub workspace_id: String,
+    pub path: String,
+    pub content: String,
+}
+
 #[derive(Debug, Clone)]
 struct WorkspaceDescriptor {
     workspace_id: String,
@@ -201,6 +212,12 @@ type CommandRow = (
     i64,
     i64,
 );
+
+#[derive(Debug, Clone)]
+struct VirtualWorkspaceArtifact {
+    entry: WorkspaceFileEntry,
+    content: String,
+}
 
 fn normalize_workspace_id(workspace_id: Option<String>) -> String {
     workspace_id
@@ -241,15 +258,133 @@ fn viewer_for_path(path: &Path) -> String {
         return "canvas".to_string();
     }
 
+    if file_name.ends_with(".dashboard.json") {
+        return "dashboard".to_string();
+    }
+
     if ext == "md" || ext == "markdown" {
         return "markdown".to_string();
     }
 
-    if ext == "json" || file_name.ends_with(".dashboard.json") {
+    if ext == "json" {
         return "json".to_string();
     }
 
     "text".to_string()
+}
+
+fn sort_workspace_entries(entries: &mut [WorkspaceFileEntry]) {
+    entries.sort_by(|left, right| {
+        right
+            .updated_at
+            .cmp(&left.updated_at)
+            .then_with(|| left.path.cmp(&right.path))
+    });
+}
+
+fn tab_agent_id(context: &TabContext) -> Option<&str> {
+    context
+        .get("agent")
+        .and_then(|value| value.get("agentId"))
+        .and_then(|value| value.as_str())
+}
+
+fn virtual_artifact_path(_tab: &Tab, command: &Command, extension: &str) -> String {
+    let kind = command.command_type.to_ascii_lowercase();
+    let stem = format!("{}-{}", kind, command.id);
+    format!("visualizations/{}.{}", stem, extension)
+}
+
+fn command_preview(command_type: &str, state: &serde_json::Value) -> Option<String> {
+    match command_type {
+        "canvas" => Some(format!(
+            "{} nodes, {} edges",
+            state
+                .get("nodes")
+                .and_then(|value| value.as_array())
+                .map(|value| value.len())
+                .unwrap_or(0),
+            state
+                .get("edges")
+                .and_then(|value| value.as_array())
+                .map(|value| value.len())
+                .unwrap_or(0)
+        )),
+        "dashboard" => Some(format!(
+            "{} charts",
+            state
+                .get("elements")
+                .and_then(|value| value.as_array())
+                .map(|value| value.len())
+                .unwrap_or(0)
+        )),
+        _ => None,
+    }
+}
+
+fn normalize_canvas_artifact_state(state: &serde_json::Value) -> serde_json::Value {
+    json!({
+        "nodes": state.get("nodes").cloned().unwrap_or_else(|| json!([])),
+        "edges": state.get("edges").cloned().unwrap_or_else(|| json!([])),
+    })
+}
+
+fn normalize_dashboard_artifact_state(state: &serde_json::Value) -> serde_json::Value {
+    let time_range = state
+        .get("timeRange")
+        .and_then(|value| value.as_str())
+        .or_else(|| {
+            state
+                .get("selectedInterval")
+                .and_then(|value| value.get("label"))
+                .and_then(|value| value.as_str())
+        })
+        .unwrap_or("1h");
+
+    json!({
+        "elements": state.get("elements").cloned().unwrap_or_else(|| json!([])),
+        "timeRange": time_range,
+    })
+}
+
+fn command_to_virtual_artifact(
+    tab: &Tab,
+    command: &Command,
+) -> Result<Option<VirtualWorkspaceArtifact>, String> {
+    let (normalized_state, extension, viewer) = match command.command_type.as_str() {
+        "canvas" => (
+            normalize_canvas_artifact_state(&command.state),
+            "canvas",
+            "canvas".to_string(),
+        ),
+        "dashboard" => (
+            normalize_dashboard_artifact_state(&command.state),
+            "dashboard.json",
+            "dashboard".to_string(),
+        ),
+        _ => return Ok(None),
+    };
+
+    let path = virtual_artifact_path(tab, command, extension);
+    let content = serde_json::to_string_pretty(&normalized_state)
+        .map_err(|error| format!("Failed to serialize {} artifact: {}", command.id, error))?;
+
+    Ok(Some(VirtualWorkspaceArtifact {
+        entry: WorkspaceFileEntry {
+            path: path.clone(),
+            relative_path: path.clone(),
+            name: Path::new(&path)
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default()
+                .to_string(),
+            viewer,
+            size: Some(content.len() as u64),
+            updated_at: command.updated_at.or(Some(command.created_at)),
+            preview: command_preview(&command.command_type, &normalized_state),
+        },
+        content,
+    }))
 }
 
 fn read_text_preview(path: &Path, max_bytes: usize, max_chars: usize) -> Option<String> {
@@ -615,15 +750,79 @@ fn resolve_workspace_file_path(root: &Path, relative_path: &str) -> Result<PathB
     Ok(candidate)
 }
 
-/// Load workspace state from SQLite
-#[tauri::command]
-pub async fn load_workspace_state(pool: State<'_, DbPool>) -> Result<WorkspaceState, String> {
-    tracing::debug!("Loading workspace state from database");
+fn resolve_workspace_file_target(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
+    let candidate = normalize_path(root.join(relative_path));
+    if !candidate.starts_with(root) {
+        return Err(format!(
+            "Path {} is outside the workspace root",
+            candidate.display()
+        ));
+    }
+    Ok(candidate)
+}
 
+fn workspace_virtual_artifacts(
+    descriptor: &WorkspaceDescriptor,
+    workspace_state: &WorkspaceState,
+) -> Result<Vec<VirtualWorkspaceArtifact>, String> {
+    let Some(agent_id) = descriptor.agent_id.as_deref() else {
+        return Ok(Vec::new());
+    };
+
+    let mut artifacts = Vec::new();
+
+    for tab in workspace_state.tabs.values() {
+        if tab_agent_id(&tab.context) != Some(agent_id) {
+            continue;
+        }
+
+        for command in workspace_state
+            .commands
+            .values()
+            .filter(|command| command.tab_id == tab.id)
+        {
+            if let Some(artifact) = command_to_virtual_artifact(tab, command)? {
+                artifacts.push(artifact);
+            }
+        }
+    }
+
+    artifacts.sort_by(|left, right| {
+        right
+            .entry
+            .updated_at
+            .cmp(&left.entry.updated_at)
+            .then_with(|| left.entry.path.cmp(&right.entry.path))
+    });
+
+    Ok(artifacts)
+}
+
+fn merge_workspace_artifacts(
+    mut file_artifacts: Vec<WorkspaceFileEntry>,
+    virtual_artifacts: Vec<VirtualWorkspaceArtifact>,
+) -> Vec<WorkspaceFileEntry> {
+    let existing_paths: std::collections::HashSet<String> = file_artifacts
+        .iter()
+        .map(|entry| entry.path.clone())
+        .collect();
+
+    file_artifacts.extend(
+        virtual_artifacts
+            .into_iter()
+            .filter(|artifact| !existing_paths.contains(&artifact.entry.path))
+            .map(|artifact| artifact.entry),
+    );
+
+    sort_workspace_entries(&mut file_artifacts);
+    file_artifacts
+}
+
+async fn load_workspace_state_from_pool(pool: &DbPool) -> Result<WorkspaceState, String> {
     // Load active tab ID from meta
     let active_tab_id: Option<String> =
         sqlx::query_scalar("SELECT value FROM workspace_meta WHERE key = 'active_tab_id'")
-            .fetch_optional(pool.inner())
+            .fetch_optional(pool)
             .await
             .map_err(|e| format!("Failed to load active tab ID: {}", e))?;
 
@@ -631,7 +830,7 @@ pub async fn load_workspace_state(pool: State<'_, DbPool>) -> Result<WorkspaceSt
     let tab_rows: Vec<TabRow> = sqlx::query_as(
         "SELECT id, title, root_tile, context, position, created_at, updated_at FROM tabs ORDER BY position",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(pool)
     .await
     .map_err(|e| format!("Failed to load tabs: {}", e))?;
 
@@ -660,12 +859,12 @@ pub async fn load_workspace_state(pool: State<'_, DbPool>) -> Result<WorkspaceSt
     let cmd_rows: Vec<CommandRow> = sqlx::query_as(
         "SELECT id, tab_id, tile_id, type, args, state, created_at, updated_at FROM commands",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(pool)
     .await
     .map_err(|e| format!("Failed to load commands: {}", e))?;
 
     let mut commands = HashMap::new();
-    for (id, tab_id, tile_id, command_type, args_json, state_json, created_at, _updated_at) in
+    for (id, tab_id, tile_id, command_type, args_json, state_json, created_at, updated_at) in
         cmd_rows
     {
         let args: serde_json::Value = args_json
@@ -689,15 +888,10 @@ pub async fn load_workspace_state(pool: State<'_, DbPool>) -> Result<WorkspaceSt
                 tile_id,
                 created_at,
                 state,
+                updated_at: Some(updated_at),
             },
         );
     }
-
-    tracing::debug!(
-        "Loaded workspace state: {} tabs, {} commands",
-        tabs.len(),
-        commands.len()
-    );
 
     Ok(WorkspaceState {
         active_tab_id,
@@ -705,6 +899,21 @@ pub async fn load_workspace_state(pool: State<'_, DbPool>) -> Result<WorkspaceSt
         tabs,
         commands,
     })
+}
+
+/// Load workspace state from SQLite
+#[tauri::command]
+pub async fn load_workspace_state(pool: State<'_, DbPool>) -> Result<WorkspaceState, String> {
+    tracing::debug!("Loading workspace state from database");
+    let state = load_workspace_state_from_pool(pool.inner()).await?;
+
+    tracing::debug!(
+        "Loaded workspace state: {} tabs, {} commands",
+        state.tabs.len(),
+        state.commands.len()
+    );
+
+    Ok(state)
 }
 
 /// Save workspace state to SQLite
@@ -897,10 +1106,16 @@ pub async fn workspace_get_snapshot(
 
         let mut artifacts = Vec::new();
         collect_files(root_path, root_path, &mut artifacts, true)?;
+        sort_workspace_entries(&mut memories);
+        sort_workspace_entries(&mut artifacts);
         (memories, artifacts)
     } else {
         (Vec::new(), Vec::new())
     };
+
+    let workspace_state = load_workspace_state_from_pool(pool.inner()).await?;
+    let virtual_artifacts = workspace_virtual_artifacts(&descriptor, &workspace_state)?;
+    let artifacts = merge_workspace_artifacts(artifacts, virtual_artifacts);
 
     // Resolve agent schedule info from config + scheduler
     let (enabled, interval_minutes, next_run_in_seconds) =
@@ -1010,30 +1225,50 @@ pub async fn workspace_get_or_create_session(
 pub async fn workspace_read_file(
     request: WorkspaceReadFileRequest,
     state: State<'_, AppState>,
+    pool: State<'_, DbPool>,
 ) -> Result<WorkspaceFileContent, String> {
     let descriptor =
         resolve_workspace_descriptor(state.inner(), Some(request.workspace_id.clone()))?;
     let root_path = descriptor
         .root_path
+        .as_ref()
         .ok_or_else(|| "This workspace does not expose a filesystem root".to_string())?;
 
-    ensure_agent_workspace_root(&root_path)?;
-    let resolved = resolve_workspace_file_path(&root_path, &request.path)?;
-    let bytes = fs::read(&resolved)
-        .map_err(|error| format!("Failed to read {}: {}", resolved.display(), error))?;
-    let bytes = if bytes.len() > MAX_FILE_CONTENT_BYTES {
-        &bytes[..MAX_FILE_CONTENT_BYTES]
-    } else {
-        &bytes[..]
-    };
-    let content = String::from_utf8(bytes.to_vec())
-        .map_err(|_| format!("{} does not contain UTF-8 text", resolved.display()))?;
+    ensure_agent_workspace_root(root_path)?;
+    match resolve_workspace_file_path(root_path, &request.path) {
+        Ok(resolved) => {
+            let bytes = fs::read(&resolved)
+                .map_err(|error| format!("Failed to read {}: {}", resolved.display(), error))?;
+            let bytes = if bytes.len() > MAX_FILE_CONTENT_BYTES {
+                &bytes[..MAX_FILE_CONTENT_BYTES]
+            } else {
+                &bytes[..]
+            };
+            let content = String::from_utf8(bytes.to_vec())
+                .map_err(|_| format!("{} does not contain UTF-8 text", resolved.display()))?;
 
-    Ok(WorkspaceFileContent {
-        path: request.path,
-        viewer: viewer_for_path(&resolved),
-        content,
-    })
+            Ok(WorkspaceFileContent {
+                path: request.path,
+                viewer: viewer_for_path(&resolved),
+                content,
+            })
+        }
+        Err(_) => {
+            let workspace_state = load_workspace_state_from_pool(pool.inner()).await?;
+            if let Some(artifact) = workspace_virtual_artifacts(&descriptor, &workspace_state)?
+                .into_iter()
+                .find(|artifact| artifact.entry.path == request.path)
+            {
+                return Ok(WorkspaceFileContent {
+                    path: request.path,
+                    viewer: artifact.entry.viewer,
+                    content: artifact.content,
+                });
+            }
+
+            Err(format!("File not found: {}", request.path))
+        }
+    }
 }
 
 /// Copy a workspace file to a destination path chosen by the user.
@@ -1044,20 +1279,61 @@ pub async fn workspace_read_file(
 pub async fn workspace_download_file(
     request: WorkspaceDownloadRequest,
     state: State<'_, AppState>,
+    pool: State<'_, DbPool>,
 ) -> Result<String, String> {
     let descriptor =
         resolve_workspace_descriptor(state.inner(), Some(request.workspace_id.clone()))?;
     let root_path = descriptor
         .root_path
+        .as_ref()
         .ok_or_else(|| "This workspace does not expose a filesystem root".to_string())?;
 
-    ensure_agent_workspace_root(&root_path)?;
-    let source = resolve_workspace_file_path(&root_path, &request.path)?;
-
+    ensure_agent_workspace_root(root_path)?;
     let dest = PathBuf::from(&request.destination);
-    fs::copy(&source, &dest).map_err(|e| format!("Failed to save file: {}", e))?;
+    match resolve_workspace_file_path(root_path, &request.path) {
+        Ok(source) => {
+            fs::copy(&source, &dest).map_err(|e| format!("Failed to save file: {}", e))?;
+            Ok(dest.to_string_lossy().to_string())
+        }
+        Err(_) => {
+            let workspace_state = load_workspace_state_from_pool(pool.inner()).await?;
+            if let Some(artifact) = workspace_virtual_artifacts(&descriptor, &workspace_state)?
+                .into_iter()
+                .find(|artifact| artifact.entry.path == request.path)
+            {
+                fs::write(&dest, artifact.content)
+                    .map_err(|e| format!("Failed to save file: {}", e))?;
+                return Ok(dest.to_string_lossy().to_string());
+            }
 
-    Ok(dest.to_string_lossy().to_string())
+            Err(format!("File not found: {}", request.path))
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn workspace_write_file(
+    request: WorkspaceWriteFileRequest,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let descriptor =
+        resolve_workspace_descriptor(state.inner(), Some(request.workspace_id.clone()))?;
+    let root_path = descriptor
+        .root_path
+        .as_ref()
+        .ok_or_else(|| "This workspace does not expose a filesystem root".to_string())?;
+
+    ensure_agent_workspace_root(root_path)?;
+    let target = resolve_workspace_file_target(root_path, &request.path)?;
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to prepare {}: {}", parent.display(), error))?;
+    }
+
+    fs::write(&target, request.content)
+        .map_err(|error| format!("Failed to write {}: {}", target.display(), error))?;
+
+    Ok(request.path)
 }
 
 #[derive(Debug, Clone, Deserialize)]

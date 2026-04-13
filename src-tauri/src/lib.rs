@@ -177,13 +177,6 @@ pub fn run() {
             // Legacy chart/anomalies API commands
             commands::api::api_get_data,
             commands::api::api_get_contexts,
-            // Conversation commands
-            commands::api::api_create_conversation,
-            commands::api::api_get_conversation,
-            commands::api::api_list_conversations,
-            commands::api::api_delete_conversation,
-            commands::api::api_create_conversation_title,
-            commands::api::api_chat_completion,
             // Assistant runtime commands
             commands::assistant::assistant_create_session,
             commands::assistant::assistant_get_session,
@@ -236,6 +229,7 @@ pub fn run() {
             commands::workspace::workspace_get_snapshot,
             commands::workspace::workspace_get_or_create_session,
             commands::workspace::workspace_read_file,
+            commands::workspace::workspace_write_file,
             commands::workspace::workspace_download_file,
             commands::workspace::workspace_update_session_mcp,
             commands::workspace::workspace_set_provider,

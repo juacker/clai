@@ -113,7 +113,7 @@ pub struct ToolStreamEvent {
     pub space_id: String,
     /// Room ID for looking up the tab.
     pub room_id: String,
-    /// Tool name (e.g., "netdata.query").
+    /// Tool name (e.g., "workspace.createCanvas").
     pub tool: String,
     /// SSE event type (e.g., "message_start", "content_block_delta").
     pub event_type: String,
@@ -570,7 +570,7 @@ mod tests {
             agent_id: "anomaly_investigator".to_string(),
             space_id: "space-456".to_string(),
             room_id: "room-789".to_string(),
-            tool: "netdata.query".to_string(),
+            tool: "workspace.createCanvas".to_string(),
             event_type: "content_block_delta".to_string(),
             payload: serde_json::json!({
                 "delta": {
@@ -586,7 +586,7 @@ mod tests {
         assert_eq!(json["agentId"], "anomaly_investigator");
         assert_eq!(json["spaceId"], "space-456");
         assert_eq!(json["roomId"], "room-789");
-        assert_eq!(json["tool"], "netdata.query");
+        assert_eq!(json["tool"], "workspace.createCanvas");
         assert_eq!(json["eventType"], "content_block_delta");
         assert_eq!(json["payload"]["delta"]["type"], "text_delta");
         assert_eq!(json["payload"]["delta"]["text"], "Hello world");

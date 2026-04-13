@@ -5,8 +5,8 @@
 //!
 //! # Tool Types
 //!
-//! - **Rust-native** (`netdata.*`): Execute directly in Rust
-//! - **JS-bridge** (`canvas.*`, `tabs.*`): Defined in Rust, execute via Tauri events
+//! - **Workspace-backed / JS-bridge** (`workspace.*`): Defined in Rust and
+//!   executed via workspace file APIs or the frontend bridge
 //!
 //! # Architecture
 //!
@@ -16,8 +16,7 @@
 //! MCP: tool_name({ params })
 //!     ↓
 //! McpToolServer
-//!     ├─→ netdata.*: Execute directly in Rust via API
-//!     └─→ canvas.*/tabs.*: Tauri event → Frontend → Result
+//!     └─→ workspace.*: Tauri / workspace bridge → Frontend → Result
 //! ```
 //!
 //! # Tool Schema Generation
@@ -36,7 +35,7 @@
 //! The `server` module provides the MCP server implementation that exposes
 //! tools to AI CLIs via HTTP transport on localhost. Each agent execution
 //! starts its own server on a random port. Use `McpToolServer::with_bridge()`
-//! to create a server with JS bridge support for canvas/tabs tools.
+//! to create a server with workspace bridge support.
 
 pub mod bridge;
 pub mod client;

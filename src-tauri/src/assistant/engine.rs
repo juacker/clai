@@ -571,9 +571,8 @@ fn build_system_prompt(
          - Prior tool outputs in the conversation may be stale. Treat them as historical context, not guaranteed current state.\n\
          - Evaluate whether prior tool outputs are still fresh enough for the current decision. When information can expire or change over time (for example issues, alerts, metrics, repo state, or external system status), re-run the relevant tools if freshness matters.\n\
          - Chat is the default output channel. Use normal assistant replies for status, findings, and conclusions.\n\
-         - Use canvas, dashboard, and tabs tools only when a workspace artifact will materially improve understanding or preserve useful state.\n\
-         - When using canvas or dashboard tools, first call `tabs.getTileLayout` to discover \
-           available commandIds. Only use `tabs.splitTile` when no suitable panel already exists.\n\
+         - Prefer `workspace.*` tools for durable outputs. Use them to list, read, create, and update artifacts that should remain in the workspace after the run.\n\
+         - Before creating a new durable artifact, call `workspace.listArtifacts` and reuse or update an existing relevant artifact when possible.\n\
          - Prefer updating existing workspace artifacts over duplicating them.\n\
          - Be concise and direct in your responses. Prefer concrete actions and evidence over vague summaries.\n",
     );
@@ -608,7 +607,7 @@ fn build_system_prompt(
         ));
         prompt.push_str(
             "Your assistant text is visible to the user in chat. Treat chat as the primary way to communicate progress and outcomes.\n\
-             Use dashboard/canvas/tabs tools only when they add durable value to the workspace.\n\
+             Prefer `workspace.*` artifact tools when saving durable workspace outputs.\n\
              For routine scheduled passes, a concise chat update is often sufficient.\n\
              Prefer updating existing visuals over recreating duplicate panels when the topic is unchanged.\n",
         );

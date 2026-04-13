@@ -1,23 +1,11 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { Suspense, memo, useCallback, useMemo, useState } from 'react';
 import { save } from '@tauri-apps/plugin-dialog';
-import MarkdownMessage from '../components/Chat/MarkdownMessage';
 import { WorkspaceProvider, useWorkspace } from './WorkspaceContext';
 import { downloadWorkspaceFile } from './client';
 import FileBrowser from './components/FileBrowser';
 import { COMPONENT_REGISTRY, VALID_LAYOUTS } from './components/registry';
+import { getViewer } from './viewers/registry';
 import styles from './WorkspaceRenderer.module.css';
-
-/**
- * Strip YAML frontmatter from markdown content for the viewer.
- */
-const stripFrontmatter = (text) => {
-  if (!text) return text;
-  const match = text.match(/^---\s*\n[\s\S]*?\n---\s*\n?/);
-  if (match) return text.slice(match[0].length).trimStart();
-  return text;
-};
-
-const codeBlock = (language, content) => `\`\`\`${language}\n${content}\n\`\`\``;
 
 /**
  * Render a single section from the workspace definition.
@@ -47,6 +35,7 @@ Section.displayName = 'Section';
 
 /**
  * File content renderer for the viewer panel.
+ * Dispatches to the appropriate viewer component via the viewer registry.
  */
 const FileContent = memo(({ viewerState }) => {
   if (viewerState.loading) {
@@ -58,20 +47,12 @@ const FileContent = memo(({ viewerState }) => {
   if (!viewerState.content) {
     return <div className={styles.viewerEmpty}>This file is empty.</div>;
   }
-  if (viewerState.viewer === 'markdown') {
-    return <MarkdownMessage content={stripFrontmatter(viewerState.content)} />;
-  }
-  if (viewerState.viewer === 'json' || viewerState.viewer === 'canvas') {
-    let formatted = viewerState.content;
-    try {
-      formatted = JSON.stringify(JSON.parse(viewerState.content), null, 2);
-    } catch {
-      // keep raw
-    }
-    return <MarkdownMessage content={codeBlock('json', formatted)} />;
-  }
+
+  const Viewer = getViewer(viewerState.viewer);
   return (
-    <pre className={styles.viewerPre}>{viewerState.content}</pre>
+    <Suspense fallback={<div className={styles.viewerEmpty}>Loading viewer...</div>}>
+      <Viewer content={viewerState.content} />
+    </Suspense>
   );
 });
 

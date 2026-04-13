@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAssistantStore } from '../assistant';
 import ChatMessageList from '../components/AssistantChat/ChatMessageList';
-import MarkdownMessage from '../components/Chat/MarkdownMessage';
 import { useChatManager } from '../contexts/ChatManagerContext';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import WorkspaceRenderer from '../workspace/WorkspaceRenderer';
+import { getViewer } from '../workspace/viewers/registry';
 import {
   getWorkspaceSnapshot,
   readWorkspaceFile,
@@ -24,15 +24,6 @@ const formatTimestamp = (timestamp) => {
     minute: '2-digit',
   });
 };
-
-const stripFrontmatter = (text) => {
-  if (!text) return text;
-  const match = text.match(/^---\s*\n[\s\S]*?\n---\s*\n?/);
-  if (match) return text.slice(match[0].length).trimStart();
-  return text;
-};
-
-const codeBlock = (language, content) => `\`\`\`${language}\n${content}\n\`\`\``;
 
 const renderFileContent = (file) => {
   if (!file) {
@@ -59,25 +50,11 @@ const renderFileContent = (file) => {
     );
   }
 
-  if (file.viewer === 'markdown') {
-    return <MarkdownMessage content={stripFrontmatter(file.content)} />;
-  }
-
-  if (file.viewer === 'json' || file.viewer === 'canvas') {
-    let formatted = file.content;
-    try {
-      formatted = JSON.stringify(JSON.parse(file.content), null, 2);
-    } catch {
-      // Keep raw content if it is not valid JSON.
-    }
-
-    return <MarkdownMessage content={codeBlock('json', formatted)} />;
-  }
-
+  const Viewer = getViewer(file.viewer);
   return (
-    <pre className={styles.viewerPre}>
-      {file.content}
-    </pre>
+    <Suspense fallback={<div className={styles.viewerEmpty}>Loading viewer...</div>}>
+      <Viewer content={file.content} />
+    </Suspense>
   );
 };
 

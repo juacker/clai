@@ -17,6 +17,16 @@ export async function readWorkspaceFile(workspaceId, path) {
   });
 }
 
+export async function writeWorkspaceFile(workspaceId, path, content) {
+  return invoke('workspace_write_file', {
+    request: {
+      workspaceId,
+      path,
+      content,
+    },
+  });
+}
+
 export async function downloadWorkspaceFile(workspaceId, path, destination) {
   return invoke('workspace_download_file', {
     request: {

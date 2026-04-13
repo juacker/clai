@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 /// Parameters for opening an anomalies panel.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct OpenAnomaliesParams {
     /// Netdata space ID to inspect.
     #[schemars(description = "Netdata space ID")]

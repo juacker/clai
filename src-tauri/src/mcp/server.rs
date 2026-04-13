@@ -12,9 +12,7 @@
 //!     ▼
 //! McpToolServer (HTTP on 127.0.0.1:PORT)
 //!     │
-//!     ├─→ netdata.query → NetdataTools (Rust-native, direct API call)
-//!     │
-//!     └─→ dashboard.*/tabs.* → DashboardTools/TabsTools (JS-bridge, Tauri events)
+//!     └─→ workspace.* → workspace-backed durable artifact operations
 //! ```
 //!
 //! # Usage
@@ -57,22 +55,22 @@ use rmcp::{
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
-use crate::api::netdata::NetdataApi;
-
 use super::bridge::JsBridge;
-use super::tools::{CanvasTools, ChatTools, DashboardTools, NetdataTools, TabsTools};
+use super::tools::{CanvasTools, DashboardTools, TabsTools, WorkspaceTools};
 
 // Re-export parameter types from tool modules (single source of truth)
 pub use super::tools::canvas::{
     AddChartNodeParams, AddEdgeParams, AddMarkdownNodeParams, AddStatusBadgeParams,
     ClearCanvasParams, RemoveEdgeParams, RemoveNodeParams, UpdateNodeParams,
 };
-pub use super::tools::chat::SendMessageParams;
 pub use super::tools::dashboard::{
     AddChartParams, ClearChartsParams, RemoveChartParams, SetTimeRangeParams,
 };
-pub use super::tools::netdata::NetdataQueryParams;
 pub use super::tools::tabs::{GetCommandContentParams, RemoveTileParams, SplitTileParams};
+pub use super::tools::workspace::{
+    CreateCanvasArtifactParams, CreateDashboardArtifactParams, ListArtifactsParams,
+    ReadArtifactParams, UpdateCanvasArtifactParams, UpdateDashboardArtifactParams,
+};
 
 // =============================================================================
 // Error Types
@@ -245,24 +243,37 @@ async fn log_requests(request: Request<Body>, next: Next) -> Response {
 ///
 /// # Tool Filtering
 ///
-/// By default, all tools are available. Use `with_allowed_tools()` to restrict
-/// which tools the AI CLI can see and use.
+/// By default, the server exposes the current public agent tool set.
+/// Use `with_allowed_tools()` to override that list for tests or specialized flows.
 #[derive(Clone)]
 #[allow(dead_code)] // Fields used via MCP #[tool] methods
 pub struct McpToolServer {
-    /// Netdata tools (Rust-native).
-    netdata: NetdataTools,
+    /// Agent ID.
+    agent_id: String,
+    /// Space ID.
+    space_id: String,
+    /// Room ID.
+    room_id: String,
     /// Dashboard tools (JS-bridge).
     dashboard: DashboardTools,
     /// Tabs tools (JS-bridge).
     tabs: TabsTools,
     /// Canvas tools (JS-bridge).
     canvas: CanvasTools,
-    /// Chat tools (JS-bridge).
-    chat: ChatTools,
+    /// Workspace artifact tools (JS-bridge).
+    workspace: WorkspaceTools,
     /// Allowed tools filter. If None, all tools are allowed.
     allowed_tools: Option<Vec<String>>,
 }
+
+const DEFAULT_AGENT_TOOL_NAMES: &[&str] = &[
+    "workspace.listArtifacts",
+    "workspace.readArtifact",
+    "workspace.createCanvas",
+    "workspace.updateCanvas",
+    "workspace.createDashboard",
+    "workspace.updateDashboard",
+];
 
 // =============================================================================
 // Tool Router Implementation
@@ -278,37 +289,39 @@ impl McpToolServer {
     ///
     /// This constructor creates a server without a JS bridge, useful for testing.
     /// Dashboard, tabs, and canvas tools will return errors when executed.
-    pub fn new(api: Arc<NetdataApi>, agent_id: String, space_id: String, room_id: String) -> Self {
+    pub fn new(
+        _api: Arc<crate::api::netdata::NetdataApi>,
+        agent_id: String,
+        space_id: String,
+        room_id: String,
+    ) -> Self {
         Self {
-            netdata: NetdataTools::new(api, space_id.clone(), room_id.clone()),
+            agent_id: agent_id.clone(),
+            space_id: space_id.clone(),
+            room_id: room_id.clone(),
             dashboard: DashboardTools::new(agent_id.clone(), space_id.clone(), room_id.clone()),
             tabs: TabsTools::new(agent_id.clone(), space_id.clone(), room_id.clone()),
             canvas: CanvasTools::new(agent_id.clone(), space_id.clone(), room_id.clone()),
-            chat: ChatTools::new(agent_id, space_id, room_id),
+            workspace: WorkspaceTools::new(agent_id.clone(), space_id.clone(), room_id.clone()),
             allowed_tools: None,
         }
     }
 
     /// Create a new MCP tool server with JS bridge for actual execution.
     ///
-    /// When the bridge is provided, NetdataTools will emit SSE streaming events
-    /// so the frontend can display real-time query progress.
+    /// When the bridge is provided, workspace-backed tools can persist durable
+    /// artifacts through the frontend/workspace bridge.
     pub fn with_bridge(
-        api: Arc<NetdataApi>,
+        _api: Arc<crate::api::netdata::NetdataApi>,
         agent_id: String,
         space_id: String,
         room_id: String,
         bridge: JsBridge,
     ) -> Self {
         Self {
-            // Pass bridge to NetdataTools for SSE streaming
-            netdata: NetdataTools::with_bridge(
-                api,
-                agent_id.clone(),
-                space_id.clone(),
-                room_id.clone(),
-                bridge.clone(),
-            ),
+            agent_id: agent_id.clone(),
+            space_id: space_id.clone(),
+            room_id: room_id.clone(),
             dashboard: DashboardTools::with_bridge(
                 agent_id.clone(),
                 space_id.clone(),
@@ -327,7 +340,12 @@ impl McpToolServer {
                 room_id.clone(),
                 bridge.clone(),
             ),
-            chat: ChatTools::with_bridge(agent_id, space_id, room_id, bridge),
+            workspace: WorkspaceTools::with_bridge(
+                agent_id.clone(),
+                space_id.clone(),
+                room_id.clone(),
+                bridge.clone(),
+            ),
             allowed_tools: None,
         }
     }
@@ -340,19 +358,156 @@ impl McpToolServer {
         self
     }
 
+    fn effective_allowed_tools(&self) -> Vec<String> {
+        self.allowed_tools.clone().unwrap_or_else(|| {
+            DEFAULT_AGENT_TOOL_NAMES
+                .iter()
+                .map(|name| (*name).to_string())
+                .collect()
+        })
+    }
+
+    fn is_tool_allowed(&self, tool_name: &str) -> bool {
+        self.effective_allowed_tools()
+            .iter()
+            .any(|name| name == tool_name)
+    }
+
     /// Get the agent ID.
     pub fn agent_id(&self) -> &str {
-        self.dashboard.agent_id()
+        &self.agent_id
     }
 
     /// Get the space ID.
     pub fn space_id(&self) -> &str {
-        self.netdata.space_id()
+        &self.space_id
     }
 
     /// Get the room ID.
     pub fn room_id(&self) -> &str {
-        self.netdata.room_id()
+        &self.room_id
+    }
+
+    /// List durable workspace artifacts.
+    #[tool(
+        name = "workspace.listArtifacts",
+        description = "List durable artifacts in the agent workspace. Supports optional viewer and path-prefix filtering."
+    )]
+    async fn workspace_list_artifacts(
+        &self,
+        params: Parameters<ListArtifactsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = self.workspace.list_artifacts(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "workspace.listArtifacts error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
+    /// Read a durable workspace artifact.
+    #[tool(
+        name = "workspace.readArtifact",
+        description = "Read a durable artifact from the agent workspace by path."
+    )]
+    async fn workspace_read_artifact(
+        &self,
+        params: Parameters<ReadArtifactParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = self.workspace.read_artifact(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "workspace.readArtifact error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
+    /// Create a canvas artifact in the workspace.
+    #[tool(
+        name = "workspace.createCanvas",
+        description = "Create a durable .canvas artifact in the agent workspace. Returns the saved path."
+    )]
+    async fn workspace_create_canvas(
+        &self,
+        params: Parameters<CreateCanvasArtifactParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = self.workspace.create_canvas(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "workspace.createCanvas error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
+    /// Update a canvas artifact in the workspace.
+    #[tool(
+        name = "workspace.updateCanvas",
+        description = "Replace the contents of an existing .canvas artifact in the agent workspace."
+    )]
+    async fn workspace_update_canvas(
+        &self,
+        params: Parameters<UpdateCanvasArtifactParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = self.workspace.update_canvas(params.0).await.map_err(|e| {
+            tracing::warn!(error = %e, "workspace.updateCanvas error");
+            McpError::internal_error(e.to_string(), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
+    /// Create a dashboard artifact in the workspace.
+    #[tool(
+        name = "workspace.createDashboard",
+        description = "Create a durable .dashboard.json artifact in the agent workspace. Returns the saved path."
+    )]
+    async fn workspace_create_dashboard(
+        &self,
+        params: Parameters<CreateDashboardArtifactParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = self
+            .workspace
+            .create_dashboard(params.0)
+            .await
+            .map_err(|e| {
+                tracing::warn!(error = %e, "workspace.createDashboard error");
+                McpError::internal_error(e.to_string(), None)
+            })?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
+    }
+
+    /// Update a dashboard artifact in the workspace.
+    #[tool(
+        name = "workspace.updateDashboard",
+        description = "Replace the contents of an existing .dashboard.json artifact in the agent workspace."
+    )]
+    async fn workspace_update_dashboard(
+        &self,
+        params: Parameters<UpdateDashboardArtifactParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = self
+            .workspace
+            .update_dashboard(params.0)
+            .await
+            .map_err(|e| {
+                tracing::warn!(error = %e, "workspace.updateDashboard error");
+                McpError::internal_error(e.to_string(), None)
+            })?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&result).unwrap_or_default(),
+        )]))
     }
 
     /// Start the MCP server with HTTP transport.
@@ -448,31 +603,6 @@ impl McpToolServer {
             port,
             shutdown: shutdown_token,
         })
-    }
-
-    // -------------------------------------------------------------------------
-    // Netdata Tools (Rust-native)
-    // -------------------------------------------------------------------------
-
-    /// Query Netdata Cloud AI for analysis of metrics, alerts, anomalies,
-    /// and infrastructure health. The AI has access to all monitoring data.
-    #[tool(
-        name = "netdata.query",
-        description = "Query Netdata Cloud AI for analysis of metrics, alerts, anomalies, and infrastructure health. Returns text analysis."
-    )]
-    async fn netdata_query(
-        &self,
-        params: Parameters<NetdataQueryParams>,
-    ) -> Result<CallToolResult, McpError> {
-        tracing::debug!(query = %params.0.query, "netdata.query called");
-
-        let result = self.netdata.query.query(params.0).await.map_err(|e| {
-            tracing::warn!(error = %e, "netdata.query error");
-            McpError::internal_error(e.to_string(), None)
-        })?;
-
-        tracing::debug!(result_len = result.len(), "netdata.query result");
-        Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
     // -------------------------------------------------------------------------
@@ -836,32 +966,6 @@ impl McpToolServer {
             serde_json::to_string(&result).unwrap_or_default(),
         )]))
     }
-
-    // -------------------------------------------------------------------------
-    // Chat Tools (JS-bridge)
-    // -------------------------------------------------------------------------
-
-    /// Send a text message to the user in the AgentChat.
-    #[tool(
-        name = "chat.message",
-        description = "Send a text message to the user. Use this to communicate findings, ask questions, or provide updates. Supports markdown formatting."
-    )]
-    async fn chat_send_message(
-        &self,
-        params: Parameters<SendMessageParams>,
-    ) -> Result<CallToolResult, McpError> {
-        tracing::debug!(message_len = %params.0.message.len(), message_type = ?params.0.message_type, "chat.message called");
-
-        let result = self.chat.send_message(params.0).await.map_err(|e| {
-            tracing::warn!(error = %e, "chat.message error");
-            McpError::internal_error(e.to_string(), None)
-        })?;
-
-        tracing::debug!(result = ?result, "chat.message success");
-        Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string(&result).unwrap_or_default(),
-        )]))
-    }
 }
 
 // =============================================================================
@@ -876,9 +980,7 @@ impl ServerHandler for McpToolServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "Netdata AI Agent tools. Use netdata.query for data analysis, \
-                 dashboard.* for chart visualization, tabs.* for layout management, \
-                 and canvas.* for creating node-based visualizations."
+                "CLAI workspace agent tools. Use workspace.* for durable workspace artifacts."
                     .into(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
@@ -893,7 +995,12 @@ impl ServerHandler for McpToolServer {
         _context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> impl Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
         async move {
-            let tools = Self::tool_router().list_all();
+            let allowed = self.effective_allowed_tools();
+            let tools = Self::tool_router()
+                .list_all()
+                .into_iter()
+                .filter(|tool| allowed.iter().any(|name| name == &tool.name))
+                .collect::<Vec<_>>();
 
             let tool_names: Vec<_> = tools.iter().map(|t| &t.name).collect();
             tracing::debug!(tools = ?tool_names, count = tools.len(), "list_tools response");
@@ -914,6 +1021,13 @@ impl ServerHandler for McpToolServer {
         async move {
             tracing::debug!(tool_name = %request.name, "call_tool");
 
+            if !self.is_tool_allowed(&request.name) {
+                return Err(McpError::internal_error(
+                    format!("Tool not available: {}", request.name),
+                    None,
+                ));
+            }
+
             let tool_context = ToolCallContext::new(self, request, context);
             Self::tool_router().call(tool_context).await
         }
@@ -928,6 +1042,7 @@ impl ServerHandler for McpToolServer {
 mod tests {
     use super::*;
     use crate::api::client::create_client;
+    use crate::api::netdata::NetdataApi;
 
     fn create_test_api() -> Arc<NetdataApi> {
         let client = create_client();
@@ -969,46 +1084,6 @@ mod tests {
     }
 
     #[test]
-    fn test_netdata_query_params_deserialization() {
-        let json = serde_json::json!({
-            "query": "What anomalies are happening?"
-        });
-
-        let params: NetdataQueryParams = serde_json::from_value(json).unwrap();
-        assert_eq!(params.query, "What anomalies are happening?");
-    }
-
-    #[test]
-    fn test_add_chart_params_deserialization() {
-        let json = serde_json::json!({
-            "spaceId": "space-1",
-            "roomId": "room-1",
-            "context": "system.cpu",
-            "groupBy": ["node"],
-            "filterBy": {"node": ["server1"]}
-        });
-
-        let params: AddChartParams = serde_json::from_value(json).unwrap();
-        assert_eq!(params.space_id, "space-1");
-        assert_eq!(params.room_id, "room-1");
-        assert_eq!(params.context, "system.cpu");
-        assert_eq!(params.group_by, Some(vec!["node".to_string()]));
-        assert!(params.filter_by.is_some());
-    }
-
-    #[test]
-    fn test_split_tile_params_deserialization() {
-        let json = serde_json::json!({
-            "parentTileId": "tile-1",
-            "splitType": "vertical"
-        });
-
-        let params: SplitTileParams = serde_json::from_value(json).unwrap();
-        assert_eq!(params.parent_tile_id, "tile-1");
-        assert_eq!(params.split_type, "vertical");
-    }
-
-    #[test]
     fn test_with_allowed_tools() {
         let api = create_test_api();
         let server = McpToolServer::new(
@@ -1017,7 +1092,7 @@ mod tests {
             "space-123".to_string(),
             "room-456".to_string(),
         )
-        .with_allowed_tools(vec!["netdata.query".to_string()]);
+        .with_allowed_tools(vec!["workspace.listArtifacts".to_string()]);
 
         assert!(server.allowed_tools.is_some());
         assert_eq!(server.allowed_tools.as_ref().unwrap().len(), 1);
@@ -1025,43 +1100,32 @@ mod tests {
             .allowed_tools
             .as_ref()
             .unwrap()
-            .contains(&"netdata.query".to_string()));
+            .contains(&"workspace.listArtifacts".to_string()));
     }
 
     #[test]
-    fn test_tool_router_returns_all_tools() {
-        // Verify that tool_router returns all 17 tools
-        // (removed redundant: dashboard.getCharts, dashboard.getChartsDetailed, tabs.getTileContent,
-        //  canvas.getNodes, canvas.getNodeDetails, canvas.getNodesDetailed)
-        // (added: tabs.getCommandContent as unified content query tool)
-        // (added: chat.message for agent-to-user communication)
-        let all_tools: Vec<_> = (McpToolServer::tool_router)().into_iter().collect();
-        assert_eq!(all_tools.len(), 18);
+    fn test_default_public_tool_set() {
+        let api = create_test_api();
+        let server = McpToolServer::new(
+            api,
+            "test_agent".to_string(),
+            "space-123".to_string(),
+            "room-456".to_string(),
+        );
 
-        let tool_names: Vec<_> = all_tools.iter().map(|r| r.name()).collect();
-        // Netdata tools (1)
-        assert!(tool_names.contains(&"netdata.query"));
-        // Dashboard tools (4)
-        assert!(tool_names.contains(&"dashboard.addChart"));
-        assert!(tool_names.contains(&"dashboard.removeChart"));
-        assert!(tool_names.contains(&"dashboard.clearCharts"));
-        assert!(tool_names.contains(&"dashboard.setTimeRange"));
-        // Tabs tools (4)
-        assert!(tool_names.contains(&"tabs.splitTile"));
-        assert!(tool_names.contains(&"tabs.removeTile"));
-        assert!(tool_names.contains(&"tabs.getTileLayout"));
-        assert!(tool_names.contains(&"tabs.getCommandContent"));
-        // Canvas tools (8)
-        assert!(tool_names.contains(&"canvas.addChart"));
-        assert!(tool_names.contains(&"canvas.addStatusBadge"));
-        assert!(tool_names.contains(&"canvas.addMarkdown"));
-        assert!(tool_names.contains(&"canvas.addEdge"));
-        assert!(tool_names.contains(&"canvas.removeNode"));
-        assert!(tool_names.contains(&"canvas.removeEdge"));
-        assert!(tool_names.contains(&"canvas.clearCanvas"));
-        assert!(tool_names.contains(&"canvas.updateNode"));
-        // Chat tools (1)
-        assert!(tool_names.contains(&"chat.message"));
+        let tool_names = server.effective_allowed_tools();
+        assert_eq!(tool_names.len(), 6);
+        assert!(tool_names.contains(&"workspace.listArtifacts".to_string()));
+        assert!(tool_names.contains(&"workspace.readArtifact".to_string()));
+        assert!(tool_names.contains(&"workspace.createCanvas".to_string()));
+        assert!(tool_names.contains(&"workspace.updateCanvas".to_string()));
+        assert!(tool_names.contains(&"workspace.createDashboard".to_string()));
+        assert!(tool_names.contains(&"workspace.updateDashboard".to_string()));
+        assert!(!tool_names.contains(&"tabs.splitTile".to_string()));
+        assert!(!tool_names.contains(&"dashboard.addChart".to_string()));
+        assert!(!tool_names.contains(&"canvas.addChart".to_string()));
+        assert!(!tool_names.contains(&"netdata.query".to_string()));
+        assert!(!tool_names.contains(&"chat.message".to_string()));
     }
 
     #[tokio::test]

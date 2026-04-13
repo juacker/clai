@@ -60,7 +60,7 @@ export const subscribe = (tabId, callback) => {
  * @param {object} event - The event object
  * @param {string} event.type - Event type: 'tool:start' | 'tool:complete' | 'tool:error' | 'tool:stream'
  * @param {string} event.id - Request/tool call ID
- * @param {string} event.tool - Tool name (e.g., 'netdata.query', 'canvas.addChart')
+ * @param {string} event.tool - Tool name (e.g., 'workspace.createCanvas', 'canvas.addChart')
  * @param {object} [event.params] - Tool parameters (for 'tool:start')
  * @param {object} [event.result] - Tool result (for 'tool:complete')
  * @param {string} [event.error] - Error message (for 'tool:error')

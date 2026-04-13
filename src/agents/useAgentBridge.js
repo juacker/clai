@@ -27,6 +27,11 @@ import { useTabManager } from '../contexts/TabManagerContext';
 import { useCommand } from '../contexts/CommandContext';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import {
+  getWorkspaceSnapshot,
+  readWorkspaceFile,
+  writeWorkspaceFile,
+} from '../workspace/client';
+import {
   initAgentBridge,
   cleanupAgentBridge,
   registerToolHandler,
@@ -39,9 +44,137 @@ import {
   clearTabCreationLock,
   getAgentTabId,
 } from './bridge';
-import { emit as emitActivity } from './activityBus';
 
 const MCP_SERVERS_CHANGED_EVENT = 'mcp-servers-changed';
+const DEFAULT_CANVAS_STATE = { nodes: [], edges: [] };
+const DEFAULT_DASHBOARD_STATE = { elements: [], timeRange: '1h' };
+
+const getCommandState = (commandId, fallbackState) => {
+  const cmd = useWorkspaceStore.getState().commands[commandId];
+  return cmd?.state || fallbackState;
+};
+
+const getCanvasState = (commandId) => getCommandState(commandId, DEFAULT_CANVAS_STATE);
+const getDashboardState = (commandId) => getCommandState(commandId, DEFAULT_DASHBOARD_STATE);
+
+const getCanvasArtifactPath = (commandId) => `visualizations/canvas-${commandId}.canvas`;
+const getDashboardArtifactPath = (commandId) => `visualizations/dashboard-${commandId}.dashboard.json`;
+
+const normalizeArtifactPath = (kind, inputPath = null) => {
+  const trimmed = typeof inputPath === 'string' ? inputPath.trim() : '';
+  const extension = kind === 'canvas' ? '.canvas' : '.dashboard.json';
+
+  if (!trimmed) {
+    return `visualizations/${kind}-${Date.now()}${extension}`;
+  }
+
+  if (trimmed.endsWith(extension)) {
+    return trimmed;
+  }
+
+  return `${trimmed}${extension}`;
+};
+
+const parseArtifactContent = (viewer, content) => {
+  if (!content || !['canvas', 'dashboard', 'json'].includes(viewer)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+};
+
+const serializeCanvasArtifact = (state = DEFAULT_CANVAS_STATE) => JSON.stringify({
+  nodes: state.nodes || [],
+  edges: state.edges || [],
+}, null, 2);
+
+const serializeDashboardArtifact = (state = DEFAULT_DASHBOARD_STATE) => JSON.stringify({
+  elements: state.elements || [],
+  timeRange: state.timeRange || state.selectedInterval?.label || DEFAULT_DASHBOARD_STATE.timeRange,
+}, null, 2);
+
+const normalizeCanvasArtifact = (canvas) => {
+  if (!canvas || typeof canvas !== 'object' || Array.isArray(canvas)) {
+    throw new Error('canvas must be an object');
+  }
+
+  return {
+    nodes: Array.isArray(canvas.nodes) ? canvas.nodes : [],
+    edges: Array.isArray(canvas.edges) ? canvas.edges : [],
+  };
+};
+
+const normalizeDashboardArtifact = (dashboard) => {
+  if (!dashboard || typeof dashboard !== 'object' || Array.isArray(dashboard)) {
+    throw new Error('dashboard must be an object');
+  }
+
+  return {
+    elements: Array.isArray(dashboard.elements) ? dashboard.elements : [],
+    timeRange: typeof dashboard.timeRange === 'string' && dashboard.timeRange.trim()
+      ? dashboard.timeRange.trim()
+      : DEFAULT_DASHBOARD_STATE.timeRange,
+  };
+};
+
+const createCanvasNode = (id, type, position, data) => {
+  const defaultDimensions = {
+    chart: { width: data?.width || 450, height: data?.height || 350 },
+    markdown: { width: data?.width || 400, height: data?.height || 200 },
+    statusBadge: { width: data?.width || 200, height: data?.height || 120 },
+  };
+  const dims = defaultDimensions[type] || { width: 300, height: 200 };
+
+  return {
+    id,
+    type,
+    position,
+    data,
+    style: { width: dims.width, height: dims.height },
+  };
+};
+
+const createCanvasEdge = (id, sourceId, targetId, options = {}) => ({
+  id,
+  source: sourceId,
+  target: targetId,
+  type: 'smoothstep',
+  animated: options.animated === true,
+  label: options.label || undefined,
+});
+
+const createDashboardElement = (id, config) => ({
+  id,
+  type: 'context-chart',
+  config,
+});
+
+const persistVisualizationArtifact = async (workspaceId, commandType, commandId) => {
+  if (!workspaceId || !commandId) {
+    return;
+  }
+
+  if (commandType === 'canvas') {
+    await writeWorkspaceFile(
+      workspaceId,
+      getCanvasArtifactPath(commandId),
+      serializeCanvasArtifact(getCanvasState(commandId))
+    );
+    return;
+  }
+
+  if (commandType === 'dashboard') {
+    await writeWorkspaceFile(
+      workspaceId,
+      getDashboardArtifactPath(commandId),
+      serializeDashboardArtifact(getDashboardState(commandId))
+    );
+  }
+};
 
 /**
  * Create a store-backed fallback canvas API for when the Canvas component
@@ -57,15 +190,14 @@ const createStoreBackedCanvasApi = (commandId) => {
   };
 
   const getState = () => {
-    const cmd = useWorkspaceStore.getState().commands[commandId];
-    return cmd?.state || { nodes: [], edges: [] };
+    return getCanvasState(commandId);
   };
 
   return {
     addNode: (type, position, data) => {
       const id = generateNodeId();
       atomicUpdate((state) => ({
-        nodes: [...(state.nodes || []), { id, type, position, data, width: data?.width || 400, height: data?.height || 300 }],
+        nodes: [...(state.nodes || []), createCanvasNode(id, type, position, data)],
       }));
       return id;
     },
@@ -120,15 +252,14 @@ const createStoreBackedDashboardApi = (commandId) => {
   };
 
   const getState = () => {
-    const cmd = useWorkspaceStore.getState().commands[commandId];
-    return cmd?.state || { elements: [], selectedInterval: { label: '15m', seconds: 900 } };
+    return getDashboardState(commandId);
   };
 
   return {
     addChart: (config) => {
       const elementId = generateElementId();
       atomicUpdate((state) => ({
-        elements: [...(state.elements || []), { id: elementId, type: 'context-chart', config }],
+        elements: [...(state.elements || []), createDashboardElement(elementId, config)],
       }));
       return elementId;
     },
@@ -142,7 +273,7 @@ const createStoreBackedDashboardApi = (commandId) => {
     getChartsDetailed: () => (getState().elements || []).filter((el) => el.type === 'context-chart'),
     hasElement: (elementId) => (getState().elements || []).some((el) => el.id === elementId),
     setTimeRange: (range) => {
-      atomicUpdate(() => ({ selectedInterval: { label: range } }));
+      atomicUpdate(() => ({ timeRange: range }));
       return true;
     },
     clearCharts: () => {
@@ -568,7 +699,7 @@ export const useAgentBridge = () => {
     if (!command.api) {
       // Component not mounted — use store-backed fallback for canvas
       if (commandType === 'canvas') {
-        return { ...command, api: createStoreBackedCanvasApi(commandId) };
+        return { ...command, api: createStoreBackedCanvasApi(commandId), isStoreBacked: true };
       }
       if (required) {
         throw new Error(`${commandType} not ready: ${commandId}`);
@@ -654,7 +785,7 @@ export const useAgentBridge = () => {
       let command;
       if (commandId) {
         command = tabManagerRef.current.getCommandFromTab(tabId, commandId);
-        if (!command || command.type !== 'dashboard') return null;
+      if (!command || command.type !== 'dashboard') return null;
       } else {
         const dashboards = tabManagerRef.current.getCommandsByTypeFromTab(tabId, 'dashboard');
         command = dashboards.length > 0 ? dashboards[0] : null;
@@ -662,7 +793,7 @@ export const useAgentBridge = () => {
       if (!command) return null;
       // Provide store-backed fallback when component isn't mounted
       if (!command.api) {
-        return { ...command, api: createStoreBackedDashboardApi(command.id) };
+        return { ...command, api: createStoreBackedDashboardApi(command.id), isStoreBacked: true };
       }
       return command;
     };
@@ -770,6 +901,131 @@ export const useAgentBridge = () => {
       return { commandId: command.id, tileId: targetTileId, reused: false };
     });
 
+    // Register workspace artifact handlers
+    registerToolHandler('workspace.listArtifacts', async (request) => {
+      const workspaceId = request.agentId;
+      if (!workspaceId) {
+        throw new Error('workspace.listArtifacts requires an agent workspace');
+      }
+
+      const snapshot = await getWorkspaceSnapshot(workspaceId);
+      const viewer = typeof request.params?.viewer === 'string' ? request.params.viewer.trim().toLowerCase() : '';
+      const pathPrefix = typeof request.params?.pathPrefix === 'string' ? request.params.pathPrefix.trim() : '';
+      const limit = Number.isFinite(request.params?.limit) ? Math.max(1, Math.floor(request.params.limit)) : 50;
+
+      const artifacts = (snapshot?.artifacts || [])
+        .filter((entry) => (!viewer || entry.viewer === viewer))
+        .filter((entry) => (!pathPrefix || entry.path.startsWith(pathPrefix)))
+        .slice(0, limit)
+        .map((entry) => ({
+          path: entry.path,
+          name: entry.name,
+          viewer: entry.viewer,
+          updatedAt: entry.updatedAt || null,
+          preview: entry.preview || null,
+          size: entry.size || null,
+        }));
+
+      return {
+        count: artifacts.length,
+        artifacts,
+      };
+    });
+
+    registerToolHandler('workspace.readArtifact', async (request) => {
+      const workspaceId = request.agentId;
+      const path = request.params?.path;
+
+      if (!workspaceId) {
+        throw new Error('workspace.readArtifact requires an agent workspace');
+      }
+      if (!path) {
+        throw new Error('path is required');
+      }
+
+      const result = await readWorkspaceFile(workspaceId, path);
+      return {
+        path,
+        viewer: result.viewer,
+        content: result.content,
+        parsed: parseArtifactContent(result.viewer, result.content),
+      };
+    });
+
+    registerToolHandler('workspace.createCanvas', async (request) => {
+      const workspaceId = request.agentId;
+      if (!workspaceId) {
+        throw new Error('workspace.createCanvas requires an agent workspace');
+      }
+
+      const path = normalizeArtifactPath('canvas', request.params?.path);
+      const canvas = normalizeCanvasArtifact(request.params?.canvas);
+      await writeWorkspaceFile(workspaceId, path, JSON.stringify(canvas, null, 2));
+
+      return {
+        path,
+        viewer: 'canvas',
+      };
+    });
+
+    registerToolHandler('workspace.updateCanvas', async (request) => {
+      const workspaceId = request.agentId;
+      const rawPath = request.params?.path;
+
+      if (!workspaceId) {
+        throw new Error('workspace.updateCanvas requires an agent workspace');
+      }
+      if (!rawPath) {
+        throw new Error('path is required');
+      }
+
+      const path = normalizeArtifactPath('canvas', rawPath);
+      const canvas = normalizeCanvasArtifact(request.params?.canvas);
+      await writeWorkspaceFile(workspaceId, path, JSON.stringify(canvas, null, 2));
+
+      return {
+        path,
+        viewer: 'canvas',
+      };
+    });
+
+    registerToolHandler('workspace.createDashboard', async (request) => {
+      const workspaceId = request.agentId;
+      if (!workspaceId) {
+        throw new Error('workspace.createDashboard requires an agent workspace');
+      }
+
+      const path = normalizeArtifactPath('dashboard', request.params?.path);
+      const dashboard = normalizeDashboardArtifact(request.params?.dashboard);
+      await writeWorkspaceFile(workspaceId, path, JSON.stringify(dashboard, null, 2));
+
+      return {
+        path,
+        viewer: 'dashboard',
+      };
+    });
+
+    registerToolHandler('workspace.updateDashboard', async (request) => {
+      const workspaceId = request.agentId;
+      const rawPath = request.params?.path;
+
+      if (!workspaceId) {
+        throw new Error('workspace.updateDashboard requires an agent workspace');
+      }
+      if (!rawPath) {
+        throw new Error('path is required');
+      }
+
+      const path = normalizeArtifactPath('dashboard', rawPath);
+      const dashboard = normalizeDashboardArtifact(request.params?.dashboard);
+      await writeWorkspaceFile(workspaceId, path, JSON.stringify(dashboard, null, 2));
+
+      return {
+        path,
+        viewer: 'dashboard',
+      };
+    });
+
     // Register dashboard tool handlers
     registerToolHandler('dashboard.addChart', async (request) => {
       const { agentId, spaceId, roomId, tabId: fallbackTabId, mcpServerIds: fallbackMcpServerIds = [], params } = request;
@@ -789,15 +1045,26 @@ export const useAgentBridge = () => {
 
       const normalizedGroupBy = normalizeGroupBy(params.groupBy);
       const normalizedFilterBy = normalizeFilterBy(params.filterBy);
-
-      const chartId = dashboard.api.addChart({
+      const chartConfig = {
         mcpServerId,
         spaceId: params.spaceId,
         roomId: params.roomId,
         context: params.context,
         groupBy: normalizedGroupBy,
         filterBy: normalizedFilterBy,
-      });
+      };
+
+      const chartId = dashboard.api.addChart(chartConfig);
+      if (!chartId) {
+        throw new Error('Failed to add dashboard chart');
+      }
+
+      if (!dashboard.isStoreBacked) {
+        useWorkspaceStore.getState().updateCommandStateAtomic(dashboard.id, (state) => ({
+          elements: [...(state.elements || []), createDashboardElement(chartId, chartConfig)],
+        }));
+      }
+      await persistVisualizationArtifact(agentId, 'dashboard', dashboard.id);
 
       return { chartId };
     });
@@ -813,6 +1080,12 @@ export const useAgentBridge = () => {
       }
 
       dashboard.api.removeChart(params.chartId);
+      if (!dashboard.isStoreBacked) {
+        useWorkspaceStore.getState().updateCommandStateAtomic(dashboard.id, (state) => ({
+          elements: (state.elements || []).filter((el) => el.id !== params.chartId),
+        }));
+      }
+      await persistVisualizationArtifact(agentId, 'dashboard', dashboard.id);
       return { success: true };
     });
 
@@ -830,6 +1103,12 @@ export const useAgentBridge = () => {
       }
 
       dashboard.api.clearCharts();
+      if (!dashboard.isStoreBacked) {
+        useWorkspaceStore.getState().updateCommandStateAtomic(dashboard.id, () => ({
+          elements: [],
+        }));
+      }
+      await persistVisualizationArtifact(agentId, 'dashboard', dashboard.id);
       return { success: true };
     });
 
@@ -856,6 +1135,13 @@ export const useAgentBridge = () => {
           timeRange: params.range,
         },
       });
+
+      if (!dashboard.isStoreBacked) {
+        useWorkspaceStore.getState().updateCommandStateAtomic(dashboard.id, () => ({
+          timeRange: params.range,
+        }));
+      }
+      await persistVisualizationArtifact(agentId, 'dashboard', dashboard.id);
 
       return { success: true, range: params.range };
     });
@@ -957,11 +1243,10 @@ export const useAgentBridge = () => {
       // Helper to get content details based on command type
       // Returns enough info for agent to decide if content can be reused
       const getContentDetails = (command) => {
-        if (!command?.api) return null;
-
         if (command.type === 'canvas') {
+          const state = getCanvasState(command.id);
           // Get all canvas nodes with their data
-          const nodes = command.api.getNodes() || [];
+          const nodes = state.nodes || [];
           return {
             nodeCount: nodes.length,
             nodes: nodes.map(n => {
@@ -988,8 +1273,9 @@ export const useAgentBridge = () => {
         }
 
         if (command.type === 'dashboard') {
+          const state = getDashboardState(command.id);
           // Get all dashboard charts
-          const charts = command.api.getChartsDetailed?.() || command.api.getCharts?.() || [];
+          const charts = (state.elements || []).filter((el) => el.type === 'context-chart');
           return {
             chartCount: charts.length,
             charts: charts.map(c => ({
@@ -998,6 +1284,8 @@ export const useAgentBridge = () => {
             })),
           };
         }
+
+        if (!command?.api) return null;
 
         if (command.type === 'anomalies') {
           const target = command.api?.getTarget?.() || getAnomaliesTarget(command);
@@ -1110,8 +1398,8 @@ export const useAgentBridge = () => {
         content: null,
       };
 
-      if (command.type === 'canvas' && command.api) {
-        const nodes = command.api.getNodes() || [];
+      if (command.type === 'canvas') {
+        const nodes = getCanvasState(command.id).nodes || [];
         result.content = {
           nodeCount: nodes.length,
           nodes: nodes.map(n => ({
@@ -1122,8 +1410,8 @@ export const useAgentBridge = () => {
             data: n.data || {},
           })),
         };
-      } else if (command.type === 'dashboard' && command.api) {
-        const charts = command.api.getChartsDetailed?.() || command.api.getCharts?.() || [];
+      } else if (command.type === 'dashboard') {
+        const charts = (getDashboardState(command.id).elements || []).filter((el) => el.type === 'context-chart');
         result.content = {
           chartCount: charts.length,
           charts: charts.map(c => ({
@@ -1169,7 +1457,7 @@ export const useAgentBridge = () => {
       const normalizedFilterBy = normalizeFilterBy(filterBy);
 
       const command = getCanvasCommand(request);
-      const nodeId = command.api.addNode('chart', { x, y }, {
+      const nodeData = {
         mcpServerId,
         spaceId: params.spaceId,
         roomId: params.roomId,
@@ -1180,7 +1468,14 @@ export const useAgentBridge = () => {
         timeRange: timeRange || '15m',
         width: width || 400,
         height: height || 300,
-      });
+      };
+      const nodeId = command.api.addNode('chart', { x, y }, nodeData);
+      if (!command.isStoreBacked) {
+        useWorkspaceStore.getState().updateCommandStateAtomic(command.id, (state) => ({
+          nodes: [...(state.nodes || []), createCanvasNode(nodeId, 'chart', { x, y }, nodeData)],
+        }));
+      }
+      await persistVisualizationArtifact(agentId, 'canvas', command.id);
 
       return { nodeId };
     });
@@ -1190,13 +1485,20 @@ export const useAgentBridge = () => {
       const { x, y, status, message, title } = params;
 
       const command = getCanvasCommand(request);
-      const nodeId = command.api.addNode('statusBadge', { x, y }, {
+      const nodeData = {
         status,
         message,
         title: title || null,
         showTimestamp: false,
         timestamp: new Date().toISOString(),
-      });
+      };
+      const nodeId = command.api.addNode('statusBadge', { x, y }, nodeData);
+      if (!command.isStoreBacked) {
+        useWorkspaceStore.getState().updateCommandStateAtomic(command.id, (state) => ({
+          nodes: [...(state.nodes || []), createCanvasNode(nodeId, 'statusBadge', { x, y }, nodeData)],
+        }));
+      }
+      await persistVisualizationArtifact(request.agentId, 'canvas', command.id);
 
       return { nodeId };
     });
@@ -1206,12 +1508,19 @@ export const useAgentBridge = () => {
       const { x, y, content, width, maxHeight } = params;
 
       const command = getCanvasCommand(request);
-      const nodeId = command.api.addNode('markdown', { x, y }, {
+      const nodeData = {
         content,
         width: width || 400,
         maxHeight: maxHeight || null,
         showHandles: true,
-      });
+      };
+      const nodeId = command.api.addNode('markdown', { x, y }, nodeData);
+      if (!command.isStoreBacked) {
+        useWorkspaceStore.getState().updateCommandStateAtomic(command.id, (state) => ({
+          nodes: [...(state.nodes || []), createCanvasNode(nodeId, 'markdown', { x, y }, nodeData)],
+        }));
+      }
+      await persistVisualizationArtifact(request.agentId, 'canvas', command.id);
 
       return { nodeId };
     });
@@ -1221,7 +1530,14 @@ export const useAgentBridge = () => {
       const { sourceId, targetId, label, animated } = params;
 
       const command = getCanvasCommand(request);
-      const edgeId = command.api.addEdge(sourceId, targetId, { label, animated });
+      const edgeOptions = { label, animated };
+      const edgeId = command.api.addEdge(sourceId, targetId, edgeOptions);
+      if (!command.isStoreBacked) {
+        useWorkspaceStore.getState().updateCommandStateAtomic(command.id, (state) => ({
+          edges: [...(state.edges || []), createCanvasEdge(edgeId, sourceId, targetId, edgeOptions)],
+        }));
+      }
+      await persistVisualizationArtifact(request.agentId, 'canvas', command.id);
 
       return { edgeId };
     });
@@ -1232,6 +1548,13 @@ export const useAgentBridge = () => {
 
       const command = getCanvasCommand(request);
       command.api.removeNode(nodeId);
+      if (!command.isStoreBacked) {
+        useWorkspaceStore.getState().updateCommandStateAtomic(command.id, (state) => ({
+          nodes: (state.nodes || []).filter((n) => n.id !== nodeId),
+          edges: (state.edges || []).filter((e) => e.source !== nodeId && e.target !== nodeId),
+        }));
+      }
+      await persistVisualizationArtifact(request.agentId, 'canvas', command.id);
 
       return { success: true };
     });
@@ -1242,6 +1565,12 @@ export const useAgentBridge = () => {
 
       const command = getCanvasCommand(request);
       command.api.removeEdge(edgeId);
+      if (!command.isStoreBacked) {
+        useWorkspaceStore.getState().updateCommandStateAtomic(command.id, (state) => ({
+          edges: (state.edges || []).filter((e) => e.id !== edgeId),
+        }));
+      }
+      await persistVisualizationArtifact(request.agentId, 'canvas', command.id);
 
       return { success: true };
     });
@@ -1253,6 +1582,13 @@ export const useAgentBridge = () => {
       }
 
       command.api.clear();
+      if (!command.isStoreBacked) {
+        useWorkspaceStore.getState().updateCommandStateAtomic(command.id, () => ({
+          nodes: [],
+          edges: [],
+        }));
+      }
+      await persistVisualizationArtifact(request.agentId, 'canvas', command.id);
       return { success: true };
     });
 
@@ -1272,9 +1608,23 @@ export const useAgentBridge = () => {
       }
 
       command.api.updateNode(nodeId, updates);
+      if (!command.isStoreBacked) {
+        useWorkspaceStore.getState().updateCommandStateAtomic(command.id, (state) => ({
+          nodes: (state.nodes || []).map((node) =>
+            node.id === nodeId
+              ? {
+                  ...node,
+                  ...(updates.position ? { position: updates.position } : {}),
+                  ...(updates.data ? { data: { ...(node.data || {}), ...updates.data } } : {}),
+                }
+              : node
+          ),
+        }));
+      }
+      await persistVisualizationArtifact(request.agentId, 'canvas', command.id);
 
       // Get the updated node to return
-      const nodes = command.api.getNodes();
+      const nodes = getCanvasState(command.id).nodes || [];
       const updatedNode = nodes.find(n => n.id === nodeId);
 
       return {
@@ -1286,100 +1636,6 @@ export const useAgentBridge = () => {
       };
     });
 
-    // ==========================================================================
-    // Chat Tools - Agent text communication
-    // ==========================================================================
-
-    /**
-     * chat.message - Send a text message to the user
-     *
-     * This tool allows agents to communicate text directly to the user.
-     * Messages appear in the AgentChat UI as a distinct "agent message" block.
-     *
-     * @param {string} message - Message content (supports markdown)
-     * @param {string} [messageType] - Type: info, question, result, error
-     * @returns {{ success: boolean }} Result
-     */
-    registerToolHandler('chat.message', async (request) => {
-      const { params, agentId, spaceId, roomId } = request;
-      const { message, messageType = 'info' } = params;
-
-      if (!message) {
-        throw new Error('Message content is required');
-      }
-
-      // Get the tab ID for this agent
-      const tabId = getAgentTabId(agentId, spaceId, roomId);
-      if (!tabId) {
-        console.warn('[chat.message] No tab found for agent:', { agentId, spaceId, roomId });
-        return { success: true, message, messageType };
-      }
-
-      // Generate unique IDs for this message
-      const messageId = `chat_msg_${Date.now()}`;
-      const toolCallId = `chat_${Date.now()}`;
-
-      // Emit tool:stream events to display the message in AgentChat
-      // These events simulate an SSE stream response with a text content block
-
-      // 1. Start the message
-      emitActivity(tabId, {
-        type: 'tool:stream',
-        id: toolCallId,
-        tool: 'chat.message',
-        eventType: 'message_start',
-        payload: {
-          message: {
-            id: messageId,
-            role: 'assistant',
-          },
-        },
-        timestamp: Date.now(),
-      });
-
-      // 2. Start the text content block
-      emitActivity(tabId, {
-        type: 'tool:stream',
-        id: toolCallId,
-        tool: 'chat.message',
-        eventType: 'content_block_start',
-        payload: {
-          index: 0,
-          content_block: {
-            type: 'text',
-            text: message,
-          },
-        },
-        timestamp: Date.now(),
-      });
-
-      // 3. Stop the content block
-      emitActivity(tabId, {
-        type: 'tool:stream',
-        id: toolCallId,
-        tool: 'chat.message',
-        eventType: 'content_block_stop',
-        payload: { index: 0 },
-        timestamp: Date.now(),
-      });
-
-      // 4. Stop the message
-      emitActivity(tabId, {
-        type: 'tool:stream',
-        id: toolCallId,
-        tool: 'chat.message',
-        eventType: 'message_stop',
-        payload: {},
-        timestamp: Date.now(),
-      });
-
-      return {
-        success: true,
-        message,
-        messageType,
-      };
-    });
-
     // Cleanup on unmount
     return () => {
       // Reset the ref so handlers can be re-registered on next mount
@@ -1387,6 +1643,12 @@ export const useAgentBridge = () => {
 
       // Unregister all handlers
       unregisterToolHandler('agent.setup');
+      unregisterToolHandler('workspace.listArtifacts');
+      unregisterToolHandler('workspace.readArtifact');
+      unregisterToolHandler('workspace.createCanvas');
+      unregisterToolHandler('workspace.updateCanvas');
+      unregisterToolHandler('workspace.createDashboard');
+      unregisterToolHandler('workspace.updateDashboard');
       unregisterToolHandler('dashboard.addChart');
       unregisterToolHandler('dashboard.removeChart');
       unregisterToolHandler('dashboard.clearCharts');
@@ -1404,8 +1666,6 @@ export const useAgentBridge = () => {
       unregisterToolHandler('canvas.removeEdge');
       unregisterToolHandler('canvas.updateNode');
       unregisterToolHandler('canvas.clearCanvas');
-      // Chat handlers
-      unregisterToolHandler('chat.message');
 
       // Note: We don't call cleanupAgentBridge here because
       // other components might still be using it. It should be

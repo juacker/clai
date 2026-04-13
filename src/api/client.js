@@ -1,5 +1,4 @@
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 
 /**
  * CLAI backend API client.
@@ -94,50 +93,6 @@ const handleApiError = (error, operation) => {
 // ============================================================================
 // API Functions
 // ============================================================================
-
-/**
- * Create a chat completion in a conversation with SSE streaming support
- *
- * This function uses Tauri events for streaming. The Rust backend emits
- * 'chat-completion-chunk' events for each SSE chunk received.
- *
- * @param {string} spaceId - Space ID
- * @param {string} roomId - Room ID
- * @param {string} conversationId - Conversation ID
- * @param {string} message - The user message
- * @param {Function} onChunk - Callback function that receives each SSE chunk
- * @param {string} [parentMessageId] - Optional parent message ID
- * @returns {Promise<void>} Resolves when the stream is complete
- * @throws {Error} If the request fails
- *
- * @example
- * await createChatCompletion(spaceId, roomId, convId, "Hello", (chunk) => {
- *   if (chunk.type === 'content_block_delta') {
- *     console.log(chunk.delta.text);
- *   }
- * });
- */
-export const createChatCompletion = async (spaceId, roomId, conversationId, message, onChunk, parentMessageId) => {
-  // Set up listener for streaming chunks before starting the request
-  const unlisten = await listen('chat-completion-chunk', (event) => {
-    onChunk(event.payload);
-  });
-
-  try {
-    await invoke('api_chat_completion', {
-      spaceId,
-      roomId,
-      conversationId,
-      message,
-      parentMessageId: parentMessageId || null
-    });
-  } catch (error) {
-    handleApiError(error, 'Failed to create chat completion');
-  } finally {
-    // Always clean up the listener
-    unlisten();
-  }
-};
 
 /**
  * Get data from Netdata Cloud with complex aggregation and filtering options
