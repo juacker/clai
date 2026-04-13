@@ -1080,7 +1080,7 @@ mod tests {
 
         let info = server.get_info();
         assert!(info.instructions.is_some());
-        assert!(info.instructions.unwrap().contains("Netdata"));
+        assert!(info.instructions.unwrap().contains("workspace"));
     }
 
     #[test]
