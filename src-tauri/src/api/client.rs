@@ -18,7 +18,6 @@
 //! We don't set a default timeout on the client because different endpoints
 //! need different timeouts:
 //! - Regular API calls: 30 seconds
-//! - Chat completion (SSE streaming): 5+ minutes
 //!
 //! Instead, timeouts are set per-request in the API methods.
 
@@ -28,10 +27,6 @@ use std::time::Duration;
 
 /// Default request timeout for regular API calls.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Timeout for streaming endpoints (chat completion).
-/// SSE streams can take several minutes for complex queries.
-pub const STREAMING_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 
 /// User agent string sent with all requests.
 const USER_AGENT: &str = concat!("clai/", env!("CARGO_PKG_VERSION"));
