@@ -76,6 +76,7 @@
   background: color-mix(in srgb, var(--color-bg-elevated) 92%, white);
   box-shadow: var(--shadow-xs);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .sectionHeader {
