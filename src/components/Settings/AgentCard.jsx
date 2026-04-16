@@ -111,6 +111,8 @@ const AgentCard = ({ agent, mcpServers = [], onEdit, onDelete, onToggleEnabled, 
     .filter(Boolean);
   const filesystemMode = agent.execution?.filesystem?.mode || 'off';
   const shellMode = agent.execution?.shell?.mode || 'off';
+  const scheduleLabel = agent.scheduleEnabled === false ? 'On demand' : `Every ${formatInterval(agent.intervalMinutes)}`;
+  const exposedToolCount = agent.exposedTools?.length || 0;
 
   return (
     <div className={styles.card}>
@@ -118,13 +120,13 @@ const AgentCard = ({ agent, mcpServers = [], onEdit, onDelete, onToggleEnabled, 
         <div className={styles.cardHeader}>
           <h4 className={styles.agentName}>{agent.name}</h4>
           <span className={styles.interval}>
-            Every {formatInterval(agent.intervalMinutes)}
+            {scheduleLabel}
           </span>
           <button
             className={`${styles.statusToggle} ${isEnabled ? styles.statusToggleOn : styles.statusToggleOff}`}
             onClick={onToggleEnabled}
             disabled={isToggling}
-            title={isEnabled ? 'Disable scheduled agent' : 'Enable scheduled agent'}
+            title={isEnabled ? 'Disable agent' : 'Enable agent'}
           >
             {isToggling ? <LoadingIcon /> : <PowerIcon />}
             <span>{isEnabled ? 'Enabled' : 'Disabled'}</span>
@@ -139,6 +141,9 @@ const AgentCard = ({ agent, mcpServers = [], onEdit, onDelete, onToggleEnabled, 
 
         <p className={styles.description}>
           MCP: {selectedMcpServerNames.length > 0 ? selectedMcpServerNames.join(', ') : 'None'}
+        </p>
+        <p className={styles.description}>
+          Exposed tools: {exposedToolCount > 0 ? exposedToolCount : 'None'}
         </p>
         <p className={styles.description}>
           Local: FS {filesystemMode.replace('_', ' ')} · Shell {shellMode.replace('_', ' ')}

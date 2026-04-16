@@ -28,12 +28,15 @@ pub fn initialize_scheduler(
 
     let config = config_manager.get();
     for agent_config in &config.agents {
+        if !agent_config.schedule_enabled {
+            continue;
+        }
         let definition = agent_config_to_definition(agent_config);
         scheduler.register_definition(definition);
     }
 
     for agent_config in &config.agents {
-        if !agent_config.enabled {
+        if !agent_config.enabled || !agent_config.schedule_enabled {
             continue;
         }
 
@@ -49,6 +52,9 @@ pub async fn restore_instances_from_config(
     let mut scheduler = scheduler.lock().await;
 
     for agent_config in &config.agents {
+        if !agent_config.schedule_enabled {
+            continue;
+        }
         let definition = agent_config_to_definition(agent_config);
         scheduler.register_definition(definition);
 

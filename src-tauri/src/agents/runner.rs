@@ -417,6 +417,7 @@ async fn ensure_background_session(
         agent_workspace_id: Some(agent_config.id.clone()),
         automation_name: Some(agent_config.name.clone()),
         automation_description: Some(agent_config.description.clone()),
+        inter_agent_call: None,
     };
 
     let existing = find_background_session(
@@ -589,6 +590,7 @@ async fn run_scheduled_agent_with_fallback(
             trigger: RunTrigger::Scheduled,
             connection_id: connection.id.clone(),
             cancel_token,
+            inter_agent_call_depth: None,
         };
         let result = engine::run_session_turn(&deps, input).await;
         runtime::unregister_run(&runtime_run_id);

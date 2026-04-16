@@ -270,6 +270,16 @@ impl McpServerConfig {
 pub const DEFAULT_AGENT_ID: &str = "00000000-0000-0000-0000-000000000001";
 
 /// User-defined scheduled automation stored in configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExposedAgentTool {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+    pub output_schema: serde_json::Value,
+}
+
+/// User-defined scheduled automation stored in configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
     /// Unique identifier (UUID).
@@ -280,6 +290,10 @@ pub struct AgentConfig {
 
     /// Description/instructions for the automation.
     pub description: String,
+
+    /// Whether this automation participates in scheduled execution.
+    #[serde(default = "default_true")]
+    pub schedule_enabled: bool,
 
     /// How often the automation runs (in minutes).
     pub interval_minutes: u32,
@@ -299,6 +313,10 @@ pub struct AgentConfig {
     /// Local execution capability policy for this automation.
     #[serde(default)]
     pub execution: ExecutionCapabilityConfig,
+
+    /// Tools intentionally exposed to other agents.
+    #[serde(default)]
+    pub exposed_tools: Vec<ExposedAgentTool>,
 
     /// When the automation was created (ISO 8601).
     pub created_at: String,
@@ -333,11 +351,13 @@ impl AgentConfig {
 - Suggest next steps when appropriate
 - Keep status updates concise when healthy"#
                 .to_string(),
+            schedule_enabled: true,
             interval_minutes: 5,
             enabled: false,
             selected_mcp_server_ids: vec![],
             provider_connection_ids: vec![],
             execution: ExecutionCapabilityConfig::default(),
+            exposed_tools: vec![],
             created_at: now.clone(),
             updated_at: now,
         }
@@ -350,11 +370,13 @@ impl AgentConfig {
             id: uuid::Uuid::new_v4().to_string(),
             name,
             description,
+            schedule_enabled: true,
             interval_minutes,
             enabled: false,
             selected_mcp_server_ids: vec![],
             provider_connection_ids: vec![],
             execution: ExecutionCapabilityConfig::default(),
+            exposed_tools: vec![],
             created_at: now.clone(),
             updated_at: now,
         }
@@ -387,6 +409,38 @@ impl AgentConfig {
         } else {
             false
         }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.schedule_enabled && self.interval_minutes == 0 {
+            return Err("Scheduled agents must have an interval of at least 1 minute.".to_string());
+        }
+
+        for tool in &self.exposed_tools {
+            if tool.name.trim().is_empty() {
+                return Err("Exposed tool names cannot be empty.".to_string());
+            }
+            if tool.description.trim().is_empty() {
+                return Err(format!(
+                    "Exposed tool '{}' must have a description.",
+                    tool.name
+                ));
+            }
+            if !tool.input_schema.is_object() {
+                return Err(format!(
+                    "Exposed tool '{}' must define an object JSON Schema for input_schema.",
+                    tool.name
+                ));
+            }
+            if !tool.output_schema.is_object() {
+                return Err(format!(
+                    "Exposed tool '{}' must define an object JSON Schema for output_schema.",
+                    tool.name
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -447,10 +501,12 @@ mod tests {
         assert!(agent.is_default());
         assert_eq!(agent.name, "Infrastructure Health Monitor");
         assert_eq!(agent.interval_minutes, 5);
+        assert!(agent.schedule_enabled);
         assert!(agent.selected_mcp_server_ids.is_empty());
         assert!(agent.provider_connection_ids.is_empty());
         assert!(matches!(agent.execution.shell.mode, ShellAccessMode::Off));
         assert!(agent.execution.filesystem.extra_paths.is_empty());
+        assert!(agent.exposed_tools.is_empty());
     }
 
     #[test]
@@ -463,6 +519,7 @@ mod tests {
         assert!(!agent2.is_default());
         assert_eq!(agent1.name, "Agent 1");
         assert_eq!(agent2.interval_minutes, 15);
+        assert!(agent1.schedule_enabled);
         assert!(agent1.selected_mcp_server_ids.is_empty());
         assert!(agent1.provider_connection_ids.is_empty());
         assert!(agent1.execution.filesystem.extra_paths.is_empty());
@@ -521,6 +578,12 @@ mod tests {
         let mut agent = AgentConfig::default_agent();
         agent.selected_mcp_server_ids = vec!["mcp-a".to_string(), "mcp-b".to_string()];
         agent.provider_connection_ids = vec!["conn-a".to_string(), "conn-b".to_string()];
+        agent.exposed_tools = vec![ExposedAgentTool {
+            name: "analyze".to_string(),
+            description: "Analyze something".to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+            output_schema: serde_json::json!({"type": "object"}),
+        }];
 
         let json = serde_json::to_string_pretty(&agent).unwrap();
 
@@ -541,6 +604,8 @@ mod tests {
             agent.provider_connection_ids
         );
         assert_eq!(parsed.execution, agent.execution);
+        assert_eq!(parsed.schedule_enabled, agent.schedule_enabled);
+        assert_eq!(parsed.exposed_tools, agent.exposed_tools);
     }
 
     #[test]
@@ -570,5 +635,21 @@ mod tests {
         let parsed: ClaiConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.agents.len(), 2);
         assert_eq!(parsed.mcp_servers.len(), 1);
+    }
+
+    #[test]
+    fn test_agent_validate_rejects_zero_interval_when_scheduled() {
+        let mut agent = AgentConfig::new("Agent".to_string(), "Desc".to_string(), 0);
+        agent.schedule_enabled = true;
+
+        let err = agent.validate().unwrap_err();
+        assert!(err.contains("interval"));
+    }
+
+    #[test]
+    fn test_agent_validate_allows_on_demand_agent() {
+        let mut agent = AgentConfig::new("Agent".to_string(), "Desc".to_string(), 0);
+        agent.schedule_enabled = false;
+        assert!(agent.validate().is_ok());
     }
 }

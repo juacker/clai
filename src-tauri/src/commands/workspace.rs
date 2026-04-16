@@ -730,6 +730,8 @@ fn desired_workspace_context(
         agent_workspace_id: descriptor.agent_id.clone(),
         automation_name: descriptor.automation_name.clone(),
         automation_description: descriptor.automation_description.clone(),
+        inter_agent_call: existing_session
+            .and_then(|session| session.context.inter_agent_call.clone()),
     }
 }
 

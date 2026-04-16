@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
 use crate::assistant::repository as assistant_repository;
-use crate::config::{AgentConfig, ExecutionCapabilityConfig};
+use crate::config::{AgentConfig, ExecutionCapabilityConfig, ExposedAgentTool};
 use crate::db::DbPool;
 use crate::AppState;
 
@@ -20,6 +20,8 @@ use crate::AppState;
 pub struct CreateAgentRequest {
     pub name: String,
     pub description: String,
+    #[serde(default = "default_true")]
+    pub schedule_enabled: bool,
     pub interval_minutes: u32,
     #[serde(default)]
     pub selected_mcp_server_ids: Vec<String>,
@@ -27,6 +29,8 @@ pub struct CreateAgentRequest {
     pub provider_connection_ids: Vec<String>,
     #[serde(default)]
     pub execution: ExecutionCapabilityConfig,
+    #[serde(default)]
+    pub exposed_tools: Vec<ExposedAgentTool>,
 }
 
 /// Request to update an existing agent.
@@ -36,6 +40,8 @@ pub struct UpdateAgentRequest {
     pub id: String,
     pub name: String,
     pub description: String,
+    #[serde(default = "default_true")]
+    pub schedule_enabled: bool,
     pub interval_minutes: u32,
     #[serde(default)]
     pub selected_mcp_server_ids: Vec<String>,
@@ -43,6 +49,8 @@ pub struct UpdateAgentRequest {
     pub provider_connection_ids: Vec<String>,
     #[serde(default)]
     pub execution: ExecutionCapabilityConfig,
+    #[serde(default)]
+    pub exposed_tools: Vec<ExposedAgentTool>,
 }
 
 /// Request to enable/disable an agent globally.
@@ -60,11 +68,13 @@ pub struct AgentResponse {
     pub id: String,
     pub name: String,
     pub description: String,
+    pub schedule_enabled: bool,
     pub interval_minutes: u32,
     pub enabled: bool,
     pub selected_mcp_server_ids: Vec<String>,
     pub provider_connection_ids: Vec<String>,
     pub execution: ExecutionCapabilityConfig,
+    pub exposed_tools: Vec<ExposedAgentTool>,
     pub created_at: String,
     pub updated_at: String,
     pub is_default: bool,
@@ -77,11 +87,13 @@ impl From<AgentConfig> for AgentResponse {
             id: agent.id,
             name: agent.name,
             description: agent.description,
+            schedule_enabled: agent.schedule_enabled,
             interval_minutes: agent.interval_minutes,
             enabled: agent.enabled,
             selected_mcp_server_ids: agent.selected_mcp_server_ids,
             provider_connection_ids: agent.provider_connection_ids,
             execution: agent.execution,
+            exposed_tools: agent.exposed_tools,
             created_at: agent.created_at,
             updated_at: agent.updated_at,
             is_default,
@@ -147,18 +159,25 @@ pub async fn create_agent(
     validate_provider_connection_ids(pool.inner(), &request.provider_connection_ids).await?;
 
     let mut agent = AgentConfig::new(request.name, request.description, request.interval_minutes);
+    agent.schedule_enabled = request.schedule_enabled;
     agent.selected_mcp_server_ids = request.selected_mcp_server_ids;
     agent.provider_connection_ids = request.provider_connection_ids;
     agent.execution = request.execution;
+    agent.exposed_tools = request.exposed_tools;
+    agent.validate()?;
 
-    let config_manager = state
-        .config_manager
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    {
+        let config_manager = state
+            .config_manager
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
 
-    config_manager
-        .add_agent(agent.clone())
-        .map_err(|e| format!("Failed to create agent: {}", e))?;
+        config_manager
+            .add_agent(agent.clone())
+            .map_err(|e| format!("Failed to create agent: {}", e))?;
+    }
+
+    sync_agent_scheduler(&state, &agent).await;
 
     Ok(AgentResponse::from(agent))
 }
@@ -188,30 +207,36 @@ pub async fn update_agent(
     }
     validate_provider_connection_ids(pool.inner(), &request.provider_connection_ids).await?;
 
-    let config_manager = state
-        .config_manager
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let agent = {
+        let config_manager = state
+            .config_manager
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
 
-    if config_manager.get_agent(&request.id).is_none() {
-        return Err(format!("Agent not found: {}", request.id));
-    }
+        let mut candidate = config_manager
+            .get_agent(&request.id)
+            .ok_or_else(|| format!("Agent not found: {}", request.id))?;
+        candidate.name = request.name.clone();
+        candidate.description = request.description.clone();
+        candidate.schedule_enabled = request.schedule_enabled;
+        candidate.interval_minutes = request.interval_minutes;
+        candidate.selected_mcp_server_ids = request.selected_mcp_server_ids.clone();
+        candidate.provider_connection_ids = request.provider_connection_ids.clone();
+        candidate.execution = request.execution.clone();
+        candidate.exposed_tools = request.exposed_tools.clone();
+        candidate.validate()?;
 
-    config_manager
-        .update_agent(&request.id, |agent| {
-            agent.name = request.name.clone();
-            agent.description = request.description.clone();
-            agent.interval_minutes = request.interval_minutes;
-            agent.selected_mcp_server_ids = request.selected_mcp_server_ids.clone();
-            agent.provider_connection_ids = request.provider_connection_ids.clone();
-            agent.execution = request.execution.clone();
-        })
-        .map_err(|e| format!("Failed to update agent: {}", e))?;
+        config_manager
+            .update_agent(&request.id, |agent| {
+                *agent = candidate.clone();
+            })
+            .map_err(|e| format!("Failed to update agent: {}", e))?;
 
-    // Fetch updated agent
-    let agent = config_manager
-        .get_agent(&request.id)
-        .ok_or_else(|| "Agent not found after update".to_string())?;
+        config_manager
+            .get_agent(&request.id)
+            .ok_or_else(|| "Agent not found after update".to_string())?
+    };
+    sync_agent_scheduler(&state, &agent).await;
 
     Ok(AgentResponse::from(agent))
 }
@@ -341,13 +366,19 @@ fn build_agent_definition(agent: &AgentConfig) -> crate::agents::AgentDefinition
 async fn sync_agent_scheduler(state: &State<'_, AppState>, agent: &AgentConfig) {
     let mut scheduler = state.scheduler.lock().await;
     scheduler.remove_instances_for_agent(&agent.id);
-    scheduler.register_definition(build_agent_definition(agent));
+    if agent.schedule_enabled {
+        scheduler.register_definition(build_agent_definition(agent));
+    }
 
-    if !agent.enabled {
+    if !agent.enabled || !agent.schedule_enabled {
         return;
     }
 
     scheduler.create_instance(&agent.id, "", "");
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn validate_mcp_server_ids(

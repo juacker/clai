@@ -10,6 +10,7 @@ use crate::assistant::repository;
 use crate::assistant::repository::{CreateMessageParams, CreateRunParams, CreateToolCallParams};
 use crate::assistant::runtime;
 use crate::assistant::tools::local::agent_workspace_root_for_id;
+use crate::assistant::tools::registry::CallableAgent;
 use crate::assistant::tools::{self, ToolExecutionContext};
 use crate::assistant::types::{
     CompletionRequest, ContentPart, MessageRole, ProviderEvent, ProviderInputMessage, RunId,
@@ -34,6 +35,7 @@ pub struct RunTurnInput {
     pub trigger: RunTrigger,
     pub connection_id: String,
     pub cancel_token: CancellationToken,
+    pub inter_agent_call_depth: Option<u32>,
 }
 
 #[derive(Debug, Error)]
@@ -130,20 +132,16 @@ pub async fn run_session_turn(
         );
         (external_tools, dashboard_enabled)
     };
-    let tool_defs = tools::available_tools(&session.context, &external_tools, dashboard_enabled);
+    let callable_agents = resolve_callable_agents(deps, &session.context);
+    let tool_defs = tools::available_tools(
+        &session.context,
+        &external_tools,
+        dashboard_enabled,
+        &callable_agents,
+    );
 
     // Build execution context for tool calls
-    let tool_context = ToolExecutionContext {
-        session_id: session.id.clone(),
-        run_id: run_id.clone(),
-        tab_id: session.tab_id.clone(),
-        space_id: session.context.space_id.clone(),
-        room_id: session.context.room_id.clone(),
-        mcp_server_ids: session.context.mcp_server_ids.clone(),
-        agent_workspace_id: session.context.agent_workspace_id.clone(),
-        execution: session.context.execution.clone(),
-        notices: std::sync::Mutex::new(Vec::new()),
-    };
+    let notices = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
 
     let mut usage: Option<RunUsage> = None;
 
@@ -405,12 +403,31 @@ pub async fn run_session_turn(
             );
 
             // Execute the tool
+            let tool_context = ToolExecutionContext {
+                session_id: session.id.clone(),
+                run_id: run_id.clone(),
+                tool_call_id: Some(tc.tool_call_id.clone()),
+                tab_id: session.tab_id.clone(),
+                space_id: session.context.space_id.clone(),
+                room_id: session.context.room_id.clone(),
+                mcp_server_ids: session.context.mcp_server_ids.clone(),
+                agent_workspace_id: session.context.agent_workspace_id.clone(),
+                automation_id: session.context.automation_id.clone(),
+                inter_agent_call_depth: input.inter_agent_call_depth,
+                execution: session.context.execution.clone(),
+                notices: notices.clone(),
+            };
             let tool_result = tokio::select! {
                 _ = input.cancel_token.cancelled() => {
                     cancel_run(deps, &session, &run_id, usage.as_ref(), None).await?;
                     return Ok(());
                 }
-                result = tools::execute_tool(deps, &tool_context, &tc.tool_name, tc.params.clone()) => result,
+                result = tools::execute_tool(
+                    deps,
+                    &tool_context,
+                    &tc.tool_name,
+                    tc.params.clone()
+                ) => result,
             };
 
             match tool_result {
@@ -503,6 +520,20 @@ pub async fn run_session_turn(
     }
 
     // Complete the run — check for policy notices
+    let tool_context = ToolExecutionContext {
+        session_id: session.id.clone(),
+        run_id: run_id.clone(),
+        tool_call_id: None,
+        tab_id: session.tab_id.clone(),
+        space_id: session.context.space_id.clone(),
+        room_id: session.context.room_id.clone(),
+        mcp_server_ids: session.context.mcp_server_ids.clone(),
+        agent_workspace_id: session.context.agent_workspace_id.clone(),
+        automation_id: session.context.automation_id.clone(),
+        inter_agent_call_depth: input.inter_agent_call_depth,
+        execution: session.context.execution.clone(),
+        notices,
+    };
     let notices = tool_context.take_notices();
     let final_status = if notices.is_empty() {
         RunStatus::Completed
@@ -526,6 +557,29 @@ pub async fn run_session_turn(
     );
 
     Ok(())
+}
+
+fn resolve_callable_agents(
+    deps: &AssistantDeps,
+    context: &crate::assistant::types::SessionContext,
+) -> Vec<CallableAgent> {
+    let state = deps.app.state::<crate::AppState>();
+    let Ok(config_manager) = state.config_manager.lock() else {
+        return Vec::new();
+    };
+
+    config_manager
+        .get_agents()
+        .into_iter()
+        .filter(|agent| agent.enabled)
+        .filter(|agent| !agent.exposed_tools.is_empty())
+        .filter(|agent| context.automation_id.as_deref() != Some(agent.id.as_str()))
+        .map(|agent| CallableAgent {
+            id: agent.id,
+            name: agent.name,
+            exposed_tools: agent.exposed_tools,
+        })
+        .collect()
 }
 
 fn usage_none() -> Option<&'static RunUsage> {
@@ -592,6 +646,11 @@ fn build_system_prompt(
                  decide what needs to be refreshed, and communicate the result clearly.\n",
             );
         }
+        RunTrigger::InterAgentCall => {
+            prompt.push_str(
+                "This is a synchronous inter-agent call. The caller is waiting for your response.\n",
+            );
+        }
         RunTrigger::UserMessage | RunTrigger::Retry => {
             prompt.push_str(
                 "This is a user-driven run. Prioritize the user's latest message and use prior context only as support.\n",
@@ -617,6 +676,16 @@ fn build_system_prompt(
             prompt.push_str(description);
             prompt.push('\n');
         }
+    }
+
+    if matches!(trigger, RunTrigger::InterAgentCall) {
+        prompt.push_str(
+            "\n## Inter-Agent Call\n\
+             You have been called by another agent. The latest user message includes the request parameters, the required JSON output schema, and a trace ID.\n\
+             Return exactly one JSON object that matches the output schema.\n\
+             Do not wrap the response in markdown fences.\n\
+             Do not ask follow-up questions because you will not receive answers.\n",
+        );
     }
 
     if let Some(agent_workspace_id) = context.agent_workspace_id.as_deref() {
@@ -723,7 +792,7 @@ fn build_system_prompt(
                      10. Prune stale entries: if a knowledge entry or checkpoint is no longer relevant, remove it.\n",
                 );
             }
-            RunTrigger::UserMessage | RunTrigger::Retry => {
+            RunTrigger::InterAgentCall | RunTrigger::UserMessage | RunTrigger::Retry => {
                 prompt.push_str(
                     "### Memory in user-driven runs\n\
                      - Do NOT read memory unless the user's request specifically needs historical context.\n\
@@ -993,7 +1062,7 @@ fn build_trigger_message(
              Run the automation {} now and report the current findings.",
             now, automation_name
         )),
-        RunTrigger::UserMessage | RunTrigger::Retry => None,
+        RunTrigger::InterAgentCall | RunTrigger::UserMessage | RunTrigger::Retry => None,
     }?;
 
     Some(ProviderInputMessage {

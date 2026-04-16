@@ -331,6 +331,7 @@ fn spawn_run_task(
             trigger,
             connection_id,
             cancel_token,
+            inter_agent_call_depth: None,
         };
         if let Err(e) = engine::run_session_turn(&deps, input).await {
             tracing::error!("Assistant engine error for run {}: {}", run_id, e);

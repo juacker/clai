@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 use crate::assistant::engine::{bridge_agent_id, AssistantDeps};
+use crate::assistant::tools::inter_agent;
 use crate::assistant::tools::local;
 use crate::mcp::bridge::JsBridge;
 use crate::AppState;
@@ -28,6 +29,9 @@ pub async fn execute_tool(
             || name.starts_with("canvas.") =>
         {
             execute_bridge_tool(deps, context, name, params).await
+        }
+        name if name.starts_with("agent.") => {
+            inter_agent::execute(deps, context, name, params).await
         }
         _ => execute_external_mcp_tool(deps, context, tool_name, params).await,
     }

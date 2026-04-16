@@ -184,7 +184,7 @@ const AgentsSettings = () => {
       <div className={styles.container}>
         <div className={styles.loadingState}>
           <LoadingIcon />
-          <span>Loading scheduled agents...</span>
+          <span>Loading agents...</span>
         </div>
       </div>
     );
@@ -194,14 +194,14 @@ const AgentsSettings = () => {
     <div className={styles.container}>
       <div className={styles.header}>
         <div className={styles.headerText}>
-          <h3 className={styles.title}>Scheduled Agents</h3>
+          <h3 className={styles.title}>Agents</h3>
           <p className={styles.description}>
-            Create scheduled agents with custom instructions, target scope, and MCP capabilities.
+            Create autonomous and on-demand agents with custom instructions, target scope, local capabilities, and inter-agent tools.
           </p>
         </div>
         <button className={styles.addButton} onClick={handleCreate}>
           <PlusIcon />
-          <span>Add Scheduled Agent</span>
+          <span>Add Agent</span>
         </button>
       </div>
 
@@ -223,13 +223,13 @@ const AgentsSettings = () => {
               <circle cx="16" cy="16" r="1" fill="currentColor" />
             </svg>
           </div>
-          <h4 className={styles.emptyTitle}>No scheduled agents configured</h4>
+          <h4 className={styles.emptyTitle}>No agents configured</h4>
           <p className={styles.emptyDescription}>
-            Create your first scheduled agent to run on a recurring interval with the MCP tools you attach to it.
+            Create your first agent to run on a recurring interval, accept on-demand calls from other agents, or both.
           </p>
           <button className={styles.emptyButton} onClick={handleCreate}>
             <PlusIcon />
-            <span>Create Scheduled Agent</span>
+            <span>Create Agent</span>
           </button>
         </div>
       ) : (
@@ -251,7 +251,7 @@ const AgentsSettings = () => {
 
       <div className={styles.hint}>
         <p>
-          Scheduled agents run independently when enabled. Attach MCP servers here, and let the agent
+          Enabled agents can run on a schedule, answer inter-agent tool calls, or both. Attach MCP servers here, and let the agent
           discover any target space or room it needs through those tools.
         </p>
       </div>

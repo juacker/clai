@@ -1,4 +1,5 @@
 use crate::assistant::types::{SessionContext, ToolDefinition};
+use crate::config::ExposedAgentTool;
 use crate::config::ShellAccessMode;
 use crate::mcp::tools::workspace::{
     CreateCanvasArtifactParams, CreateDashboardArtifactParams, ListArtifactsParams,
@@ -10,6 +11,7 @@ pub fn available_tools(
     context: &SessionContext,
     external_tools: &[ToolDefinition],
     _dashboard_enabled: bool,
+    callable_agents: &[CallableAgent],
 ) -> Vec<ToolDefinition> {
     let mut tools = vec![];
 
@@ -148,9 +150,29 @@ pub fn available_tools(
         });
     }
 
+    for agent in callable_agents {
+        for tool in &agent.exposed_tools {
+            tools.push(ToolDefinition {
+                name: format!("agent.{}.{}", agent.id, tool.name),
+                description: format!(
+                    "[Agent: {}] {} Returns JSON matching the configured output schema.",
+                    agent.name, tool.description
+                ),
+                input_schema: tool.input_schema.clone(),
+            });
+        }
+    }
+
     tools.extend(external_tools.iter().cloned());
 
     tools
+}
+
+#[derive(Debug, Clone)]
+pub struct CallableAgent {
+    pub id: String,
+    pub name: String,
+    pub exposed_tools: Vec<ExposedAgentTool>,
 }
 
 /// Build a ToolDefinition from a schemars-annotated param type.

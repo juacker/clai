@@ -76,6 +76,7 @@ rmcp = { version = "0.12", features = ["client", "server", "transport-streamable
 
 # JSON Schema generation for MCP tool definitions
 schemars = "1"
+jsonschema = "0.33"
 
 # HTTP server for MCP (AI CLIs connect via HTTP)
 axum = "0.8"

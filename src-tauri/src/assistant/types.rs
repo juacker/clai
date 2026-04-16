@@ -85,6 +85,21 @@ pub enum RunTrigger {
     Retry,
     Scheduled,
     ManualAutomation,
+    InterAgentCall,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InterAgentCallContext {
+    pub call_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caller_agent_id: Option<String>,
+    pub caller_session_id: String,
+    pub caller_run_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caller_tool_call_id: Option<String>,
+    pub callee_agent_id: String,
+    pub exposed_tool_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -114,6 +129,8 @@ pub struct SessionContext {
     pub automation_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inter_agent_call: Option<InterAgentCallContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

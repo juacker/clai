@@ -39,6 +39,16 @@ const normalizePathGrants = (items = []) =>
     }))
     .filter((item) => item.path);
 
+const defaultSchemaText = '{\n  "type": "object"\n}';
+const draftId = () => (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+const createDraftExposedTool = (tool = {}) => ({
+  id: tool.id || draftId(),
+  name: tool.name || '',
+  description: tool.description || '',
+  inputSchemaText: JSON.stringify(tool.inputSchema || { type: 'object' }, null, 2),
+  outputSchemaText: JSON.stringify(tool.outputSchema || { type: 'object' }, null, 2),
+});
+
 /**
  * Close icon
  */
@@ -128,6 +138,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [scheduleEnabled, setScheduleEnabled] = useState(true);
   const [intervalMinutes, setIntervalMinutes] = useState(30);
   const [selectedMcpServerIds, setSelectedMcpServerIds] = useState([]);
   const [providerConnectionIds, setProviderConnectionIds] = useState([]);
@@ -141,6 +152,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
   const [allowedCommandDraft, setAllowedCommandDraft] = useState('');
   const [blockedCommandDraft, setBlockedCommandDraft] = useState('');
   const [webEnabled, setWebEnabled] = useState(false);
+  const [exposedTools, setExposedTools] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -161,6 +173,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
       if (agent) {
         setName(agent.name || '');
         setDescription(agent.description || '');
+        setScheduleEnabled(agent.scheduleEnabled !== false);
         setIntervalMinutes(agent.intervalMinutes || 30);
         setSelectedMcpServerIds(agent.selectedMcpServerIds || []);
         setProviderConnectionIds(agent.providerConnectionIds || []);
@@ -174,9 +187,11 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
         setAllowedCommandDraft('');
         setBlockedCommandDraft('');
         setWebEnabled(execution.web?.enabled || false);
+        setExposedTools((agent.exposedTools || []).map((tool) => createDraftExposedTool(tool)));
       } else {
         setName('');
         setDescription('');
+        setScheduleEnabled(true);
         setIntervalMinutes(30);
         setSelectedMcpServerIds([]);
         setProviderConnectionIds([]);
@@ -190,6 +205,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
         setAllowedCommandDraft('');
         setBlockedCommandDraft('');
         setWebEnabled(false);
+        setExposedTools([]);
       }
       setError(null);
     }
@@ -253,7 +269,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
       return;
     }
 
-    if (intervalMinutes < 1 || intervalMinutes > 1440) {
+    if (scheduleEnabled && (intervalMinutes < 1 || intervalMinutes > 1440)) {
       setError('Interval must be between 1 minute and 24 hours');
       return;
     }
@@ -263,12 +279,65 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
       return;
     }
 
+    const parsedExposedTools = [];
+    const seenNames = new Set();
+    for (const tool of exposedTools) {
+      const toolName = tool.name.trim();
+      if (!toolName) {
+        setError('Each exposed tool needs a name.');
+        return;
+      }
+      if (seenNames.has(toolName)) {
+        setError(`Duplicate exposed tool name: ${toolName}`);
+        return;
+      }
+      seenNames.add(toolName);
+
+      const descriptionText = tool.description.trim();
+      if (!descriptionText) {
+        setError(`Exposed tool "${toolName}" needs a description.`);
+        return;
+      }
+
+      let inputSchema;
+      let outputSchema;
+      try {
+        inputSchema = JSON.parse(tool.inputSchemaText || defaultSchemaText);
+      } catch {
+        setError(`Input schema for "${toolName}" is not valid JSON.`);
+        return;
+      }
+      try {
+        outputSchema = JSON.parse(tool.outputSchemaText || defaultSchemaText);
+      } catch {
+        setError(`Output schema for "${toolName}" is not valid JSON.`);
+        return;
+      }
+
+      if (!inputSchema || typeof inputSchema !== 'object' || Array.isArray(inputSchema)) {
+        setError(`Input schema for "${toolName}" must be a JSON object.`);
+        return;
+      }
+      if (!outputSchema || typeof outputSchema !== 'object' || Array.isArray(outputSchema)) {
+        setError(`Output schema for "${toolName}" must be a JSON object.`);
+        return;
+      }
+
+      parsedExposedTools.push({
+        name: toolName,
+        description: descriptionText,
+        inputSchema,
+        outputSchema,
+      });
+    }
+
     setSaving(true);
 
     try {
       await onSubmit({
         name: trimmedName,
         description: description.trim(),
+        scheduleEnabled,
         intervalMinutes: Number(intervalMinutes),
         selectedMcpServerIds,
         providerConnectionIds,
@@ -285,6 +354,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
             enabled: webEnabled,
           },
         },
+        exposedTools: parsedExposedTools,
       });
     } catch (err) {
       console.error('[AgentFormModal] Submit error:', err);
@@ -304,7 +374,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
         {/* Header */}
         <div className={styles.header}>
           <h2 className={styles.title}>
-            {isEditing ? 'Edit Scheduled Agent' : 'Create Scheduled Agent'}
+            {isEditing ? 'Edit Agent' : 'Create Agent'}
           </h2>
           <button
             className={styles.closeButton}
@@ -340,7 +410,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
               autoFocus
             />
             <span className={styles.hint}>
-              A descriptive name for this scheduled agent
+              A descriptive name for this agent
             </span>
           </div>
 
@@ -362,19 +432,54 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
             </span>
           </div>
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="agent-interval">
-              Check Interval
-            </label>
-            <IntervalSelect
-              id="agent-interval"
-              value={intervalMinutes}
-              onChange={setIntervalMinutes}
-              disabled={saving}
-            />
-            <span className={styles.hint}>
-              How often this agent runs while enabled
-            </span>
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Execution Mode</div>
+            <div className={styles.sectionDescription}>
+              Agents can run on a schedule, be available only for on-demand inter-agent calls, or both.
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label}>Scheduled Execution</label>
+              <label className={styles.toggleRow}>
+                <span className={styles.toggleLabel}>
+                  Run this agent on a recurring schedule
+                </span>
+                <span className={`${styles.toggle} ${scheduleEnabled ? styles.toggleOn : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={scheduleEnabled}
+                    onChange={(e) => setScheduleEnabled(e.target.checked)}
+                    disabled={saving}
+                    className={styles.toggleInput}
+                  />
+                  <span className={styles.toggleTrack}>
+                    <span className={styles.toggleThumb} />
+                  </span>
+                </span>
+              </label>
+              <span className={styles.hint}>
+                {scheduleEnabled
+                  ? 'When enabled, this agent can be scheduled and can also be called by other agents if it exposes tools.'
+                  : 'On-demand only. The agent will not be registered with the scheduler but can still be enabled and called by other agents.'}
+              </span>
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="agent-interval">
+                Check Interval
+              </label>
+              <IntervalSelect
+                id="agent-interval"
+                value={intervalMinutes}
+                onChange={setIntervalMinutes}
+                disabled={saving || !scheduleEnabled}
+              />
+              <span className={styles.hint}>
+                {scheduleEnabled
+                  ? 'How often this agent runs while enabled.'
+                  : 'Stored for later if you re-enable scheduling.'}
+              </span>
+            </div>
           </div>
 
           <div className={styles.field}>
@@ -543,6 +648,116 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
             <span className={styles.hint}>
               The first connection is primary. Additional connections are used as ordered fallbacks.
             </span>
+          </div>
+
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Exposed Tools</div>
+            <div className={styles.sectionDescription}>
+              Exposed tools let other enabled agents call this agent synchronously. Define task-shaped tools with explicit input and output schemas.
+            </div>
+
+            {exposedTools.length === 0 ? (
+              <div className={styles.hint}>
+                No exposed tools yet. Leave this empty to keep the agent isolated from other agents.
+              </div>
+            ) : (
+              <div className={styles.providerConnectionList}>
+                {exposedTools.map((tool, index) => (
+                  <div key={tool.id} className={styles.providerConnectionItem}>
+                    <div className={styles.providerConnectionDetails}>
+                      <div className={styles.providerConnectionHeader}>
+                        <span className={styles.providerConnectionName}>
+                          {tool.name.trim() || `Tool ${index + 1}`}
+                        </span>
+                      </div>
+
+                      <div className={styles.field}>
+                        <label className={styles.label}>Tool Name</label>
+                        <input
+                          type="text"
+                          className={styles.input}
+                          value={tool.name}
+                          onChange={(e) => setExposedTools((current) => current.map((item) => (
+                            item.id === tool.id ? { ...item, name: e.target.value } : item
+                          )))}
+                          placeholder="analyze_network_issue"
+                          disabled={saving}
+                        />
+                      </div>
+
+                      <div className={styles.field}>
+                        <label className={styles.label}>Description</label>
+                        <textarea
+                          className={styles.textarea}
+                          value={tool.description}
+                          onChange={(e) => setExposedTools((current) => current.map((item) => (
+                            item.id === tool.id ? { ...item, description: e.target.value } : item
+                          )))}
+                          placeholder="Investigate a network anomaly and return a structured report."
+                          disabled={saving}
+                          rows={3}
+                        />
+                      </div>
+
+                      <div className={styles.gridTwo}>
+                        <div className={styles.field}>
+                          <label className={styles.label}>Input Schema</label>
+                          <textarea
+                            className={styles.textarea}
+                            value={tool.inputSchemaText}
+                            onChange={(e) => setExposedTools((current) => current.map((item) => (
+                              item.id === tool.id ? { ...item, inputSchemaText: e.target.value } : item
+                            )))}
+                            spellCheck={false}
+                            disabled={saving}
+                            rows={8}
+                          />
+                        </div>
+
+                        <div className={styles.field}>
+                          <label className={styles.label}>Output Schema</label>
+                          <textarea
+                            className={styles.textarea}
+                            value={tool.outputSchemaText}
+                            onChange={(e) => setExposedTools((current) => current.map((item) => (
+                              item.id === tool.id ? { ...item, outputSchemaText: e.target.value } : item
+                            )))}
+                            spellCheck={false}
+                            disabled={saving}
+                            rows={8}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className={styles.providerConnectionActions}>
+                      <button
+                        type="button"
+                        className={styles.chipRemove}
+                        onClick={() => setExposedTools((current) => current.filter((item) => item.id !== tool.id))}
+                        disabled={saving}
+                        aria-label={`Remove tool ${tool.name || index + 1}`}
+                        title="Remove tool"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              type="button"
+              className={styles.addButton}
+              onClick={() => setExposedTools((current) => [...current, createDraftExposedTool({
+                inputSchema: { type: 'object', properties: {} },
+                outputSchema: { type: 'object', properties: {} },
+              })])}
+              disabled={saving}
+            >
+              Add Exposed Tool
+            </button>
           </div>
 
           <div className={styles.section}>
@@ -769,7 +984,7 @@ const AgentFormModal = ({ isOpen, onClose, onSubmit, agent, mcpServers = [], pro
                   <span>Saving...</span>
                 </>
               ) : (
-                <span>{isEditing ? 'Save Changes' : 'Create Scheduled Agent'}</span>
+                <span>{isEditing ? 'Save Changes' : 'Create Agent'}</span>
               )}
             </button>
           </div>

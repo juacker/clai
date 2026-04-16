@@ -330,7 +330,7 @@ struct PartialToolCall {
 /// Full state carried through the SSE stream unfold.
 struct SseState {
     stream: Pin<Box<dyn Stream<Item = reqwest::Result<Bytes>> + Send>>,
-    buf: String,
+    buf: Vec<u8>,
     is_first: bool,
     tool_calls: Vec<PartialToolCall>,
 }
@@ -340,7 +340,7 @@ fn sse_to_provider_events(
 ) -> impl Stream<Item = Result<ProviderEvent, ProviderError>> + Send {
     let state = SseState {
         stream: byte_stream.boxed(),
-        buf: String::new(),
+        buf: Vec::new(),
         is_first: true,
         tool_calls: Vec::new(),
     };
@@ -348,9 +348,22 @@ fn sse_to_provider_events(
     futures::stream::unfold(state, |mut state| async move {
         loop {
             // Check if we have a complete SSE frame in the buffer
-            if let Some(pos) = state.buf.find("\n\n") {
-                let frame = state.buf[..pos].to_string();
-                state.buf = state.buf[pos + 2..].to_string();
+            if let Some((pos, delim_len)) = find_sse_frame_delimiter(&state.buf) {
+                let frame_bytes = state.buf[..pos].to_vec();
+                state.buf.drain(..pos + delim_len);
+
+                let frame = match String::from_utf8(frame_bytes) {
+                    Ok(frame) => frame,
+                    Err(e) => {
+                        return Some((
+                            vec![Err(ProviderError::RequestFailed(format!(
+                                "Invalid UTF-8 in SSE frame: {}",
+                                e
+                            )))],
+                            state,
+                        ));
+                    }
+                };
 
                 let events = parse_sse_frame(&frame, &mut state.is_first, &mut state.tool_calls);
                 if !events.is_empty() {
@@ -361,18 +374,7 @@ fn sse_to_provider_events(
 
             // Need more data
             match state.stream.next().await {
-                Some(Ok(bytes)) => match String::from_utf8(bytes.to_vec()) {
-                    Ok(text) => state.buf.push_str(&text),
-                    Err(e) => {
-                        return Some((
-                            vec![Err(ProviderError::RequestFailed(format!(
-                                "Invalid UTF-8 in stream: {}",
-                                e
-                            )))],
-                            state,
-                        ));
-                    }
-                },
+                Some(Ok(bytes)) => state.buf.extend_from_slice(bytes.as_ref()),
                 Some(Err(e)) => {
                     return Some((
                         vec![Err(ProviderError::RequestFailed(e.to_string()))],
@@ -381,15 +383,29 @@ fn sse_to_provider_events(
                 }
                 None => {
                     // Stream ended. Parse any remaining buffer.
-                    if !state.buf.trim().is_empty() {
-                        let events = parse_sse_frame(
-                            state.buf.trim(),
-                            &mut state.is_first,
-                            &mut state.tool_calls,
-                        );
-                        state.buf.clear();
-                        if !events.is_empty() {
-                            return Some((events, state));
+                    if !state.buf.is_empty() {
+                        let remaining = std::mem::take(&mut state.buf);
+                        let text = match String::from_utf8(remaining) {
+                            Ok(text) => text,
+                            Err(e) => {
+                                return Some((
+                                    vec![Err(ProviderError::RequestFailed(format!(
+                                        "Invalid UTF-8 in trailing SSE buffer: {}",
+                                        e
+                                    )))],
+                                    state,
+                                ));
+                            }
+                        };
+                        if !text.trim().is_empty() {
+                            let events = parse_sse_frame(
+                                text.trim(),
+                                &mut state.is_first,
+                                &mut state.tool_calls,
+                            );
+                            if !events.is_empty() {
+                                return Some((events, state));
+                            }
                         }
                     }
                     return None;
@@ -398,6 +414,17 @@ fn sse_to_provider_events(
         }
     })
     .flat_map(futures::stream::iter)
+}
+
+fn find_sse_frame_delimiter(buf: &[u8]) -> Option<(usize, usize)> {
+    buf.windows(2)
+        .position(|window| window == b"\n\n")
+        .map(|pos| (pos, 2))
+        .or_else(|| {
+            buf.windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .map(|pos| (pos, 4))
+        })
 }
 
 /// Parse a single SSE frame into ProviderEvent values.
@@ -552,6 +579,7 @@ fn flush_tool_calls(
 mod tests {
     use super::*;
     use crate::assistant::types::{ContentPart, MessageRole, ProviderInputMessage};
+    use futures::StreamExt;
 
     #[test]
     fn build_message_includes_tool_result_timestamps() {
@@ -578,5 +606,31 @@ mod tests {
         assert_eq!(parsed["startedAt"], "2023-11-14T22:13:20+00:00");
         assert_eq!(parsed["completedAt"], "2023-11-14T22:13:20.250+00:00");
         assert_eq!(parsed["payload"]["openIssues"], 0);
+    }
+
+    #[tokio::test]
+    async fn sse_stream_handles_split_utf8_across_transport_chunks() {
+        let frame = "data: {\"choices\":[{\"delta\":{\"content\":\"€\"}}]}\n\n";
+        let bytes = frame.as_bytes();
+        let split_at = bytes
+            .iter()
+            .position(|b| *b == 0xE2)
+            .expect("euro sign should exist in frame")
+            + 1;
+        let stream = futures::stream::iter(vec![
+            Ok(Bytes::from(bytes[..split_at].to_vec())),
+            Ok(Bytes::from(bytes[split_at..].to_vec())),
+        ]);
+
+        let events = sse_to_provider_events(stream).collect::<Vec<_>>().await;
+
+        assert!(matches!(
+            events.first(),
+            Some(Ok(ProviderEvent::MessageStart))
+        ));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            Ok(ProviderEvent::TextDelta { text }) if text == "€"
+        )));
     }
 }
