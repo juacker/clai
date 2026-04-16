@@ -239,11 +239,10 @@ fn build_message(msg: &crate::assistant::types::ProviderInputMessage) -> Option<
 
             for part in &msg.content {
                 match part {
-                    ContentPart::Text { text } => {
-                        if !text.is_empty() {
-                            content.push(json!({ "type": "text", "text": text }));
-                        }
+                    ContentPart::Text { text } if !text.is_empty() => {
+                        content.push(json!({ "type": "text", "text": text }));
                     }
+                    ContentPart::Text { .. } => {}
                     ContentPart::ToolUse {
                         tool_call_id,
                         tool_name,

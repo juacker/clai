@@ -1566,7 +1566,7 @@ pub async fn workspace_list(
     }
 
     // Sort all entries by updated_at descending
-    entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.updated_at));
 
     Ok(entries)
 }
