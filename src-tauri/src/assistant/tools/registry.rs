@@ -1,47 +1,33 @@
-use crate::assistant::types::{SessionContext, ToolDefinition};
-use crate::config::ExposedAgentTool;
-use crate::config::ShellAccessMode;
-use crate::mcp::tools::workspace::{
-    CreateCanvasArtifactParams, CreateDashboardArtifactParams, ListArtifactsParams,
-    ReadArtifactParams, UpdateCanvasArtifactParams, UpdateDashboardArtifactParams,
+use crate::assistant::tools::workspace_tasks::{
+    AssignWorkspaceTaskParams, GetWorkspaceTaskResultParams, ListWorkspaceAgentsParams,
+    RequestWorkspaceUserInputParams,
 };
+use crate::assistant::types::{SessionContext, ToolDefinition};
+use crate::config::ShellAccessMode;
 
 /// Returns all tool definitions available for the given session context.
 pub fn available_tools(
     context: &SessionContext,
     external_tools: &[ToolDefinition],
-    _dashboard_enabled: bool,
-    callable_agents: &[CallableAgent],
 ) -> Vec<ToolDefinition> {
     let mut tools = vec![];
 
-    if context.agent_workspace_id.is_some() {
-        tools.push(tool::<ListArtifactsParams>(
-            "workspace.listArtifacts",
-            "List durable artifacts in the current workspace. Use this first to discover existing canvas, dashboard, markdown, and other files before creating duplicates.",
+    if is_workspace_manager_context(context) {
+        tools.push(tool::<ListWorkspaceAgentsParams>(
+            "workspace.listAgents",
+            "List agents assigned to this workspace. Use this before delegating work so tasks are assigned only to workspace-local agents.",
         ));
-        tools.push(tool::<ReadArtifactParams>(
-            "workspace.readArtifact",
-            "Read a durable workspace artifact by path. Returns the artifact content and parsed JSON when applicable.",
+        tools.push(tool::<AssignWorkspaceTaskParams>(
+            "workspace.assignTask",
+            "Assign a bounded task to an agent assigned to this workspace. The task runs asynchronously and returns a task ID to poll with workspace.getTaskResult.",
         ));
-    }
-
-    if context.agent_workspace_id.is_some() {
-        tools.push(tool::<CreateCanvasArtifactParams>(
-            "workspace.createCanvas",
-            "Create a durable .canvas artifact in the current workspace.",
+        tools.push(tool::<GetWorkspaceTaskResultParams>(
+            "workspace.getTaskResult",
+            "Read the current status and result of a workspace-local task by task ID.",
         ));
-        tools.push(tool::<UpdateCanvasArtifactParams>(
-            "workspace.updateCanvas",
-            "Update an existing durable .canvas artifact in the current workspace.",
-        ));
-        tools.push(tool::<CreateDashboardArtifactParams>(
-            "workspace.createDashboard",
-            "Create a durable .dashboard.json artifact in the current workspace.",
-        ));
-        tools.push(tool::<UpdateDashboardArtifactParams>(
-            "workspace.updateDashboard",
-            "Update an existing durable .dashboard.json artifact in the current workspace.",
+        tools.push(tool::<RequestWorkspaceUserInputParams>(
+            "workspace.requestUserInput",
+            "Create a workspace-visible request for user feedback, approval, or missing information. Use this when work is blocked on a human decision.",
         ));
     }
 
@@ -150,29 +136,20 @@ pub fn available_tools(
         });
     }
 
-    for agent in callable_agents {
-        for tool in &agent.exposed_tools {
-            tools.push(ToolDefinition {
-                name: format!("agent.{}.{}", agent.id, tool.name),
-                description: format!(
-                    "[Agent: {}] {} Returns JSON matching the configured output schema.",
-                    agent.name, tool.description
-                ),
-                input_schema: tool.input_schema.clone(),
-            });
-        }
-    }
-
     tools.extend(external_tools.iter().cloned());
 
     tools
 }
 
-#[derive(Debug, Clone)]
-pub struct CallableAgent {
-    pub id: String,
-    pub name: String,
-    pub exposed_tools: Vec<ExposedAgentTool>,
+fn is_workspace_manager_context(context: &SessionContext) -> bool {
+    let Some(current_agent_definition_id) = context.automation_id.as_deref() else {
+        return false;
+    };
+
+    context
+        .workspace_agents
+        .iter()
+        .any(|agent| agent.is_default && agent.agent_definition_id == current_agent_definition_id)
 }
 
 /// Build a ToolDefinition from a schemars-annotated param type.

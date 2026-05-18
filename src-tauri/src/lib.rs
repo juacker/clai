@@ -37,9 +37,6 @@ mod db;
 mod mcp;
 mod providers;
 
-// Re-export for agent execution and testing
-pub use mcp::server::McpToolServer;
-
 use std::sync::Mutex;
 
 use agents::SharedScheduler;
@@ -218,6 +215,14 @@ pub fn run() {
             commands::provider_connections::provider_connection_list,
             commands::provider_connections::provider_connection_list_models,
             commands::provider_connections::provider_connection_test,
+            // Skill catalog commands
+            commands::skills::skill_sources_list,
+            commands::skills::skills_list,
+            commands::skills::skills_catalog,
+            commands::skills::skill_source_add,
+            commands::skills::skill_source_refresh,
+            commands::skills::skill_source_set_enabled,
+            commands::skills::skill_source_delete,
             // Agent tool bridge commands
             commands::bridge::agent_tool_result,
             commands::bridge::agent_bridge_ready,
@@ -233,6 +238,12 @@ pub fn run() {
             commands::workspace::workspace_download_file,
             commands::workspace::workspace_update_session_mcp,
             commands::workspace::workspace_set_provider,
+            commands::workspace::workspace_list_agents,
+            commands::workspace::workspace_assign_agent,
+            commands::workspace::workspace_unassign_agent,
+            commands::workspace::workspace_set_default_agent,
+            commands::workspace::workspace_acknowledge_task,
+            commands::workspace::workspace_submit_task_feedback,
             commands::workspace::workspace_create,
             commands::workspace::workspace_list,
             commands::workspace::workspace_delete,
