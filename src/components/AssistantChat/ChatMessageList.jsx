@@ -281,18 +281,35 @@ const ChatMessageList = ({
 
   const grouped = groupMessages(messages);
 
+  // An item is an "assistant continuation" when it's an assistant turn
+  // (text+tools MessageBlock or a tool-only MergedToolGroup) AND the
+  // item before it is also assistant/tool. Continuations render slim:
+  // no header, no card chrome, just the content flowing into the
+  // previous block. The first assistant after a user message keeps
+  // the full header and card framing so the turn boundary stays
+  // legible.
+  const isAssistantItem = (it) => {
+    if (!it) return false;
+    if (it.type === 'tool-group') return true;
+    return it.message?.role === 'assistant';
+  };
+  const continuationFlags = grouped.map((_, idx) =>
+    isAssistantItem(grouped[idx]) && isAssistantItem(grouped[idx - 1])
+  );
+
   return (
     <div
       ref={containerRef}
       className={styles.activityList}
       onScroll={handleScroll}
     >
-      {grouped.map((item) =>
+      {grouped.map((item, idx) =>
         item.type === 'tool-group' ? (
           <MergedToolGroup
             key={item.id}
             item={item}
             toolCalls={toolCalls}
+            isContinuation={continuationFlags[idx]}
           />
         ) : (
           <MessageBlock
@@ -301,6 +318,7 @@ const ChatMessageList = ({
             streamingText={streamingText[item.message.id]}
             toolCalls={toolCalls}
             userLabel={userLabel}
+            isContinuation={continuationFlags[idx]}
           />
         )
       )}
@@ -320,7 +338,7 @@ const ChatMessageList = ({
   );
 };
 
-const MessageBlock = memo(({ message, streamingText, toolCalls, userLabel = 'You' }) => {
+const MessageBlock = memo(({ message, streamingText, toolCalls, userLabel = 'You', isContinuation = false }) => {
   const { role, createdAt } = message;
 
   if (role === 'user') {
@@ -366,16 +384,13 @@ const MessageBlock = memo(({ message, streamingText, toolCalls, userLabel = 'You
     });
 
     return (
-      <div className={styles.assistantMessage}>
-        <div className={styles.messageHeader}>
-          <img
-            src="/icon.svg"
-            alt="Clai"
-            className={styles.providerIcon}
-          />
-          <span className={styles.messageRoleText}>Clai</span>
-          {createdAt && <span className={styles.messageTimestamp}>{formatTimestamp(createdAt)}</span>}
-        </div>
+      <div className={isContinuation ? styles.assistantContinuation : styles.assistantMessage}>
+        {!isContinuation && (
+          <div className={styles.messageHeader}>
+            <span className={styles.messageRoleText}>Clai</span>
+            {createdAt && <span className={styles.messageTimestamp}>{formatTimestamp(createdAt)}</span>}
+          </div>
+        )}
         <div className={styles.messageContent}>
           {thinkingContent && (
             <ThinkingBlock content={thinkingContent} />
@@ -402,7 +417,7 @@ const MessageBlock = memo(({ message, streamingText, toolCalls, userLabel = 'You
  * MergedToolGroup — renders tool calls from multiple consecutive assistant turns
  * as a single collapsed group, avoiding repeated "CLAI" headers for tool-only turns.
  */
-const MergedToolGroup = memo(({ item, toolCalls }) => {
+const MergedToolGroup = memo(({ item, toolCalls, isContinuation = false }) => {
   const enrichedToolUses = item.toolUses.map((tu) => {
     const tc = toolCalls.find((t) => t.id === tu.tool_call_id);
     return {
@@ -417,12 +432,13 @@ const MergedToolGroup = memo(({ item, toolCalls }) => {
   });
 
   return (
-    <div className={styles.assistantMessage}>
-      <div className={styles.messageHeader}>
-        <img src="/icon.svg" alt="Clai" className={styles.providerIcon} />
-        <span className={styles.messageRoleText}>Clai</span>
-        {item.createdAt && <span className={styles.messageTimestamp}>{formatTimestamp(item.createdAt)}</span>}
-      </div>
+    <div className={isContinuation ? styles.assistantContinuation : styles.assistantMessage}>
+      {!isContinuation && (
+        <div className={styles.messageHeader}>
+          <span className={styles.messageRoleText}>Clai</span>
+          {item.createdAt && <span className={styles.messageTimestamp}>{formatTimestamp(item.createdAt)}</span>}
+        </div>
+      )}
       <div className={styles.messageContent}>
         <ToolCallGroup toolUses={enrichedToolUses} />
       </div>

@@ -192,13 +192,6 @@
   margin: 0 2px;
 }
 
-.providerIcon {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  object-fit: contain;
-}
-
 .messageContent {
   /* Let MarkdownMessage handle its own styling */
   color: var(--color-text-primary);
@@ -278,6 +271,20 @@
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
+  animation: slideIn var(--transition-base) ease-out;
+}
+
+/* Continuation: a follow-up assistant turn that belongs to the same
+ * agent response as the one directly above. No card chrome and no
+ * header — just content flowing into the previous block, so a multi-
+ * iteration agent run reads as one continuous response instead of N
+ * separate "CLAI" cards. */
+.assistantContinuation {
+  padding: 0 16px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  margin-top: -4px; /* tighten the gap left by .activityList's flex gap */
   animation: slideIn var(--transition-base) ease-out;
 }
 
