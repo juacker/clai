@@ -452,6 +452,35 @@ async fn ensure_background_session(
         Some(config) => agent_instructions_with_skills(&config, agent_config),
         None => agent_config.description.clone(),
     };
+
+    // Load the workspace's agent roster so the manager session knows
+    // who it can delegate to. Without this, `is_workspace_manager_context`
+    // returns false (empty Vec → no `is_default` entry matches), the
+    // four `workspace_*` tools never get added to the tool list, and
+    // the periodic manager run cannot poll, assign, or request user
+    // input. The on-demand chat path already populates this via
+    // `desired_workspace_context` — this matches that behavior for
+    // scheduled runs. On failure we fall back to an empty Vec rather
+    // than crashing the run; the manager will then act as a solo
+    // agent (current pre-fix behavior).
+    let workspace_agents = if agent_config.workspace_id.is_empty() {
+        Vec::new()
+    } else {
+        crate::commands::workspace::workspace_agent_summaries(
+            pool,
+            &state,
+            &agent_config.workspace_id,
+        )
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(
+                workspace_id = %agent_config.workspace_id,
+                "Failed to load workspace agent summaries for scheduled run: {} — manager tools will be unavailable for this run",
+                e
+            );
+            Vec::new()
+        })
+    };
     let desired_context = SessionContext {
         space_id: session_space_id.clone(),
         room_id: session_room_id.clone(),
@@ -476,7 +505,7 @@ async fn ensure_background_session(
         automation_name: Some(agent_config.name.clone()),
         automation_description: Some(automation_description),
         inter_agent_call: None,
-        workspace_agents: Vec::new(),
+        workspace_agents,
     };
 
     let existing = find_background_session(

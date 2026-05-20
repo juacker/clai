@@ -948,6 +948,8 @@ async fn run_migrations(pool: &DbPool) -> Result<(), String> {
 
     canonicalize_legacy_tool_names(pool).await?;
 
+    sweep_orphaned_running_state(pool).await?;
+
     for legacy_table in [
         "assistant_sessions_legacy",
         "assistant_messages_legacy",
@@ -963,6 +965,65 @@ async fn run_migrations(pool: &DbPool) -> Result<(), String> {
         .execute(pool)
         .await
         .map_err(|e| format!("Failed to enable foreign keys: {}", e))?;
+
+    Ok(())
+}
+
+/// Startup sweep: marks any `workspace_tasks` row stuck in `running`
+/// (or `assistant_runs` stuck in `running`/`queued`) as failed. These
+/// are orphans from a previous app process that died, was killed by a
+/// rebuild, or otherwise didn't get to finalize its in-flight work.
+/// Without this, the tasks pile up as forever-"RUNNING" in the UI
+/// (the actual agent session that owned them no longer exists, so
+/// nothing can resolve them).
+async fn sweep_orphaned_running_state(pool: &DbPool) -> Result<(), String> {
+    let now = chrono::Utc::now().timestamp_millis();
+
+    // workspace_tasks: any 'running' row at startup is by definition
+    // orphaned — there's no in-memory runner that still owns it.
+    let tasks = sqlx::query(
+        r#"
+        UPDATE workspace_tasks
+        SET status = 'failed',
+            error = COALESCE(error, 'task interrupted by app restart'),
+            updated_at = ?,
+            completed_at = ?
+        WHERE status = 'running'
+        "#,
+    )
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to sweep orphaned workspace_tasks: {}", e))?;
+    if tasks.rows_affected() > 0 {
+        tracing::info!(
+            "Marked {} workspace_tasks as failed (orphaned 'running' state from previous app session)",
+            tasks.rows_affected()
+        );
+    }
+
+    // assistant_runs: same shape. If we left runs as 'running' or
+    // 'queued' at shutdown, they're not coming back.
+    let runs = sqlx::query(
+        r#"
+        UPDATE assistant_runs
+        SET status = 'failed',
+            error = COALESCE(error, 'run interrupted by app restart'),
+            completed_at = ?
+        WHERE status IN ('running', 'queued')
+        "#,
+    )
+    .bind(now)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to sweep orphaned assistant_runs: {}", e))?;
+    if runs.rows_affected() > 0 {
+        tracing::info!(
+            "Marked {} assistant_runs as failed (orphaned 'running'/'queued' state from previous app session)",
+            runs.rows_affected()
+        );
+    }
 
     Ok(())
 }

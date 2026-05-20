@@ -988,7 +988,7 @@ async fn list_workspace_task_responses(
         .collect())
 }
 
-async fn workspace_agent_summaries(
+pub(crate) async fn workspace_agent_summaries(
     pool: &DbPool,
     state: &AppState,
     workspace_id: &str,
