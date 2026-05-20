@@ -19,8 +19,6 @@ use crate::assistant::types::{
 use crate::db::DbPool;
 use tokio_util::sync::CancellationToken;
 
-const MAX_TOOL_ITERATIONS: usize = 10;
-
 #[derive(Clone)]
 pub struct AssistantDeps {
     pub pool: DbPool,
@@ -190,7 +188,13 @@ pub async fn run_session_turn(
         );
     }
 
-    for iteration in 0..MAX_TOOL_ITERATIONS {
+    // No iteration cap: the agent runs as long as the LLM keeps emitting
+    // tool calls. The cancel token is the only stop — surfaced as the
+    // "Stop" button in the UI and any explicit cancel from upstream.
+    // Provider-side context-length limits will surface as errors and
+    // exit via fail_run; this loop itself imposes no ceiling.
+    let mut iteration: usize = 0;
+    loop {
         if input.cancel_token.is_cancelled() {
             cancel_run(deps, &session, &run_id, usage.as_ref(), None).await?;
             return Ok(());
@@ -531,7 +535,8 @@ pub async fn run_session_turn(
             }
         }
 
-        // Continue loop — will call API again with tool results in message history
+        // Continue loop — will call API again with tool results in message history.
+        iteration += 1;
     }
 
     // Complete the run — check for policy notices
