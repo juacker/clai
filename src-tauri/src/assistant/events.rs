@@ -16,6 +16,7 @@ pub enum AssistantUiEvent {
     RunQueued { run: AssistantRun },
     RunStarted { run: AssistantRun },
     AssistantDelta { message_id: MessageId, text: String },
+    AssistantThinkingDelta { message_id: MessageId, text: String },
     AssistantMessageCompleted { message: AssistantMessage },
     ToolCallStarted { tool_call: ToolInvocation },
     ToolCallCompleted { tool_call: ToolInvocation },

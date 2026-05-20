@@ -711,6 +711,9 @@ fn message_contains_output(content: &[ContentPart]) -> bool {
     content.iter().any(|part| match part {
         ContentPart::Text { text } => !text.trim().is_empty(),
         ContentPart::ToolUse { .. } | ContentPart::ToolResult { .. } => true,
+        // Thinking alone doesn't count as user-visible output — it's
+        // the model's internal reasoning, not a deliverable.
+        ContentPart::Thinking { .. } => false,
     })
 }
 

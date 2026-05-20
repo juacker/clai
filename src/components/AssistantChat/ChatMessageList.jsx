@@ -31,6 +31,44 @@ const getToolUses = (message) => {
   return message.content.filter((part) => part.type === 'tool_use');
 };
 
+const getThinkingContent = (message) => {
+  if (!message.content || !Array.isArray(message.content)) return '';
+  return message.content
+    .filter((part) => part.type === 'thinking')
+    .map((part) => part.text)
+    .join('');
+};
+
+/**
+ * Collapsible "thinking" block — renders the model's reasoning_content
+ * with a distinct muted/italic style so it doesn't compete with the
+ * user-facing response. Collapsed by default; click to expand.
+ */
+const ThinkingBlock = memo(({ content }) => {
+  const [expanded, setExpanded] = useState(false);
+  if (!content) return null;
+  const preview = content.slice(0, 120).replace(/\s+/g, ' ').trim();
+  return (
+    <div className={styles.thinkingBlock}>
+      <button
+        type="button"
+        className={styles.thinkingHeader}
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+      >
+        <span className={styles.thinkingIcon} aria-hidden="true">{'\u{1F4AD}'}</span>
+        <span className={styles.thinkingLabel}>Thinking</span>
+        {!expanded && preview && (
+          <span className={styles.thinkingPreview}>{preview}{content.length > preview.length ? '…' : ''}</span>
+        )}
+        <span className={styles.thinkingChevron} aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+      </button>
+      {expanded && <pre className={styles.thinkingBody}>{content}</pre>}
+    </div>
+  );
+});
+ThinkingBlock.displayName = 'ThinkingBlock';
+
 /**
  * Clean MCP-style tool names: "mcp.<uuid>.get_metric_data" → "get_metric_data"
  */
@@ -311,6 +349,7 @@ const MessageBlock = memo(({ message, streamingText, toolCalls, userLabel = 'You
     const textContent = streamingText || getTextContent(message);
     const isCurrentlyStreaming = !!streamingText;
     const toolUses = getToolUses(message);
+    const thinkingContent = getThinkingContent(message);
 
     // Build enriched tool use list with params from store
     const enrichedToolUses = toolUses.map((tu) => {
@@ -338,6 +377,9 @@ const MessageBlock = memo(({ message, streamingText, toolCalls, userLabel = 'You
           {createdAt && <span className={styles.messageTimestamp}>{formatTimestamp(createdAt)}</span>}
         </div>
         <div className={styles.messageContent}>
+          {thinkingContent && (
+            <ThinkingBlock content={thinkingContent} />
+          )}
           {textContent && (
             <MarkdownMessage
               content={textContent}

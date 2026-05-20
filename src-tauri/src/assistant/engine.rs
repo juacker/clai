@@ -254,6 +254,7 @@ pub async fn run_session_turn(
 
         // Consume the stream
         let mut accumulated_text = String::new();
+        let mut accumulated_thinking = String::new();
         let mut tool_calls: Vec<ToolInvocationDraft> = Vec::new();
 
         loop {
@@ -281,6 +282,18 @@ pub async fn run_session_turn(
                             &session,
                             Some(&run_id),
                             AssistantUiEvent::AssistantDelta {
+                                message_id: assistant_message.id.clone(),
+                                text,
+                            },
+                        );
+                    }
+                    ProviderEvent::ThinkingDelta { text } => {
+                        accumulated_thinking.push_str(&text);
+                        let _ = emit_event(
+                            &deps.app,
+                            &session,
+                            Some(&run_id),
+                            AssistantUiEvent::AssistantThinkingDelta {
                                 message_id: assistant_message.id.clone(),
                                 text,
                             },
@@ -322,6 +335,14 @@ pub async fn run_session_turn(
         // [DONE] never arriving, leaving the assistant row with empty content
         // while tool result rows get persisted just below.
         let mut final_content = Vec::new();
+        // Thinking comes first so the eventual outbound serializer sees
+        // a stable ordering and can extract `reasoning_content` from a
+        // known position.
+        if !accumulated_thinking.is_empty() {
+            final_content.push(ContentPart::Thinking {
+                text: accumulated_thinking.clone(),
+            });
+        }
         if !accumulated_text.is_empty() {
             final_content.push(ContentPart::Text {
                 text: accumulated_text.clone(),
@@ -1387,6 +1408,10 @@ fn normalize_history_for_provider(messages: &[AssistantMessage]) -> Vec<Provider
 fn assistant_content_is_empty(content: &[ContentPart]) -> bool {
     content.iter().all(|part| match part {
         ContentPart::Text { text } => text.is_empty(),
+        // A message with only thinking and no other content is
+        // semantically empty from the user/provider standpoint —
+        // there's no answer or action to take.
+        ContentPart::Thinking { text } => text.is_empty(),
         ContentPart::ToolUse { .. } | ContentPart::ToolResult { .. } => false,
     })
 }

@@ -168,6 +168,16 @@ pub enum ContentPart {
     Text {
         text: String,
     },
+    /// Model "reasoning" / "thinking" content. OpenAI's o1/kimi/etc.
+    /// stream this via `choices[0].delta.reasoning_content`; Anthropic
+    /// streams it via `thinking` content blocks. We store it as a
+    /// first-class content part so we can echo it back to providers
+    /// that require it (LiteLLM-fronted OpenAI rejects assistant
+    /// tool_call messages with `thinking enabled but reasoning_content
+    /// missing` when this is absent).
+    Thinking {
+        text: String,
+    },
     ToolUse {
         tool_call_id: ToolCallId,
         tool_name: String,
@@ -344,6 +354,14 @@ pub struct ToolInvocationDraft {
 pub enum ProviderEvent {
     MessageStart,
     TextDelta {
+        text: String,
+    },
+    /// Streamed "reasoning"/"thinking" text. Engines append to a
+    /// `ContentPart::Thinking` block on the assistant message under
+    /// construction. The same content gets serialized back on outbound
+    /// so providers that enforce its presence (LiteLLM/OpenAI o1/kimi)
+    /// accept the conversation history.
+    ThinkingDelta {
         text: String,
     },
     ToolCallDelta {

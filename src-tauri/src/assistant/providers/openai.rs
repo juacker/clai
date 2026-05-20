@@ -265,6 +265,16 @@ fn build_message(msg: &crate::assistant::types::ProviderInputMessage) -> serde_j
             .collect::<Vec<_>>()
             .join("");
 
+        let reasoning_content: String = msg
+            .content
+            .iter()
+            .filter_map(|p| match p {
+                ContentPart::Thinking { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
+
         let tool_calls: Vec<serde_json::Value> = tool_uses
             .iter()
             .map(|p| match p {
@@ -284,9 +294,17 @@ fn build_message(msg: &crate::assistant::types::ProviderInputMessage) -> serde_j
             })
             .collect();
 
+        // Always include `reasoning_content` (empty string when we
+        // didn't capture any). LiteLLM/OpenAI o1/kimi reject the
+        // message entirely if the field is *missing* from an
+        // assistant-with-tool_calls message while thinking is enabled.
+        // Sending an empty string keeps the schema check happy for
+        // legacy messages we ingested before we started parsing
+        // reasoning_content.
         let mut message = json!({
             "role": "assistant",
             "tool_calls": tool_calls,
+            "reasoning_content": reasoning_content,
         });
         if !text_content.is_empty() {
             message["content"] = json!(text_content);
@@ -484,6 +502,24 @@ fn parse_sse_frame(
                     if !content.is_empty() {
                         events.push(Ok(ProviderEvent::TextDelta {
                             text: content.to_string(),
+                        }));
+                    }
+                }
+
+                // Extract reasoning_content delta (o1 / kimi / "thinking"-
+                // enabled models). The provider streams partial thinking
+                // text in `choices[0].delta.reasoning_content`. We capture
+                // it so the engine can attach a `ContentPart::Thinking` to
+                // the assistant message — and so we can echo it back on
+                // the next turn, which strict providers (LiteLLM-fronted
+                // OpenAI) require.
+                if let Some(reasoning) = delta
+                    .and_then(|d| d.get("reasoning_content"))
+                    .and_then(|c| c.as_str())
+                {
+                    if !reasoning.is_empty() {
+                        events.push(Ok(ProviderEvent::ThinkingDelta {
+                            text: reasoning.to_string(),
                         }));
                     }
                 }
