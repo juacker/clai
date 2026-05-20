@@ -1457,6 +1457,53 @@ fn normalize_history_for_provider(messages: &[AssistantMessage]) -> Vec<Provider
         }
     }
 
+    // Final invariant pass: every `tool_use` in an assistant message must
+    // have a matching tool_result later in `out`. If it doesn't, the tool
+    // result was either never persisted (engine crash between exec and
+    // write, or the user cancelled the run mid-tool) or got dropped by an
+    // earlier normalizer iteration. Either way, sending it to a strict
+    // provider triggers "tool_call_ids did not have response messages: X"
+    // and stalls the whole conversation. Strip the orphan tool_use parts
+    // so the assistant either continues with its text content or — if it
+    // had only tool_calls — gets dropped as an empty assistant
+    // placeholder by the standard pass below.
+    let assistant_indices: Vec<usize> = out
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, m)| (m.role == MessageRole::Assistant).then_some(idx))
+        .collect();
+    for assistant_idx in assistant_indices {
+        let tool_ids_in_assistant: Vec<String> = out[assistant_idx]
+            .content
+            .iter()
+            .filter_map(|part| match part {
+                ContentPart::ToolUse { tool_call_id, .. } => Some(tool_call_id.clone()),
+                _ => None,
+            })
+            .collect();
+        for tool_call_id in tool_ids_in_assistant {
+            let has_response = out.iter().skip(assistant_idx + 1).any(|m| {
+                m.role == MessageRole::Tool
+                    && m.content.iter().any(|p| {
+                        matches!(p, ContentPart::ToolResult { tool_call_id: id, .. } if id == &tool_call_id)
+                    })
+            });
+            if !has_response {
+                tracing::warn!(
+                    tool_call_id = %tool_call_id,
+                    "Stripping orphan tool_use from assistant message (no tool_result in history)"
+                );
+                out[assistant_idx].content.retain(|p| {
+                    !matches!(p, ContentPart::ToolUse { tool_call_id: id, .. } if id == &tool_call_id)
+                });
+            }
+        }
+    }
+
+    // Drop assistant messages that became empty after stripping (or that
+    // were empty placeholders ingested from a crashed run).
+    out.retain(|m| !(m.role == MessageRole::Assistant && assistant_content_is_empty(&m.content)));
+
     out
 }
 
