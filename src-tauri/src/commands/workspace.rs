@@ -1511,16 +1511,14 @@ pub async fn workspace_get_snapshot(
     // in the `workspaces` table — load it here so renames via
     // `workspace_set_title` actually surface in the snapshot.
     if descriptor.workspace_id != DEFAULT_WORKSPACE_ID {
-        if let Ok(Some(db_title)) = sqlx::query_scalar::<_, Option<String>>(
+        if let Ok(Some(Some(title))) = sqlx::query_scalar::<_, Option<String>>(
             "SELECT title FROM workspaces WHERE id = ? LIMIT 1",
         )
         .bind(&descriptor.workspace_id)
         .fetch_optional(pool.inner())
         .await
         {
-            if let Some(title) = db_title {
-                descriptor.title = title;
-            }
+            descriptor.title = title;
         }
     }
 
