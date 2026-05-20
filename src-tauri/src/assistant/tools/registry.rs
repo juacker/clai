@@ -14,26 +14,26 @@ pub fn available_tools(
 
     if is_workspace_manager_context(context) {
         tools.push(tool::<ListWorkspaceAgentsParams>(
-            "workspace.listAgents",
+            "workspace_listAgents",
             "List agents assigned to this workspace. Use this before delegating work so tasks are assigned only to workspace-local agents.",
         ));
         tools.push(tool::<AssignWorkspaceTaskParams>(
-            "workspace.assignTask",
-            "Assign a bounded task to an agent assigned to this workspace. The task runs asynchronously and returns a task ID to poll with workspace.getTaskResult.",
+            "workspace_assignTask",
+            "Assign a bounded task to an agent assigned to this workspace. The task runs asynchronously and returns a task ID to poll with workspace_getTaskResult.",
         ));
         tools.push(tool::<GetWorkspaceTaskResultParams>(
-            "workspace.getTaskResult",
+            "workspace_getTaskResult",
             "Read the current status and result of a workspace-local task by task ID.",
         ));
         tools.push(tool::<RequestWorkspaceUserInputParams>(
-            "workspace.requestUserInput",
+            "workspace_requestUserInput",
             "Create a workspace-visible request for user feedback, approval, or missing information. Use this when work is blocked on a human decision.",
         ));
     }
 
     if context.agent_workspace_id.is_some() {
         tools.push(ToolDefinition {
-            name: "fs.list".to_string(),
+            name: "fs_list".to_string(),
             description: "List files and directories under the agent workspace or another allowed filesystem path. Supports optional recursive traversal with a hard result limit.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -45,7 +45,7 @@ pub fn available_tools(
             }),
         });
         tools.push(ToolDefinition {
-            name: "fs.glob".to_string(),
+            name: "fs_glob".to_string(),
             description: "Find files or directories matching a glob pattern within the agent workspace or another allowed filesystem path.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -57,7 +57,7 @@ pub fn available_tools(
             }),
         });
         tools.push(ToolDefinition {
-            name: "fs.read".to_string(),
+            name: "fs_read".to_string(),
             description: "Read a text file from the agent workspace or from an additional allowed filesystem path.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -70,7 +70,7 @@ pub fn available_tools(
             }),
         });
         tools.push(ToolDefinition {
-            name: "fs.write".to_string(),
+            name: "fs_write".to_string(),
             description: "Write a text file to the agent workspace or to an additional writable filesystem path. Creates parent directories when requested.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -88,7 +88,7 @@ pub fn available_tools(
         && !matches!(context.execution.shell.mode, ShellAccessMode::Off)
     {
         tools.push(ToolDefinition {
-            name: "bash.exec".to_string(),
+            name: "bash_exec".to_string(),
             description: "Run a shell command inside this automation's allowed working directory. Use this for local command execution and data processing when MCP tools are not the right fit.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -110,7 +110,7 @@ pub fn available_tools(
     };
     if web_enabled {
         tools.push(ToolDefinition {
-            name: "web.search".to_string(),
+            name: "web_search".to_string(),
             description: "Search the web using DuckDuckGo and return a list of results with titles, URLs, and snippets.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -122,7 +122,7 @@ pub fn available_tools(
             }),
         });
         tools.push(ToolDefinition {
-            name: "web.fetch".to_string(),
+            name: "web_fetch".to_string(),
             description: "Fetch a web page and return its content as markdown. Useful for reading documentation, articles, or any web content.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",

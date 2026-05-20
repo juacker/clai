@@ -946,6 +946,8 @@ async fn run_migrations(pool: &DbPool) -> Result<(), String> {
 
     split_workspace_agent_prefixes(pool).await?;
 
+    canonicalize_legacy_tool_names(pool).await?;
+
     for legacy_table in [
         "assistant_sessions_legacy",
         "assistant_messages_legacy",
@@ -963,6 +965,101 @@ async fn run_migrations(pool: &DbPool) -> Result<(), String> {
         .map_err(|e| format!("Failed to enable foreign keys: {}", e))?;
 
     Ok(())
+}
+
+/// Idempotent migration: canonicalizes built-in tool names from the
+/// legacy dotted form (`fs.list`, `bash.exec`, ...) to the underscore
+/// form OpenAI-compatible providers require (`fs_list`, `bash_exec`).
+///
+/// Touches two surfaces:
+/// 1. `assistant_tool_calls.tool_name` — a direct column. Plain SQL UPDATE.
+/// 2. `assistant_messages.content_json` — JSON blobs containing
+///    `tool_use` parts with a `tool_name` field. Read each row, walk the
+///    `content` array, rewrite any object with a known legacy
+///    `tool_name`, write back if anything changed.
+///
+/// Both passes are idempotent: re-running over already-canonicalized
+/// data is a no-op.
+async fn canonicalize_legacy_tool_names(pool: &DbPool) -> Result<(), String> {
+    // 1. Direct column update.
+    let direct = sqlx::query(
+        r#"
+        UPDATE assistant_tool_calls
+        SET tool_name = REPLACE(tool_name, '.', '_')
+        WHERE tool_name LIKE 'fs.%'
+           OR tool_name LIKE 'bash.%'
+           OR tool_name LIKE 'web.%'
+           OR tool_name LIKE 'workspace.%'
+           OR tool_name LIKE 'agent.%'
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to canonicalize assistant_tool_calls names: {}", e))?;
+    if direct.rows_affected() > 0 {
+        tracing::info!(
+            "Canonicalized {} assistant_tool_calls.tool_name rows (`.` → `_`)",
+            direct.rows_affected()
+        );
+    }
+
+    // 2. JSON blob rewrite for content parts.
+    let rows: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
+        "SELECT id, content_json FROM assistant_messages",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("Failed to read assistant_messages for tool-name migration: {}", e))?;
+
+    let mut blob_updates = 0_u32;
+    for (id, content_json) in rows {
+        let mut content: serde_json::Value = match serde_json::from_str(&content_json) {
+            Ok(v) => v,
+            Err(_) => continue, // skip malformed rows; the rest of the app handles them too
+        };
+        let mut changed = false;
+        if let Some(arr) = content.as_array_mut() {
+            for part in arr.iter_mut() {
+                if let Some(obj) = part.as_object_mut() {
+                    if let Some(serde_json::Value::String(name)) = obj.get_mut("tool_name") {
+                        if is_legacy_dotted_tool_name(name) {
+                            *name = name.replacen('.', "_", 1);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        if !changed {
+            continue;
+        }
+        let new_json = serde_json::to_string(&content).map_err(|e| {
+            format!(
+                "Failed to re-serialize content_json for assistant_messages {}: {}",
+                id, e
+            )
+        })?;
+        sqlx::query("UPDATE assistant_messages SET content_json = ? WHERE id = ?")
+            .bind(new_json)
+            .bind(&id)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("Failed to update assistant_messages {}: {}", id, e))?;
+        blob_updates += 1;
+    }
+    if blob_updates > 0 {
+        tracing::info!(
+            "Canonicalized tool_name fields in {} assistant_messages content blobs",
+            blob_updates
+        );
+    }
+
+    Ok(())
+}
+
+fn is_legacy_dotted_tool_name(name: &str) -> bool {
+    const LEGACY_PREFIXES: &[&str] = &["fs.", "bash.", "web.", "workspace.", "agent."];
+    LEGACY_PREFIXES.iter().any(|p| name.starts_with(p))
 }
 
 /// Idempotent migration: walks every `workspace_agents` row and runs each
@@ -1538,5 +1635,118 @@ mod tests {
             .filter_map(|v| v.as_str())
             .collect();
         assert_eq!(allowed, vec!["git status"]);
+    }
+
+    // -------------------------------------------------------------------
+    // canonicalize_legacy_tool_names migration
+    // -------------------------------------------------------------------
+
+    async fn create_legacy_tool_name_schema(pool: &DbPool) {
+        sqlx::query(
+            r#"
+            CREATE TABLE assistant_tool_calls (
+                id TEXT PRIMARY KEY,
+                tool_name TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            CREATE TABLE assistant_messages (
+                id TEXT PRIMARY KEY,
+                content_json TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn canonicalize_rewrites_dotted_tool_calls_column() {
+        let pool = create_test_pool().await;
+        create_legacy_tool_name_schema(&pool).await;
+        sqlx::query("INSERT INTO assistant_tool_calls VALUES ('tc1', 'bash.exec')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO assistant_tool_calls VALUES ('tc2', 'fs.read')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO assistant_tool_calls VALUES ('tc3', 'already_canonical')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        canonicalize_legacy_tool_names(&pool).await.unwrap();
+
+        let names: Vec<String> = sqlx::query_scalar(
+            "SELECT tool_name FROM assistant_tool_calls ORDER BY id",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            names,
+            vec![
+                "bash_exec".to_string(),
+                "fs_read".to_string(),
+                "already_canonical".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn canonicalize_rewrites_tool_name_in_content_json() {
+        let pool = create_test_pool().await;
+        create_legacy_tool_name_schema(&pool).await;
+        let legacy = r#"[
+            {"type":"text","text":"hi"},
+            {"type":"tool_use","tool_call_id":"a","tool_name":"bash.exec","arguments":{}},
+            {"type":"tool_use","tool_call_id":"b","tool_name":"workspace.listAgents","arguments":{}},
+            {"type":"tool_use","tool_call_id":"c","tool_name":"external_mcp.tool","arguments":{}}
+        ]"#;
+        sqlx::query("INSERT INTO assistant_messages VALUES ('m1', ?)")
+            .bind(legacy)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        canonicalize_legacy_tool_names(&pool).await.unwrap();
+
+        let updated: String =
+            sqlx::query_scalar("SELECT content_json FROM assistant_messages WHERE id = 'm1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(updated.contains("\"tool_name\":\"bash_exec\""));
+        assert!(updated.contains("\"tool_name\":\"workspace_listAgents\""));
+        // External MCP names (no known legacy prefix) must be left alone.
+        assert!(updated.contains("\"tool_name\":\"external_mcp.tool\""));
+    }
+
+    #[tokio::test]
+    async fn canonicalize_is_idempotent() {
+        let pool = create_test_pool().await;
+        create_legacy_tool_name_schema(&pool).await;
+        sqlx::query("INSERT INTO assistant_tool_calls VALUES ('tc1', 'bash.exec')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        canonicalize_legacy_tool_names(&pool).await.unwrap();
+        canonicalize_legacy_tool_names(&pool).await.unwrap();
+
+        let name: String =
+            sqlx::query_scalar("SELECT tool_name FROM assistant_tool_calls WHERE id = 'tc1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(name, "bash_exec");
     }
 }

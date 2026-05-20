@@ -127,24 +127,24 @@ pub async fn execute(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     match tool_name {
-        "workspace.listAgents" => {
+        "workspace_listAgents" => {
             let params: ListWorkspaceAgentsParams = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid workspace.listAgents params: {}", e))?;
+                .map_err(|e| format!("Invalid workspace_listAgents params: {}", e))?;
             list_agents(deps, context, params).await
         }
-        "workspace.assignTask" => {
+        "workspace_assignTask" => {
             let params: AssignWorkspaceTaskParams = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid workspace.assignTask params: {}", e))?;
+                .map_err(|e| format!("Invalid workspace_assignTask params: {}", e))?;
             assign_task(deps, context, params).await
         }
-        "workspace.getTaskResult" => {
+        "workspace_getTaskResult" => {
             let params: GetWorkspaceTaskResultParams = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid workspace.getTaskResult params: {}", e))?;
+                .map_err(|e| format!("Invalid workspace_getTaskResult params: {}", e))?;
             get_task_result(deps, context, params).await
         }
-        "workspace.requestUserInput" => {
+        "workspace_requestUserInput" => {
             let params: RequestWorkspaceUserInputParams = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid workspace.requestUserInput params: {}", e))?;
+                .map_err(|e| format!("Invalid workspace_requestUserInput params: {}", e))?;
             request_user_input(deps, context, params).await
         }
         _ => Err(format!("Unknown workspace task tool: {}", tool_name)),

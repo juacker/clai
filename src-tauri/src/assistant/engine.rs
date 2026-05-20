@@ -1155,7 +1155,7 @@ mod tests {
                 },
                 ContentPart::ToolUse {
                     tool_call_id: "call_a".into(),
-                    tool_name: "fs.write".into(),
+                    tool_name: "fs_write".into(),
                     arguments: serde_json::json!({}),
                 },
             ]),
@@ -1204,7 +1204,7 @@ mod tests {
             user_message("do work"),
             assistant_message_with_content(vec![ContentPart::ToolUse {
                 tool_call_id: "call_old".into(),
-                tool_name: "fs.write".into(),
+                tool_name: "fs_write".into(),
                 arguments: serde_json::json!({}),
             }]),
             tool_message("call_old"),
@@ -1236,7 +1236,7 @@ mod tests {
                 },
                 ContentPart::ToolUse {
                     tool_call_id: "call_a".into(),
-                    tool_name: "fs.write".into(),
+                    tool_name: "fs_write".into(),
                     arguments: serde_json::json!({}),
                 },
             ]),
@@ -1281,12 +1281,12 @@ mod tests {
             assistant_message_with_content(vec![
                 ContentPart::ToolUse {
                     tool_call_id: "call_a".into(),
-                    tool_name: "fs.write".into(),
+                    tool_name: "fs_write".into(),
                     arguments: serde_json::json!({}),
                 },
                 ContentPart::ToolUse {
                     tool_call_id: "call_b".into(),
-                    tool_name: "fs.write".into(),
+                    tool_name: "fs_write".into(),
                     arguments: serde_json::json!({}),
                 },
             ]),

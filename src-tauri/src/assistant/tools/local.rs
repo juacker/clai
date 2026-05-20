@@ -138,39 +138,39 @@ pub async fn execute_local_tool(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     match tool_name {
-        "fs.list" => {
+        "fs_list" => {
             let params: FsListParams = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid fs.list params: {}", e))?;
+                .map_err(|e| format!("Invalid fs_list params: {}", e))?;
             execute_fs_list(context, params)
         }
-        "fs.glob" => {
+        "fs_glob" => {
             let params: FsGlobParams = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid fs.glob params: {}", e))?;
+                .map_err(|e| format!("Invalid fs_glob params: {}", e))?;
             execute_fs_glob(context, params)
         }
-        "fs.read" => {
+        "fs_read" => {
             let params: FsReadParams = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid fs.read params: {}", e))?;
+                .map_err(|e| format!("Invalid fs_read params: {}", e))?;
             execute_fs_read(context, params)
         }
-        "fs.write" => {
+        "fs_write" => {
             let params: FsWriteParams = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid fs.write params: {}", e))?;
+                .map_err(|e| format!("Invalid fs_write params: {}", e))?;
             execute_fs_write(context, params)
         }
-        "bash.exec" => {
+        "bash_exec" => {
             let params: BashExecParams = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid bash.exec params: {}", e))?;
+                .map_err(|e| format!("Invalid bash_exec params: {}", e))?;
             execute_bash_exec(deps, context, params).await
         }
-        "web.search" => {
+        "web_search" => {
             let params: WebSearchParams = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid web.search params: {}", e))?;
+                .map_err(|e| format!("Invalid web_search params: {}", e))?;
             execute_web_search(params).await
         }
-        "web.fetch" => {
+        "web_fetch" => {
             let params: WebFetchParams = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid web.fetch params: {}", e))?;
+                .map_err(|e| format!("Invalid web_fetch params: {}", e))?;
             execute_web_fetch(params).await
         }
         _ => Err(format!("Unknown local tool: {}", tool_name)),
