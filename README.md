@@ -159,6 +159,8 @@ npm install
 make dev
 
 # Verify builds and lints
+npm run lint
+npm run format:check
 npm run build
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
