@@ -76,10 +76,13 @@ const useAssistantStore = create(
             s.messages[idx] = message;
           }
           delete s.streamingTextByMessageId[message.id];
-          // Only clear isStreaming if no more streaming messages
-          if (Object.keys(s.streamingTextByMessageId).length === 0) {
-            s.isStreaming = false;
-          }
+          // Intentionally do NOT clear `isStreaming` here. A run typically
+          // alternates between assistant text turns and tool-execution
+          // phases; clearing on every message completion makes the activity
+          // indicator blink off during tool execution and between
+          // iterations. `isStreaming` is cleared on terminal run states in
+          // `setRunStatus`, which is the right boundary for "agent is no
+          // longer working."
         }),
 
       setRunStatus: (sessionId, run) =>
@@ -95,6 +98,13 @@ const useAssistantStore = create(
           if (['completed', 'completed_with_warnings', 'failed', 'cancelled'].includes(run.status)) {
             s.isStreaming = false;
             s.streamingTextByMessageId = {};
+          } else if (['queued', 'running', 'waiting_for_tool'].includes(run.status)) {
+            // Activity indicator should appear the moment the run is
+            // queued/started — before the first text delta arrives —
+            // so the user gets immediate feedback that work has begun.
+            // It also stays on across tool execution and inter-iteration
+            // gaps, where no text deltas are flowing.
+            s.isStreaming = true;
           }
         }),
 

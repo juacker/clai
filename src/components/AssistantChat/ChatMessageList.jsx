@@ -7,6 +7,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import MarkdownMessage from '../Chat/MarkdownMessage';
+import StreamingMarkdown from '../Chat/StreamingMarkdown';
 import styles from './AssistantChat.module.css';
 
 const EMPTY_STREAMING = {};
@@ -264,10 +265,18 @@ const ChatMessageList = ({
   }, [checkIfNearBottom]);
 
   useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
     const currentCount = messages.length;
     const isNewMessage = currentCount > prevMessageCountRef.current;
     prevMessageCountRef.current = currentCount;
 
+    // New message boundary: do a single smooth scroll to anchor the
+    // conversation at the new turn. After that, while content is still
+    // flowing in, we pin the viewport to the bottom directly (no
+    // animation) so the typewriter / tool blocks grow in place without
+    // fighting an in-flight smooth-scroll animation.
     if (isNewMessage) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       isNearBottomRef.current = true;
@@ -275,7 +284,7 @@ const ChatMessageList = ({
     }
 
     if (isStreaming && isNearBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      container.scrollTop = container.scrollHeight - container.clientHeight;
     }
   }, [messages, isStreaming, streamingText, toolCalls]);
 
@@ -396,10 +405,7 @@ const MessageBlock = memo(({ message, streamingText, toolCalls, userLabel = 'You
             <ThinkingBlock content={thinkingContent} />
           )}
           {textContent && (
-            <MarkdownMessage
-              content={textContent}
-              isStreaming={isCurrentlyStreaming}
-            />
+            <StreamingMarkdown content={textContent} isStreaming={isCurrentlyStreaming} />
           )}
           {enrichedToolUses.length > 0 && (
             <ToolCallGroup toolUses={enrichedToolUses} />
