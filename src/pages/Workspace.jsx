@@ -22,6 +22,8 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import {
   acknowledgeWorkspaceTask,
   getWorkspaceSnapshot,
+  runWorkspaceNow,
+  setWorkspaceSchedulePaused,
   setWorkspaceTitle,
   submitWorkspaceTaskFeedback,
 } from '../workspace/client';
@@ -61,6 +63,15 @@ const formatNextRun = (seconds) => {
   if (seconds < 3600) return `In ${Math.floor(seconds / 60)}m`;
   if (seconds < 86400) return `In ${Math.floor(seconds / 3600)}h`;
   return `In ${Math.floor(seconds / 86400)}d`;
+};
+
+const formatSchedulePill = (snapshot) => {
+  if (!snapshot?.scheduleEnabled) return null;
+  const interval = snapshot.intervalMinutes;
+  if (snapshot.schedulePaused) {
+    return interval ? `Paused · every ${interval}m` : 'Paused';
+  }
+  return interval ? `Periodic · every ${interval}m` : 'Periodic';
 };
 
 const getLastRunInfo = (runs) => {
@@ -446,10 +457,23 @@ const WorkspaceHeader = ({
   activePanel,
   setActivePanel,
   onOpenWorkspaceSettings,
+  onRunNow,
+  onTogglePause,
+  runNowBusy,
+  pauseBusy,
 }) => {
   const isAgent = snapshot?.kind === 'agent';
   const lastRun = getLastRunInfo(snapshot?.runs);
   const nextRunText = formatNextRun(snapshot?.nextRunInSeconds);
+  const schedulePillText = formatSchedulePill(snapshot);
+  const scheduleEnabled = !!snapshot?.scheduleEnabled;
+  const schedulePaused = !!snapshot?.schedulePaused;
+  // Active = a scheduled task is running, or any non-terminal task is in
+  // flight on this workspace. Matches Fleet's "isProcessing" check so the
+  // Run-now button correctly disables while a run is mid-flight.
+  const hasRunningTask = (snapshot?.tasks || []).some(
+    (task) => task.status === 'running' || task.status === 'queued',
+  );
   // Manager is invisible to the user — exclude it from the headline count so
   // the chip and the drawer (which already filters !isDefault) agree.
   const assignedAgentCount = (snapshot?.assignedAgents || []).filter((a) => !a.isDefault).length;
@@ -504,11 +528,66 @@ const WorkspaceHeader = ({
         <h1 className={styles.title}>
           {snapshot?.title || (isGenericWorkspace ? 'Workspace' : workspaceId)}
         </h1>
-        <span className={styles.kindBadge}>
-          {isAgent ? 'Agent' : 'General'}
-        </span>
-        {isAgent && snapshot?.enabled === false && (
-          <span className={styles.disabledBadge}>Disabled</span>
+        {scheduleEnabled && (
+          <span
+            className={`${styles.schedulePill} ${schedulePaused ? styles.schedulePillPaused : styles.schedulePillActive}`}
+            title={schedulePillText}
+          >
+            {schedulePillText}
+          </span>
+        )}
+        {scheduleEnabled && !schedulePaused && (
+          <>
+            <button
+              type="button"
+              className={styles.runNowBtn}
+              onClick={onRunNow}
+              disabled={!onRunNow || hasRunningTask || runNowBusy}
+              title={
+                hasRunningTask
+                  ? 'Already running'
+                  : runNowBusy
+                  ? 'Starting…'
+                  : 'Run now'
+              }
+              aria-label="Run now"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className={styles.pauseBtn}
+              onClick={() => onTogglePause?.(true)}
+              disabled={!onTogglePause || pauseBusy}
+              title={
+                pauseBusy
+                  ? 'Updating…'
+                  : hasRunningTask
+                  ? 'Pause schedule (current run will finish)'
+                  : 'Pause schedule'
+              }
+              aria-label="Pause schedule"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <rect x="6" y="5" width="4" height="14" rx="1" />
+                <rect x="14" y="5" width="4" height="14" rx="1" />
+              </svg>
+            </button>
+          </>
+        )}
+        {scheduleEnabled && schedulePaused && (
+          <button
+            type="button"
+            className={styles.resumeBtn}
+            onClick={() => onTogglePause?.(false)}
+            disabled={!onTogglePause || pauseBusy}
+            title={pauseBusy ? 'Updating…' : 'Resume schedule'}
+            aria-label="Resume schedule"
+          >
+            Resume
+          </button>
         )}
         {onOpenWorkspaceSettings && (
           <button
@@ -831,6 +910,46 @@ const Workspace = () => {
     setEditingAgent(null);
   }, []);
 
+  // Schedule controls — Run / Pause / Resume. Mirror Fleet.jsx so the
+  // workspace page can drive the periodic schedule without the user having
+  // to jump back to the Fleet view.
+  const [runNowBusy, setRunNowBusy] = useState(false);
+  const handleRunNow = useCallback(async () => {
+    if (runNowBusy) return;
+    setRunNowBusy(true);
+    try {
+      await runWorkspaceNow(workspaceId);
+      setError('');
+      await loadSnapshot(false);
+    } catch (err) {
+      setError(typeof err === 'string' ? err : (err?.message || 'Failed to start run.'));
+    } finally {
+      setRunNowBusy(false);
+    }
+  }, [loadSnapshot, runNowBusy, workspaceId]);
+
+  const [pauseBusy, setPauseBusy] = useState(false);
+  const handleTogglePause = useCallback(async (nextPaused) => {
+    if (pauseBusy) return;
+    setPauseBusy(true);
+    // Optimistically flip the snapshot's pause flag so the button swaps
+    // immediately — the next snapshot poll will reconcile if the backend
+    // disagrees.
+    setSnapshot((current) => (current ? { ...current, schedulePaused: nextPaused } : current));
+    try {
+      await setWorkspaceSchedulePaused(workspaceId, nextPaused);
+      setError('');
+      await loadSnapshot(false);
+    } catch (err) {
+      setError(typeof err === 'string' ? err : (err?.message || 'Failed to update pause state.'));
+      setSnapshot((current) => (
+        current ? { ...current, schedulePaused: !nextPaused } : current
+      ));
+    } finally {
+      setPauseBusy(false);
+    }
+  }, [loadSnapshot, pauseBusy, workspaceId]);
+
   const handleAgentRemove = useCallback(async (workspaceAgentId) => {
     if (agentBusy) return;
     setAgentBusy(`remove:${workspaceAgentId}`);
@@ -876,6 +995,10 @@ const Workspace = () => {
         activePanel={activePanel}
         setActivePanel={setActivePanel}
         onOpenWorkspaceSettings={managerAgentId ? openWorkspaceSettings : null}
+        onRunNow={handleRunNow}
+        onTogglePause={handleTogglePause}
+        runNowBusy={runNowBusy}
+        pauseBusy={pauseBusy}
       />
 
       {error && <div className={styles.errorBanner}>{error}</div>}

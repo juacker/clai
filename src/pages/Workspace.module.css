@@ -63,30 +63,6 @@
   text-overflow: ellipsis;
 }
 
-.kindBadge {
-  flex-shrink: 0;
-  padding: 3px 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-primary-alpha-08);
-  color: var(--color-primary);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.disabledBadge {
-  flex-shrink: 0;
-  padding: 3px 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-overlay-06);
-  color: var(--color-text-tertiary);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
 .headerRight {
   display: flex;
   align-items: center;
@@ -1035,4 +1011,112 @@
   .taskTitle {
     white-space: normal;
   }
+}
+
+/* ── Schedule controls (Run / Pause / Resume) ──────────────
+ * Mirrors the Fleet workspace card so the Workspace page can drive the
+ * periodic schedule from its own header. Pill ▸ icon-buttons (running) or
+ * a single Resume pill (paused). */
+
+.schedulePill {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.schedulePillActive {
+  background: var(--color-primary-alpha-08);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary-alpha-30);
+}
+
+.schedulePillPaused {
+  background: var(--color-overlay-06);
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-overlay-12, rgba(255, 255, 255, 0.12));
+}
+
+.runNowBtn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-accent-alpha-30, rgba(0, 171, 148, 0.28));
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-alpha-08, rgba(0, 171, 148, 0.08));
+  color: var(--color-accent-dark);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.runNowBtn:hover:not(:disabled) {
+  background: var(--color-accent-alpha-20, rgba(0, 171, 148, 0.18));
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.runNowBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pauseBtn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-overlay-12, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.pauseBtn:hover:not(:disabled) {
+  background: var(--color-overlay-06);
+  border-color: var(--color-overlay-12, rgba(255, 255, 255, 0.18));
+  color: var(--color-text-secondary);
+}
+
+.pauseBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.resumeBtn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  padding: 0 10px;
+  border: 1px solid var(--color-accent-alpha-30, rgba(0, 171, 148, 0.28));
+  border-radius: var(--radius-full);
+  background: var(--color-accent-alpha-08, rgba(0, 171, 148, 0.08));
+  color: var(--color-accent-dark);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.resumeBtn:hover:not(:disabled) {
+  background: var(--color-accent-alpha-20, rgba(0, 171, 148, 0.18));
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.resumeBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }

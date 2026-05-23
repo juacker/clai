@@ -156,6 +156,11 @@ pub struct WorkspaceSnapshot {
     // Agent schedule info (only for agent workspaces)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    // Periodic-workspace surface — read from the workspace's default manager
+    // agent so the Workspace page can render the same run / pause / resume
+    // controls the Fleet card has. Mirrors WorkspaceListEntry.
+    pub schedule_enabled: bool,
+    pub schedule_paused: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interval_minutes: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1632,8 +1637,45 @@ pub async fn workspace_get_snapshot(
             .await?;
 
     // Agent-derived workspaces (descriptor.agent_id != None) no longer exist;
-    // schedule metadata is exposed per workspace_agent via list_workspace_agent_responses.
-    let (enabled, interval_minutes, next_run_in_seconds) = (None, None, None);
+    // the per-workspace schedule lives on the default manager workspace_agent.
+    // Mirror the lookup workspace_list does so the Workspace page can render
+    // run / pause / resume controls without a second round-trip.
+    let enabled: Option<bool> = None;
+    let (schedule_enabled, schedule_paused, interval_minutes) =
+        match default_workspace_agent_id.as_deref() {
+            Some(manager_id) => {
+                let row: Option<(i64, i64, i64)> = sqlx::query_as(
+                    "SELECT schedule_enabled, interval_minutes, schedule_paused \
+                         FROM workspace_agents WHERE id = ? LIMIT 1",
+                )
+                .bind(manager_id)
+                .fetch_optional(pool.inner())
+                .await
+                .unwrap_or(None);
+                match row {
+                    Some((sched, interval, paused)) if sched != 0 => (
+                        true,
+                        paused != 0,
+                        Some(u32::try_from(interval).unwrap_or(0)),
+                    ),
+                    _ => (false, false, None),
+                }
+            }
+            None => (false, false, None),
+        };
+    let next_run_in_seconds = if schedule_enabled && !schedule_paused {
+        if let Some(manager_id) = default_workspace_agent_id.as_deref() {
+            let instance_id = format!("{}::", manager_id);
+            let scheduler = state.scheduler.lock().await;
+            scheduler
+                .get_instance(&instance_id)
+                .map(|instance| instance.seconds_until_next_run())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     Ok(WorkspaceSnapshot {
         workspace_id: descriptor.workspace_id,
@@ -1655,6 +1697,8 @@ pub async fn workspace_get_snapshot(
         memories,
         artifacts,
         enabled,
+        schedule_enabled,
+        schedule_paused,
         interval_minutes,
         next_run_in_seconds,
     })
