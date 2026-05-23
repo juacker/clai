@@ -25,7 +25,12 @@
   background: var(--color-bg-primary, #FDFCFB);
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  width: 480px;
+  /* Form has grown to include templates, skills with descriptions,
+   * schedule, local capabilities and exposed tools — 480px left long
+   * skill rows and the description textarea uncomfortably narrow.
+   * 760px is a comfortable single-column form width without dominating
+   * a typical laptop screen. */
+  width: 760px;
   max-width: 90vw;
   max-height: 85vh;
   display: flex;
