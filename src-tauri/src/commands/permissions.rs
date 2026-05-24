@@ -188,6 +188,29 @@ impl PendingApprovals {
             .collect()
     }
 
+    /// Drops every pending entry belonging to `workspace_id` and clears
+    /// its count. Used by `workspace_delete` so requests scoped to a
+    /// just-deleted workspace don't linger in memory until restart.
+    /// Dropping each entry's `sender` closes the oneshot channel, which
+    /// surfaces as a "channel closed" error on the bash-tool side that
+    /// was awaiting the decision — appropriate, since the workspace
+    /// (and therefore the in-flight call's context) is gone.
+    pub async fn purge_workspace(&self, workspace_id: &str) -> usize {
+        let mut inner = self.inner.lock().await;
+        let to_remove: Vec<String> = inner
+            .entries
+            .iter()
+            .filter(|(_, entry)| entry.workspace_id.as_deref() == Some(workspace_id))
+            .map(|(id, _)| id.clone())
+            .collect();
+        let count = to_remove.len();
+        for id in to_remove {
+            inner.entries.remove(&id);
+        }
+        inner.counts.remove(&Some(workspace_id.to_string()));
+        count
+    }
+
     /// Removes the pending entry and decrements its workspace count.
     /// Returns the entry and the post-decrement workspace count (for
     /// emitting attention).

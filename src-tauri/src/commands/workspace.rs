@@ -2245,13 +2245,21 @@ pub async fn workspace_set_schedule_paused(
     Ok(())
 }
 
-/// Delete a general workspace — removes metadata, session data, and filesystem root.
+/// Delete a general workspace — removes metadata, session data, filesystem
+/// root, and any in-memory state scoped to it (scheduler definitions /
+/// instances, pending permission and path-grant queues). Without this
+/// last step, deleting a scheduled workspace at runtime would leave the
+/// scheduler firing on a vanished config until the next app restart.
 #[tauri::command]
 pub async fn workspace_delete(
     workspace_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let workspace_id = resolve_workspace_id(state.inner(), Some(workspace_id))?;
+
+    // Remove from the workspace index first; the returned locator carries
+    // the on-disk root we still need below for both config-loading and
+    // recursive removal. Closes the cached sqlx pool too.
     let locator = state
         .workspace_index
         .write()
@@ -2259,6 +2267,30 @@ pub async fn workspace_delete(
         .remove_workspace(&workspace_id)
         .ok_or_else(|| format!("Workspace {} not found.", workspace_id))?;
 
+    // Best-effort: read the config (still on disk at this point) to learn
+    // which agent IDs the scheduler may have registered for this
+    // workspace. A missing/corrupt config isn't fatal — we still want
+    // disk cleanup to proceed, we just can't precisely purge scheduler
+    // state for an unknowable agent set.
+    let agent_ids: Vec<String> = workspace_config::load(&locator.root_path)
+        .map(|cfg| cfg.agents.iter().map(|a| a.id.clone()).collect())
+        .unwrap_or_default();
+
+    // Drop scheduler entries for every agent the workspace owned. Any
+    // task already mid-flight will continue running with its own copy
+    // of context, but no further ticks will be scheduled — and the
+    // definition map won't leak the stale entry until restart.
+    if !agent_ids.is_empty() {
+        let mut sched = state.scheduler.lock().await;
+        for id in &agent_ids {
+            sched.remove_instances_for_agent(id);
+            sched.remove_definition(id);
+        }
+    }
+
+    // Now wipe the on-disk root: `.clai/config.json`, `data.sqlite`,
+    // `memory/`, plus any artifact files written into the workspace
+    // directory.
     if locator.root_path.exists() {
         fs::remove_dir_all(&locator.root_path).map_err(|e| {
             format!(
@@ -2269,7 +2301,20 @@ pub async fn workspace_delete(
         })?;
     }
 
-    tracing::info!(workspace_id = %workspace_id, "Deleted general workspace");
+    // Drain in-memory queues for this workspace. Pending bash-tool /
+    // path-grant approvals get their oneshot channels dropped, which
+    // surfaces as a closed-channel error on the awaiting side — correct,
+    // since the workspace they were scoped to no longer exists.
+    let purged_approvals = state.pending_approvals.purge_workspace(&workspace_id).await;
+    let purged_path_grants = state.pending_path_grants.purge_workspace(&workspace_id).await;
+
+    tracing::info!(
+        workspace_id = %workspace_id,
+        agents_cleared = agent_ids.len(),
+        approvals_purged = purged_approvals,
+        path_grants_purged = purged_path_grants,
+        "Deleted general workspace"
+    );
 
     Ok(())
 }

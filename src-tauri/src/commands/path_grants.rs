@@ -160,6 +160,25 @@ impl PendingPathGrants {
             .collect()
     }
 
+    /// See [`crate::commands::permissions::PendingApprovals::purge_workspace`].
+    /// Same semantics — drops every pending path-grant request for the
+    /// given workspace and clears its count. Used by `workspace_delete`.
+    pub async fn purge_workspace(&self, workspace_id: &str) -> usize {
+        let mut inner = self.inner.lock().await;
+        let to_remove: Vec<String> = inner
+            .entries
+            .iter()
+            .filter(|(_, entry)| entry.workspace_id.as_deref() == Some(workspace_id))
+            .map(|(id, _)| id.clone())
+            .collect();
+        let count = to_remove.len();
+        for id in to_remove {
+            inner.entries.remove(&id);
+        }
+        inner.counts.remove(&Some(workspace_id.to_string()));
+        count
+    }
+
     pub async fn take(&self, request_id: &str) -> Option<(PendingEntry, u32)> {
         let mut inner = self.inner.lock().await;
         let entry = inner.entries.remove(request_id)?;

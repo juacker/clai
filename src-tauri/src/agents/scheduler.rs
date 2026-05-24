@@ -86,6 +86,13 @@ impl Scheduler {
         self.definitions.get(agent_id)
     }
 
+    /// Removes an agent definition. Pair with [`remove_instances_for_agent`]
+    /// when the underlying agent is being deleted — clearing the definition
+    /// keeps the in-memory map from accumulating stale entries.
+    pub fn remove_definition(&mut self, agent_id: &str) -> Option<AgentDefinition> {
+        self.definitions.remove(agent_id)
+    }
+
     /// Creates and registers an agent instance for a space/room.
     ///
     /// Returns `None` if:
