@@ -1,15 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  getAgentTemplates,
-  getMcpServers,
-  getSkills,
-  workspaceCreateAgent,
-  workspaceDeleteAgent,
-  workspaceGetAgent,
-  workspaceUpdateAgent,
-} from '../api/client';
-import AgentFormModal from '../components/Settings/AgentFormModal';
+import { workspaceDeleteAgent } from '../api/client';
+import WorkspaceSettingsModal from '../components/Settings/WorkspaceSettingsModal';
 import WorkspaceTaskTranscriptPanel from '../components/WorkspaceTaskTranscriptPanel';
 import WorkspaceFilePreviewPanel from '../components/WorkspaceFilePreviewPanel';
 import { assistantClient, useAssistantStore } from '../assistant';
@@ -24,7 +16,6 @@ import {
   getWorkspaceSnapshot,
   runWorkspaceNow,
   setWorkspaceSchedulePaused,
-  setWorkspaceTitle,
   submitWorkspaceTaskFeedback,
 } from '../workspace/client';
 import styles from './Workspace.module.css';
@@ -117,12 +108,15 @@ const WorkspaceAgentsPanel = ({
   const assignedAgents = snapshot?.assignedAgents || [];
   const isManageable = snapshot?.kind !== 'agent' && workspaceId !== DEFAULT_WORKSPACE_ID;
 
-  // The workspace's "manager" is implicit — surfaced via the header gear icon.
-  // Drawer lists only attached helper agents; the "+ Add" affordance lives in
-  // the drawer header so we don't duplicate the "Agents" title here.
-  const memberAgents = assignedAgents.filter((agent) => !agent.isDefault);
+  // Manager first (rendered as "Main"), then sub-agents. The manager is
+  // always present and not removable; Edit deep-links into the workspace
+  // settings modal just like sub-agents.
+  const sortedAgents = [...assignedAgents].sort((a, b) => {
+    if (a.isDefault === b.isDefault) return 0;
+    return a.isDefault ? -1 : 1;
+  });
 
-  if (!isManageable && memberAgents.length === 0) {
+  if (!isManageable && sortedAgents.length === 0) {
     return null;
   }
 
@@ -130,13 +124,15 @@ const WorkspaceAgentsPanel = ({
     <section className={styles.agentRoster} aria-label="Workspace agents">
       {error && <div className={styles.agentRosterError}>{error}</div>}
 
-      {memberAgents.length > 0 ? (
+      {sortedAgents.length > 0 ? (
         <div className={styles.agentRosterList}>
-          {memberAgents.map((agent) => (
+          {sortedAgents.map((agent) => (
             <div key={agent.id} className={styles.agentRosterItem}>
               <div className={styles.agentRosterIdentity}>
                 <div className={styles.agentRosterNameRow}>
-                  <span className={styles.agentRosterName}>{agent.displayName}</span>
+                  <span className={styles.agentRosterName}>
+                    {agent.isDefault ? 'Main' : agent.displayName}
+                  </span>
                 </div>
                 {agent.agentDescription && (
                   <p className={styles.agentRosterDescription}>{agent.agentDescription}</p>
@@ -152,14 +148,16 @@ const WorkspaceAgentsPanel = ({
                   >
                     Edit
                   </button>
-                  <button
-                    type="button"
-                    className={styles.agentActionDanger}
-                    onClick={() => onRemove(agent.id)}
-                    disabled={!!busy}
-                  >
-                    Remove
-                  </button>
+                  {!agent.isDefault && (
+                    <button
+                      type="button"
+                      className={styles.agentActionDanger}
+                      onClick={() => onRemove(agent.id)}
+                      disabled={!!busy}
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -476,7 +474,9 @@ const WorkspaceHeader = ({
   );
   // Manager is invisible to the user — exclude it from the headline count so
   // the chip and the drawer (which already filters !isDefault) agree.
-  const assignedAgentCount = (snapshot?.assignedAgents || []).filter((a) => !a.isDefault).length;
+  // Count includes the main (default) agent — the manager is now a
+  // first-class entry in the workspace's agent list.
+  const assignedAgentCount = (snapshot?.assignedAgents || []).length;
   const taskCount = snapshot?.tasks?.length || 0;
   const activeTaskCount = (snapshot?.tasks || []).filter(
     (task) => task.status === 'running' || task.status === 'queued',
@@ -712,18 +712,14 @@ const Workspace = () => {
 
   const isSidePanelOpen = !!previewEntry || !!viewingTask;
 
-  // ── Agent form (lifted up so the Workspace Settings entry can live on the
-  //    header, not inside the agents drawer) ────────────────────────────────
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingAgent, setEditingAgent] = useState(null);
+  // ── Workspace Settings modal (replaces the legacy AgentFormModal
+  //    workspace-mode hack). Selection drives which section/agent the
+  //    modal opens to: gear icon -> General, drawer Edit -> agent:<id>,
+  //    drawer "+ Add" -> new-agent. ────────────────────────────────────
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSelection, setSettingsSelection] = useState({ kind: 'general' });
   const [agentBusy, setAgentBusy] = useState('');
   const [agentError, setAgentError] = useState('');
-  const [formDeps, setFormDeps] = useState({
-    mcpServers: [],
-    providerConnections: [],
-    skills: [],
-    agentTemplates: [],
-  });
   const sessionId = snapshot?.session?.id || null;
   const sessionState = useAssistantStore((state) =>
     sessionId ? state.sessions[sessionId] : null
@@ -808,107 +804,32 @@ const Workspace = () => {
     }
   }, [workspaceId]);
 
-  // ── Agent form handlers (lifted from WorkspaceAgentsPanel) ─────────────
-  const managerAgentId = snapshot?.assignedAgents?.find((a) => a.isDefault)?.id || null;
-
-  const loadFormDependencies = useCallback(async () => {
-    const [serversResult, skillsResult, connectionsResult, templatesResult] = await Promise.allSettled([
-      getMcpServers(),
-      getSkills(),
-      assistantClient.listProviderConnections(),
-      getAgentTemplates(),
-    ]);
-    setFormDeps({
-      mcpServers: serversResult.status === 'fulfilled' ? (serversResult.value || []) : [],
-      skills: skillsResult.status === 'fulfilled' ? (skillsResult.value || []) : [],
-      providerConnections: connectionsResult.status === 'fulfilled' ? (connectionsResult.value || []) : [],
-      agentTemplates: templatesResult.status === 'fulfilled' ? (templatesResult.value || []) : [],
-    });
+  // ── Workspace Settings modal openers ───────────────────────────────────
+  const openSettings = useCallback((selection) => {
+    setSettingsSelection(selection || { kind: 'general' });
+    setSettingsOpen(true);
+    setAgentError('');
   }, []);
 
-  const openMemberCreate = useCallback(async () => {
-    setAgentError('');
-    await loadFormDependencies();
-    setEditingAgent(null);
-    setIsFormOpen(true);
-  }, [loadFormDependencies]);
+  const openWorkspaceSettings = useCallback(() => {
+    openSettings({ kind: 'general' });
+  }, [openSettings]);
 
-  const openAgentEdit = useCallback(async (workspaceAgentId) => {
-    if (agentBusy) return;
-    setAgentBusy(`edit:${workspaceAgentId}`);
-    setAgentError('');
-    try {
-      const [detail] = await Promise.all([
-        workspaceGetAgent(workspaceId, workspaceAgentId),
-        loadFormDependencies(),
-      ]);
-      if (!detail) {
-        throw new Error('Workspace agent not found.');
-      }
-      setEditingAgent(detail);
-      setIsFormOpen(true);
-    } catch (err) {
-      setAgentError(typeof err === 'string' ? err : (err?.message || 'Failed to load agent.'));
-    } finally {
-      setAgentBusy('');
-    }
-  }, [agentBusy, loadFormDependencies, workspaceId]);
+  const openAgentEdit = useCallback((workspaceAgentId) => {
+    openSettings({ kind: 'agent', agentId: workspaceAgentId });
+  }, [openSettings]);
 
-  const openWorkspaceSettings = useCallback(async () => {
-    if (!managerAgentId) return;
-    await openAgentEdit(managerAgentId);
-  }, [managerAgentId, openAgentEdit]);
+  const openMemberCreate = useCallback(() => {
+    openSettings({ kind: 'new-agent' });
+  }, [openSettings]);
 
-  const handleFormSubmit = useCallback(async (formData) => {
-    setAgentError('');
-    try {
-      if (editingAgent) {
-        const isWorkspaceEdit = editingAgent.id === managerAgentId;
-        if (isWorkspaceEdit) {
-          // In workspace mode the "Name" field is the workspace title.
-          await setWorkspaceTitle(workspaceId, formData.name);
-        }
-        await workspaceUpdateAgent({
-          workspaceId,
-          agentId: editingAgent.id,
-          name: formData.name,
-          description: formData.description,
-          selectedSkillIds: formData.selectedSkillIds || [],
-          selectedMcpServerIds: formData.selectedMcpServerIds || [],
-          providerConnectionIds: formData.providerConnectionIds || [],
-          execution: formData.execution,
-          exposedTools: formData.exposedTools || [],
-          scheduleEnabled: !!formData.scheduleEnabled,
-          intervalMinutes: formData.intervalMinutes || 0,
-          enabled: formData.enabled !== false,
-        });
-      } else {
-        await workspaceCreateAgent({
-          workspaceId,
-          name: formData.name,
-          description: formData.description,
-          selectedSkillIds: formData.selectedSkillIds || [],
-          selectedMcpServerIds: formData.selectedMcpServerIds || [],
-          providerConnectionIds: formData.providerConnectionIds || [],
-          execution: formData.execution,
-          exposedTools: formData.exposedTools || [],
-          scheduleEnabled: !!formData.scheduleEnabled,
-          intervalMinutes: formData.intervalMinutes || 0,
-          enabled: formData.enabled !== false,
-        });
-      }
-      setIsFormOpen(false);
-      setEditingAgent(null);
-      await loadSnapshot(false);
-    } catch (err) {
-      setAgentError(typeof err === 'string' ? err : (err?.message || 'Failed to save agent.'));
-    }
-  }, [editingAgent, loadSnapshot, managerAgentId, workspaceId]);
-
-  const handleFormClose = useCallback(() => {
-    setIsFormOpen(false);
-    setEditingAgent(null);
+  const handleSettingsClose = useCallback(() => {
+    setSettingsOpen(false);
   }, []);
+
+  const handleSettingsChanged = useCallback(async () => {
+    await loadSnapshot(false);
+  }, [loadSnapshot]);
 
   // Schedule controls — Run / Pause / Resume. Mirror Fleet.jsx so the
   // workspace page can drive the periodic schedule without the user having
@@ -994,7 +915,7 @@ const Workspace = () => {
         navigate={navigate}
         activePanel={activePanel}
         setActivePanel={setActivePanel}
-        onOpenWorkspaceSettings={managerAgentId ? openWorkspaceSettings : null}
+        onOpenWorkspaceSettings={openWorkspaceSettings}
         onRunNow={handleRunNow}
         onTogglePause={handleTogglePause}
         runNowBusy={runNowBusy}
@@ -1109,17 +1030,13 @@ const Workspace = () => {
         )}
       </div>
 
-      <AgentFormModal
-        isOpen={isFormOpen}
-        onClose={handleFormClose}
-        onSubmit={handleFormSubmit}
-        agent={editingAgent}
-        mcpServers={formDeps.mcpServers}
-        providerConnections={formDeps.providerConnections}
-        skills={formDeps.skills}
-        agentTemplates={formDeps.agentTemplates}
-        mode={editingAgent?.id && managerAgentId === editingAgent.id ? 'workspace' : 'member'}
-        workspaceTitle={snapshot?.title}
+      <WorkspaceSettingsModal
+        isOpen={settingsOpen}
+        onClose={handleSettingsClose}
+        workspaceId={workspaceId}
+        snapshot={snapshot}
+        initialSelection={settingsSelection}
+        onChanged={handleSettingsChanged}
       />
     </div>
   );

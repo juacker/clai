@@ -36,10 +36,7 @@ use tauri::{Emitter, State};
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
 
 use crate::commands::permissions::PermissionScope;
-use crate::config::{
-    ExecutionCapabilityConfig, FilesystemPathAccess, FilesystemPathGrant, GrantOrigin,
-};
-use crate::db::DbPool;
+use crate::config::{workspace_config, FilesystemPathAccess, FilesystemPathGrant, GrantOrigin};
 use crate::AppState;
 
 pub const PATH_GRANT_REQUEST_EVENT: &str = "path-grants://request";
@@ -163,6 +160,25 @@ impl PendingPathGrants {
             .collect()
     }
 
+    /// See [`crate::commands::permissions::PendingApprovals::purge_workspace`].
+    /// Same semantics — drops every pending path-grant request for the
+    /// given workspace and clears its count. Used by `workspace_delete`.
+    pub async fn purge_workspace(&self, workspace_id: &str) -> usize {
+        let mut inner = self.inner.lock().await;
+        let to_remove: Vec<String> = inner
+            .entries
+            .iter()
+            .filter(|(_, entry)| entry.workspace_id.as_deref() == Some(workspace_id))
+            .map(|(id, _)| id.clone())
+            .collect();
+        let count = to_remove.len();
+        for id in to_remove {
+            inner.entries.remove(&id);
+        }
+        inner.counts.remove(&Some(workspace_id.to_string()));
+        count
+    }
+
     pub async fn take(&self, request_id: &str) -> Option<(PendingEntry, u32)> {
         let mut inner = self.inner.lock().await;
         let entry = inner.entries.remove(request_id)?;
@@ -205,7 +221,6 @@ pub async fn list_pending_path_grant_requests(
 #[tauri::command]
 pub async fn submit_path_grant_decision(
     state: State<'_, AppState>,
-    pool: State<'_, DbPool>,
     app: tauri::AppHandle,
     request_id: String,
     decision: PathGrantDecision,
@@ -232,8 +247,17 @@ pub async fn submit_path_grant_decision(
         let Some(agent_id) = entry.agent_id.as_deref() else {
             return Err("Cannot persist path grant: pending entry has no agent_id".to_string());
         };
-        persist_grant_to_agent(pool.inner(), agent_id, path, *access, &entry.request.reason)
-            .await?;
+        let Some(workspace_id) = entry.workspace_id.as_deref() else {
+            return Err("Cannot persist path grant: pending entry has no workspace_id".to_string());
+        };
+        persist_grant_to_agent(
+            state.inner(),
+            workspace_id,
+            agent_id,
+            path,
+            *access,
+            &entry.request.reason,
+        )?;
     }
 
     let _ = entry.sender.send(validated);
@@ -278,28 +302,26 @@ fn validate_decision_against_request(
 /// the path already exists at a weaker level), tags it with
 /// `GrantOrigin::Approval`, and writes the JSON back. Idempotent: a second
 /// approval for the same path+access pair is a no-op.
-async fn persist_grant_to_agent(
-    pool: &DbPool,
+fn persist_grant_to_agent(
+    state: &AppState,
+    workspace_id: &str,
     agent_id: &str,
     path: &str,
     access: FilesystemPathAccess,
     reason: &str,
 ) -> Result<(), String> {
-    let execution_json: Option<String> =
-        sqlx::query_scalar("SELECT execution FROM workspace_agents WHERE id = ? LIMIT 1")
-            .bind(agent_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| format!("Failed to load agent for path-grant persistence: {}", e))?;
-    let Some(execution_json) = execution_json else {
+    let root = state
+        .workspace_root(workspace_id)
+        .ok_or_else(|| format!("Workspace not found: {}", workspace_id))?;
+    let mut config = workspace_config::load(&root).map_err(|e| e.to_string())?;
+    let Some(agent) = config.agents.iter_mut().find(|agent| agent.id == agent_id) else {
         return Err(format!(
-            "Cannot persist path grant: workspace_agents row not found for id `{}`",
+            "Cannot persist path grant: workspace agent not found for id `{}`",
             agent_id
         ));
     };
 
-    let mut execution: ExecutionCapabilityConfig = serde_json::from_str(&execution_json)
-        .map_err(|e| format!("Failed to parse agent execution config: {}", e))?;
+    let execution = &mut agent.execution;
 
     if let Some(existing) = execution
         .filesystem
@@ -328,15 +350,14 @@ async fn persist_grant_to_agent(
         });
     }
 
-    let updated_json = serde_json::to_string(&execution)
-        .map_err(|e| format!("Failed to serialize updated execution config: {}", e))?;
-    sqlx::query("UPDATE workspace_agents SET execution = ?, updated_at = ? WHERE id = ?")
-        .bind(updated_json)
-        .bind(chrono::Utc::now().timestamp_millis())
-        .bind(agent_id)
-        .execute(pool)
-        .await
-        .map_err(|e| format!("Failed to persist path grant to workspace_agents: {}", e))?;
+    agent.updated_at = chrono::Utc::now().timestamp_millis();
+    config.updated_at = agent.updated_at;
+    workspace_config::save(&root, &config).map_err(|e| e.to_string())?;
+    state
+        .workspace_index
+        .write()
+        .map_err(|e| format!("Workspace index lock error: {}", e))?
+        .insert_config(root, &config);
     Ok(())
 }
 

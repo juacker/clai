@@ -363,6 +363,14 @@ export const workspaceSetAgentEnabled = async (workspaceId, agentId, enabled) =>
   }
 };
 
+export const workspaceAgentDefaultExecution = async () => {
+  try {
+    return await invoke('workspace_agent_default_execution');
+  } catch (error) {
+    handleApiError(error, 'Failed to load agent defaults');
+  }
+};
+
 // ============================================================================
 // Skill Catalog
 // ============================================================================

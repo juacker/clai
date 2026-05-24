@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 const STDERR_TAIL_LINES: usize = 20;
 
 use serde_json::Value;
+use tauri::Manager;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
@@ -24,6 +25,7 @@ use crate::assistant::types::{
     AssistantMessage, AssistantSession, ContentPart, MessageRole, ProviderConnection,
     ProviderInputMessage, RunNotice, RunStatus, RunUsage, ToolCallStatus,
 };
+use crate::AppState;
 
 const CLAUDE_DISABLED_TOOLS: &str = "Bash,Read,Edit,Write,Glob,Grep,WebFetch,WebSearch,Task,TodoWrite,NotebookEdit,NotebookRead,LSP";
 
@@ -35,8 +37,16 @@ pub async fn run_session_turn(
         .await?
         .ok_or_else(|| AssistantEngineError::SessionNotFound(input.session_id.clone()))?;
 
-    let connection = repository::get_provider_connection(&deps.pool, &input.connection_id)
-        .await?
+    let connection = deps
+        .app
+        .try_state::<AppState>()
+        .and_then(|state| {
+            state
+                .config_manager
+                .lock()
+                .ok()?
+                .get_provider_connection(&input.connection_id)
+        })
         .ok_or_else(|| AssistantEngineError::ProviderNotConfigured(input.connection_id.clone()))?;
 
     let run_id = resolve_run_id(deps, &session, &connection, &input).await?;
@@ -293,6 +303,24 @@ async fn run_claude_turn(
         .stderr(Stdio::piped());
     if !connection.model_id.trim().is_empty() {
         command.arg("--model").arg(connection.model_id.trim());
+    }
+
+    // Pin the subprocess cwd to the agent's workspace root. Without
+    // this, Claude Code inherits CLAI's launch cwd — which on a dev
+    // machine is the CLAI repo itself, causing Claude Code's
+    // auto-memory loader (`~/.claude/projects/<hash-of-cwd>/memory/`)
+    // to pull in memory from unrelated projects. Pinning cwd keys
+    // memory to the workspace, giving each agent a clean per-workspace
+    // context. Skipped when the session has no workspace_id (transient
+    // sessions) or the workspace is no longer in the index.
+    if let Some(workspace_id) = session.context.workspace_id.as_deref() {
+        if let Some(root) = deps
+            .app
+            .state::<crate::AppState>()
+            .workspace_root(workspace_id)
+        {
+            command.current_dir(&root);
+        }
     }
 
     let mut child = command.spawn().map_err(|e| {
