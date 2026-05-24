@@ -83,6 +83,16 @@ fn default_true() -> bool {
     true
 }
 
+/// Returns the default execution-capability shape that a brand-new agent
+/// ships with (host `$HOME` read-only by default). The UI calls this when
+/// opening the "Add agent" form so the user can see the granted defaults
+/// — and, importantly, remove them before saving — instead of having the
+/// backend silently inject them on create.
+#[tauri::command]
+pub async fn workspace_agent_default_execution() -> Result<ExecutionCapabilityConfig, String> {
+    Ok(workspace_config::default_agent_execution())
+}
+
 #[tauri::command]
 pub async fn workspace_get_agent(
     workspace_id: String,
@@ -112,13 +122,11 @@ pub async fn workspace_create_agent(
         return Err(format!("Workspace agent already exists: {}", id));
     }
 
-    // Inject the host `$HOME` RO default so every new agent can read user
-    // dotfiles like the user's shell would, unless the caller explicitly
-    // supplied a different filesystem grant set.
-    let mut execution = request.execution;
-    if execution.filesystem.extra_paths.is_empty() {
-        execution = workspace_config::default_agent_execution();
-    }
+    // The host `$HOME` RO default is pre-populated by the UI via
+    // `workspace_agent_default_execution` so the user can see and remove it
+    // before saving. Trust the request's execution verbatim — if the user
+    // cleared all path grants on purpose, we honor that.
+    let execution = request.execution;
 
     let now = now_millis();
     let agent = WorkspaceAgent {

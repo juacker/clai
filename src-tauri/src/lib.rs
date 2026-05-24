@@ -312,6 +312,7 @@ pub fn run() {
             commands::workspace_agents::workspace_update_agent,
             commands::workspace_agents::workspace_delete_agent,
             commands::workspace_agents::workspace_set_agent_enabled,
+            commands::workspace_agents::workspace_agent_default_execution,
             commands::permissions::submit_permission_decision,
             commands::permissions::list_pending_permission_requests,
             commands::path_grants::submit_path_grant_decision,
