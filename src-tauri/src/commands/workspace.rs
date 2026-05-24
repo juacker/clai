@@ -2010,13 +2010,12 @@ async fn workspace_team_summary(
         .or_else(|| agents.iter().find(|agent| agent.role == "manager"))
         .map(|agent| agent.display_name.clone());
 
-    // The workspace's default "manager" agent is an implementation detail; the
-    // UI treats it as invisible (its config is surfaced via the gear icon on
-    // the workspace header, not as a peer agent). Exclude it from the
-    // "N agents" headline count so Fleet and Workspace counters agree.
-    let visible_agent_count = agents.iter().filter(|agent| !agent.is_default).count();
+    // Count every agent. The workspace's default "main" agent is now a
+    // first-class entry in the agents list (rendered as "Main" in the UI),
+    // so it counts toward the workspace's headline agent total.
+    let agent_count = agents.len();
 
-    Ok((visible_agent_count, default_manager_name))
+    Ok((agent_count, default_manager_name))
 }
 
 /// Create a new general workspace with a UUID and filesystem root.
@@ -2187,12 +2186,44 @@ pub async fn workspace_run_now(
     }
 }
 
+/// Set the workspace's schedule (enable / disable + interval).
+///
+/// Writes `WorkspaceConfig.schedule.{enabled, interval_minutes}` and
+/// reconciles the live scheduler so the change takes effect immediately —
+/// no restart required.
+#[tauri::command]
+pub async fn workspace_set_schedule(
+    workspace_id: String,
+    enabled: bool,
+    interval_minutes: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if enabled && interval_minutes == 0 {
+        return Err("Schedule interval must be at least 1 minute.".to_string());
+    }
+    let workspace_id = resolve_workspace_id(state.inner(), Some(workspace_id))?;
+    let (root, mut config) = load_workspace_config_for_id(state.inner(), &workspace_id)?;
+    config.schedule.enabled = enabled;
+    config.schedule.interval_minutes = interval_minutes;
+    // Disabling the schedule clears any prior pause — there's nothing to be
+    // paused if the workspace isn't scheduled.
+    if !enabled {
+        config.schedule.paused = false;
+    }
+    config.updated_at = now_millis();
+    save_workspace_config_for_root(state.inner(), &root, &config)?;
+
+    let mut scheduler = state.scheduler.lock().await;
+    crate::agents::init::apply_workspace_schedule(&mut scheduler, &config);
+
+    Ok(())
+}
+
 /// Pause or resume the workspace's periodic schedule.
 ///
-/// Pausing keeps the workspace's "periodic" identity (schedule_enabled stays
-/// true, interval is preserved) but disables the scheduler instance so the
-/// runner skips it. Resuming flips the instance back on and the next tick
-/// will fire normally.
+/// Pausing keeps `schedule.enabled` true (interval is preserved) but
+/// disables the live scheduler instance so the runner skips it until
+/// resumed.
 #[tauri::command]
 pub async fn workspace_set_schedule_paused(
     workspace_id: String,
@@ -2201,7 +2232,6 @@ pub async fn workspace_set_schedule_paused(
 ) -> Result<(), String> {
     let workspace_id = resolve_workspace_id(state.inner(), Some(workspace_id))?;
     let (root, mut config) = load_workspace_config_for_id(state.inner(), &workspace_id)?;
-    let manager_id = config.default_agent_id.clone();
     if !config.schedule.enabled {
         return Err("Workspace is not periodic.".to_string());
     }
@@ -2209,15 +2239,8 @@ pub async fn workspace_set_schedule_paused(
     config.updated_at = now_millis();
     save_workspace_config_for_root(state.inner(), &root, &config)?;
 
-    // Flip the live scheduler instance. populate_scheduler_from_workspace_agents
-    // creates instances with empty space/room ids, so the instance id is
-    // `{manager_id}::`. set_instance_enabled is a no-op if the instance is
-    // absent (e.g. workspace was made periodic mid-session and the scheduler
-    // hasn't been repopulated since startup) — DB persistence still wins on
-    // next restart.
-    let instance_id = format!("{}::", manager_id);
     let mut scheduler = state.scheduler.lock().await;
-    scheduler.set_instance_enabled(&instance_id, !paused);
+    crate::agents::init::apply_workspace_schedule(&mut scheduler, &config);
 
     Ok(())
 }

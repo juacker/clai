@@ -55,46 +55,64 @@ pub async fn populate_scheduler_from_workspace_agents(
 
     let mut sched = scheduler.lock().await;
     for locator in locators {
-        if !locator.schedule_enabled {
-            continue;
-        }
         let Ok(config) = workspace_config::load(&locator.root_path) else {
             continue;
         };
-        // The workspace schedule fires the workspace's default (manager) agent.
-        let Some(agent) = config
-            .agents
-            .iter()
-            .find(|agent| agent.id == config.default_agent_id)
-        else {
-            continue;
-        };
+        apply_workspace_schedule(&mut sched, &config);
+    }
+}
 
-        let execution: ExecutionCapabilityConfig = agent.execution.clone();
-        let mut tools: Vec<&'static str> = vec!["netdata", "dashboard", "tabs", "fs"];
-        if !matches!(execution.shell.mode, ShellAccessMode::Off) {
-            tools.push("bash");
-        }
-        if execution.web.enabled {
-            tools.push("web");
-        }
-        let definition = AgentDefinition::new(
-            &agent.id,
-            &agent.name,
-            (config.schedule.interval_minutes as u64).max(1) * 60 * 1000,
-        )
-        .with_tools(tools);
-        sched.register_definition(definition);
-        if agent.enabled {
-            let instance_id = sched.create_instance(&agent.id, "", "");
-            // Paused workspaces still get a scheduler instance (so the live
-            // pause/resume toggle can flip it without re-registering), but the
-            // instance is created disabled so the runner ignores it until
-            // resumed.
-            if config.schedule.paused {
-                if let Some(instance_id) = instance_id {
-                    sched.set_instance_enabled(&instance_id, false);
-                }
+/// Reconcile the scheduler's view of a single workspace with its current
+/// `WorkspaceConfig`. Removes any prior instance for the workspace's
+/// default agent, then re-registers if `schedule.enabled`. Idempotent —
+/// callable from startup (via `populate_scheduler_from_workspace_agents`)
+/// and from the `workspace_set_schedule` / `workspace_set_schedule_paused`
+/// Tauri commands so live state always tracks the file.
+pub fn apply_workspace_schedule(
+    sched: &mut crate::agents::scheduler::Scheduler,
+    config: &crate::config::WorkspaceConfig,
+) {
+    // The workspace schedule fires the workspace's default (manager) agent.
+    let Some(agent) = config
+        .agents
+        .iter()
+        .find(|agent| agent.id == config.default_agent_id)
+    else {
+        return;
+    };
+
+    // Always start clean: drop any prior instance(s) for this agent. Cheap
+    // when there is none; safe when there is one of either polarity.
+    sched.remove_instances_for_agent(&agent.id);
+
+    if !config.schedule.enabled {
+        return;
+    }
+
+    let execution: ExecutionCapabilityConfig = agent.execution.clone();
+    let mut tools: Vec<&'static str> = vec!["netdata", "dashboard", "tabs", "fs"];
+    if !matches!(execution.shell.mode, ShellAccessMode::Off) {
+        tools.push("bash");
+    }
+    if execution.web.enabled {
+        tools.push("web");
+    }
+    let definition = AgentDefinition::new(
+        &agent.id,
+        &agent.name,
+        (config.schedule.interval_minutes as u64).max(1) * 60 * 1000,
+    )
+    .with_tools(tools);
+    sched.register_definition(definition);
+
+    if agent.enabled {
+        let instance_id = sched.create_instance(&agent.id, "", "");
+        // Paused workspaces still get an instance (so pause/resume can flip
+        // it without re-registering), but the instance starts disabled so
+        // the runner skips it until resumed.
+        if config.schedule.paused {
+            if let Some(instance_id) = instance_id {
+                sched.set_instance_enabled(&instance_id, false);
             }
         }
     }

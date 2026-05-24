@@ -117,12 +117,15 @@ const WorkspaceAgentsPanel = ({
   const assignedAgents = snapshot?.assignedAgents || [];
   const isManageable = snapshot?.kind !== 'agent' && workspaceId !== DEFAULT_WORKSPACE_ID;
 
-  // The workspace's "manager" is implicit — surfaced via the header gear icon.
-  // Drawer lists only attached helper agents; the "+ Add" affordance lives in
-  // the drawer header so we don't duplicate the "Agents" title here.
-  const memberAgents = assignedAgents.filter((agent) => !agent.isDefault);
+  // Manager first (rendered as "Main"), then sub-agents. The manager is
+  // always present and not removable; Edit deep-links into the workspace
+  // settings modal just like sub-agents.
+  const sortedAgents = [...assignedAgents].sort((a, b) => {
+    if (a.isDefault === b.isDefault) return 0;
+    return a.isDefault ? -1 : 1;
+  });
 
-  if (!isManageable && memberAgents.length === 0) {
+  if (!isManageable && sortedAgents.length === 0) {
     return null;
   }
 
@@ -130,13 +133,15 @@ const WorkspaceAgentsPanel = ({
     <section className={styles.agentRoster} aria-label="Workspace agents">
       {error && <div className={styles.agentRosterError}>{error}</div>}
 
-      {memberAgents.length > 0 ? (
+      {sortedAgents.length > 0 ? (
         <div className={styles.agentRosterList}>
-          {memberAgents.map((agent) => (
+          {sortedAgents.map((agent) => (
             <div key={agent.id} className={styles.agentRosterItem}>
               <div className={styles.agentRosterIdentity}>
                 <div className={styles.agentRosterNameRow}>
-                  <span className={styles.agentRosterName}>{agent.displayName}</span>
+                  <span className={styles.agentRosterName}>
+                    {agent.isDefault ? 'Main' : agent.displayName}
+                  </span>
                 </div>
                 {agent.agentDescription && (
                   <p className={styles.agentRosterDescription}>{agent.agentDescription}</p>
@@ -152,14 +157,16 @@ const WorkspaceAgentsPanel = ({
                   >
                     Edit
                   </button>
-                  <button
-                    type="button"
-                    className={styles.agentActionDanger}
-                    onClick={() => onRemove(agent.id)}
-                    disabled={!!busy}
-                  >
-                    Remove
-                  </button>
+                  {!agent.isDefault && (
+                    <button
+                      type="button"
+                      className={styles.agentActionDanger}
+                      onClick={() => onRemove(agent.id)}
+                      disabled={!!busy}
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -476,7 +483,9 @@ const WorkspaceHeader = ({
   );
   // Manager is invisible to the user — exclude it from the headline count so
   // the chip and the drawer (which already filters !isDefault) agree.
-  const assignedAgentCount = (snapshot?.assignedAgents || []).filter((a) => !a.isDefault).length;
+  // Count includes the main (default) agent — the manager is now a
+  // first-class entry in the workspace's agent list.
+  const assignedAgentCount = (snapshot?.assignedAgents || []).length;
   const taskCount = snapshot?.tasks?.length || 0;
   const activeTaskCount = (snapshot?.tasks || []).filter(
     (task) => task.status === 'running' || task.status === 'queued',
