@@ -159,6 +159,7 @@ pub async fn run_session_turn(
     // into each per-tool-call ToolExecutionContext so accepting a grant
     // mid-run is visible to subsequent tool calls in the same run.
     let session_grants = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let session_allowed_command_prefixes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
 
     let mut usage: Option<RunUsage> = None;
 
@@ -438,6 +439,7 @@ pub async fn run_session_turn(
                 execution: session.context.execution.clone(),
                 notices: notices.clone(),
                 session_grants: session_grants.clone(),
+                session_allowed_command_prefixes: session_allowed_command_prefixes.clone(),
             };
             let tool_result = tokio::select! {
                 _ = input.cancel_token.cancelled() => {
@@ -559,6 +561,7 @@ pub async fn run_session_turn(
         execution: session.context.execution.clone(),
         notices,
         session_grants,
+        session_allowed_command_prefixes,
     };
     let notices = tool_context.take_notices();
     let final_status = if notices.is_empty() {

@@ -79,6 +79,7 @@ pub async fn run_session_turn(
     let mcp_runtime = local_mcp::ensure_started(&deps.app).await?;
     let notices = Arc::new(Mutex::new(Vec::<RunNotice>::new()));
     let session_grants = Arc::new(Mutex::new(Vec::new()));
+    let session_allowed_command_prefixes = Arc::new(Mutex::new(Vec::new()));
     // `binding_guard` removes the bearer token from the MCP runtime on
     // drop, including on panic or early return — keep it alive until
     // after `run_claude_turn` returns and the Claude subprocess has
@@ -91,6 +92,7 @@ pub async fn run_session_turn(
         inter_agent_call_depth: input.inter_agent_call_depth,
         notices: notices.clone(),
         session_grants,
+        session_allowed_command_prefixes,
     });
     let mcp_config_path = match write_mcp_config(mcp_runtime.url(), binding_guard.token()) {
         Ok(path) => path,

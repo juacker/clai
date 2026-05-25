@@ -60,6 +60,13 @@ pub struct ToolBinding {
     /// host engine so a session grant accepted during a CLI-provider run is
     /// visible to the same run's subsequent tool calls.
     pub session_grants: Arc<Mutex<Vec<crate::config::FilesystemPathGrant>>>,
+    /// Run-scoped allowed command prefixes accepted via the bash approval
+    /// modal. Populated from both `AllowOnce` and `AllowAlways` decisions
+    /// so a single `Allow once` during a run prevents the user from being
+    /// re-prompted for the same (or descendant) command for the rest of
+    /// the run. `AllowAlways` is additionally persisted by the submit
+    /// command into the agent's durable `allowed_command_prefixes`.
+    pub session_allowed_command_prefixes: Arc<Mutex<Vec<String>>>,
 }
 
 impl LocalMcpRuntime {
@@ -317,6 +324,7 @@ async fn execute_bound_tool(
         execution: session.context.execution.clone(),
         notices: binding.notices.clone(),
         session_grants: binding.session_grants.clone(),
+        session_allowed_command_prefixes: binding.session_allowed_command_prefixes.clone(),
     };
 
     tokio::select! {

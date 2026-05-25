@@ -41,6 +41,18 @@ pub struct ToolExecutionContext {
     /// lands here so the running tool sees the grant immediately *and* gets
     /// persisted to the agent's DB row so the next session picks it up.
     pub session_grants: Arc<Mutex<Vec<FilesystemPathGrant>>>,
+    /// Run-scoped allowed command prefixes accepted via the bash approval
+    /// modal. Mirrors `session_grants` for commands: both `AllowOnce` and
+    /// `AllowAlways` populate this so the same command (or a descendant
+    /// of the chosen prefix) won't re-prompt the user for the rest of
+    /// the run. `AllowAlways` is additionally persisted to the agent's
+    /// durable `allowed_command_prefixes`; `AllowOnce` is run-scoped only
+    /// and vanishes when the run ends. Without this cache, every bash
+    /// invocation re-evaluated only the durable list (which mid-run
+    /// reflects neither the just-accepted `AllowOnce` nor the
+    /// just-accepted `AllowAlways`, since persistence updates the DB but
+    /// not the running execution snapshot) and re-prompted every time.
+    pub session_allowed_command_prefixes: Arc<Mutex<Vec<String>>>,
 }
 
 impl ToolExecutionContext {
@@ -83,6 +95,29 @@ impl ToolExecutionContext {
         self.session_grants
             .lock()
             .map(|g| g.clone())
+            .unwrap_or_default()
+    }
+
+    /// Append a run-scoped allowed command prefix. Idempotent on string
+    /// equality so re-approving the same command doesn't bloat the list.
+    pub fn add_session_allowed_command_prefix(&self, prefix: String) {
+        let trimmed = prefix.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        if let Ok(mut prefixes) = self.session_allowed_command_prefixes.lock() {
+            if !prefixes.iter().any(|p| p == trimmed) {
+                prefixes.push(trimmed.to_string());
+            }
+        }
+    }
+
+    /// Snapshot of run-scoped allowed command prefixes for merging with
+    /// the durable allowlist in policy evaluation.
+    pub fn session_allowed_command_prefixes_snapshot(&self) -> Vec<String> {
+        self.session_allowed_command_prefixes
+            .lock()
+            .map(|p| p.clone())
             .unwrap_or_default()
     }
 }

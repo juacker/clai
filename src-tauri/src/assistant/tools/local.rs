@@ -316,7 +316,8 @@ async fn execute_bash_exec(
     let cwd = resolve_shell_cwd(context, params.cwd.as_deref())?;
     let workspace_root = ensure_workspace_root(context)?;
 
-    match evaluate_command_policy(&context.execution, &params.command) {
+    let run_allowed = context.session_allowed_command_prefixes_snapshot();
+    match evaluate_command_policy(&context.execution, &params.command, &run_allowed) {
         PolicyResult::Allow => { /* proceed */ }
         PolicyResult::Block {
             segment_text,
@@ -860,6 +861,7 @@ pub(crate) enum PolicyResult {
 pub(crate) fn evaluate_command_policy(
     execution: &ExecutionCapabilityConfig,
     command: &str,
+    extra_allowed_prefixes: &[String],
 ) -> PolicyResult {
     use crate::assistant::tools::command_splitter::{split_command, Segment};
     use crate::assistant::tools::prefix_detector::suggest_prefix;
@@ -892,11 +894,26 @@ pub(crate) fn evaluate_command_policy(
             continue;
         }
 
+        // Run-scoped allowlist holds prefixes accepted this run via
+        // `AllowOnce`/`AllowAlways`. Without consulting it, every bash
+        // call after a fresh approval would re-prompt mid-run: durable
+        // list updates land on the next session, and persistence does
+        // not mutate the running execution snapshot.
+        let run_match = find_matching_prefix(extra_allowed_prefixes, text);
+
         match segment {
             Segment::Opaque(_) => {
-                // Opaque segments can never be allowlisted: substitutions,
-                // executor heads, redirects, control flow. Always require
-                // fresh approval. No suggested prefix (can't be saved).
+                // Opaque segments can never be allowlisted *durably*
+                // (substitutions, executor heads, redirects, control
+                // flow have no safe prefix to save). Within a single
+                // run, however, the run-scoped cache may hold the exact
+                // segment text from a prior `AllowOnce` on the same
+                // command — honor that, otherwise the user gets
+                // re-prompted for the same `$(...)` every time the
+                // LLM retries.
+                if run_match.is_some() {
+                    continue;
+                }
                 approvals.push(SegmentApproval {
                     text: text.to_string(),
                     kind: SegmentKind::Opaque,
@@ -904,7 +921,9 @@ pub(crate) fn evaluate_command_policy(
                 });
             }
             Segment::Simple(_) => {
-                if find_matching_prefix(&execution.shell.allowed_command_prefixes, text).is_none() {
+                let durable_match =
+                    find_matching_prefix(&execution.shell.allowed_command_prefixes, text);
+                if durable_match.is_none() && run_match.is_none() {
                     approvals.push(SegmentApproval {
                         text: text.to_string(),
                         kind: SegmentKind::Simple,
@@ -937,7 +956,8 @@ async fn await_user_permission(
     segments: Vec<crate::commands::permissions::SegmentApproval>,
 ) -> Result<(), String> {
     use crate::commands::permissions::{
-        emit_attention, PermissionRequest, APPROVAL_TIMEOUT, PERMISSION_REQUEST_EVENT,
+        emit_attention, PermissionRequest, SegmentDecision, APPROVAL_TIMEOUT,
+        PERMISSION_REQUEST_EVENT,
     };
     use tauri::{Emitter, Manager};
 
@@ -953,7 +973,7 @@ async fn await_user_permission(
         // resolves it from agent_id via existing workspace queries.
         agent_name: None,
         command: command.to_string(),
-        segments,
+        segments: segments.clone(),
     };
     let request_id = request.request_id.clone();
 
@@ -988,6 +1008,38 @@ async fn await_user_permission(
         context.add_notice(RunNoticeKind::CommandDenied, msg.to_string());
         return Err(msg.to_string());
     }
+
+    // Record allowed prefixes on the run-scoped cache so the next bash
+    // call within this run doesn't re-prompt for the same command.
+    // `AllowAlways` is also separately persisted by the submit command
+    // into the agent's durable `allowed_command_prefixes`, but that
+    // persistence doesn't reach the running execution snapshot, so we
+    // need the run-scoped cache for the within-run case regardless.
+    //
+    // For `AllowOnce` we cache the segment's full text: `matches_prefix`
+    // accepts an exact match or an additional-args extension (so an
+    // `AllowOnce` of `git status` covers `git status -s` in the same
+    // run, matching what the durable `AllowAlways` semantics would give
+    // for the same prefix — narrower commands than what the user
+    // explicitly approved are not blocked).
+    for (segment, decision) in segments.iter().zip(decisions.iter()) {
+        match decision {
+            SegmentDecision::AllowAlways { prefix, .. } => {
+                context.add_session_allowed_command_prefix(prefix.clone());
+            }
+            SegmentDecision::AllowOnce => {
+                context.add_session_allowed_command_prefix(segment.text.clone());
+            }
+            SegmentDecision::DenyOnce | SegmentDecision::DenyAlways { .. } => {
+                // Denials are not cached — re-evaluating the policy on
+                // the next call lets the user reconsider, and the early
+                // `decisions.iter().any(!is_allow)` check above has
+                // already short-circuited the current call with an
+                // error.
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -1190,7 +1242,7 @@ fn enforce_command_policy(
     _workspace_root: Option<&std::path::Path>,
     command: &str,
 ) -> Result<(), CommandDenial> {
-    match evaluate_command_policy(execution, command) {
+    match evaluate_command_policy(execution, command, &[]) {
         PolicyResult::Allow => Ok(()),
         PolicyResult::Block {
             segment_text,
@@ -1970,5 +2022,70 @@ mod tests {
         let exec = restricted_execution_config(&[], &[]);
         let err = enforce_command_policy(&exec, None, "   ").unwrap_err();
         assert!(matches!(err, CommandDenial::ExplicitlyBlocked(_)));
+    }
+
+    // -------------------------------------------------------------------
+    // Run-scoped allowed prefixes — the within-run cache populated by
+    // AllowOnce/AllowAlways so the user isn't re-prompted mid-run.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn policy_run_scoped_prefix_covers_simple_segment() {
+        // Empty durable allowlist, but a run-scoped entry for `git status`.
+        // A fresh `git status` should pass without approval.
+        let exec = restricted_execution_config(&[], &[]);
+        let run_allowed = vec!["git status".to_string()];
+        assert!(matches!(
+            evaluate_command_policy(&exec, "git status", &run_allowed),
+            PolicyResult::Allow,
+        ));
+    }
+
+    #[test]
+    fn policy_run_scoped_prefix_covers_descendant_args() {
+        // `matches_prefix` accepts the cached prefix plus more arguments,
+        // mirroring durable-allowlist semantics. AllowOnce on `git status`
+        // therefore also covers `git status -s` in the same run.
+        let exec = restricted_execution_config(&[], &[]);
+        let run_allowed = vec!["git status".to_string()];
+        assert!(matches!(
+            evaluate_command_policy(&exec, "git status -s", &run_allowed),
+            PolicyResult::Allow,
+        ));
+    }
+
+    #[test]
+    fn policy_run_scoped_prefix_does_not_cover_different_command() {
+        let exec = restricted_execution_config(&[], &[]);
+        let run_allowed = vec!["git status".to_string()];
+        assert!(matches!(
+            evaluate_command_policy(&exec, "git log", &run_allowed),
+            PolicyResult::NeedsApproval(_),
+        ));
+    }
+
+    #[test]
+    fn policy_run_scoped_prefix_covers_opaque_segment() {
+        // Opaque segments can never be allowlisted *durably*, but the
+        // run-scoped cache holds the exact segment text from a prior
+        // AllowOnce — honor it so the user isn't re-prompted for the
+        // same `bash -c "..."` in the same run.
+        let exec = restricted_execution_config(&[], &[]);
+        let run_allowed = vec![r#"bash -c "echo hi""#.to_string()];
+        assert!(matches!(
+            evaluate_command_policy(&exec, r#"bash -c "echo hi""#, &run_allowed),
+            PolicyResult::Allow,
+        ));
+    }
+
+    #[test]
+    fn policy_durable_allowlist_does_not_cover_opaque_segment() {
+        // Regression guard: the durable allowlist must NOT allowlist an
+        // Opaque segment. Only the run-scoped cache does.
+        let exec = restricted_execution_config(&["bash"], &[]);
+        assert!(matches!(
+            evaluate_command_policy(&exec, r#"bash -c "echo hi""#, &[]),
+            PolicyResult::NeedsApproval(_),
+        ));
     }
 }
