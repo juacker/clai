@@ -67,6 +67,15 @@ pub struct ToolBinding {
     /// the run. `AllowAlways` is additionally persisted by the submit
     /// command into the agent's durable `allowed_command_prefixes`.
     pub session_allowed_command_prefixes: Arc<Mutex<Vec<String>>>,
+    /// Run-scoped blocked command prefixes — mirror of the allow cache
+    /// for `DenyAlways` decisions. Without this, a `DenyAlways` would be
+    /// honored on the next session (durable persistence) but the current
+    /// run would still re-prompt the user for the same command if the
+    /// LLM retried, because the running `context.execution` snapshot
+    /// doesn't pick up persistence. `DenyOnce` is intentionally NOT
+    /// cached: that decision is one-shot by definition, and re-prompting
+    /// on retry lets the user reconsider.
+    pub session_blocked_command_prefixes: Arc<Mutex<Vec<String>>>,
 }
 
 impl LocalMcpRuntime {
@@ -325,6 +334,7 @@ async fn execute_bound_tool(
         notices: binding.notices.clone(),
         session_grants: binding.session_grants.clone(),
         session_allowed_command_prefixes: binding.session_allowed_command_prefixes.clone(),
+        session_blocked_command_prefixes: binding.session_blocked_command_prefixes.clone(),
     };
 
     tokio::select! {

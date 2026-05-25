@@ -317,7 +317,13 @@ async fn execute_bash_exec(
     let workspace_root = ensure_workspace_root(context)?;
 
     let run_allowed = context.session_allowed_command_prefixes_snapshot();
-    match evaluate_command_policy(&context.execution, &params.command, &run_allowed) {
+    let run_blocked = context.session_blocked_command_prefixes_snapshot();
+    match evaluate_command_policy(
+        &context.execution,
+        &params.command,
+        &run_allowed,
+        &run_blocked,
+    ) {
         PolicyResult::Allow => { /* proceed */ }
         PolicyResult::Block {
             segment_text,
@@ -862,6 +868,7 @@ pub(crate) fn evaluate_command_policy(
     execution: &ExecutionCapabilityConfig,
     command: &str,
     extra_allowed_prefixes: &[String],
+    extra_blocked_prefixes: &[String],
 ) -> PolicyResult {
     use crate::assistant::tools::command_splitter::{split_command, Segment};
     use crate::assistant::tools::prefix_detector::suggest_prefix;
@@ -880,8 +887,12 @@ pub(crate) fn evaluate_command_policy(
     for segment in &segments {
         let text = segment.text();
 
-        // Blocklist applies to every segment, Simple or Opaque.
+        // Blocklist applies to every segment, Simple or Opaque. Durable
+        // blocklist is checked first; run-scoped blocklist (this run's
+        // accepted `DenyAlways` decisions) is checked next so a fresh
+        // deny-always takes effect mid-run.
         if let Some(matched) = find_matching_prefix(&execution.shell.blocked_command_prefixes, text)
+            .or_else(|| find_matching_prefix(extra_blocked_prefixes, text))
         {
             return PolicyResult::Block {
                 segment_text: text.to_string(),
@@ -1003,25 +1014,27 @@ async fn await_user_permission(
         }
     };
 
-    if decisions.iter().any(|d| !d.is_allow()) {
-        let msg = "User denied one or more command segments";
-        context.add_notice(RunNoticeKind::CommandDenied, msg.to_string());
-        return Err(msg.to_string());
-    }
-
-    // Record allowed prefixes on the run-scoped cache so the next bash
-    // call within this run doesn't re-prompt for the same command.
-    // `AllowAlways` is also separately persisted by the submit command
-    // into the agent's durable `allowed_command_prefixes`, but that
-    // persistence doesn't reach the running execution snapshot, so we
-    // need the run-scoped cache for the within-run case regardless.
+    // Cache the user's intent on the run-scoped allow/block lists
+    // BEFORE the deny short-circuit, so a `DenyAlways` still ends the
+    // current call with an error but its block-prefix is recorded so
+    // subsequent retries of the same command don't re-prompt.
     //
-    // For `AllowOnce` we cache the segment's full text: `matches_prefix`
-    // accepts an exact match or an additional-args extension (so an
-    // `AllowOnce` of `git status` covers `git status -s` in the same
-    // run, matching what the durable `AllowAlways` semantics would give
-    // for the same prefix — narrower commands than what the user
-    // explicitly approved are not blocked).
+    // - `AllowAlways` caches the user's chosen prefix (also persisted
+    //   durably by the submit command).
+    // - `AllowOnce` caches the segment's full text: `matches_prefix`
+    //   accepts an exact match or an additional-args extension (so an
+    //   `AllowOnce` of `git status` covers `git status -s` in the same
+    //   run, matching what the durable `AllowAlways` semantics would
+    //   give for the same prefix).
+    // - `DenyAlways` caches the user's chosen prefix on the run-scoped
+    //   blocklist (also persisted durably). Without this, the LLM's
+    //   next retry of the just-denied command would re-prompt the user
+    //   because persistence updates the DB but not the running
+    //   `context.execution` snapshot.
+    // - `DenyOnce` is intentionally not cached. It's a single-shot
+    //   decision by design — re-prompting on retry lets the user
+    //   reconsider. (The current call is still denied by the check
+    //   below.)
     for (segment, decision) in segments.iter().zip(decisions.iter()) {
         match decision {
             SegmentDecision::AllowAlways { prefix, .. } => {
@@ -1030,14 +1043,17 @@ async fn await_user_permission(
             SegmentDecision::AllowOnce => {
                 context.add_session_allowed_command_prefix(segment.text.clone());
             }
-            SegmentDecision::DenyOnce | SegmentDecision::DenyAlways { .. } => {
-                // Denials are not cached — re-evaluating the policy on
-                // the next call lets the user reconsider, and the early
-                // `decisions.iter().any(!is_allow)` check above has
-                // already short-circuited the current call with an
-                // error.
+            SegmentDecision::DenyAlways { prefix, .. } => {
+                context.add_session_blocked_command_prefix(prefix.clone());
             }
+            SegmentDecision::DenyOnce => {}
         }
+    }
+
+    if decisions.iter().any(|d| !d.is_allow()) {
+        let msg = "User denied one or more command segments";
+        context.add_notice(RunNoticeKind::CommandDenied, msg.to_string());
+        return Err(msg.to_string());
     }
 
     Ok(())
@@ -1242,7 +1258,7 @@ fn enforce_command_policy(
     _workspace_root: Option<&std::path::Path>,
     command: &str,
 ) -> Result<(), CommandDenial> {
-    match evaluate_command_policy(execution, command, &[]) {
+    match evaluate_command_policy(execution, command, &[], &[]) {
         PolicyResult::Allow => Ok(()),
         PolicyResult::Block {
             segment_text,
@@ -2036,7 +2052,7 @@ mod tests {
         let exec = restricted_execution_config(&[], &[]);
         let run_allowed = vec!["git status".to_string()];
         assert!(matches!(
-            evaluate_command_policy(&exec, "git status", &run_allowed),
+            evaluate_command_policy(&exec, "git status", &run_allowed, &[]),
             PolicyResult::Allow,
         ));
     }
@@ -2049,7 +2065,7 @@ mod tests {
         let exec = restricted_execution_config(&[], &[]);
         let run_allowed = vec!["git status".to_string()];
         assert!(matches!(
-            evaluate_command_policy(&exec, "git status -s", &run_allowed),
+            evaluate_command_policy(&exec, "git status -s", &run_allowed, &[]),
             PolicyResult::Allow,
         ));
     }
@@ -2059,7 +2075,7 @@ mod tests {
         let exec = restricted_execution_config(&[], &[]);
         let run_allowed = vec!["git status".to_string()];
         assert!(matches!(
-            evaluate_command_policy(&exec, "git log", &run_allowed),
+            evaluate_command_policy(&exec, "git log", &run_allowed, &[]),
             PolicyResult::NeedsApproval(_),
         ));
     }
@@ -2073,7 +2089,7 @@ mod tests {
         let exec = restricted_execution_config(&[], &[]);
         let run_allowed = vec![r#"bash -c "echo hi""#.to_string()];
         assert!(matches!(
-            evaluate_command_policy(&exec, r#"bash -c "echo hi""#, &run_allowed),
+            evaluate_command_policy(&exec, r#"bash -c "echo hi""#, &run_allowed, &[]),
             PolicyResult::Allow,
         ));
     }
@@ -2084,8 +2100,50 @@ mod tests {
         // Opaque segment. Only the run-scoped cache does.
         let exec = restricted_execution_config(&["bash"], &[]);
         assert!(matches!(
-            evaluate_command_policy(&exec, r#"bash -c "echo hi""#, &[]),
+            evaluate_command_policy(&exec, r#"bash -c "echo hi""#, &[], &[]),
             PolicyResult::NeedsApproval(_),
+        ));
+    }
+
+    // -------------------------------------------------------------------
+    // Run-scoped blocklist — populated by DenyAlways so a fresh deny
+    // takes effect mid-run instead of waiting for the next session.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn policy_run_scoped_blocklist_blocks_simple_segment() {
+        // No durable blocklist, but a run-scoped DenyAlways for `rm -rf`.
+        // A fresh `rm -rf /tmp/foo` should hit Block without prompting.
+        let exec = restricted_execution_config(&["rm"], &[]);
+        let run_blocked = vec!["rm -rf".to_string()];
+        assert!(matches!(
+            evaluate_command_policy(&exec, "rm -rf /tmp/foo", &[], &run_blocked),
+            PolicyResult::Block { .. },
+        ));
+    }
+
+    #[test]
+    fn policy_run_scoped_blocklist_takes_priority_over_run_scoped_allowlist() {
+        // Blocklist wins over allowlist — matches the durable-list
+        // precedence rule.
+        let exec = restricted_execution_config(&[], &[]);
+        let run_allowed = vec!["rm".to_string()];
+        let run_blocked = vec!["rm -rf".to_string()];
+        assert!(matches!(
+            evaluate_command_policy(&exec, "rm -rf /tmp/foo", &run_allowed, &run_blocked),
+            PolicyResult::Block { .. },
+        ));
+    }
+
+    #[test]
+    fn policy_run_scoped_blocklist_does_not_cover_unrelated_command() {
+        // `rm file.txt` doesn't match the `rm -rf` prefix, so the
+        // durable allowlist for `rm` still lets it through.
+        let exec = restricted_execution_config(&["rm"], &[]);
+        let run_blocked = vec!["rm -rf".to_string()];
+        assert!(matches!(
+            evaluate_command_policy(&exec, "rm file.txt", &[], &run_blocked),
+            PolicyResult::Allow,
         ));
     }
 }

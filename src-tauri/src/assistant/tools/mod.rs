@@ -53,6 +53,15 @@ pub struct ToolExecutionContext {
     /// just-accepted `AllowAlways`, since persistence updates the DB but
     /// not the running execution snapshot) and re-prompted every time.
     pub session_allowed_command_prefixes: Arc<Mutex<Vec<String>>>,
+    /// Run-scoped blocked command prefixes — symmetric counterpart of
+    /// `session_allowed_command_prefixes` for `DenyAlways` decisions. A
+    /// `DenyAlways` mid-run otherwise persists to the agent's durable
+    /// `blocked_command_prefixes` but isn't visible to the running
+    /// `context.execution`, so the LLM's next retry of the same command
+    /// would re-prompt the user. `DenyOnce` is deliberately NOT cached:
+    /// it's a one-shot decision by design, and re-prompting on retry
+    /// lets the user reconsider.
+    pub session_blocked_command_prefixes: Arc<Mutex<Vec<String>>>,
 }
 
 impl ToolExecutionContext {
@@ -116,6 +125,29 @@ impl ToolExecutionContext {
     /// the durable allowlist in policy evaluation.
     pub fn session_allowed_command_prefixes_snapshot(&self) -> Vec<String> {
         self.session_allowed_command_prefixes
+            .lock()
+            .map(|p| p.clone())
+            .unwrap_or_default()
+    }
+
+    /// Append a run-scoped blocked command prefix. Idempotent on string
+    /// equality. Mirrors [`Self::add_session_allowed_command_prefix`].
+    pub fn add_session_blocked_command_prefix(&self, prefix: String) {
+        let trimmed = prefix.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        if let Ok(mut prefixes) = self.session_blocked_command_prefixes.lock() {
+            if !prefixes.iter().any(|p| p == trimmed) {
+                prefixes.push(trimmed.to_string());
+            }
+        }
+    }
+
+    /// Snapshot of run-scoped blocked command prefixes for merging with
+    /// the durable blocklist in policy evaluation.
+    pub fn session_blocked_command_prefixes_snapshot(&self) -> Vec<String> {
+        self.session_blocked_command_prefixes
             .lock()
             .map(|p| p.clone())
             .unwrap_or_default()

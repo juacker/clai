@@ -160,6 +160,7 @@ pub async fn run_session_turn(
     // mid-run is visible to subsequent tool calls in the same run.
     let session_grants = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let session_allowed_command_prefixes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let session_blocked_command_prefixes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
 
     let mut usage: Option<RunUsage> = None;
 
@@ -440,6 +441,7 @@ pub async fn run_session_turn(
                 notices: notices.clone(),
                 session_grants: session_grants.clone(),
                 session_allowed_command_prefixes: session_allowed_command_prefixes.clone(),
+                session_blocked_command_prefixes: session_blocked_command_prefixes.clone(),
             };
             let tool_result = tokio::select! {
                 _ = input.cancel_token.cancelled() => {
@@ -562,6 +564,7 @@ pub async fn run_session_turn(
         notices,
         session_grants,
         session_allowed_command_prefixes,
+        session_blocked_command_prefixes,
     };
     let notices = tool_context.take_notices();
     let final_status = if notices.is_empty() {
