@@ -1,3 +1,4 @@
+pub mod ask_user;
 pub mod command_splitter;
 pub mod local;
 pub mod prefix_detector;

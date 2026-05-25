@@ -248,6 +248,7 @@ pub fn run() {
             commands::assistant::assistant_list_runs,
             commands::assistant::assistant_list_tool_calls,
             commands::assistant::assistant_send_message,
+            commands::assistant::assistant_submit_user_input,
             commands::assistant::assistant_retry_run,
             commands::assistant::assistant_cancel_run,
             // Bundled agent templates (read-only).
@@ -299,7 +300,6 @@ pub fn run() {
             commands::workspace::workspace_list_agents,
             commands::workspace::workspace_set_default_agent,
             commands::workspace::workspace_acknowledge_task,
-            commands::workspace::workspace_submit_task_feedback,
             commands::workspace::workspace_create,
             commands::workspace::workspace_list,
             commands::workspace::workspace_run_now,

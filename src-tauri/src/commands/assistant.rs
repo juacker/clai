@@ -6,6 +6,7 @@ use crate::assistant::events::{emit_event, AssistantUiEvent};
 use crate::assistant::repository;
 use crate::assistant::repository::{CreateMessageParams, CreateRunParams, CreateSessionParams};
 use crate::assistant::runtime;
+use crate::assistant::tools::ask_user::{self, AskUserAnswer};
 use crate::assistant::types::{
     AssistantMessage, AssistantRun, AssistantSession, ContentPart, MessageRole, RunStatus,
     RunTrigger, SessionContext, SessionKind, ToolInvocation,
@@ -320,6 +321,38 @@ pub async fn assistant_send_message(
         message: assistant_message,
         run,
     })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantSubmitUserInputRequest {
+    /// Matches the `pending_id` carried on the `AskUserRequested` event.
+    pub pending_id: String,
+    /// The user's answer text. For option-bearing questions this is the
+    /// selected option's label (or the "Other" free-text). For free-text
+    /// questions it's the textarea contents.
+    pub answer: String,
+    /// 0-based index into the question's `options` array when the user
+    /// picked a structured option (rather than typing free text via
+    /// "Other"). Omitted for plain-text questions.
+    #[serde(default)]
+    pub selected_option_index: Option<usize>,
+}
+
+/// Deliver an answer from the FE back to the blocking `ask_user` tool
+/// invocation identified by `pending_id`. Errors when no pending entry
+/// matches (e.g. the run already ended or the user submitted twice).
+#[tauri::command]
+pub async fn assistant_submit_user_input(
+    request: AssistantSubmitUserInputRequest,
+) -> Result<(), String> {
+    ask_user::submit_answer(
+        &request.pending_id,
+        AskUserAnswer {
+            text: request.answer,
+            selected_option_index: request.selected_option_index,
+        },
+    )
 }
 
 #[tauri::command]

@@ -71,16 +71,6 @@ export async function acknowledgeWorkspaceTask(workspaceId, taskId) {
   });
 }
 
-export async function submitWorkspaceTaskFeedback(workspaceId, taskId, response) {
-  return invoke('workspace_submit_task_feedback', {
-    request: {
-      workspaceId,
-      taskId,
-      response,
-    },
-  });
-}
-
 export async function createWorkspace(title) {
   return invoke('workspace_create', { title: title || null });
 }

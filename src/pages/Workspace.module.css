@@ -513,8 +513,7 @@
   color: var(--color-critical);
 }
 
-.taskStatus_blocked,
-.taskStatus_needs_user_input {
+.taskStatus_blocked {
   background: color-mix(in srgb, var(--color-warning) 14%, transparent);
   color: var(--color-warning);
 }
@@ -539,41 +538,6 @@
   overflow: hidden;
 }
 
-.taskUserResponse {
-  margin: 6px 0 0;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-primary-alpha-08);
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.taskFeedbackBox {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.taskFeedbackInput {
-  width: 100%;
-  resize: vertical;
-  min-height: 64px;
-  border: 1px solid var(--color-border-medium);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-elevated);
-  color: var(--color-text-primary);
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.4;
-  padding: 7px 8px;
-}
-
-.taskFeedbackInput:focus {
-  border-color: var(--color-primary-alpha-30);
-}
-
 .taskActions {
   display: flex;
   align-items: center;
@@ -582,8 +546,7 @@
   flex-wrap: wrap;
 }
 
-.taskAction,
-.taskActionPrimary {
+.taskAction {
   height: 28px;
   border: 1px solid var(--color-border-medium);
   border-radius: var(--radius-sm);
@@ -597,26 +560,12 @@
   white-space: nowrap;
 }
 
-.taskAction:hover,
-.taskActionPrimary:hover {
+.taskAction:hover {
   border-color: var(--color-primary-alpha-30);
   color: var(--color-primary);
 }
 
-.taskActionPrimary {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: white;
-}
-
-.taskActionPrimary:hover {
-  color: white;
-  background: color-mix(in srgb, var(--color-primary) 88%, black);
-}
-
-.taskAction:disabled,
-.taskActionPrimary:disabled,
-.taskFeedbackInput:disabled {
+.taskAction:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }

@@ -3,11 +3,10 @@
 //! These commands handle saving and loading the workspace state
 //! (tabs, commands, layout) to/from SQLite.
 
-use crate::assistant::events::{emit_event, AssistantUiEvent};
-use crate::assistant::repository::{self, CreateRunParams};
+use crate::assistant::repository;
 use crate::assistant::types::{
-    AssistantMessage, AssistantRun, AssistantSession, ContentPart, MessageRole, RunStatus,
-    RunTrigger, SessionContext, SessionKind, ToolInvocation, WorkspaceAgentSummary,
+    AssistantMessage, AssistantRun, AssistantSession, SessionContext, SessionKind, ToolInvocation,
+    WorkspaceAgentSummary,
 };
 use crate::config::{
     agent_instructions_with_skills, workspace_config, AgentConfig, AppConfig,
@@ -21,7 +20,7 @@ use sqlx::Row;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use tauri::{AppHandle, State};
+use tauri::State;
 
 /// Tab context payload.
 ///
@@ -301,14 +300,6 @@ pub struct WorkspaceWriteFileRequest {
 pub struct WorkspaceTaskActionRequest {
     pub workspace_id: String,
     pub task_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceTaskFeedbackRequest {
-    pub workspace_id: String,
-    pub task_id: String,
-    pub response: String,
 }
 
 #[derive(Debug, Clone)]
@@ -1811,260 +1802,6 @@ pub async fn workspace_acknowledge_task(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn workspace_submit_task_feedback(
-    request: WorkspaceTaskFeedbackRequest,
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<(), String> {
-    let workspace_id = resolve_workspace_id(state.inner(), Some(request.workspace_id))?;
-    let workspace_pool = state.workspace_db(&workspace_id).await?;
-    let response = request.response.trim();
-    if response.is_empty() {
-        return Err("Task feedback cannot be empty.".to_string());
-    }
-
-    // `instructions` carries the original question the agent asked
-    // (composed by `request_user_input` as
-    // "Question for the user:\n…\n\nContext:\n…\n\nRequested action:\n…").
-    // We echo it back into the feedback message so the LLM doesn't have
-    // to mentally re-link the answer to the prior tool_use.
-    let current: Option<(String, String, String, String)> = sqlx::query_as(
-        "SELECT id, title, status, instructions FROM workspace_tasks WHERE id = ? LIMIT 1",
-    )
-    .bind(&request.task_id)
-    .fetch_optional(&workspace_pool)
-    .await
-    .map_err(|e| format!("Failed to load workspace task: {}", e))?;
-
-    let Some((task_id, title, status, instructions)) = current else {
-        return Err(format!("Workspace task not found: {}", request.task_id));
-    };
-
-    let now = now_millis();
-    let next_status = if status == "needs_user_input" {
-        "completed"
-    } else {
-        status.as_str()
-    };
-    sqlx::query(
-        r#"
-        UPDATE workspace_tasks
-        SET user_response = ?,
-            user_response_at = ?,
-            attention_acknowledged_at = ?,
-            status = ?,
-            updated_at = ?,
-            completed_at = COALESCE(?, completed_at)
-        WHERE id = ?
-        "#,
-    )
-    .bind(response)
-    .bind(now)
-    .bind(now)
-    .bind(next_status)
-    .bind(now)
-    .bind(if status == "needs_user_input" {
-        Some(now)
-    } else {
-        None
-    })
-    .bind(&task_id)
-    .execute(&workspace_pool)
-    .await
-    .map_err(|e| format!("Failed to save workspace task feedback: {}", e))?;
-
-    deliver_task_feedback(
-        state.inner(),
-        &app,
-        &workspace_pool,
-        &workspace_id,
-        &task_id,
-        &title,
-        &instructions,
-        response,
-    )
-    .await?;
-
-    Ok(())
-}
-
-/// Append the feedback as a user message on the manager session, then
-/// auto-spawn a follow-up run so the LLM picks up the answer immediately
-/// (no need for the user to manually nudge "please continue"). Best-effort
-/// on spawning — if no provider connection can be resolved, or a run is
-/// already in flight, we still persist the message and let the next
-/// scheduler tick or user nudge pick it up.
-#[allow(clippy::too_many_arguments)]
-async fn deliver_task_feedback(
-    state: &AppState,
-    app: &AppHandle,
-    pool: &DbPool,
-    workspace_id: &str,
-    task_id: &str,
-    title: &str,
-    instructions: &str,
-    response: &str,
-) -> Result<(), String> {
-    let descriptor = resolve_workspace_descriptor(state, Some(workspace_id.to_string()))?;
-    let Some(session) = find_workspace_session(pool, state, &descriptor).await? else {
-        return Ok(());
-    };
-
-    let workspace_root = descriptor
-        .root_path
-        .as_ref()
-        .map(|p| p.display().to_string());
-    let message_text = format_task_feedback_message(
-        task_id,
-        title,
-        instructions,
-        response,
-        workspace_root.as_deref(),
-    );
-
-    let message = repository::create_message(
-        pool,
-        repository::CreateMessageParams {
-            session_id: session.id.clone(),
-            role: MessageRole::User,
-            content: vec![ContentPart::Text { text: message_text }],
-            provider_metadata: None,
-        },
-    )
-    .await?;
-
-    // Emit so the FE updates the chat without waiting for a snapshot poll.
-    let _ = emit_event(
-        app,
-        &session,
-        None,
-        AssistantUiEvent::MessageCreated {
-            message: message.clone(),
-        },
-    );
-
-    // Spawn a follow-up run unless one is already in flight (e.g. a
-    // scheduler tick collided with feedback submission). If we can't
-    // resolve a provider connection, fall through silently — the message
-    // is still in the conversation and the next trigger will pick it up.
-    if repository::session_has_active_run(pool, &session.id)
-        .await
-        .unwrap_or(false)
-    {
-        return Ok(());
-    }
-    let Some(connection_id) = resolve_followup_connection(state, pool, &session, &descriptor).await
-    else {
-        return Ok(());
-    };
-    let connection = match provider_connection_by_id(state, &connection_id) {
-        Some(connection) => connection,
-        None => return Ok(()),
-    };
-
-    let run = repository::create_run(
-        pool,
-        CreateRunParams {
-            session_id: session.id.clone(),
-            status: RunStatus::Queued,
-            trigger: RunTrigger::UserMessage,
-            connection_id: connection.id.clone(),
-            provider_id: connection.provider_id.clone(),
-            model_id: connection.model_id.clone(),
-            usage: None,
-            error: None,
-        },
-    )
-    .await?;
-
-    let _ = emit_event(
-        app,
-        &session,
-        Some(&run.id),
-        AssistantUiEvent::RunQueued { run: run.clone() },
-    );
-
-    crate::commands::assistant::spawn_run_task(
-        pool.clone(),
-        app.clone(),
-        session.id.clone(),
-        run.id,
-        RunTrigger::UserMessage,
-        connection.id,
-    );
-
-    Ok(())
-}
-
-/// Build the user-message text appended to the chat after feedback is
-/// submitted. Wraps the original question and the user's answer in
-/// XML-style tags (a well-known model-attention hint) and adds a
-/// directive line so the LLM knows to apply the answer instead of
-/// re-asking. The workspace root is included when available, because
-/// answers like "use your workspace path" are otherwise ambiguous.
-fn format_task_feedback_message(
-    task_id: &str,
-    title: &str,
-    instructions: &str,
-    response: &str,
-    workspace_root: Option<&str>,
-) -> String {
-    let mut out = String::new();
-    out.push_str("<workspace_input_response>\n");
-    out.push_str(&format!(
-        "You previously created a workspace input request `{}` (task `{}`) with this content:\n\n",
-        title, task_id
-    ));
-    out.push_str("<request>\n");
-    out.push_str(instructions.trim());
-    out.push_str("\n</request>\n\n");
-    out.push_str("The user has now answered:\n\n");
-    out.push_str("<answer>\n");
-    out.push_str(response.trim());
-    out.push_str("\n</answer>\n\n");
-    if let Some(root) = workspace_root {
-        out.push_str(&format!("Workspace root path: `{}`\n\n", root));
-    }
-    out.push_str(
-        "The task is marked complete. Apply this answer to your pending plan and proceed; \
-         do not re-ask the same question.\n",
-    );
-    out.push_str("</workspace_input_response>");
-    out
-}
-
-/// Resolve a provider connection id for the follow-up run. Prefer the
-/// connection from the session's most recent run (same model + auth as
-/// the user has been seeing), and only fall back to the workspace's
-/// preferred provider when the session has no run history.
-async fn resolve_followup_connection(
-    state: &AppState,
-    pool: &DbPool,
-    session: &AssistantSession,
-    descriptor: &WorkspaceDescriptor,
-) -> Option<String> {
-    if let Ok(runs) = repository::list_runs(pool, &session.id).await {
-        if let Some(run) = runs.into_iter().next() {
-            return Some(run.connection_id);
-        }
-    }
-    resolve_workspace_provider_selection(state, descriptor)
-        .ok()
-        .and_then(|selection| selection.preferred_connection_id)
-}
-
-fn provider_connection_by_id(
-    state: &AppState,
-    connection_id: &str,
-) -> Option<crate::assistant::types::ProviderConnection> {
-    state
-        .config_manager
-        .lock()
-        .ok()?
-        .get_provider_connection(connection_id)
-}
-
 // =============================================================================
 // Workspace CRUD — create, list, delete general workspaces
 // =============================================================================
@@ -2087,7 +1824,6 @@ pub struct WorkspaceListEntry {
     pub running_task_count: i64,
     pub blocked_task_count: i64,
     pub failed_task_count: i64,
-    pub needs_user_input_task_count: i64,
     pub attention_task_count: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latest_attention_task_id: Option<String>,
@@ -2121,7 +1857,6 @@ struct WorkspaceTaskAttentionSummary {
     running_task_count: i64,
     blocked_task_count: i64,
     failed_task_count: i64,
-    needs_user_input_task_count: i64,
     latest_attention_task_id: Option<String>,
     latest_attention_task_title: Option<String>,
     latest_attention_task_status: Option<String>,
@@ -2131,7 +1866,7 @@ struct WorkspaceTaskAttentionSummary {
 
 impl WorkspaceTaskAttentionSummary {
     fn attention_task_count(&self) -> i64 {
-        self.blocked_task_count + self.failed_task_count + self.needs_user_input_task_count
+        self.blocked_task_count + self.failed_task_count
     }
 }
 
@@ -2257,7 +1992,6 @@ pub async fn workspace_list(state: State<'_, AppState>) -> Result<Vec<WorkspaceL
             running_task_count: task_attention.running_task_count,
             blocked_task_count: task_attention.blocked_task_count,
             failed_task_count: task_attention.failed_task_count,
-            needs_user_input_task_count: task_attention.needs_user_input_task_count,
             attention_task_count: task_attention.attention_task_count(),
             latest_attention_task_id: task_attention.latest_attention_task_id,
             latest_attention_task_title: task_attention.latest_attention_task_title,
@@ -2508,13 +2242,12 @@ async fn workspace_task_attention_summary(
     pool: &DbPool,
     _workspace_id: &str,
 ) -> Result<WorkspaceTaskAttentionSummary, String> {
-    let counts: (i64, i64, i64, i64) = sqlx::query_as(
+    let counts: (i64, i64, i64) = sqlx::query_as(
         r#"
         SELECT
             COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0),
             COALESCE(SUM(CASE WHEN status = 'blocked' AND attention_acknowledged_at IS NULL AND user_response_at IS NULL THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN status = 'failed' AND attention_acknowledged_at IS NULL AND user_response_at IS NULL THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN status = 'needs_user_input' AND attention_acknowledged_at IS NULL AND user_response_at IS NULL THEN 1 ELSE 0 END), 0)
+            COALESCE(SUM(CASE WHEN status = 'failed' AND attention_acknowledged_at IS NULL AND user_response_at IS NULL THEN 1 ELSE 0 END), 0)
         FROM workspace_tasks
         "#,
     )
@@ -2528,15 +2261,14 @@ async fn workspace_task_attention_summary(
             r#"
             SELECT id, title, status, result_summary, error, updated_at
             FROM workspace_tasks
-            WHERE status IN ('blocked', 'failed', 'needs_user_input')
+            WHERE status IN ('blocked', 'failed')
                 AND attention_acknowledged_at IS NULL
                 AND user_response_at IS NULL
             ORDER BY
                 CASE status
-                    WHEN 'needs_user_input' THEN 0
-                    WHEN 'blocked' THEN 1
-                    WHEN 'failed' THEN 2
-                    ELSE 3
+                    WHEN 'blocked' THEN 0
+                    WHEN 'failed' THEN 1
+                    ELSE 2
                 END,
                 updated_at DESC
             LIMIT 1
@@ -2550,7 +2282,6 @@ async fn workspace_task_attention_summary(
         running_task_count: counts.0,
         blocked_task_count: counts.1,
         failed_task_count: counts.2,
-        needs_user_input_task_count: counts.3,
         ..Default::default()
     };
 

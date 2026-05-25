@@ -74,6 +74,21 @@ export function useAssistantEvents() {
           store.setToolCall(sessionId, payload.tool_call);
           break;
 
+        case 'ask_user_requested':
+          // The `ask_user` tool is blocking the run waiting for input.
+          // Rust field names are snake_case via the serde envelope.
+          store.setAskUserPending(sessionId, {
+            pendingId: payload.pending_id,
+            question: payload.question,
+            options: payload.options || null,
+            extraContext: payload.extra_context || null,
+          });
+          break;
+
+        case 'ask_user_resolved':
+          store.clearAskUserPending(sessionId, payload.pending_id);
+          break;
+
         default:
           break;
       }

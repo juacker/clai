@@ -2,6 +2,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
+use crate::assistant::tools::ask_user::AskUserOption;
 use crate::assistant::types::{
     AssistantMessage, AssistantRun, AssistantSession, MessageId, RunId, ToolInvocation,
 };
@@ -61,6 +62,22 @@ pub enum AssistantUiEvent {
     },
     RunCancelled {
         run: AssistantRun,
+    },
+    /// The `ask_user` tool is awaiting a human answer. The FE renders an
+    /// inline answer block (radio for options, textarea for free text)
+    /// keyed by `pending_id` and submits via `assistant_submit_user_input`.
+    AskUserRequested {
+        pending_id: String,
+        question: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        options: Option<Vec<AskUserOption>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extra_context: Option<String>,
+    },
+    /// The `ask_user` tool has received the user's answer; the inline
+    /// block can be cleared.
+    AskUserResolved {
+        pending_id: String,
     },
 }
 

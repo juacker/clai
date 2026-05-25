@@ -36,7 +36,6 @@ const formatNextRun = (seconds) => {
 const TASK_STATUS_LABEL = {
   blocked: 'Blocked',
   failed: 'Failed',
-  needs_user_input: 'Needs input',
 };
 
 const CARD_STATUS_LABEL = {
@@ -48,11 +47,7 @@ const CARD_STATUS_LABEL = {
 
 const deriveCardStatus = (ws, isProcessing, hasPendingApprovals) => {
   if ((ws.failedTaskCount || 0) > 0) return 'critical';
-  if (
-    hasPendingApprovals ||
-    (ws.blockedTaskCount || 0) > 0 ||
-    (ws.needsUserInputTaskCount || 0) > 0
-  ) return 'attention';
+  if (hasPendingApprovals || (ws.blockedTaskCount || 0) > 0) return 'attention';
   if (isProcessing) return 'running';
   return 'idle';
 };
@@ -60,7 +55,6 @@ const deriveCardStatus = (ws, isProcessing, hasPendingApprovals) => {
 const ATTENTION_PILLS = [
   { key: 'failed', countField: 'failedTaskCount', label: 'failed', tone: 'critical' },
   { key: 'blocked', countField: 'blockedTaskCount', label: 'blocked', tone: 'attention' },
-  { key: 'needs_input', countField: 'needsUserInputTaskCount', label: 'needs input', tone: 'attention' },
 ];
 
 const Fleet = () => {

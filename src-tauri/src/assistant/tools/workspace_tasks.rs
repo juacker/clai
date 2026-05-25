@@ -40,17 +40,6 @@ pub struct GetWorkspaceTaskResultParams {
     pub task_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct RequestWorkspaceUserInputParams {
-    pub title: String,
-    pub question: String,
-    #[serde(default)]
-    pub context: Option<String>,
-    #[serde(default)]
-    pub requested_action: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkspaceTaskResponse {
@@ -143,11 +132,6 @@ pub async fn execute(
             let params: GetWorkspaceTaskResultParams = serde_json::from_value(params)
                 .map_err(|e| format!("Invalid workspace_getTaskResult params: {}", e))?;
             get_task_result(deps, context, params).await
-        }
-        "workspace_requestUserInput" => {
-            let params: RequestWorkspaceUserInputParams = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid workspace_requestUserInput params: {}", e))?;
-            request_user_input(deps, context, params).await
         }
         _ => Err(format!("Unknown workspace task tool: {}", tool_name)),
     }
@@ -306,7 +290,7 @@ async fn assign_task(
                      Task title: {}\n\n\
                      Instructions:\n{}\n\n\
                      Work only with the current workspace context and available tools. \
-                     Return a concise result summary. If blocked by missing capability, context, permission, or runtime failure, start your response with `BLOCKED:`. If you specifically need user feedback or approval, start your response with `NEEDS_USER_INPUT:` and describe the decision or input needed.",
+                     Return a concise result summary. If blocked by missing capability, context, permission, or runtime failure, start your response with `BLOCKED:` and describe the blocker. If you need a human decision, call the `ask_user` tool directly — do not surface the question via your text response.",
                     task_id, title, instructions
                 ),
             }],
@@ -367,86 +351,6 @@ async fn get_task_result(
     let workspace_id = workspace_id_from_context(context)?;
     let task = load_task(&deps.pool, &workspace_id, &params.task_id).await?;
 
-    Ok(serde_json::json!({
-        "ok": true,
-        "task": task_to_response(task)?,
-    }))
-}
-
-async fn request_user_input(
-    deps: &AssistantDeps,
-    context: &ToolExecutionContext,
-    params: RequestWorkspaceUserInputParams,
-) -> Result<serde_json::Value, String> {
-    let workspace_id = workspace_id_from_context(context)?;
-    let title = params.title.trim();
-    let question = params.question.trim();
-    if title.is_empty() {
-        return Err("User input request title is required.".to_string());
-    }
-    if question.is_empty() {
-        return Err("User input request question is required.".to_string());
-    }
-
-    let app_state = deps.app.state::<AppState>();
-    let manager = current_manager_workspace_agent_row(app_state.inner(), context, &workspace_id)?;
-    let creator_workspace_agent_id = find_workspace_agent_for_definition(
-        app_state.inner(),
-        &workspace_id,
-        context.automation_id.as_deref(),
-    )?;
-    let context_text = params
-        .context
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let requested_action = params
-        .requested_action
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-
-    let mut instructions = format!("Question for the user:\n{}", question);
-    if let Some(context_text) = context_text {
-        instructions.push_str("\n\nContext:\n");
-        instructions.push_str(context_text);
-    }
-    if let Some(requested_action) = requested_action {
-        instructions.push_str("\n\nRequested action:\n");
-        instructions.push_str(requested_action);
-    }
-
-    let task_id = uuid::Uuid::new_v4().to_string();
-    create_task_row(
-        &deps.pool,
-        &task_id,
-        creator_workspace_agent_id.as_deref(),
-        &manager,
-        title,
-        &instructions,
-    )
-    .await?;
-
-    let result_json = serde_json::json!({
-        "kind": "needs_user_input",
-        "reason": question,
-        "requestedAction": requested_action,
-    });
-    update_task_status(
-        &deps.pool,
-        &task_id,
-        "needs_user_input",
-        None,
-        None,
-        None,
-        Some(question),
-        Some(&result_json),
-        false,
-    )
-    .await?;
-    let _ = emit_task_attention_event(&deps.app, &deps.pool, &workspace_id, &task_id).await;
-
-    let task = load_task(&deps.pool, &workspace_id, &task_id).await?;
     Ok(serde_json::json!({
         "ok": true,
         "task": task_to_response(task)?,
@@ -681,39 +585,6 @@ fn load_workspace_agent_row(
         .find(|row| row.id == workspace_agent_id))
 }
 
-fn current_manager_workspace_agent_row(
-    state: &AppState,
-    context: &ToolExecutionContext,
-    workspace_id: &str,
-) -> Result<WorkspaceAgentRow, String> {
-    if let Some(manager) = context
-        .workspace_agents
-        .iter()
-        .find(|agent| agent.is_default)
-    {
-        if let Some(row) = load_workspace_agent_row(state, workspace_id, &manager.id)? {
-            return Ok(row);
-        }
-    }
-
-    if let Some(current_agent_definition_id) = context.automation_id.as_deref() {
-        if let Some(workspace_agent_id) = find_workspace_agent_for_definition(
-            state,
-            workspace_id,
-            Some(current_agent_definition_id),
-        )? {
-            if let Some(row) = load_workspace_agent_row(state, workspace_id, &workspace_agent_id)? {
-                return Ok(row);
-            }
-        }
-    }
-
-    Err(
-        "Could not resolve the workspace manager assignment for this user input request."
-            .to_string(),
-    )
-}
-
 fn find_workspace_agent_for_definition(
     state: &AppState,
     workspace_id: &str,
@@ -930,7 +801,7 @@ async fn emit_task_attention_event(
 }
 
 fn is_attention_status(status: &str) -> bool {
-    matches!(status, "blocked" | "failed" | "needs_user_input")
+    matches!(status, "blocked" | "failed")
 }
 
 fn classify_worker_status(summary: Option<&str>, fallback: &'static str) -> &'static str {
@@ -938,9 +809,7 @@ fn classify_worker_status(summary: Option<&str>, fallback: &'static str) -> &'st
         return fallback;
     };
 
-    if summary.starts_with("NEEDS_USER_INPUT:") || summary.starts_with("USER_INPUT:") {
-        "needs_user_input"
-    } else if summary.starts_with("BLOCKED:") {
+    if summary.starts_with("BLOCKED:") {
         "blocked"
     } else {
         fallback
@@ -1052,8 +921,10 @@ mod tests {
     }
 
     #[test]
-    fn is_attention_status_needs_user_input() {
-        assert!(is_attention_status("needs_user_input"));
+    fn is_attention_status_needs_user_input_is_false() {
+        // `needs_user_input` is no longer a status — the `ask_user` tool
+        // blocks the run inline, so the row never enters that state.
+        assert!(!is_attention_status("needs_user_input"));
     }
 
     #[test]
@@ -1086,18 +957,12 @@ mod tests {
     }
 
     #[test]
-    fn classify_worker_status_needs_user_input_prefix() {
+    fn classify_worker_status_needs_user_input_prefix_falls_through() {
+        // The NEEDS_USER_INPUT prefix is no longer special-cased — the
+        // `ask_user` tool is the only channel for human-input questions.
         assert_eq!(
             classify_worker_status(Some("NEEDS_USER_INPUT: Please review."), "completed"),
-            "needs_user_input"
-        );
-    }
-
-    #[test]
-    fn classify_worker_status_user_input_prefix() {
-        assert_eq!(
-            classify_worker_status(Some("USER_INPUT: What is your decision?"), "completed"),
-            "needs_user_input"
+            "completed"
         );
     }
 

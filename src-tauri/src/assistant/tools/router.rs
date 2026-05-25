@@ -1,8 +1,7 @@
 use tauri::Manager;
 
 use crate::assistant::engine::AssistantDeps;
-use crate::assistant::tools::local;
-use crate::assistant::tools::workspace_tasks;
+use crate::assistant::tools::{ask_user, local, workspace_tasks};
 use crate::AppState;
 
 use super::ToolExecutionContext;
@@ -35,12 +34,10 @@ pub async fn execute_tool(
             "Global agent tools are no longer available. Use workspace-local task delegation instead."
                 .to_string(),
         ),
-        "workspace_listAgents"
-        | "workspace_assignTask"
-        | "workspace_getTaskResult"
-        | "workspace_requestUserInput" => {
+        "workspace_listAgents" | "workspace_assignTask" | "workspace_getTaskResult" => {
             workspace_tasks::execute(deps, context, name_for_dispatch, params).await
         }
+        "ask_user" => ask_user::execute(deps, context, params).await,
         _ => execute_external_mcp_tool(deps, context, tool_name, params).await,
     }
 }

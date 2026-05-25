@@ -93,12 +93,6 @@
   border-color: color-mix(in srgb, var(--color-critical) 30%, transparent);
 }
 
-.status_needs_user_input {
-  background: color-mix(in srgb, var(--color-warning, #d29922) 14%, transparent);
-  color: var(--color-warning, #d29922);
-  border-color: color-mix(in srgb, var(--color-warning, #d29922) 30%, transparent);
-}
-
 .closeButton {
   appearance: none;
   background: transparent;

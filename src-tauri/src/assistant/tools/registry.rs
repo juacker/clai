@@ -1,6 +1,6 @@
+use crate::assistant::tools::ask_user::AskUserParams;
 use crate::assistant::tools::workspace_tasks::{
     AssignWorkspaceTaskParams, GetWorkspaceTaskResultParams, ListWorkspaceAgentsParams,
-    RequestWorkspaceUserInputParams,
 };
 use crate::assistant::types::{SessionContext, ToolDefinition};
 use crate::config::ShellAccessMode;
@@ -25,9 +25,9 @@ pub fn available_tools(
             "workspace_getTaskResult",
             "Read the current status and result of a workspace-local task by task ID.",
         ));
-        tools.push(tool::<RequestWorkspaceUserInputParams>(
-            "workspace_requestUserInput",
-            "Create a workspace-visible request for user feedback, approval, or missing information. Use this when work is blocked on a human decision.",
+        tools.push(tool::<AskUserParams>(
+            "ask_user",
+            "Ask the human a question and BLOCK until they answer. The question is rendered inline in the chat with an interactive answer control (radio buttons when `options` are provided, with an automatic \"Other\" free-text fallback; a plain textarea otherwise). Use this whenever you need a human decision before proceeding — do NOT phrase the question as plain assistant text expecting them to reply in the next turn; use this tool instead so the run pauses, the question is unmistakable, and the answer is returned to you as the tool_result. Returns `{answer: string, selectedOptionIndex?: number}`.",
         ));
     }
 

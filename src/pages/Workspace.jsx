@@ -5,6 +5,7 @@ import WorkspaceSettingsModal from '../components/Settings/WorkspaceSettingsModa
 import WorkspaceTaskTranscriptPanel from '../components/WorkspaceTaskTranscriptPanel';
 import WorkspaceFilePreviewPanel from '../components/WorkspaceFilePreviewPanel';
 import { assistantClient, useAssistantStore } from '../assistant';
+import AskUserPanel from '../components/AskUserPanel/AskUserPanel';
 import ChatMessageList from '../components/AssistantChat/ChatMessageList';
 import InlineApprovalCard from '../components/InlineApprovalCard';
 import InlinePathGrantCard from '../components/InlinePathGrantCard';
@@ -16,7 +17,6 @@ import {
   getWorkspaceSnapshot,
   runWorkspaceNow,
   setWorkspaceSchedulePaused,
-  submitWorkspaceTaskFeedback,
 } from '../workspace/client';
 import styles from './Workspace.module.css';
 
@@ -87,11 +87,10 @@ const TASK_STATUS_LABEL = {
   completed: 'Completed',
   failed: 'Failed',
   blocked: 'Blocked',
-  needs_user_input: 'Needs input',
 };
 
 const isTaskAttention = (task) => (
-  (task.status === 'blocked' || task.status === 'failed' || task.status === 'needs_user_input')
+  (task.status === 'blocked' || task.status === 'failed')
   && !task.attentionAcknowledgedAt
   && !task.userResponseAt
 );
@@ -176,7 +175,6 @@ const WorkspaceAgentsPanel = ({
 
 const WorkspaceTasksPanel = ({ workspaceId, tasks, onChanged, onViewTask }) => {
   const visibleTasks = tasks || [];
-  const [feedbackDrafts, setFeedbackDrafts] = useState({});
   const [busyTaskId, setBusyTaskId] = useState('');
   const [error, setError] = useState('');
 
@@ -193,27 +191,6 @@ const WorkspaceTasksPanel = ({ workspaceId, tasks, onChanged, onViewTask }) => {
       setBusyTaskId('');
     }
   }, [busyTaskId, onChanged, workspaceId]);
-
-  const handleSubmitFeedback = useCallback(async (taskId) => {
-    if (busyTaskId) return;
-    const response = (feedbackDrafts[taskId] || '').trim();
-    if (!response) {
-      setError('Feedback cannot be empty.');
-      return;
-    }
-
-    setBusyTaskId(taskId);
-    setError('');
-    try {
-      await submitWorkspaceTaskFeedback(workspaceId, taskId, response);
-      setFeedbackDrafts((current) => ({ ...current, [taskId]: '' }));
-      await onChanged();
-    } catch (err) {
-      setError(typeof err === 'string' ? err : (err?.message || 'Failed to submit feedback.'));
-    } finally {
-      setBusyTaskId('');
-    }
-  }, [busyTaskId, feedbackDrafts, onChanged, workspaceId]);
 
   return (
     <section className={styles.taskActivity} aria-label="Workspace task activity">
@@ -232,7 +209,6 @@ const WorkspaceTasksPanel = ({ workspaceId, tasks, onChanged, onViewTask }) => {
             const statusLabel = TASK_STATUS_LABEL[task.status] || task.status;
             const detail = task.error || task.resultSummary || task.instructions;
             const needsAttention = isTaskAttention(task);
-            const draft = feedbackDrafts[task.id] || '';
             return (
               <div key={task.id} className={styles.taskItem}>
                 <div className={styles.taskMain}>
@@ -250,54 +226,7 @@ const WorkspaceTasksPanel = ({ workspaceId, tasks, onChanged, onViewTask }) => {
                   {detail && (
                     <p className={styles.taskSummary}>{detail}</p>
                   )}
-                  {task.userResponse && (
-                    <p className={styles.taskUserResponse}>
-                      User response: {task.userResponse}
-                    </p>
-                  )}
-                  {needsAttention && task.status === 'needs_user_input' && (
-                    <div className={styles.taskFeedbackBox}>
-                      <textarea
-                        className={styles.taskFeedbackInput}
-                        value={draft}
-                        onChange={(event) => setFeedbackDrafts((current) => ({
-                          ...current,
-                          [task.id]: event.target.value,
-                        }))}
-                        placeholder="Reply for the manager"
-                        rows={3}
-                        disabled={busyTaskId === task.id}
-                      />
-                      <div className={styles.taskActions}>
-                        <button
-                          type="button"
-                          className={styles.taskActionPrimary}
-                          onClick={() => handleSubmitFeedback(task.id)}
-                          disabled={busyTaskId === task.id || !draft.trim()}
-                        >
-                          Submit response
-                        </button>
-                        <button
-                          type="button"
-                          className={styles.taskAction}
-                          onClick={() => handleAcknowledge(task.id)}
-                          disabled={busyTaskId === task.id}
-                        >
-                          Mark reviewed
-                        </button>
-                        {task.sessionId && (
-                          <button
-                            type="button"
-                            className={styles.taskAction}
-                            onClick={() => onViewTask?.(task)}
-                          >
-                            View log
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {needsAttention && task.status !== 'needs_user_input' && (
+                  {needsAttention && (
                     <div className={styles.taskActions}>
                       <button
                         type="button"
@@ -651,6 +580,7 @@ const ChatFirstLayout = ({ sessionId, workspaceId, messages, toolCalls, streamin
           streamingText={streamingText}
           isStreaming={isStreaming}
         />
+        <AskUserPanel sessionId={sessionId} />
         <InlineApprovalCard workspaceId={workspaceId} />
         <InlinePathGrantCard workspaceId={workspaceId} />
       </>

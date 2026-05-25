@@ -11,7 +11,6 @@ const AUTO_DISMISS_MS = 10000;
 const STATUS_LABEL = {
   blocked: 'Blocked',
   failed: 'Failed',
-  needs_user_input: 'Needs input',
 };
 
 const notificationText = (payload) => (

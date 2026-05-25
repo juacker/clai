@@ -8,7 +8,6 @@ const TASK_STATUS_LABEL = {
   running: 'Running',
   completed: 'Completed',
   failed: 'Failed',
-  needs_user_input: 'Needs input',
   cancelled: 'Cancelled',
 };
 

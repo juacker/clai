@@ -16,6 +16,12 @@ const createInitialSessionState = (session) => ({
   toolCalls: [],
   streamingTextByMessageId: {},
   isStreaming: false,
+  // `null` when the agent isn't currently asking. While set, the
+  // chat renders an inline answer block: { pendingId, question,
+  // options?, extraContext? }. The pendingId is the round-trip key
+  // back to the blocking `ask_user` tool via the
+  // `assistant_submit_user_input` Tauri command.
+  pendingAskUser: null,
 });
 
 const useAssistantStore = create(
@@ -128,6 +134,25 @@ const useAssistantStore = create(
             // gaps, where no text deltas are flowing.
             s.isStreaming = true;
           }
+        }),
+
+      setAskUserPending: (sessionId, request) =>
+        set((state) => {
+          const s = state.sessions[sessionId];
+          if (!s) return;
+          s.pendingAskUser = request;
+        }),
+
+      clearAskUserPending: (sessionId, pendingId) =>
+        set((state) => {
+          const s = state.sessions[sessionId];
+          if (!s) return;
+          // Only clear if the pending id matches — guards against an
+          // out-of-order resolve event for an older request landing after
+          // a newer request was already raised.
+          if (!s.pendingAskUser) return;
+          if (pendingId && s.pendingAskUser.pendingId !== pendingId) return;
+          s.pendingAskUser = null;
         }),
 
       setToolCall: (sessionId, toolCall) =>
