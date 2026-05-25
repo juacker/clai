@@ -317,6 +317,7 @@ pub fn run() {
             commands::permissions::list_pending_permission_requests,
             commands::path_grants::submit_path_grant_decision,
             commands::path_grants::list_pending_path_grant_requests,
+            commands::system::open_external_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
