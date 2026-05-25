@@ -76,18 +76,32 @@ pub struct WorkspaceSchedule {
 /// Discriminated union describing *how* the manager's next run is
 /// computed. Stored inline on [`WorkspaceSchedule`] and consumed by
 /// [`crate::agents::schedule::compute_next_run_at`].
+///
+/// Note the dual rename: `rename_all = "camelCase"` only affects
+/// **variant** names (so the JSON tag reads as `"interval"` /
+/// `"cron"`); `rename_all_fields = "camelCase"` is the separate
+/// attribute that also renames the **fields inside each variant**.
+/// Without it, the JSON would need snake_case field names like
+/// `interval_minutes`, but the frontend (and serde-style consistency
+/// with the rest of the config) sends `intervalMinutes`. Earlier
+/// shipping omitted `rename_all_fields` plus had a `#[serde(default)]`
+/// on `interval_minutes`, which silently turned the missing field
+/// into `0` and tripped the "interval must be ≥1" validator —
+/// surfacing as a confusing save error when the user's interval was
+/// actually 24h.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ScheduleKind {
     /// Fire `N` minutes after the previous completion. Stable in the
     /// face of long-running tasks: a tick that takes 10 minutes pushes
     /// the next fire 10 minutes later, guaranteeing inter-run quiet
     /// time. Doesn't let the user pin to a particular clock-time — for
     /// that, use `Cron`.
-    Interval {
-        #[serde(default)]
-        interval_minutes: u32,
-    },
+    Interval { interval_minutes: u32 },
     /// Fire at the next wall-clock time matching a 5-field Vixie cron
     /// expression in the given IANA timezone (e.g. `0 9 * * 1-5` in
     /// `America/New_York` = weekdays at 9am NY-local across DST).

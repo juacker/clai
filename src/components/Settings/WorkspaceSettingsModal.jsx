@@ -427,15 +427,17 @@ const GeneralSection = ({ workspaceId, snapshot, onSaved }) => {
 // Workspace / Schedule
 // ──────────────────────────────────────────────────────────────────────────
 
-// Common cron patterns surfaced as a dropdown — keeps simple cases
+// Common cron patterns surfaced as chips — keeps simple cases
 // one-click and lets users escape to free-text for anything custom.
+// Labels are short enough to fit on a chip; the cron value itself
+// shows in the input below as visual confirmation.
 const CRON_PRESETS = [
-  { label: 'Every hour on the hour', value: '0 * * * *' },
-  { label: 'Every day at 9:00 AM', value: '0 9 * * *' },
-  { label: 'Every day at midnight', value: '0 0 * * *' },
-  { label: 'Every weekday at 9:00 AM', value: '0 9 * * 1-5' },
-  { label: 'Every Monday at 9:00 AM', value: '0 9 * * 1' },
-  { label: 'First of the month at midnight', value: '0 0 1 * *' },
+  { label: 'Hourly', value: '0 * * * *' },
+  { label: 'Daily 9am', value: '0 9 * * *' },
+  { label: 'Daily midnight', value: '0 0 * * *' },
+  { label: 'Weekdays 9am', value: '0 9 * * 1-5' },
+  { label: 'Mondays 9am', value: '0 9 * * 1' },
+  { label: 'Monthly', value: '0 0 1 * *' },
 ];
 
 const initialScheduleKindFromSnapshot = (snapshot) => {
@@ -449,12 +451,36 @@ const initialScheduleKindFromSnapshot = (snapshot) => {
   return { type: 'interval', intervalMinutes: 30 };
 };
 
-const formatUnixMsForUserLocale = (ms) => {
+// Compact absolute time — drops seconds and the year if it matches
+// today's so the preview list stays scannable.
+const formatPreviewAbsolute = (ms) => {
   try {
-    return new Date(ms).toLocaleString();
+    const d = new Date(ms);
+    const sameYear = d.getFullYear() === new Date().getFullYear();
+    return d.toLocaleString(undefined, {
+      year: sameYear ? undefined : 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   } catch {
     return new Date(ms).toISOString();
   }
+};
+
+// Coarse "in 3h" / "in 2d" string. Anything past 30 days falls back
+// to the absolute date so the relative side stays meaningful.
+const formatPreviewRelative = (ms) => {
+  const delta = ms - Date.now();
+  if (!Number.isFinite(delta) || delta <= 0) return 'now';
+  const min = Math.round(delta / 60_000);
+  if (min < 60) return `in ${min}m`;
+  const hr = Math.round(min / 60);
+  if (hr < 48) return `in ${hr}h`;
+  const day = Math.round(hr / 24);
+  if (day < 30) return `in ${day}d`;
+  return ''; // too far out — let the absolute side carry it
 };
 
 const ScheduleSection = ({ workspaceId, snapshot, onSaved }) => {
@@ -636,81 +662,104 @@ const ScheduleSection = ({ workspaceId, snapshot, onSaved }) => {
       </div>
 
       <div className={styles.field}>
-        <label className={styles.label} htmlFor="ws-schedule-type">Schedule type</label>
-        <select
-          id="ws-schedule-type"
-          className={styles.input}
-          value={scheduleKind.type}
-          onChange={(e) => updateKindType(e.target.value)}
-          disabled={busy || !enabled}
-        >
-          <option value="interval">Interval (every N minutes, anchored to last completion)</option>
-          <option value="cron">Cron (fire at a specific time / day)</option>
-        </select>
+        <label className={styles.label}>Schedule type</label>
+        <div className={styles.segmented} role="tablist" aria-label="Schedule type">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={scheduleKind.type === 'interval'}
+            className={`${styles.segmentedOption} ${
+              scheduleKind.type === 'interval' ? styles.segmentedOptionActive : ''
+            }`}
+            onClick={() => updateKindType('interval')}
+            disabled={busy || !enabled}
+          >
+            Interval
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={scheduleKind.type === 'cron'}
+            className={`${styles.segmentedOption} ${
+              scheduleKind.type === 'cron' ? styles.segmentedOptionActive : ''
+            }`}
+            onClick={() => updateKindType('cron')}
+            disabled={busy || !enabled}
+          >
+            Cron
+          </button>
+        </div>
       </div>
 
       {scheduleKind.type === 'interval' && (
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="ws-interval">Interval</label>
-          <IntervalSelect
-            id="ws-interval"
-            value={scheduleKind.intervalMinutes}
-            onChange={(v) =>
-              setScheduleKind((prev) => ({ ...prev, intervalMinutes: Number(v) }))
-            }
-            disabled={busy || !enabled}
-          />
-          <span className={styles.hint}>
-            {enabled
-              ? 'How often the main agent runs while not paused. Anchored to the previous completion.'
-              : 'Stored for later if you re-enable scheduling.'}
-          </span>
+        <div className={styles.scheduleCard}>
+          <div className={styles.field} style={{ marginBottom: 0 }}>
+            <label className={styles.label} htmlFor="ws-interval">Interval</label>
+            <IntervalSelect
+              id="ws-interval"
+              value={scheduleKind.intervalMinutes}
+              onChange={(v) =>
+                setScheduleKind((prev) => ({ ...prev, intervalMinutes: Number(v) }))
+              }
+              disabled={busy || !enabled}
+            />
+            <span className={styles.hint}>
+              {enabled
+                ? 'Fires N minutes after the previous completion. Use Cron for fixed-time schedules.'
+                : 'Stored for later if you re-enable scheduling.'}
+            </span>
+          </div>
         </div>
       )}
 
       {scheduleKind.type === 'cron' && (
-        <>
+        <div className={styles.scheduleCard}>
           <div className={styles.field}>
-            <label className={styles.label} htmlFor="ws-cron-preset">Common patterns</label>
-            <select
-              id="ws-cron-preset"
-              className={styles.input}
-              value=""
-              onChange={(e) => {
-                if (!e.target.value) return;
-                setScheduleKind((prev) => ({ ...prev, expression: e.target.value }));
-              }}
-              disabled={busy || !enabled}
-            >
-              <option value="">Pick a preset or write your own below…</option>
-              {CRON_PRESETS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label} ({p.value})</option>
-              ))}
-            </select>
+            <label className={styles.label}>Quick patterns</label>
+            <div className={styles.presetRow}>
+              {CRON_PRESETS.map((p) => {
+                const active = scheduleKind.expression === p.value;
+                return (
+                  <button
+                    key={p.value}
+                    type="button"
+                    className={`${styles.presetChip} ${active ? styles.presetChipActive : ''}`}
+                    onClick={() =>
+                      setScheduleKind((prev) => ({ ...prev, expression: p.value }))
+                    }
+                    disabled={busy || !enabled}
+                    title={p.value}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className={styles.field}>
-            <label className={styles.label} htmlFor="ws-cron-expr">
-              Cron expression (5 fields: minute hour day-of-month month day-of-week)
-            </label>
+            <label className={styles.label} htmlFor="ws-cron-expr">Cron expression</label>
             <input
               id="ws-cron-expr"
               type="text"
-              className={styles.input}
+              className={styles.cronInput}
               value={scheduleKind.expression || ''}
               onChange={(e) =>
                 setScheduleKind((prev) => ({ ...prev, expression: e.target.value }))
               }
-              placeholder="e.g. 0 9 * * 1-5"
+              placeholder="0 9 * * 1-5"
               disabled={busy || !enabled}
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="off"
             />
+            <span className={styles.hint}>
+              5 fields: minute · hour · day-of-month · month · day-of-week
+            </span>
           </div>
 
           <div className={styles.field}>
-            <label className={styles.label} htmlFor="ws-cron-tz">Timezone (IANA)</label>
+            <label className={styles.label} htmlFor="ws-cron-tz">Timezone</label>
             <input
               id="ws-cron-tz"
               type="text"
@@ -719,59 +768,79 @@ const ScheduleSection = ({ workspaceId, snapshot, onSaved }) => {
               onChange={(e) =>
                 setScheduleKind((prev) => ({ ...prev, timezone: e.target.value }))
               }
-              placeholder="e.g. America/New_York"
+              placeholder="America/New_York"
               disabled={busy || !enabled}
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="off"
             />
-            <span className={styles.hint}>
-              Defaults to your system timezone ({hostTimezone}). Use any IANA name like
-              {' '}<code>UTC</code>, <code>Europe/Madrid</code>, etc.
+            <span className={styles.tzHint}>
+              IANA timezone name.
+              {scheduleKind.timezone !== hostTimezone && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className={styles.tzLink}
+                    onClick={() =>
+                      setScheduleKind((prev) => ({ ...prev, timezone: hostTimezone }))
+                    }
+                    disabled={busy || !enabled}
+                  >
+                    Use system timezone ({hostTimezone})
+                  </button>
+                </>
+              )}
             </span>
           </div>
 
-          <div className={styles.field}>
-            <label className={styles.label}>Next 3 fire times</label>
+          <div className={styles.field} style={{ marginBottom: 0 }}>
+            <label className={styles.label}>Next runs</label>
             {previewError && (
               <div className={styles.errorBanner}>{previewError}</div>
             )}
             {!previewError && previewTimes.length === 0 && (
-              <span className={styles.hint}>
-                Enter a valid expression + timezone to see the next runs.
+              <span className={styles.previewEmpty}>
+                Enter a valid expression and timezone to preview upcoming runs.
               </span>
             )}
             {!previewError && previewTimes.length > 0 && (
-              <ul className={styles.cronPreviewList}>
-                {previewTimes.map((ms) => (
-                  <li key={ms}>{formatUnixMsForUserLocale(ms)}</li>
-                ))}
+              <ul className={styles.previewList}>
+                {previewTimes.map((ms) => {
+                  const rel = formatPreviewRelative(ms);
+                  return (
+                    <li key={ms} className={styles.previewItem}>
+                      <span className={styles.previewAbsolute}>
+                        {formatPreviewAbsolute(ms)}
+                      </span>
+                      {rel && <span className={styles.previewRelative}>{rel}</span>}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
-        </>
+        </div>
       )}
 
       {snapshot?.scheduleEnabled && (
-        <div className={styles.field}>
-          <label className={styles.toggleRow}>
-            <span className={styles.toggleLabel}>
-              {paused ? 'Schedule is paused' : 'Schedule is running'}
-            </span>
-            <button
-              type="button"
-              className={styles.secondaryButton}
-              onClick={handleTogglePaused}
-              disabled={busy}
-            >
-              {paused ? 'Resume' : 'Pause'}
-            </button>
-          </label>
-          <span className={styles.scheduleStatus}>
-            {paused
-              ? 'The scheduler will skip this workspace until resumed.'
-              : 'Next tick fires on the configured interval.'}
+        <div className={styles.statusBar}>
+          <span className={styles.statusBadge}>
+            <span
+              className={`${styles.statusDot} ${
+                paused ? styles.statusDotPaused : styles.statusDotRunning
+              }`}
+            />
+            {paused ? 'Paused' : 'Running'}
           </span>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={handleTogglePaused}
+            disabled={busy}
+          >
+            {paused ? 'Resume' : 'Pause'}
+          </button>
         </div>
       )}
 

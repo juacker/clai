@@ -213,4 +213,46 @@ mod tests {
             Vec::<i64>::new()
         );
     }
+
+    /// Regression for the `intervalMinutes` deserialization bug: the FE
+    /// sends camelCase keys and serde must honor them for fields *inside*
+    /// the variant. Without `rename_all_fields = "camelCase"` on the
+    /// enum, the field name stays snake_case (`interval_minutes`) and a
+    /// camelCase payload silently defaults to 0, tripping the
+    /// "≥1 minute" validator with a confusing message.
+    #[test]
+    fn camel_case_payload_round_trips_through_serde() {
+        let json = r#"{"type":"interval","intervalMinutes":1440}"#;
+        let kind: ScheduleKind = serde_json::from_str(json).unwrap();
+        match kind {
+            ScheduleKind::Interval { interval_minutes } => {
+                assert_eq!(interval_minutes, 1440);
+            }
+            other => panic!("expected Interval, got {:?}", other),
+        }
+        // Round-trip back to JSON: must serialize as camelCase too so
+        // the on-disk shape matches the wire shape.
+        let reserialized = serde_json::to_string(&ScheduleKind::Interval {
+            interval_minutes: 1440,
+        })
+        .unwrap();
+        assert!(reserialized.contains("intervalMinutes"));
+        assert!(!reserialized.contains("interval_minutes"));
+    }
+
+    #[test]
+    fn camel_case_cron_payload_round_trips_through_serde() {
+        let json = r#"{"type":"cron","expression":"0 9 * * 1-5","timezone":"UTC"}"#;
+        let kind: ScheduleKind = serde_json::from_str(json).unwrap();
+        match kind {
+            ScheduleKind::Cron {
+                expression,
+                timezone,
+            } => {
+                assert_eq!(expression, "0 9 * * 1-5");
+                assert_eq!(timezone, "UTC");
+            }
+            other => panic!("expected Cron, got {:?}", other),
+        }
+    }
 }
