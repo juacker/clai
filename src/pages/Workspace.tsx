@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, type NavigateFunction } from 'react-router-dom';
 import { workspaceDeleteAgent } from '../api/client';
 import WorkspaceSettingsModal from '../components/Settings/WorkspaceSettingsModal';
 import WorkspaceTaskTranscriptPanel from '../components/WorkspaceTaskTranscriptPanel';
 import WorkspaceFilePreviewPanel from '../components/WorkspaceFilePreviewPanel';
-import { assistantClient, useAssistantStore } from '../assistant';
+import * as assistantClient from '../assistant/client';
+import useAssistantStore from '../assistant/sessionStore';
 import AskUserPanel from '../components/AskUserPanel/AskUserPanel';
 import ChatMessageList from '../components/AssistantChat/ChatMessageList';
 import InlineApprovalCard from '../components/InlineApprovalCard';
@@ -18,6 +19,14 @@ import {
   runWorkspaceNow,
   setWorkspaceSchedulePaused,
 } from '../workspace/client';
+import type {
+  AssistantMessage,
+  AssistantRun,
+  ToolInvocation,
+  WorkspaceFileEntry,
+  WorkspaceSnapshot,
+  WorkspaceTaskResponse,
+} from '../generated/bindings';
 import styles from './Workspace.module.css';
 
 const DEFAULT_WORKSPACE_ID = 'default';
@@ -27,9 +36,48 @@ const LIGHTWEIGHT_SNAPSHOT_OPTIONS = {
   includeFiles: false,
 };
 
-const formatTimestamp = (timestamp) => {
-  if (!timestamp) return 'Never';
-  return new Date(timestamp).toLocaleString([], {
+type NumericTimestamp = number | bigint | null | undefined;
+type ActivePanel = 'agents' | 'tasks' | 'memories' | 'artifacts' | null;
+type PreviewEntry = { kind: 'memory' | 'artifact'; entry: WorkspaceFileEntry };
+type SettingsSelection =
+  | { kind: 'general' }
+  | { kind: 'agent'; agentId: string }
+  | { kind: 'new-agent' };
+type SnapshotOptions = Parameters<typeof getWorkspaceSnapshot>[1];
+type ShortcutHandlers = { onToggleChat?: () => void };
+type VirtualizedListProps<T> = {
+  items: T[];
+  itemKey: (item: T, index: number) => string;
+  renderItem: (item: T, index: number) => React.ReactNode;
+  className?: string;
+  estimateSize?: number;
+  overscan?: number;
+  gap?: number;
+};
+
+const WorkspaceVirtualizedList = VirtualizedList as <T>(
+  props: VirtualizedListProps<T>
+) => React.ReactElement | null;
+const useWorkspaceKeyboardShortcuts = useKeyboardShortcuts as unknown as (
+  handlers: ShortcutHandlers,
+  enabled?: boolean
+) => void;
+
+const toNumber = (value: NumericTimestamp): number | null => {
+  if (value === null || value === undefined) return null;
+  return typeof value === 'bigint' ? Number(value) : value;
+};
+
+const errorMessage = (error: unknown, fallback: string): string => {
+  if (typeof error === 'string') return error;
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+const formatTimestamp = (timestamp: NumericTimestamp): string => {
+  const value = toNumber(timestamp);
+  if (!value) return 'Never';
+  return new Date(value).toLocaleString([], {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -37,9 +85,10 @@ const formatTimestamp = (timestamp) => {
   });
 };
 
-const formatRelativeTime = (timestamp) => {
-  if (!timestamp) return 'Never';
-  const diffMs = Date.now() - timestamp;
+const formatRelativeTime = (timestamp: NumericTimestamp): string => {
+  const value = toNumber(timestamp);
+  if (!value) return 'Never';
+  const diffMs = Date.now() - value;
   const diffSec = Math.max(0, Math.floor(diffMs / 1000));
   if (diffSec < 60) return `${diffSec}s ago`;
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
@@ -47,22 +96,27 @@ const formatRelativeTime = (timestamp) => {
   return `${Math.floor(diffSec / 86400)}d ago`;
 };
 
-const formatNextRun = (seconds) => {
-  if (seconds === null || seconds === undefined) return null;
-  if (seconds <= 0) return 'Due now';
-  if (seconds < 60) return `In ${seconds}s`;
-  if (seconds < 3600) return `In ${Math.floor(seconds / 60)}m`;
-  if (seconds < 86400) return `In ${Math.floor(seconds / 3600)}h`;
-  return `In ${Math.floor(seconds / 86400)}d`;
+const formatNextRun = (seconds: number | bigint | null | undefined): string | null => {
+  const value = toNumber(seconds);
+  if (value === null) return null;
+  if (value <= 0) return 'Due now';
+  if (value < 60) return `In ${value}s`;
+  if (value < 3600) return `In ${Math.floor(value / 60)}m`;
+  if (value < 86400) return `In ${Math.floor(value / 3600)}h`;
+  return `In ${Math.floor(value / 86400)}d`;
 };
 
-const formatSchedulePill = (snapshot) => {
+const formatSchedulePill = (snapshot: WorkspaceSnapshot | null): string | null => {
   if (!snapshot?.scheduleEnabled) return null;
   const kind = snapshot.scheduleKind;
-  let cadence = null;
+  let cadence: string | null = null;
   if (kind?.type === 'interval' && Number(kind.intervalMinutes) > 0) {
     cadence = `every ${Number(kind.intervalMinutes)}m`;
-  } else if (kind?.type === 'cron' && typeof kind.expression === 'string' && kind.expression.trim()) {
+  } else if (
+    kind?.type === 'cron' &&
+    typeof kind.expression === 'string' &&
+    kind.expression.trim()
+  ) {
     cadence = `cron: ${kind.expression.trim()}`;
   }
   if (snapshot.schedulePaused) {
@@ -71,14 +125,16 @@ const formatSchedulePill = (snapshot) => {
   return cadence ? `Periodic · ${cadence}` : 'Periodic';
 };
 
-const getLastRunInfo = (runs) => {
+const getLastRunInfo = (runs: AssistantRun[] | null | undefined): AssistantRun | null => {
   if (!runs || runs.length === 0) return null;
   // runs are sorted newest first from backend
-  const last = [...runs].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+  const last = [...runs].sort(
+    (a, b) => (toNumber(b.startedAt) || 0) - (toNumber(a.startedAt) || 0)
+  )[0];
   return last;
 };
 
-const RUN_STATUS_LABEL = {
+const RUN_STATUS_LABEL: Partial<Record<AssistantRun['status'], string>> = {
   completed: 'Completed',
   completed_with_warnings: 'Warnings',
   failed: 'Failed',
@@ -87,7 +143,7 @@ const RUN_STATUS_LABEL = {
   cancelled: 'Cancelled',
 };
 
-const TASK_STATUS_LABEL = {
+const TASK_STATUS_LABEL: Record<string, string> = {
   queued: 'Queued',
   running: 'Running',
   completed: 'Completed',
@@ -95,21 +151,30 @@ const TASK_STATUS_LABEL = {
   blocked: 'Blocked',
 };
 
-const isTaskAttention = (task) => (
-  (task.status === 'blocked' || task.status === 'failed')
-  && !task.attentionAcknowledgedAt
-  && !task.userResponseAt
-);
+const ACTIVE_RUN_STATUSES: AssistantRun['status'][] = ['queued', 'running', 'waiting_for_tool'];
+
+const isTaskAttention = (task: WorkspaceTaskResponse): boolean =>
+  (task.status === 'blocked' || task.status === 'failed') &&
+  !task.attentionAcknowledgedAt &&
+  !task.userResponseAt;
+
+interface WorkspaceAgentsPanelProps {
+  workspaceId: string;
+  snapshot: WorkspaceSnapshot | null;
+  busy: string;
+  error: string;
+  onOpenEdit: (workspaceAgentId: string) => void;
+  onRemove: (workspaceAgentId: string) => void;
+}
 
 const WorkspaceAgentsPanel = ({
   workspaceId,
   snapshot,
   busy,
   error,
-  onOpenCreate,
   onOpenEdit,
   onRemove,
-}) => {
+}: WorkspaceAgentsPanelProps) => {
   const assignedAgents = snapshot?.assignedAgents || [];
   const isManageable = snapshot?.kind !== 'agent' && workspaceId !== DEFAULT_WORKSPACE_ID;
 
@@ -170,33 +235,48 @@ const WorkspaceAgentsPanel = ({
         </div>
       ) : (
         <div className={styles.agentRosterEmpty}>
-          The workspace itself is the entry-point agent — its configuration is
-          edited via the gear icon next to the workspace title. Agents added
-          here are optional helpers the workspace can call as tools.
+          The workspace itself is the entry-point agent — its configuration is edited via the gear
+          icon next to the workspace title. Agents added here are optional helpers the workspace can
+          call as tools.
         </div>
       )}
     </section>
   );
 };
 
-const WorkspaceTasksPanel = ({ workspaceId, tasks, onChanged, onViewTask }) => {
+interface WorkspaceTasksPanelProps {
+  workspaceId: string;
+  tasks: WorkspaceTaskResponse[];
+  onChanged: () => void | Promise<void>;
+  onViewTask?: (task: WorkspaceTaskResponse) => void;
+}
+
+const WorkspaceTasksPanel = ({
+  workspaceId,
+  tasks,
+  onChanged,
+  onViewTask,
+}: WorkspaceTasksPanelProps) => {
   const visibleTasks = tasks || [];
   const [busyTaskId, setBusyTaskId] = useState('');
   const [error, setError] = useState('');
 
-  const handleAcknowledge = useCallback(async (taskId) => {
-    if (busyTaskId) return;
-    setBusyTaskId(taskId);
-    setError('');
-    try {
-      await acknowledgeWorkspaceTask(workspaceId, taskId);
-      await onChanged();
-    } catch (err) {
-      setError(typeof err === 'string' ? err : (err?.message || 'Failed to acknowledge task.'));
-    } finally {
-      setBusyTaskId('');
-    }
-  }, [busyTaskId, onChanged, workspaceId]);
+  const handleAcknowledge = useCallback(
+    async (taskId: string) => {
+      if (busyTaskId) return;
+      setBusyTaskId(taskId);
+      setError('');
+      try {
+        await acknowledgeWorkspaceTask(workspaceId, taskId);
+        await onChanged();
+      } catch (err) {
+        setError(errorMessage(err, 'Failed to acknowledge task.'));
+      } finally {
+        setBusyTaskId('');
+      }
+    },
+    [busyTaskId, onChanged, workspaceId]
+  );
 
   return (
     <section className={styles.taskActivity} aria-label="Workspace task activity">
@@ -220,7 +300,9 @@ const WorkspaceTasksPanel = ({ workspaceId, tasks, onChanged, onViewTask }) => {
                 <div className={styles.taskMain}>
                   <div className={styles.taskTitleRow}>
                     <span className={styles.taskTitle}>{task.title}</span>
-                    <span className={`${styles.taskStatus} ${styles[`taskStatus_${task.status}`] || ''}`}>
+                    <span
+                      className={`${styles.taskStatus} ${styles[`taskStatus_${task.status}`] || ''}`}
+                    >
                       {statusLabel}
                     </span>
                   </div>
@@ -229,9 +311,7 @@ const WorkspaceTasksPanel = ({ workspaceId, tasks, onChanged, onViewTask }) => {
                     <span className={styles.metricSeparator}>{'\u00B7'}</span>
                     <span>{formatRelativeTime(task.updatedAt)}</span>
                   </div>
-                  {detail && (
-                    <p className={styles.taskSummary}>{detail}</p>
-                  )}
+                  {detail && <p className={styles.taskSummary}>{detail}</p>}
                   {needsAttention && (
                     <div className={styles.taskActions}>
                       <button
@@ -272,33 +352,41 @@ const WorkspaceTasksPanel = ({ workspaceId, tasks, onChanged, onViewTask }) => {
       ) : (
         <div className={styles.agentRosterEmpty}>No delegated tasks yet.</div>
       )}
-
     </section>
   );
 };
 
-const WorkspaceFileEntryList = ({ entries, emptyMessage, onSelect }) => {
-  const itemKey = useCallback((entry) => entry.path, []);
-  const renderEntry = useCallback((entry) => (
-    <button
-      type="button"
-      className={styles.drawerListItem}
-      onClick={() => onSelect?.(entry)}
-    >
-      <div className={styles.drawerListName}>{entry.name}</div>
-      <div className={styles.drawerListMeta}>
-        {entry.path}
-        {entry.updatedAt ? ` · ${formatTimestamp(entry.updatedAt)}` : ''}
-      </div>
-    </button>
-  ), [onSelect]);
+interface WorkspaceFileEntryListProps {
+  entries: WorkspaceFileEntry[];
+  emptyMessage: string;
+  onSelect?: (entry: WorkspaceFileEntry) => void;
+}
+
+const WorkspaceFileEntryList = ({
+  entries,
+  emptyMessage,
+  onSelect,
+}: WorkspaceFileEntryListProps) => {
+  const itemKey = useCallback((entry: WorkspaceFileEntry) => entry.path, []);
+  const renderEntry = useCallback(
+    (entry: WorkspaceFileEntry) => (
+      <button type="button" className={styles.drawerListItem} onClick={() => onSelect?.(entry)}>
+        <div className={styles.drawerListName}>{entry.name}</div>
+        <div className={styles.drawerListMeta}>
+          {entry.path}
+          {entry.updatedAt ? ` · ${formatTimestamp(entry.updatedAt)}` : ''}
+        </div>
+      </button>
+    ),
+    [onSelect]
+  );
 
   if (!entries || entries.length === 0) {
     return <div className={styles.drawerEmpty}>{emptyMessage}</div>;
   }
 
   return (
-    <VirtualizedList
+    <WorkspaceVirtualizedList
       items={entries}
       itemKey={itemKey}
       renderItem={renderEntry}
@@ -316,9 +404,42 @@ const WorkspaceFileEntryList = ({ entries, emptyMessage, onSelect }) => {
 // reconstruct the folder hierarchy from each entry's `path` and render it
 // as a collapsible tree with one folder/file per row.
 
-const buildArtifactTree = (artifacts) => {
-  const root = {
-    kind: 'folder', name: '', path: '', depth: -1, children: new Map(),
+type ArtifactFileNode = {
+  kind: 'file';
+  name: string;
+  path: string;
+  depth: number;
+  entry: WorkspaceFileEntry;
+};
+
+type ArtifactFolderDraft = {
+  kind: 'folder';
+  name: string;
+  path: string;
+  depth: number;
+  children: Map<string, ArtifactDraftNode>;
+};
+
+type ArtifactDraftNode = ArtifactFolderDraft | ArtifactFileNode;
+
+type ArtifactFolderNode = {
+  kind: 'folder';
+  name: string;
+  path: string;
+  depth: number;
+  children: ArtifactTreeNode[];
+  fileCount: number;
+};
+
+type ArtifactTreeNode = ArtifactFolderNode | ArtifactFileNode;
+
+const buildArtifactTree = (artifacts: WorkspaceFileEntry[]): ArtifactFolderNode => {
+  const root: ArtifactFolderDraft = {
+    kind: 'folder',
+    name: '',
+    path: '',
+    depth: -1,
+    children: new Map(),
   };
   for (const entry of artifacts) {
     const parts = (entry.path || entry.name || '').split('/').filter(Boolean);
@@ -340,25 +461,34 @@ const buildArtifactTree = (artifacts) => {
         child = { kind: 'folder', name: part, path: childPath, depth: i, children: new Map() };
         node.children.set(part, child);
       }
-      node = child;
+      if (child.kind === 'folder') {
+        node = child;
+      }
     }
   }
 
-  const finalize = (node) => {
-    if (node.kind === 'file') return 1;
+  const finalize = (node: ArtifactDraftNode): ArtifactTreeNode => {
+    if (node.kind === 'file') return node;
     const arr = [...node.children.values()];
     arr.sort((a, b) => {
       if (a.kind !== b.kind) return a.kind === 'folder' ? -1 : 1;
       return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
     });
-    node.children = arr;
-    let count = 0;
-    for (const child of arr) count += finalize(child);
-    node.fileCount = count;
-    return count;
+    const children = arr.map(finalize);
+    const fileCount = children.reduce(
+      (count, child) => count + (child.kind === 'file' ? 1 : child.fileCount),
+      0
+    );
+    return {
+      kind: 'folder',
+      name: node.name,
+      path: node.path,
+      depth: node.depth,
+      children,
+      fileCount,
+    };
   };
-  finalize(root);
-  return root;
+  return finalize(root) as ArtifactFolderNode;
 };
 
 // When the search box has content, walk the tree once and collect every
@@ -366,11 +496,11 @@ const buildArtifactTree = (artifacts) => {
 // uses this set both as a visibility filter and (since it contains all
 // ancestor folders) as the effective "expanded" set — so matches always
 // reveal themselves without disturbing the user's manual expansion state.
-const computeArtifactMatches = (root, query) => {
+const computeArtifactMatches = (root: ArtifactFolderNode, query: string): Set<string> | null => {
   if (!query) return null;
   const q = query.toLowerCase();
-  const matched = new Set();
-  const walk = (node) => {
+  const matched = new Set<string>();
+  const walk = (node: ArtifactTreeNode): boolean => {
     if (node.kind === 'file') {
       if (node.name.toLowerCase().includes(q) || node.path.toLowerCase().includes(q)) {
         matched.add(node.path);
@@ -394,9 +524,13 @@ const computeArtifactMatches = (root, query) => {
   return matched;
 };
 
-const flattenArtifactTree = (root, expanded, matches) => {
-  const out = [];
-  const walk = (node) => {
+const flattenArtifactTree = (
+  root: ArtifactFolderNode,
+  expanded: Set<string>,
+  matches: Set<string> | null
+): ArtifactTreeNode[] => {
+  const out: ArtifactTreeNode[] = [];
+  const walk = (node: ArtifactFolderNode) => {
     for (const child of node.children) {
       if (matches && !matches.has(child.path)) continue;
       out.push(child);
@@ -409,7 +543,7 @@ const flattenArtifactTree = (root, expanded, matches) => {
   return out;
 };
 
-const HighlightedText = ({ text, query }) => {
+const HighlightedText = ({ text, query }: { text: string; query: string }): React.ReactNode => {
   if (!query) return text;
   const idx = text.toLowerCase().indexOf(query.toLowerCase());
   if (idx === -1) return text;
@@ -422,12 +556,17 @@ const HighlightedText = ({ text, query }) => {
   );
 };
 
-const ChevronIcon = ({ open }) => (
+const ChevronIcon = ({ open }: { open: boolean }) => (
   <svg
     className={`${styles.fileTreeChevron} ${open ? styles.fileTreeChevronOpen : ''}`}
-    width="10" height="10" viewBox="0 0 24 24"
-    fill="none" stroke="currentColor" strokeWidth="2.5"
-    strokeLinecap="round" strokeLinejoin="round"
+    width="10"
+    height="10"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     aria-hidden="true"
   >
     <polyline points="9 6 15 12 9 18" />
@@ -436,9 +575,14 @@ const ChevronIcon = ({ open }) => (
 
 const FolderGlyph = () => (
   <svg
-    width="14" height="14" viewBox="0 0 24 24"
-    fill="none" stroke="currentColor" strokeWidth="2"
-    strokeLinecap="round" strokeLinejoin="round"
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     aria-hidden="true"
   >
     <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -447,9 +591,14 @@ const FolderGlyph = () => (
 
 const FileGlyph = () => (
   <svg
-    width="14" height="14" viewBox="0 0 24 24"
-    fill="none" stroke="currentColor" strokeWidth="2"
-    strokeLinecap="round" strokeLinejoin="round"
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     aria-hidden="true"
   >
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -457,7 +606,15 @@ const FileGlyph = () => (
   </svg>
 );
 
-const ArtifactTreeRow = ({ node, isExpanded, query, onToggle, onSelect }) => {
+interface ArtifactTreeRowProps {
+  node: ArtifactTreeNode;
+  isExpanded: boolean;
+  query: string;
+  onToggle: (path: string) => void;
+  onSelect?: (entry: WorkspaceFileEntry) => void;
+}
+
+const ArtifactTreeRow = ({ node, isExpanded, query, onToggle, onSelect }: ArtifactTreeRowProps) => {
   const isFolder = node.kind === 'folder';
   const handleClick = () => {
     if (isFolder) onToggle(node.path);
@@ -475,24 +632,29 @@ const ArtifactTreeRow = ({ node, isExpanded, query, onToggle, onSelect }) => {
       <span className={styles.fileTreeChevronSlot}>
         {isFolder && <ChevronIcon open={isExpanded} />}
       </span>
-      <span className={styles.fileTreeIcon}>
-        {isFolder ? <FolderGlyph /> : <FileGlyph />}
-      </span>
+      <span className={styles.fileTreeIcon}>{isFolder ? <FolderGlyph /> : <FileGlyph />}</span>
       <span className={styles.fileTreeName}>
         <HighlightedText text={node.name} query={query} />
       </span>
       <span className={styles.fileTreeMeta}>
         {isFolder
           ? node.fileCount
-          : (node.entry?.updatedAt ? formatTimestamp(node.entry.updatedAt) : '')}
+          : node.entry?.updatedAt
+            ? formatTimestamp(node.entry.updatedAt)
+            : ''}
       </span>
     </button>
   );
 };
 
-const ArtifactsList = ({ artifacts, onSelect }) => {
+interface ArtifactsListProps {
+  artifacts: WorkspaceFileEntry[];
+  onSelect?: (entry: WorkspaceFileEntry) => void;
+}
+
+const ArtifactsList = ({ artifacts, onSelect }: ArtifactsListProps) => {
   const [query, setQuery] = useState('');
-  const [expanded, setExpanded] = useState(() => new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const initializedRef = useRef(false);
 
   const tree = useMemo(() => buildArtifactTree(artifacts || []), [artifacts]);
@@ -511,17 +673,14 @@ const ArtifactsList = ({ artifacts, onSelect }) => {
   }, [tree]);
 
   const trimmedQuery = query.trim();
-  const matches = useMemo(
-    () => computeArtifactMatches(tree, trimmedQuery),
-    [tree, trimmedQuery]
-  );
+  const matches = useMemo(() => computeArtifactMatches(tree, trimmedQuery), [tree, trimmedQuery]);
 
   const visibleNodes = useMemo(
     () => flattenArtifactTree(tree, matches || expanded, matches),
     [tree, expanded, matches]
   );
 
-  const handleToggle = useCallback((path) => {
+  const handleToggle = useCallback((path: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
@@ -530,16 +689,19 @@ const ArtifactsList = ({ artifacts, onSelect }) => {
     });
   }, []);
 
-  const itemKey = useCallback((node) => node.path, []);
-  const renderItem = useCallback((node) => (
-    <ArtifactTreeRow
-      node={node}
-      isExpanded={matches ? true : expanded.has(node.path)}
-      query={trimmedQuery}
-      onToggle={handleToggle}
-      onSelect={onSelect}
-    />
-  ), [expanded, matches, trimmedQuery, handleToggle, onSelect]);
+  const itemKey = useCallback((node: ArtifactTreeNode) => node.path, []);
+  const renderItem = useCallback(
+    (node: ArtifactTreeNode) => (
+      <ArtifactTreeRow
+        node={node}
+        isExpanded={matches ? true : expanded.has(node.path)}
+        query={trimmedQuery}
+        onToggle={handleToggle}
+        onSelect={onSelect}
+      />
+    ),
+    [expanded, matches, trimmedQuery, handleToggle, onSelect]
+  );
 
   return (
     <div className={styles.searchableList}>
@@ -548,7 +710,7 @@ const ArtifactsList = ({ artifacts, onSelect }) => {
           type="text"
           className={styles.searchInput}
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setQuery(event.target.value)}
           placeholder={`Search artifacts (${total})`}
           aria-label="Search artifacts"
         />
@@ -558,7 +720,7 @@ const ArtifactsList = ({ artifacts, onSelect }) => {
       ) : visibleNodes.length === 0 ? (
         <div className={styles.drawerEmpty}>No artifacts match &quot;{query}&quot;.</div>
       ) : (
-        <VirtualizedList
+        <WorkspaceVirtualizedList
           items={visibleNodes}
           itemKey={itemKey}
           renderItem={renderItem}
@@ -572,7 +734,7 @@ const ArtifactsList = ({ artifacts, onSelect }) => {
   );
 };
 
-const WorkspaceAttentionBanner = ({ tasks }) => {
+const WorkspaceAttentionBanner = ({ tasks }: { tasks: WorkspaceTaskResponse[] }) => {
   const attentionTasks = (tasks || []).filter(isTaskAttention);
 
   if (attentionTasks.length === 0) {
@@ -621,6 +783,25 @@ const WorkspaceHeader = ({
   runNowBusy,
   pauseBusy,
   stopBusy,
+}: {
+  snapshot: WorkspaceSnapshot | null;
+  workspaceId: string;
+  isGenericWorkspace: boolean;
+  messages: AssistantMessage[];
+  memories: WorkspaceFileEntry[];
+  artifacts: WorkspaceFileEntry[];
+  navigate: NavigateFunction;
+  activePanel: ActivePanel;
+  setActivePanel: React.Dispatch<React.SetStateAction<ActivePanel>>;
+  onOpenWorkspaceSettings: () => void;
+  onRunNow: () => void | Promise<void>;
+  onTogglePause: (paused: boolean) => void | Promise<void>;
+  onStop: (runId: string | null) => void | Promise<void>;
+  activeRunId: string | null;
+  hasActiveRun: boolean;
+  runNowBusy: boolean;
+  pauseBusy: boolean;
+  stopBusy: boolean;
 }) => {
   const isAgent = snapshot?.kind === 'agent';
   const lastRun = getLastRunInfo(snapshot?.runs);
@@ -632,7 +813,7 @@ const WorkspaceHeader = ({
   // flight on this workspace. Matches Fleet's "isProcessing" check so the
   // Run-now button correctly disables while a run is mid-flight.
   const hasRunningTask = (snapshot?.tasks || []).some(
-    (task) => task.status === 'running' || task.status === 'queued',
+    (task) => task.status === 'running' || task.status === 'queued'
   );
   // Manager is invisible to the user — exclude it from the headline count so
   // the chip and the drawer (which already filters !isDefault) agree.
@@ -641,19 +822,29 @@ const WorkspaceHeader = ({
   const assignedAgentCount = (snapshot?.assignedAgents || []).length;
   const taskCount = snapshot?.tasks?.length || 0;
   const activeTaskCount = (snapshot?.tasks || []).filter(
-    (task) => task.status === 'running' || task.status === 'queued',
+    (task) => task.status === 'running' || task.status === 'queued'
   ).length;
 
   // Click a counter to open its panel; click again (or click another) to switch.
   // null = no panel open, chat takes the full content area.
-  const togglePanel = (panel) => {
+  const togglePanel = (panel: ActivePanel) => {
     setActivePanel((current) => (current === panel ? null : panel));
   };
 
-  const renderCounter = (panel, count, label, clickable = true, activeCount = 0) => {
+  const renderCounter = (
+    panel: ActivePanel,
+    count: number,
+    label: string,
+    clickable = true,
+    activeCount = 0
+  ) => {
     const isActive = activePanel === panel;
     if (!clickable) {
-      return <span className={styles.metric}>{count} {label}</span>;
+      return (
+        <span className={styles.metric}>
+          {count} {label}
+        </span>
+      );
     }
     return (
       <button
@@ -679,11 +870,7 @@ const WorkspaceHeader = ({
   return (
     <div className={styles.header}>
       <div className={styles.headerLeft}>
-        <button
-          type="button"
-          className={styles.breadcrumb}
-          onClick={() => navigate('/fleet')}
-        >
+        <button type="button" className={styles.breadcrumb} onClick={() => navigate('/fleet')}>
           Fleet
         </button>
         <span className={styles.breadcrumbSeparator}>/</span>
@@ -693,7 +880,7 @@ const WorkspaceHeader = ({
         {scheduleEnabled && (
           <span
             className={`${styles.schedulePill} ${schedulePaused ? styles.schedulePillPaused : styles.schedulePillActive}`}
-            title={schedulePillText}
+            title={schedulePillText || undefined}
           >
             {schedulePillText}
           </span>
@@ -718,13 +905,7 @@ const WorkspaceHeader = ({
             className={styles.runNowBtn}
             onClick={onRunNow}
             disabled={!onRunNow || hasRunningTask || runNowBusy}
-            title={
-              hasRunningTask
-                ? 'Already running'
-                : runNowBusy
-                ? 'Starting…'
-                : 'Run now'
-            }
+            title={hasRunningTask ? 'Already running' : runNowBusy ? 'Starting…' : 'Run now'}
             aria-label="Run now"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -742,10 +923,10 @@ const WorkspaceHeader = ({
               pauseBusy
                 ? 'Updating…'
                 : hasActiveRun
-                ? 'Pause schedule (current run will keep going — use Stop to cancel it)'
-                : hasRunningTask
-                ? 'Pause schedule (current run will finish)'
-                : 'Pause schedule'
+                  ? 'Pause schedule (current run will keep going — use Stop to cancel it)'
+                  : hasRunningTask
+                    ? 'Pause schedule (current run will finish)'
+                    : 'Pause schedule'
             }
             aria-label="Pause schedule"
           >
@@ -775,7 +956,16 @@ const WorkspaceHeader = ({
             title="Workspace settings"
             aria-label="Open workspace settings"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
@@ -819,7 +1009,23 @@ const WorkspaceHeader = ({
 // Chat is the workspace's primary surface. Memories, artifacts, tasks, and
 // member agents live in the drawer (toggled from the header counters) and
 // open in modals when inspected — the chat is never hidden.
-const ChatFirstLayout = ({ sessionId, workspaceId, messages, toolCalls, streamingText, isStreaming }) => (
+interface ChatFirstLayoutProps {
+  sessionId: string | null;
+  workspaceId: string;
+  messages: AssistantMessage[];
+  toolCalls: ToolInvocation[];
+  streamingText: Record<string, string>;
+  isStreaming: boolean;
+}
+
+const ChatFirstLayout = ({
+  sessionId,
+  workspaceId,
+  messages,
+  toolCalls,
+  streamingText,
+  isStreaming,
+}: ChatFirstLayoutProps) => (
   <div className={styles.chatFirstContent}>
     {messages.length > 0 ? (
       <>
@@ -836,13 +1042,23 @@ const ChatFirstLayout = ({ sessionId, workspaceId, messages, toolCalls, streamin
     ) : (
       <div className={styles.chatFirstEmpty}>
         <div className={styles.chatFirstEmptyIcon}>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="40"
+            height="40"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
         </div>
         <p className={styles.chatFirstEmptyTitle}>Start a conversation</p>
         <p className={styles.chatFirstEmptyText}>
-          Type a message in the terminal below to begin. This workspace can search the web, create documents, and use any attached MCP servers.
+          Type a message in the terminal below to begin. This workspace can search the web, create
+          documents, and use any attached MCP servers.
         </p>
       </div>
     )}
@@ -852,28 +1068,28 @@ const ChatFirstLayout = ({ sessionId, workspaceId, messages, toolCalls, streamin
 const Workspace = () => {
   const params = useParams();
   const navigate = useNavigate();
-  const { toggleChat } = useChatManager();
+  const { toggleChat } = useChatManager() as { toggleChat: () => void };
   const workspaceId = params.workspaceId || DEFAULT_WORKSPACE_ID;
   const isGenericWorkspace = workspaceId === DEFAULT_WORKSPACE_ID;
-  const [snapshot, setSnapshot] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
+  const [, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   // Which "drawer" is open in response to a counter click in the header.
   // null = chat-only. 'agents' | 'tasks' | 'memories' | 'artifacts' otherwise.
-  const [activePanel, setActivePanel] = useState(null);
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   // Slide-out side panels (only one may be open at a time):
   //   - previewEntry: { kind: 'memory' | 'artifact', entry } — file preview
   //   - viewingTask:  task object — task transcript log
   // Opening one clears the other; closing the drawer clears both.
-  const [previewEntry, setPreviewEntry] = useState(null);
-  const [viewingTask, setViewingTask] = useState(null);
+  const [previewEntry, setPreviewEntry] = useState<PreviewEntry | null>(null);
+  const [viewingTask, setViewingTask] = useState<WorkspaceTaskResponse | null>(null);
 
-  const openPreviewEntry = useCallback((next) => {
+  const openPreviewEntry = useCallback((next: PreviewEntry) => {
     setViewingTask(null);
     setPreviewEntry(next);
   }, []);
 
-  const openTaskTranscript = useCallback((task) => {
+  const openTaskTranscript = useCallback((task: WorkspaceTaskResponse) => {
     setPreviewEntry(null);
     setViewingTask(task);
   }, []);
@@ -896,18 +1112,20 @@ const Workspace = () => {
   //    modal opens to: gear icon -> General, drawer Edit -> agent:<id>,
   //    drawer "+ Add" -> new-agent. ────────────────────────────────────
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSelection, setSettingsSelection] = useState({ kind: 'general' });
+  const [settingsSelection, setSettingsSelection] = useState<SettingsSelection>({
+    kind: 'general',
+  });
   const [agentBusy, setAgentBusy] = useState('');
   const [agentError, setAgentError] = useState('');
   const sessionId = snapshot?.session?.id || null;
   const sessionState = useAssistantStore((state) =>
-    sessionId ? state.sessions[sessionId] : null
+    sessionId ? state.sessions[sessionId] || null : null
   );
-  const lastLoadedSessionUpdatedAtRef = useRef(null);
+  const lastLoadedSessionUpdatedAtRef = useRef<NumericTimestamp>(null);
 
   // Register Ctrl/Cmd+Shift+C to toggle chat panel — only for agent workspaces.
   // General workspaces embed chat directly in the page.
-  useKeyboardShortcuts({
+  useWorkspaceKeyboardShortcuts({
     onToggleChat: () => {
       if (snapshot?.kind === 'agent') {
         toggleChat();
@@ -915,76 +1133,82 @@ const Workspace = () => {
     },
   });
 
-  const loadSnapshot = useCallback(async (showSpinner = false, options = null) => {
-    if (showSpinner) {
-      setIsLoading(true);
-    }
+  const loadSnapshot = useCallback(
+    async (showSpinner = false, options: SnapshotOptions = null) => {
+      if (showSpinner) {
+        setIsLoading(true);
+      }
 
-    const isLightweight = !!options;
+      const isLightweight = options !== null;
 
-    try {
-      const nextSnapshot = await getWorkspaceSnapshot(workspaceId, options);
-      setSnapshot((current) => {
-        if (!isLightweight || !current) {
-          return nextSnapshot;
-        }
+      try {
+        const nextSnapshot = await getWorkspaceSnapshot(workspaceId, options);
+        setSnapshot((current) => {
+          if (!isLightweight || !current) {
+            return nextSnapshot;
+          }
 
-        return {
-          ...nextSnapshot,
-          messages: current.messages || [],
-          toolCalls: current.toolCalls || [],
-          memories: current.memories || [],
-          artifacts: current.artifacts || [],
-        };
-      });
-      setError('');
+          return {
+            ...nextSnapshot,
+            messages: current.messages || [],
+            toolCalls: current.toolCalls || [],
+            memories: current.memories || [],
+            artifacts: current.artifacts || [],
+          };
+        });
+        setError('');
 
-      if (nextSnapshot?.session) {
-        const store = useAssistantStore.getState();
-        store.setActiveSessionForTab(`workspace:${workspaceId}`, nextSnapshot.session.id);
+        if (nextSnapshot?.session) {
+          const store = useAssistantStore.getState();
+          store.setActiveSessionForTab(`workspace:${workspaceId}`, nextSnapshot.session.id);
 
-        const existingSession = store.sessions[nextSnapshot.session.id];
-        const needsInitialHydration = !existingSession;
-        const hasUnloadedUpdate = (
-          nextSnapshot.session.updatedAt
-          && lastLoadedSessionUpdatedAtRef.current !== nextSnapshot.session.updatedAt
-        );
-        const shouldHydrateSession = !isLightweight
-          || needsInitialHydration
-          || (hasUnloadedUpdate && !existingSession?.isStreaming);
+          const existingSession = store.sessions[nextSnapshot.session.id];
+          const needsInitialHydration = !existingSession;
+          const hasUnloadedUpdate =
+            nextSnapshot.session.updatedAt &&
+            lastLoadedSessionUpdatedAtRef.current !== nextSnapshot.session.updatedAt;
+          const shouldHydrateSession =
+            !isLightweight ||
+            needsInitialHydration ||
+            (hasUnloadedUpdate && !existingSession?.isStreaming);
 
-        if (shouldHydrateSession) {
-          const [messages, runs, toolCalls] = isLightweight
-            ? await Promise.all([
+          if (shouldHydrateSession) {
+            let messages: AssistantMessage[];
+            let runs: AssistantRun[];
+            let toolCalls: ToolInvocation[];
+            if (isLightweight) {
+              [messages, runs, toolCalls] = await Promise.all([
                 assistantClient.loadSessionMessages(nextSnapshot.session.id),
                 assistantClient.listRuns(nextSnapshot.session.id),
                 assistantClient.listToolCalls(nextSnapshot.session.id),
-              ])
-            : [
-                nextSnapshot.messages || [],
-                nextSnapshot.runs || [],
-                nextSnapshot.toolCalls || [],
-              ];
+              ]);
+            } else {
+              messages = nextSnapshot.messages || [];
+              runs = nextSnapshot.runs || [];
+              toolCalls = nextSnapshot.toolCalls || [];
+            }
 
-          store.loadSessionData(
-            nextSnapshot.session.id,
-            nextSnapshot.session,
-            messages,
-            runs,
-            toolCalls
-          );
-          lastLoadedSessionUpdatedAtRef.current = nextSnapshot.session.updatedAt || null;
+            store.loadSessionData(
+              nextSnapshot.session.id,
+              nextSnapshot.session,
+              messages,
+              runs,
+              toolCalls
+            );
+            lastLoadedSessionUpdatedAtRef.current = nextSnapshot.session.updatedAt || null;
+          }
         }
+      } catch (err) {
+        setError(errorMessage(err, 'Failed to load workspace.'));
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      setError(typeof err === 'string' ? err : (err?.message || 'Failed to load workspace.'));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [workspaceId]);
+    },
+    [workspaceId]
+  );
 
   // ── Workspace Settings modal openers ───────────────────────────────────
-  const openSettings = useCallback((selection) => {
+  const openSettings = useCallback((selection?: SettingsSelection | null) => {
     setSettingsSelection(selection || { kind: 'general' });
     setSettingsOpen(true);
     setAgentError('');
@@ -994,9 +1218,12 @@ const Workspace = () => {
     openSettings({ kind: 'general' });
   }, [openSettings]);
 
-  const openAgentEdit = useCallback((workspaceAgentId) => {
-    openSettings({ kind: 'agent', agentId: workspaceAgentId });
-  }, [openSettings]);
+  const openAgentEdit = useCallback(
+    (workspaceAgentId: string) => {
+      openSettings({ kind: 'agent', agentId: workspaceAgentId });
+    },
+    [openSettings]
+  );
 
   const openMemberCreate = useCallback(() => {
     openSettings({ kind: 'new-agent' });
@@ -1022,7 +1249,7 @@ const Workspace = () => {
       setError('');
       await loadSnapshot(false);
     } catch (err) {
-      setError(typeof err === 'string' ? err : (err?.message || 'Failed to start run.'));
+      setError(errorMessage(err, 'Failed to start run.'));
     } finally {
       setRunNowBusy(false);
     }
@@ -1034,55 +1261,62 @@ const Workspace = () => {
   // token — the engine flips RunStatus on its next checkpoint — so
   // clearing busy on resolve would re-arm the button while the run is
   // still streaming.
-  const [cancellingRunId, setCancellingRunId] = useState(null);
-  const handleStop = useCallback(async (runId) => {
-    if (!runId || cancellingRunId) return;
-    setCancellingRunId(runId);
-    try {
-      await assistantClient.cancelRun(runId);
-      setError('');
-      await loadSnapshot(false);
-    } catch (err) {
-      setError(typeof err === 'string' ? err : (err?.message || 'Failed to stop run.'));
-      setCancellingRunId(null);
-    }
-  }, [cancellingRunId, loadSnapshot]);
+  const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
+  const handleStop = useCallback(
+    async (runId: string | null) => {
+      if (!runId || cancellingRunId) return;
+      setCancellingRunId(runId);
+      try {
+        await assistantClient.cancelRun(runId);
+        setError('');
+        await loadSnapshot(false);
+      } catch (err) {
+        setError(errorMessage(err, 'Failed to stop run.'));
+        setCancellingRunId(null);
+      }
+    },
+    [cancellingRunId, loadSnapshot]
+  );
 
   const [pauseBusy, setPauseBusy] = useState(false);
-  const handleTogglePause = useCallback(async (nextPaused) => {
-    if (pauseBusy) return;
-    setPauseBusy(true);
-    // Optimistically flip the snapshot's pause flag so the button swaps
-    // immediately — the next snapshot poll will reconcile if the backend
-    // disagrees.
-    setSnapshot((current) => (current ? { ...current, schedulePaused: nextPaused } : current));
-    try {
-      await setWorkspaceSchedulePaused(workspaceId, nextPaused);
-      setError('');
-      await loadSnapshot(false);
-    } catch (err) {
-      setError(typeof err === 'string' ? err : (err?.message || 'Failed to update pause state.'));
-      setSnapshot((current) => (
-        current ? { ...current, schedulePaused: !nextPaused } : current
-      ));
-    } finally {
-      setPauseBusy(false);
-    }
-  }, [loadSnapshot, pauseBusy, workspaceId]);
+  const handleTogglePause = useCallback(
+    async (nextPaused: boolean) => {
+      if (pauseBusy) return;
+      setPauseBusy(true);
+      // Optimistically flip the snapshot's pause flag so the button swaps
+      // immediately — the next snapshot poll will reconcile if the backend
+      // disagrees.
+      setSnapshot((current) => (current ? { ...current, schedulePaused: nextPaused } : current));
+      try {
+        await setWorkspaceSchedulePaused(workspaceId, nextPaused);
+        setError('');
+        await loadSnapshot(false);
+      } catch (err) {
+        setError(errorMessage(err, 'Failed to update pause state.'));
+        setSnapshot((current) => (current ? { ...current, schedulePaused: !nextPaused } : current));
+      } finally {
+        setPauseBusy(false);
+      }
+    },
+    [loadSnapshot, pauseBusy, workspaceId]
+  );
 
-  const handleAgentRemove = useCallback(async (workspaceAgentId) => {
-    if (agentBusy) return;
-    setAgentBusy(`remove:${workspaceAgentId}`);
-    setAgentError('');
-    try {
-      await workspaceDeleteAgent(workspaceId, workspaceAgentId);
-      await loadSnapshot(false);
-    } catch (err) {
-      setAgentError(typeof err === 'string' ? err : (err?.message || 'Failed to remove agent.'));
-    } finally {
-      setAgentBusy('');
-    }
-  }, [agentBusy, loadSnapshot, workspaceId]);
+  const handleAgentRemove = useCallback(
+    async (workspaceAgentId: string) => {
+      if (agentBusy) return;
+      setAgentBusy(`remove:${workspaceAgentId}`);
+      setAgentError('');
+      try {
+        await workspaceDeleteAgent(workspaceId, workspaceAgentId);
+        await loadSnapshot(false);
+      } catch (err) {
+        setAgentError(errorMessage(err, 'Failed to remove agent.'));
+      } finally {
+        setAgentBusy('');
+      }
+    },
+    [agentBusy, loadSnapshot, workspaceId]
+  );
 
   useEffect(() => {
     lastLoadedSessionUpdatedAtRef.current = null;
@@ -1105,9 +1339,8 @@ const Workspace = () => {
   // header Stop button + hides Run-now while a run is mid-stream.
   // `snapshot.runs` is sorted newest-first by the backend; pick the first
   // non-terminal entry so we cancel the most recent activation.
-  const activeRun = (snapshot?.runs || []).find((run) =>
-    ['queued', 'running', 'waiting_for_tool'].includes(run?.status)
-  ) || null;
+  const activeRun =
+    (snapshot?.runs || []).find((run) => ACTIVE_RUN_STATUSES.includes(run.status)) || null;
   const hasActiveRun = !!activeRun;
   // Clear the "stopping…" lock once the cancelled run leaves the active
   // set. The cancel propagation is async (engine checkpoints), so we
@@ -1115,8 +1348,7 @@ const Workspace = () => {
   useEffect(() => {
     if (!cancellingRunId) return;
     const stillActive = (snapshot?.runs || []).some(
-      (run) => run.id === cancellingRunId
-        && ['queued', 'running', 'waiting_for_tool'].includes(run.status)
+      (run) => run.id === cancellingRunId && ACTIVE_RUN_STATUSES.includes(run.status)
     );
     if (!stillActive) setCancellingRunId(null);
   }, [snapshot, cancellingRunId]);
@@ -1150,7 +1382,9 @@ const Workspace = () => {
       <WorkspaceAttentionBanner tasks={tasks} />
 
       <div className={styles.workspaceBody}>
-        <div className={`${styles.workspaceMain} ${isSidePanelOpen ? styles.workspaceMainWithPreview : ''}`}>
+        <div
+          className={`${styles.workspaceMain} ${isSidePanelOpen ? styles.workspaceMainWithPreview : ''}`}
+        >
           <ChatFirstLayout
             sessionId={sessionId}
             workspaceId={workspaceId}
@@ -1171,10 +1405,7 @@ const Workspace = () => {
         )}
 
         {snapshot && activePanel === 'tasks' && viewingTask && (
-          <WorkspaceTaskTranscriptPanel
-            task={viewingTask}
-            onClose={() => setViewingTask(null)}
-          />
+          <WorkspaceTaskTranscriptPanel task={viewingTask} onClose={() => setViewingTask(null)} />
         )}
 
         {snapshot && activePanel && (
@@ -1184,18 +1415,18 @@ const Workspace = () => {
                 {activePanel.charAt(0).toUpperCase() + activePanel.slice(1)}
               </span>
               <div className={styles.workspaceDrawerActions}>
-                {activePanel === 'agents'
-                  && snapshot?.kind !== 'agent'
-                  && workspaceId !== DEFAULT_WORKSPACE_ID && (
-                  <button
-                    type="button"
-                    className={styles.workspaceDrawerAction}
-                    onClick={openMemberCreate}
-                    disabled={!!agentBusy}
-                  >
-                    + Add Agent
-                  </button>
-                )}
+                {activePanel === 'agents' &&
+                  snapshot?.kind !== 'agent' &&
+                  workspaceId !== DEFAULT_WORKSPACE_ID && (
+                    <button
+                      type="button"
+                      className={styles.workspaceDrawerAction}
+                      onClick={openMemberCreate}
+                      disabled={!!agentBusy}
+                    >
+                      + Add Agent
+                    </button>
+                  )}
                 <button
                   type="button"
                   className={styles.workspaceDrawerClose}
@@ -1219,7 +1450,6 @@ const Workspace = () => {
                   snapshot={snapshot}
                   busy={agentBusy}
                   error={agentError}
-                  onOpenCreate={openMemberCreate}
                   onOpenEdit={openAgentEdit}
                   onRemove={handleAgentRemove}
                 />

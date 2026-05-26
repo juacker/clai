@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::config::{bundled, AppConfig, SkillSourceKind};
 use crate::config::{ExecutionCapabilityConfig, FilesystemPathAccess, FilesystemPathGrant};
@@ -89,12 +90,13 @@ pub struct WorkspaceSchedule {
 /// into `0` and tripped the "interval must be ≥1" validator —
 /// surfacing as a confusing save error when the user's interval was
 /// actually 24h.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
+#[ts(export, export_to = "bindings.ts")]
 pub enum ScheduleKind {
     /// Fire `N` minutes after the previous completion. Stable in the
     /// face of long-running tasks: a tick that takes 10 minutes pushes

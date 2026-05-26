@@ -35,6 +35,32 @@ export type RunTrigger = "user_message" | "retry" | "scheduled" | "manual_automa
 
 export type RunUsage = { inputTokens: bigint | null, outputTokens: bigint | null, reasoningTokens: bigint | null, totalTokens: bigint | null, };
 
+/**
+ * Discriminated union describing *how* the manager's next run is
+ * computed. Stored inline on [`WorkspaceSchedule`] and consumed by
+ * [`crate::agents::schedule::compute_next_run_at`].
+ *
+ * Note the dual rename: `rename_all = "camelCase"` only affects
+ * **variant** names (so the JSON tag reads as `"interval"` /
+ * `"cron"`); `rename_all_fields = "camelCase"` is the separate
+ * attribute that also renames the **fields inside each variant**.
+ * Without it, the JSON would need snake_case field names like
+ * `interval_minutes`, but the frontend (and serde-style consistency
+ * with the rest of the config) sends `intervalMinutes`. Earlier
+ * shipping omitted `rename_all_fields` plus had a `#[serde(default)]`
+ * on `interval_minutes`, which silently turned the missing field
+ * into `0` and tripped the "interval must be ≥1" validator —
+ * surfacing as a confusing save error when the user's interval was
+ * actually 24h.
+ */
+export type ScheduleKind = { "type": "interval", intervalMinutes: number, } | { "type": "cron", expression: string, 
+/**
+ * IANA timezone name. Empty / unknown values are rejected by
+ * `compute_next_run_at` at save time so an invalid string can't
+ * silently fall through to UTC.
+ */
+timezone: string, };
+
 export type SessionContext = { spaceId: string | null, roomId: string | null, workspaceId: string | null, toolScopes: Array<string>, mcpServerIds: Array<string>, execution: unknown, netdataConversationId: string | null, cliSessionId: string | null, automationId: string | null, agentWorkspaceId: string | null, automationName: string | null, interAgentCall: InterAgentCallContext | null, workspaceAgents?: Array<WorkspaceAgentSummary>, };
 
 export type SessionKind = "interactive" | "background_job";
@@ -43,4 +69,44 @@ export type ToolCallStatus = "pending" | "running" | "completed" | "failed";
 
 export type ToolInvocation = { id: string, runId: string, sessionId: string, toolName: string, params: JsonValue, status: ToolCallStatus, result: JsonValue | null, error: string | null, startedAt: bigint, completedAt: bigint | null, };
 
+export type WorkspaceAgentResponse = { id: string, workspaceId: string, agentDefinitionId: string, displayName: string, role: string, enabled: boolean, isDefault: boolean, agentName: string | null, agentDescription: string | null, providerConnectionIds: Array<string>, skillIds: Array<string>, 
+/**
+ * MCP server IDs selected for this agent. Surfaced so the Fleet
+ * chat input (which routes messages to the workspace's default
+ * agent) can spin up a session with the right tool wiring.
+ */
+selectedMcpServerIds: Array<string>, 
+/**
+ * Execution-capability config (shell mode, allow/block prefixes,
+ * filesystem access, web access). Same rationale as
+ * `selected_mcp_server_ids` — needed to start a usable session
+ * from the Fleet view.
+ */
+execution: unknown, createdAt: bigint, updatedAt: bigint, };
+
 export type WorkspaceAgentSummary = { id: string, agentDefinitionId: string, displayName: string, role: string, isDefault: boolean, description?: string | null, };
+
+export type WorkspaceFileContent = { path: string, viewer: string, content: string, };
+
+export type WorkspaceFileEntry = { path: string, relativePath: string, name: string, viewer: string, size: bigint | null, updatedAt: bigint | null, preview: string | null, };
+
+export type WorkspaceListEntry = { id: string, kind: string, title: string, agentId: string | null, enabled: boolean, messageCount: bigint, artifactCount: bigint, memoryCount: bigint, assignedAgentCount: number, defaultManagerName: string | null, runningTaskCount: bigint, blockedTaskCount: bigint, failedTaskCount: bigint, attentionTaskCount: bigint, latestAttentionTaskId: string | null, latestAttentionTaskTitle: string | null, latestAttentionTaskStatus: string | null, latestAttentionTaskSummary: string | null, latestAttentionTaskUpdatedAt: bigint | null, scheduleEnabled: boolean, schedulePaused: boolean, 
+/**
+ * Schedule mode (interval vs cron). Empty when the workspace is
+ * not scheduled. The Fleet card reads this to render the cadence
+ * label (`every 5m` for Interval, `0 9 * * 1-5` for Cron).
+ */
+scheduleKind: ScheduleKind | null, nextRunInSeconds: bigint | null, createdAt: bigint, updatedAt: bigint, };
+
+export type WorkspaceSessionBinding = { session: AssistantSession, providerConnectionId: string | null, };
+
+export type WorkspaceSnapshot = { workspaceId: string, kind: string, title: string, agentId: string | null, assignedAgents: Array<WorkspaceAgentResponse>, tasks: Array<WorkspaceTaskResponse>, defaultWorkspaceAgentId: string | null, rootPath: string | null, providerConnectionIds: Array<string>, providerConnectionNames: Array<string>, selectedMcpServerIds: Array<string>, selectedMcpServerNames: Array<string>, session: AssistantSession | null, messages: Array<AssistantMessage>, runs: Array<AssistantRun>, toolCalls: Array<ToolInvocation>, memories: Array<WorkspaceFileEntry>, artifacts: Array<WorkspaceFileEntry>, enabled: boolean | null, scheduleEnabled: boolean, schedulePaused: boolean, 
+/**
+ * The workspace's schedule mode (interval vs cron). Empty when the
+ * workspace isn't scheduled. The frontend reads this to render the
+ * "every Nm" / "Cron: …" label and to populate the workspace
+ * settings modal.
+ */
+scheduleKind: ScheduleKind | null, nextRunInSeconds: bigint | null, };
+
+export type WorkspaceTaskResponse = { id: string, workspaceId: string, createdByWorkspaceAgentId: string | null, createdByDisplayName: string | null, assignedToWorkspaceAgentId: string, assignedAgentDefinitionId: string, assignedAgentDisplayName: string, title: string, instructions: string, status: string, resultSummary: string | null, error: string | null, sessionId: string | null, runId: string | null, createdAt: bigint, updatedAt: bigint, completedAt: bigint | null, attentionAcknowledgedAt: bigint | null, userResponse: string | null, userResponseAt: bigint | null, };

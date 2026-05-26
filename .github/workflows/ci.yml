@@ -43,6 +43,17 @@ jobs:
       - name: Lint frontend
         run: npm run lint
 
+      - name: Typecheck frontend
+        run: npm run typecheck
+
+      - name: Frontend tests
+        run: npm test
+
+      - name: Check generated bindings
+        run: |
+          npm run gen:bindings
+          git diff --exit-code src/generated/bindings.ts
+
       - name: Build frontend
         run: npm run build
 

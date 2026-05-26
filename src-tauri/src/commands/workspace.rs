@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use tauri::State;
+use ts_rs::TS;
 
 /// Tab context payload.
 ///
@@ -104,8 +105,9 @@ const SKIPPED_ARTIFACT_DIRS: &[&str] = &[
     "venv",
 ];
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct WorkspaceFileEntry {
     pub path: String,
     pub relative_path: String,
@@ -119,8 +121,9 @@ pub struct WorkspaceFileEntry {
     pub preview: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct WorkspaceSnapshot {
     pub workspace_id: String,
     pub kind: String,
@@ -192,8 +195,9 @@ impl WorkspaceSnapshotOptions {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct WorkspaceAgentResponse {
     pub id: String,
     pub workspace_id: String,
@@ -220,13 +224,15 @@ pub struct WorkspaceAgentResponse {
     /// `selected_mcp_server_ids` — needed to start a usable session
     /// from the Fleet view.
     #[serde(default)]
+    #[ts(type = "unknown")]
     pub execution: ExecutionCapabilityConfig,
     pub created_at: i64,
     pub updated_at: i64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct WorkspaceTaskResponse {
     pub id: String,
     pub workspace_id: String,
@@ -260,16 +266,18 @@ pub struct WorkspaceTaskResponse {
     pub user_response_at: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct WorkspaceSessionBinding {
     pub session: AssistantSession,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_connection_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct WorkspaceFileContent {
     pub path: String,
     pub viewer: String,
@@ -1816,8 +1824,9 @@ pub async fn workspace_acknowledge_task(
 // Workspace CRUD — create, list, delete general workspaces
 // =============================================================================
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct WorkspaceListEntry {
     pub id: String,
     pub kind: String,

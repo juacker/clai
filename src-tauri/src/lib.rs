@@ -44,10 +44,15 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use agents::SharedScheduler;
 use auth::TokenStorage;
-use config::ConfigManager;
 use tauri::Manager;
 use tokio::sync::Mutex as AsyncMutex;
-use workspace_index::WorkspaceIndex;
+
+#[doc(hidden)]
+pub use commands::workspace::workspace_agent_runtime_description;
+#[doc(hidden)]
+pub use config::{workspace_config, AppConfig, ConfigManager, SkillSourceConfig, WorkspaceConfig};
+#[doc(hidden)]
+pub use workspace_index::WorkspaceIndex;
 
 /// Shared application state accessible from all commands.
 ///
@@ -74,6 +79,30 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Construct application state for integration tests that exercise helper
+    /// code without starting a Tauri app.
+    #[doc(hidden)]
+    pub fn new_for_tests(
+        config_manager: ConfigManager,
+        workspace_index: WorkspaceIndex,
+    ) -> Result<Self, String> {
+        let initial_config = config_manager.get();
+        let mut mcp_client_manager = mcp::client::McpClientManager::new();
+        mcp_client_manager.sync_from_config(&initial_config);
+
+        Ok(Self {
+            token_storage: TokenStorage::new()
+                .map_err(|error| format!("Failed to initialize token storage: {}", error))?,
+            base_url: Mutex::new(DEFAULT_BASE_URL.to_string()),
+            config_manager: Mutex::new(config_manager),
+            mcp_client_manager: AsyncMutex::new(mcp_client_manager),
+            scheduler: agents::create_shared_scheduler(),
+            pending_approvals: commands::permissions::PendingApprovals::new(),
+            pending_path_grants: commands::path_grants::PendingPathGrants::new(),
+            workspace_index: Arc::new(RwLock::new(workspace_index)),
+        })
+    }
+
     pub fn workspace_root(&self, workspace_id: &str) -> Option<PathBuf> {
         self.workspace_index.read().ok()?.root(workspace_id)
     }

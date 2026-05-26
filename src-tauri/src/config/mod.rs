@@ -101,6 +101,18 @@ impl ConfigManager {
         Ok(manager)
     }
 
+    /// Construct a manager around an explicit config.
+    ///
+    /// This is used by integration tests that need an isolated app config
+    /// without reading or writing the user's real CLAI home.
+    #[doc(hidden)]
+    pub fn new_for_tests(config: ClaiConfig, config_path: PathBuf) -> Self {
+        Self {
+            config: Mutex::new(config),
+            config_path,
+        }
+    }
+
     /// Gets the platform-specific config file path.
     fn get_config_path() -> Result<PathBuf, ConfigError> {
         Ok(crate::paths::clai_home().join(CONFIG_FILE_NAME))

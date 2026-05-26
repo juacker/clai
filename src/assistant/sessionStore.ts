@@ -39,7 +39,7 @@ export interface SessionState {
   pendingAskUser: PendingAskUser | null;
 }
 
-interface AssistantStoreState {
+export interface AssistantStoreState {
   sessions: Record<string, SessionState>;
   activeSessionByTab: Record<string, string>;
 

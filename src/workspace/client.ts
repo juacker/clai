@@ -2,12 +2,16 @@
  * Workspace Client
  *
  * Thin wrapper around Tauri invoke calls for workspace operations.
- * The WorkspaceSnapshot shape isn't yet in the generated bindings —
- * derive `TS` on commands::workspace::WorkspaceSnapshot when this
- * becomes a regression surface.
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import type {
+  WorkspaceAgentResponse,
+  WorkspaceFileContent,
+  WorkspaceListEntry,
+  WorkspaceSessionBinding,
+  WorkspaceSnapshot,
+} from '../generated/bindings';
 
 interface SnapshotOptions {
   includeSessionPayload?: boolean;
@@ -16,18 +20,21 @@ interface SnapshotOptions {
 
 export async function getWorkspaceSnapshot(
   workspaceId: string = 'default',
-  options: SnapshotOptions | null = null,
-): Promise<unknown> {
+  options: SnapshotOptions | null = null
+): Promise<WorkspaceSnapshot> {
   return invoke('workspace_get_snapshot', { workspaceId, options });
 }
 
 export async function getOrCreateWorkspaceSession(
-  workspaceId: string = 'default',
-): Promise<unknown> {
+  workspaceId: string = 'default'
+): Promise<WorkspaceSessionBinding> {
   return invoke('workspace_get_or_create_session', { workspaceId });
 }
 
-export async function readWorkspaceFile(workspaceId: string, path: string): Promise<unknown> {
+export async function readWorkspaceFile(
+  workspaceId: string,
+  path: string
+): Promise<WorkspaceFileContent> {
   return invoke('workspace_read_file', {
     request: { workspaceId, path },
   });
@@ -36,8 +43,8 @@ export async function readWorkspaceFile(workspaceId: string, path: string): Prom
 export async function writeWorkspaceFile(
   workspaceId: string,
   path: string,
-  content: string,
-): Promise<unknown> {
+  content: string
+): Promise<string> {
   return invoke('workspace_write_file', {
     request: { workspaceId, path, content },
   });
@@ -46,8 +53,8 @@ export async function writeWorkspaceFile(
 export async function downloadWorkspaceFile(
   workspaceId: string,
   path: string,
-  destination: string,
-): Promise<unknown> {
+  destination: string
+): Promise<string> {
   return invoke('workspace_download_file', {
     request: { workspaceId, path, destination },
   });
@@ -55,8 +62,8 @@ export async function downloadWorkspaceFile(
 
 export async function updateWorkspaceSessionMcp(
   workspaceId: string,
-  mcpServerIds: string[],
-): Promise<unknown> {
+  mcpServerIds: string[]
+): Promise<void> {
   return invoke('workspace_update_session_mcp', {
     request: { workspaceId, mcpServerIds },
   });
@@ -64,12 +71,12 @@ export async function updateWorkspaceSessionMcp(
 
 export async function setWorkspaceProvider(
   workspaceId: string,
-  providerConnectionId: string,
-): Promise<unknown> {
+  providerConnectionId: string
+): Promise<void> {
   return invoke('workspace_set_provider', { workspaceId, providerConnectionId });
 }
 
-export async function listWorkspaceAgents(workspaceId: string): Promise<unknown[]> {
+export async function listWorkspaceAgents(workspaceId: string): Promise<WorkspaceAgentResponse[]> {
   return invoke('workspace_list_agents', { workspaceId });
 }
 
@@ -79,15 +86,12 @@ export async function listWorkspaceAgents(workspaceId: string): Promise<unknown[
 
 export async function setWorkspaceDefaultAgent(
   workspaceId: string,
-  workspaceAgentId: string,
-): Promise<unknown> {
+  workspaceAgentId: string
+): Promise<void> {
   return invoke('workspace_set_default_agent', { workspaceId, workspaceAgentId });
 }
 
-export async function acknowledgeWorkspaceTask(
-  workspaceId: string,
-  taskId: string,
-): Promise<unknown> {
+export async function acknowledgeWorkspaceTask(workspaceId: string, taskId: string): Promise<void> {
   return invoke('workspace_acknowledge_task', {
     request: { workspaceId, taskId },
   });
@@ -97,7 +101,7 @@ export async function createWorkspace(title?: string | null): Promise<string> {
   return invoke('workspace_create', { title: title || null });
 }
 
-export async function listWorkspaces(): Promise<unknown[]> {
+export async function listWorkspaces(): Promise<WorkspaceListEntry[]> {
   return invoke('workspace_list');
 }
 
@@ -111,7 +115,7 @@ export async function runWorkspaceNow(workspaceId: string): Promise<void> {
 
 export async function setWorkspaceSchedulePaused(
   workspaceId: string,
-  paused: boolean,
+  paused: boolean
 ): Promise<void> {
   return invoke('workspace_set_schedule_paused', { workspaceId, paused });
 }
