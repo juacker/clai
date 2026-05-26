@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    // Target / module — Vite handles the actual transpilation; tsc here
+    // is type-check-only via `noEmit`. Keep target/module modern so we
+    // don't lie to the type checker about ES syntax availability.
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+
+    "jsx": "react-jsx",
+    "useDefineForClassFields": true,
+
+    // Allow .js next to .ts during the incremental migration.
+    "allowJs": true,
+    // Don't type-check the .js files themselves — they remain untyped
+    // until they get converted. (Type errors in still-JS files would
+    // drown out real signal.)
+    "checkJs": false,
+
+    // Strict mode on the TS surface that exists today. Cheap to keep
+    // on because the migration starts small.
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // Build hygiene
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+
+    // No baseUrl/paths yet — keep imports relative to avoid invisible
+    // aliasing that Vite + tsc + ESLint all have to agree on.
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.js", "src/**/*.jsx"],
+  "exclude": ["node_modules", "dist", "src-tauri"]
+}

@@ -9,27 +9,79 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
-const createInitialSessionState = (session) => ({
+import type {
+  AssistantMessage,
+  AssistantRun,
+  AssistantSession,
+  ToolInvocation,
+} from '../generated/bindings';
+
+// FE-only state that the BE snapshot doesn't carry. Lives on the store
+// for the lifetime of an in-flight ask_user question; cleared on
+// ask_user_resolved.
+export interface PendingAskUser {
+  pendingId: string;
+  question: string;
+  options: { label: string; description?: string | null }[] | null;
+  extraContext: string | null;
+}
+
+export interface SessionState {
+  session: AssistantSession;
+  messages: AssistantMessage[];
+  runs: AssistantRun[];
+  toolCalls: ToolInvocation[];
+  /** Per-message accumulator for streaming text deltas. Keyed by message id. */
+  streamingTextByMessageId: Record<string, string>;
+  /** True while a run is queued/running/waiting_for_tool. Drives the chat activity indicator. */
+  isStreaming: boolean;
+  /** Non-null while the agent is blocked on an ask_user question. */
+  pendingAskUser: PendingAskUser | null;
+}
+
+interface AssistantStoreState {
+  sessions: Record<string, SessionState>;
+  activeSessionByTab: Record<string, string>;
+
+  setActiveSessionForTab: (tabId: string, sessionId: string) => void;
+  getActiveSessionForTab: (tabId: string) => string | null;
+
+  initSession: (session: AssistantSession & { tabId?: string | null }) => void;
+  addMessage: (sessionId: string, message: AssistantMessage) => void;
+  appendDelta: (sessionId: string, messageId: string, text: string) => void;
+  completeMessage: (sessionId: string, message: AssistantMessage) => void;
+  updateMessageContent: (sessionId: string, message: AssistantMessage) => void;
+  setRunStatus: (sessionId: string, run: AssistantRun) => void;
+  setAskUserPending: (sessionId: string, request: PendingAskUser) => void;
+  clearAskUserPending: (sessionId: string, pendingId?: string | null) => void;
+  setToolCall: (sessionId: string, toolCall: ToolInvocation) => void;
+  loadSessionData: (
+    sessionId: string,
+    session: AssistantSession,
+    messages: AssistantMessage[],
+    runs?: AssistantRun[],
+    toolCalls?: ToolInvocation[],
+  ) => void;
+  removeSession: (sessionId: string) => void;
+}
+
+const createInitialSessionState = (session: AssistantSession): SessionState => ({
   session,
   messages: [],
   runs: [],
   toolCalls: [],
   streamingTextByMessageId: {},
   isStreaming: false,
-  // `null` when the agent isn't currently asking. While set, the
-  // chat renders an inline answer block: { pendingId, question,
-  // options?, extraContext? }. The pendingId is the round-trip key
-  // back to the blocking `ask_user` tool via the
-  // `assistant_submit_user_input` Tauri command.
   pendingAskUser: null,
 });
 
-const useAssistantStore = create(
+const TERMINAL_STATUSES = ['completed', 'completed_with_warnings', 'failed', 'cancelled'] as const;
+const ACTIVE_STATUSES = ['queued', 'running', 'waiting_for_tool'] as const;
+
+const useAssistantStore = create<AssistantStoreState>()(
   devtools(
     immer((set, get) => ({
-      // Record<sessionId, SessionState>
       sessions: {},
-      // Record<tabId, sessionId>
       activeSessionByTab: {},
 
       setActiveSessionForTab: (tabId, sessionId) =>
@@ -46,7 +98,6 @@ const useAssistantStore = create(
           if (!state.sessions[session.id]) {
             state.sessions[session.id] = createInitialSessionState(session);
           }
-          // Map tab to session if tab_id present
           if (session.tabId) {
             state.activeSessionByTab[session.tabId] = session.id;
           }
@@ -56,7 +107,6 @@ const useAssistantStore = create(
         set((state) => {
           const s = state.sessions[sessionId];
           if (s) {
-            // Avoid duplicates
             if (!s.messages.find((m) => m.id === message.id)) {
               s.messages.push(message);
             }
@@ -99,9 +149,7 @@ const useAssistantStore = create(
       // and its content has been persisted into message.content; the
       // streamingText accumulator must reset so subsequent deltas for
       // the *next* text block don't render alongside the persisted
-      // text and double the visible content. Unlike `completeMessage`,
-      // this does NOT mark the message as complete (the run keeps
-      // streaming).
+      // text and double the visible content.
       updateMessageContent: (sessionId, message) =>
         set((state) => {
           const s = state.sessions[sessionId];
@@ -123,15 +171,10 @@ const useAssistantStore = create(
           } else {
             s.runs.push(run);
           }
-          if (['completed', 'completed_with_warnings', 'failed', 'cancelled'].includes(run.status)) {
+          if ((TERMINAL_STATUSES as readonly string[]).includes(run.status)) {
             s.isStreaming = false;
             s.streamingTextByMessageId = {};
-          } else if (['queued', 'running', 'waiting_for_tool'].includes(run.status)) {
-            // Activity indicator should appear the moment the run is
-            // queued/started — before the first text delta arrives —
-            // so the user gets immediate feedback that work has begun.
-            // It also stays on across tool execution and inter-iteration
-            // gaps, where no text deltas are flowing.
+          } else if ((ACTIVE_STATUSES as readonly string[]).includes(run.status)) {
             s.isStreaming = true;
           }
         }),
@@ -147,9 +190,6 @@ const useAssistantStore = create(
         set((state) => {
           const s = state.sessions[sessionId];
           if (!s) return;
-          // Only clear if the pending id matches — guards against an
-          // out-of-order resolve event for an older request landing after
-          // a newer request was already raised.
           if (!s.pendingAskUser) return;
           if (pendingId && s.pendingAskUser.pendingId !== pendingId) return;
           s.pendingAskUser = null;
@@ -179,8 +219,6 @@ const useAssistantStore = create(
             // The DB only persists assistant text at end-of-run, so a poll
             // tick that lands mid-stream would otherwise wipe the deltas the
             // user is watching arrive, making text flicker on and off.
-            // Stale entries get cleared naturally by completeMessage and
-            // setRunStatus when the run terminates.
             streamingTextByMessageId: existing?.streamingTextByMessageId || {},
             isStreaming: existing?.isStreaming || false,
             // Same rationale for the pending ask_user request: it's
@@ -195,18 +233,15 @@ const useAssistantStore = create(
       removeSession: (sessionId) =>
         set((state) => {
           delete state.sessions[sessionId];
-          // Clean up tab mappings
-          for (const [tabId, sid] of Object.entries(
-            state.activeSessionByTab
-          )) {
+          for (const [tabId, sid] of Object.entries(state.activeSessionByTab)) {
             if (sid === sessionId) {
               delete state.activeSessionByTab[tabId];
             }
           }
         }),
     })),
-    { name: 'assistant-store' }
-  )
+    { name: 'assistant-store' },
+  ),
 );
 
 export default useAssistantStore;
