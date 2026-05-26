@@ -945,11 +945,8 @@ mod tests {
         // Stale skill id in agent config must not corrupt the prompt — it
         // should silently fall through to the base description.
         let config = ClaiConfig::default();
-        let prompt = compose_agent_instructions(
-            &config,
-            "BASE",
-            &["nonexistent:skill-id".to_string()],
-        );
+        let prompt =
+            compose_agent_instructions(&config, "BASE", &["nonexistent:skill-id".to_string()]);
         assert_eq!(prompt, "BASE");
     }
 }

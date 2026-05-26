@@ -7,10 +7,7 @@ use crate::assistant::types::{
     ContentPart, MessageRole, ProviderConnection, RunStatus, RunTrigger, SessionContext,
     SessionKind,
 };
-use crate::config::{
-    workspace_config, AgentConfig, AppConfig, WorkspaceAgent,
-    WorkspaceConfig,
-};
+use crate::config::{workspace_config, AgentConfig, AppConfig, WorkspaceAgent, WorkspaceConfig};
 use crate::db::DbPool;
 use crate::AppState;
 use serde::{Deserialize, Serialize};

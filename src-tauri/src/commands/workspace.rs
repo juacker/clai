@@ -9,8 +9,8 @@ use crate::assistant::types::{
     WorkspaceAgentSummary,
 };
 use crate::config::{
-    workspace_config, AgentConfig, AppConfig,
-    ExecutionCapabilityConfig, WorkspaceAgent, WorkspaceConfig,
+    workspace_config, AgentConfig, AppConfig, ExecutionCapabilityConfig, WorkspaceAgent,
+    WorkspaceConfig,
 };
 use crate::db::DbPool;
 use crate::AppState;
@@ -790,8 +790,7 @@ pub fn workspace_agent_runtime_description(
     let workspace_cfg = workspace_config::load(&root).ok()?;
     let agent = workspace_cfg.agents.iter().find(|a| a.id == agent_id)?;
     let app_cfg = state.config_manager.lock().ok()?.get();
-    let selected_skill_ids =
-        workspace_config::refs_to_skill_ids(&app_cfg, &agent.selected_skills);
+    let selected_skill_ids = workspace_config::refs_to_skill_ids(&app_cfg, &agent.selected_skills);
     Some(crate::config::compose_agent_instructions(
         &app_cfg,
         &agent.description,
