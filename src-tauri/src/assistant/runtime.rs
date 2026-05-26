@@ -50,7 +50,10 @@ mod tests {
 
         let was_found = cancel_run(id);
         assert!(was_found, "cancel_run must report success for a known id");
-        assert!(token.is_cancelled(), "the original token handle must observe the cancel");
+        assert!(
+            token.is_cancelled(),
+            "the original token handle must observe the cancel"
+        );
 
         unregister_run(id);
     }
