@@ -54,6 +54,14 @@ pub use config::{workspace_config, AppConfig, ConfigManager, SkillSourceConfig, 
 #[doc(hidden)]
 pub use workspace_index::WorkspaceIndex;
 
+/// Re-exports for integration tests. Not part of the public API —
+/// the `#[doc(hidden)]` keeps them out of generated docs, and the
+/// module's name signals intent at the use site.
+#[doc(hidden)]
+pub mod runtime {
+    pub use crate::assistant::runtime::{cancel_run, register_run, unregister_run};
+}
+
 /// Shared application state accessible from all commands.
 ///
 /// This struct holds all the shared resources that commands need access to.
