@@ -1,6 +1,7 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
+use ts_rs::TS;
 
 use crate::assistant::tools::ask_user::AskUserOption;
 use crate::assistant::types::{
@@ -9,8 +10,9 @@ use crate::assistant::types::{
 
 pub const ASSISTANT_EVENT_NAME: &str = "assistant://event";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+#[ts(export, export_to = "bindings.ts")]
 pub enum AssistantUiEvent {
     SessionCreated {
         session: Box<AssistantSession>,
@@ -81,8 +83,9 @@ pub enum AssistantUiEvent {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct AssistantEventEnvelope {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]

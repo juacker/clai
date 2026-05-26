@@ -59,8 +59,9 @@ pub struct AskUserParams {
     pub context: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct AskUserOption {
     pub label: String,
     #[serde(default)]

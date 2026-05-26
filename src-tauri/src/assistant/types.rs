@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::config::ExecutionCapabilityConfig;
 
@@ -35,15 +36,17 @@ impl std::fmt::Display for AuthMode {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "bindings.ts")]
 pub enum SessionKind {
     Interactive,
     BackgroundJob,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "bindings.ts")]
 pub enum MessageRole {
     System,
     User,
@@ -51,8 +54,9 @@ pub enum MessageRole {
     Tool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "bindings.ts")]
 pub enum RunStatus {
     Queued,
     Running,
@@ -63,8 +67,9 @@ pub enum RunStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "bindings.ts")]
 pub enum RunNoticeKind {
     CommandDenied,
     PathDenied,
@@ -79,16 +84,18 @@ pub enum RunNoticeKind {
     PathGrantDenied,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct RunNotice {
     pub kind: RunNoticeKind,
     pub message: String,
     pub timestamp: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "bindings.ts")]
 pub enum RunTrigger {
     UserMessage,
     Retry,
@@ -98,8 +105,9 @@ pub enum RunTrigger {
     WorkspaceTask,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct InterAgentCallContext {
     pub call_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -112,8 +120,9 @@ pub struct InterAgentCallContext {
     pub exposed_tool_name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct WorkspaceAgentSummary {
     pub id: String,
     pub agent_definition_id: String,
@@ -124,8 +133,9 @@ pub struct WorkspaceAgentSummary {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct SessionContext {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub space_id: Option<String>,
@@ -137,7 +147,12 @@ pub struct SessionContext {
     pub tool_scopes: Vec<String>,
     #[serde(default)]
     pub mcp_server_ids: Vec<String>,
+    // ExecutionCapabilityConfig has a deep tree (sandbox/fs/shell/web
+    // configs each with sub-types). The FE doesn't deeply consume it in
+    // event payloads, so we erase it to `unknown` here to avoid pulling
+    // the entire config module into the generated bindings.
     #[serde(default)]
+    #[ts(type = "unknown")]
     pub execution: ExecutionCapabilityConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub netdata_conversation_id: Option<String>,
@@ -155,8 +170,9 @@ pub struct SessionContext {
     pub workspace_agents: Vec<WorkspaceAgentSummary>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct AssistantSession {
     pub id: SessionId,
     pub kind: SessionKind,
@@ -167,8 +183,9 @@ pub struct AssistantSession {
     pub updated_at: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[ts(export, export_to = "bindings.ts")]
 pub enum ContentPart {
     Text {
         text: String,
@@ -199,8 +216,9 @@ pub enum ContentPart {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct AssistantMessage {
     pub id: MessageId,
     pub session_id: SessionId,
@@ -211,8 +229,9 @@ pub struct AssistantMessage {
     pub provider_metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct RunUsage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u64>,
@@ -224,8 +243,9 @@ pub struct RunUsage {
     pub total_tokens: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct AssistantRun {
     pub id: RunId,
     pub session_id: SessionId,
@@ -245,8 +265,9 @@ pub struct AssistantRun {
     pub notices: Vec<RunNotice>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "bindings.ts")]
 pub enum ToolCallStatus {
     Pending,
     Running,
@@ -254,8 +275,9 @@ pub enum ToolCallStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
 pub struct ToolInvocation {
     pub id: ToolCallId,
     pub run_id: RunId,

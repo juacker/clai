@@ -1,0 +1,7 @@
+# ts-rs writes generated TypeScript bindings to this directory whenever
+# `cargo test` runs. Path is relative to this crate's root (src-tauri/).
+# All `#[ts(export_to = "bindings.ts")]` annotations concatenate with
+# this prefix, so every type lands in a single src/generated/bindings.ts
+# on the frontend side.
+[env]
+TS_RS_EXPORT_DIR = "../src/generated"
