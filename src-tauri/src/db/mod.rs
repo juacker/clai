@@ -18,8 +18,10 @@
 //! workspace and calls `init_workspace_db`, and the lazy-open path goes
 //! through the same function. Both apply pending migrations.
 
-use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
+use sqlx::{Pool, Sqlite};
 use std::path::Path;
+use std::time::Duration;
 
 /// SQLite connection pool, the only persistent storage handle outside
 /// the OS keyring and `.clai/config.json` files.
@@ -36,10 +38,28 @@ pub async fn init_workspace_db(workspace_root: &Path) -> Result<DbPool, String> 
     std::fs::create_dir_all(parent)
         .map_err(|e| format!("Failed to create workspace DB directory: {}", e))?;
 
-    let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
+    // Connection options applied to *every* pooled connection (sqlx runs
+    // them on connect), unlike a one-off `pool.execute(PRAGMA …)` which only
+    // touches a single connection.
+    //
+    // WAL + synchronous=NORMAL is the fix for the high system iowait we were
+    // seeing: the SQLite default (rollback journal, synchronous=FULL) forces
+    // an fsync — and on ext4 a journal commit — on *every* write. Under the
+    // app's frequent small writes (amplified when several agents write the
+    // same workspace data.sqlite at once) that drove %wa very high despite
+    // tiny byte volume. WAL fsyncs only at checkpoint, not per commit.
+    let connect_options = SqliteConnectOptions::new()
+        .filename(&db_path)
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        // WAL still serializes writers; wait briefly instead of erroring with
+        // SQLITE_BUSY when concurrent agents write the same workspace DB.
+        .busy_timeout(Duration::from_secs(5));
+
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(&db_url)
+        .connect_with(connect_options)
         .await
         .map_err(|e| format!("Failed to connect to workspace SQLite database: {}", e))?;
 
