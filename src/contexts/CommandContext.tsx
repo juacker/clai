@@ -6,17 +6,42 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { parseCommand } from '../utils/commandParser';
+import type { ParsedCommand } from '../utils/commandParser';
 import { COMMAND_STATUS } from '../utils/commandTypes';
 
-const CommandContext = createContext(null);
+// A parsed command plus the execution-lifecycle fields this context layers on.
+export interface CommandRecord extends ParsedCommand {
+  completedAt?: number;
+}
+
+export interface CommandContextValue {
+  currentCommand: CommandRecord | null;
+  commandHistory: CommandRecord[];
+  commandOutput: unknown;
+  isExecuting: boolean;
+  error: string | null;
+  executeCommand: (command: string | CommandRecord) => CommandRecord | null;
+  clearCommand: () => void;
+  setOutput: (output: unknown) => void;
+  setCommandError: (errorMessage: string) => void;
+  getHistoryCommand: (index: number) => CommandRecord | null;
+  replayCommand: (index: number) => CommandRecord | null;
+  clearHistory: () => void;
+  getFilteredHistory: (filterFn: (cmd: CommandRecord) => boolean) => CommandRecord[];
+  getVisualizationHistory: () => CommandRecord[];
+  cancelCommand: () => void;
+  getCommand: (commandId: string | null | undefined) => CommandRecord | null;
+}
+
+const CommandContext = createContext<CommandContextValue | null>(null);
 const COMMAND_HISTORY_KEY = 'clai_command_history';
 const LEGACY_COMMAND_HISTORY_KEY = 'netdata_command_history';
 
 /**
  * Hook to use the CommandContext
- * @throws {Error} If used outside of CommandProvider
+ * @throws If used outside of CommandProvider
  */
-export const useCommand = () => {
+export const useCommand = (): CommandContextValue => {
   const context = useContext(CommandContext);
   if (!context) {
     throw new Error('useCommand must be used within a CommandProvider');
@@ -28,21 +53,21 @@ export const useCommand = () => {
  * CommandProvider component
  * Provides command execution state and methods to the application
  */
-export const CommandProvider = ({ children }) => {
+export const CommandProvider = ({ children }: { children: React.ReactNode }) => {
   // Current command being executed or displayed
-  const [currentCommand, setCurrentCommand] = useState(null);
+  const [currentCommand, setCurrentCommand] = useState<CommandRecord | null>(null);
 
   // Command history (all executed commands)
-  const [commandHistory, setCommandHistory] = useState([]);
+  const [commandHistory, setCommandHistory] = useState<CommandRecord[]>([]);
 
   // Current command output/result
-  const [commandOutput, setCommandOutput] = useState(null);
+  const [commandOutput, setCommandOutput] = useState<unknown>(null);
 
   // Loading state for async command execution
   const [isExecuting, setIsExecuting] = useState(false);
 
   // Error state
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Maximum history size (prevent memory issues)
   const MAX_HISTORY_SIZE = 100;
@@ -79,19 +104,15 @@ export const CommandProvider = ({ children }) => {
   }, [commandHistory]);
 
   /**
-   * Execute a command
-   * Parses the command string and sets it as current
-   *
-   * @param {string|Object} command - Command string or parsed command object
-   * @returns {Object} Parsed command object
+   * Execute a command. Parses the command string and sets it as current.
    */
-  const executeCommand = useCallback((command) => {
+  const executeCommand = useCallback((command: string | CommandRecord): CommandRecord | null => {
     try {
       setError(null);
       setIsExecuting(true);
 
       // Parse command if it's a string
-      const parsedCommand = typeof command === 'string'
+      const parsedCommand: CommandRecord = typeof command === 'string'
         ? parseCommand(command)
         : command;
 
@@ -100,10 +121,10 @@ export const CommandProvider = ({ children }) => {
         const errorMessage = 'Empty command';
         setError(errorMessage);
 
-        const errorCommand = {
+        const errorCommand: CommandRecord = {
           ...parsedCommand,
           status: COMMAND_STATUS.ERROR,
-          error: errorMessage
+          error: errorMessage,
         };
 
         setCommandHistory(prev => [...prev, errorCommand]);
@@ -114,9 +135,9 @@ export const CommandProvider = ({ children }) => {
       }
 
       // Update command status to executing
-      const executingCommand = {
+      const executingCommand: CommandRecord = {
         ...parsedCommand,
-        status: COMMAND_STATUS.EXECUTING
+        status: COMMAND_STATUS.EXECUTING,
       };
 
       // Set as current command
@@ -134,7 +155,7 @@ export const CommandProvider = ({ children }) => {
       return executingCommand;
     } catch (err) {
       console.error('Error executing command:', err);
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
       setIsExecuting(false);
       return null;
     }
@@ -151,20 +172,18 @@ export const CommandProvider = ({ children }) => {
 
   /**
    * Set output for the current command
-   *
-   * @param {*} output - Command output data
    */
-  const setOutput = useCallback((output) => {
+  const setOutput = useCallback((output: unknown) => {
     setCommandOutput(output);
 
     // Update current command status to success using functional updates
     setCurrentCommand(prev => {
       if (!prev) return prev;
 
-      const updatedCommand = {
+      const updatedCommand: CommandRecord = {
         ...prev,
         status: COMMAND_STATUS.SUCCESS,
-        completedAt: Date.now()
+        completedAt: Date.now(),
       };
 
       // Update in history
@@ -180,19 +199,17 @@ export const CommandProvider = ({ children }) => {
 
   /**
    * Set error for the current command
-   *
-   * @param {string} errorMessage - Error message
    */
-  const setCommandError = useCallback((errorMessage) => {
+  const setCommandError = useCallback((errorMessage: string) => {
     setError(errorMessage);
 
     // Update current command status to error
     if (currentCommand) {
-      const updatedCommand = {
+      const updatedCommand: CommandRecord = {
         ...currentCommand,
         status: COMMAND_STATUS.ERROR,
         error: errorMessage,
-        completedAt: Date.now()
+        completedAt: Date.now(),
       };
       setCurrentCommand(updatedCommand);
 
@@ -206,13 +223,10 @@ export const CommandProvider = ({ children }) => {
   }, [currentCommand]);
 
   /**
-   * Get command from history by index
-   * Supports negative indices (e.g., -1 for last command)
-   *
-   * @param {number} index - History index
-   * @returns {Object|null} Command object or null
+   * Get command from history by index.
+   * Supports negative indices (e.g., -1 for last command).
    */
-  const getHistoryCommand = useCallback((index) => {
+  const getHistoryCommand = useCallback((index: number): CommandRecord | null => {
     if (commandHistory.length === 0) return null;
 
     // Handle negative indices
@@ -229,11 +243,8 @@ export const CommandProvider = ({ children }) => {
 
   /**
    * Replay a command from history
-   *
-   * @param {number} index - History index
-   * @returns {Object|null} Replayed command or null
    */
-  const replayCommand = useCallback((index) => {
+  const replayCommand = useCallback((index: number): CommandRecord | null => {
     const command = getHistoryCommand(index);
     if (command) {
       return executeCommand(command);
@@ -252,27 +263,21 @@ export const CommandProvider = ({ children }) => {
 
   /**
    * Get filtered history (e.g., only visualization commands)
-   *
-   * @param {Function} filterFn - Filter function
-   * @returns {Array} Filtered command history
    */
-  const getFilteredHistory = useCallback((filterFn) => {
+  const getFilteredHistory = useCallback((filterFn: (cmd: CommandRecord) => boolean): CommandRecord[] => {
     return commandHistory.filter(filterFn);
   }, [commandHistory]);
 
   /**
    * Get command history excluding navigation commands
    * (useful for showing only visualization commands)
-   *
-   * @returns {Array} Non-navigation commands
    */
-
-  const isNavigationCommand = (cmd) => {
-    const navigationTypes = ["navigate", "open", "switch", "back", "forward"];
-    return navigationTypes.includes(cmd?.type) || cmd?.type?.endsWith("_navigation");
+  const isNavigationCommand = (cmd: CommandRecord | undefined): boolean => {
+    const navigationTypes = ['navigate', 'open', 'switch', 'back', 'forward'];
+    return navigationTypes.includes(cmd?.type ?? '') || (cmd?.type?.endsWith('_navigation') ?? false);
   };
 
-  const getVisualizationHistory = useCallback(() => {
+  const getVisualizationHistory = useCallback((): CommandRecord[] => {
     return commandHistory.filter(cmd => !isNavigationCommand(cmd));
   }, [commandHistory]);
 
@@ -281,10 +286,10 @@ export const CommandProvider = ({ children }) => {
    */
   const cancelCommand = useCallback(() => {
     if (currentCommand) {
-      const cancelledCommand = {
+      const cancelledCommand: CommandRecord = {
         ...currentCommand,
         status: COMMAND_STATUS.CANCELLED,
-        completedAt: Date.now()
+        completedAt: Date.now(),
       };
       setCurrentCommand(cancelledCommand);
 
@@ -302,15 +307,13 @@ export const CommandProvider = ({ children }) => {
 
   /**
    * Get a command by ID from history
-   * @param {string} commandId - Command ID to retrieve
-   * @returns {Object|null} Command object or null if not found
    */
-  const getCommand = useCallback((commandId) => {
+  const getCommand = useCallback((commandId: string | null | undefined): CommandRecord | null => {
     if (!commandId) return null;
     return commandHistory.find(cmd => cmd.id === commandId) || null;
   }, [commandHistory]);
 
-  const value = useMemo(() => ({
+  const value = useMemo<CommandContextValue>(() => ({
     // State
     currentCommand,
     commandHistory,
@@ -329,7 +332,7 @@ export const CommandProvider = ({ children }) => {
     getFilteredHistory,
     getVisualizationHistory,
     cancelCommand,
-    getCommand
+    getCommand,
   }), [
     currentCommand,
     commandHistory,
@@ -346,7 +349,7 @@ export const CommandProvider = ({ children }) => {
     getFilteredHistory,
     getVisualizationHistory,
     cancelCommand,
-    getCommand
+    getCommand,
   ]);
 
   return (

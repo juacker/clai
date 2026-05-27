@@ -33,13 +33,9 @@ interface TerminalEmulatorProps {
 }
 
 const TerminalEmulator = ({ onSendToChat, disabled = false }: TerminalEmulatorProps) => {
-  // CommandContext / TabManagerContext are still untyped .jsx (their
-  // createContext(null) makes the hook return type infer as `never`).
-  // Cast at the call site until they're converted under Batch 7.
-  const { executeCommand, commandHistory } = useCommand() as {
-    executeCommand: (command: ParsedCommand) => void;
-    commandHistory: ParsedCommand[];
-  };
+  const { executeCommand, commandHistory } = useCommand();
+  // TabManagerContext is still untyped .jsx (its createContext(null) makes
+  // the hook return type infer as `never`). Cast until it's converted.
   const { handleLayoutCommand, getActiveTab } = useTabManager() as {
     handleLayoutCommand: (command: ParsedCommand) => { success?: boolean; message?: string } | null | void;
     getActiveTab: () => { id: string } | null;
