@@ -11,33 +11,45 @@ import React, { useCallback, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import styles from './ConfirmDialog.module.css';
 
+interface ConfirmDialogProps {
+  isOpen: boolean;
+  title?: React.ReactNode;
+  body?: React.ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  // 'danger' renders confirm as a red danger button; 'primary' renders it
+  // as the standard accent. Use 'danger' for delete / drop / discard.
+  confirmTone?: 'primary' | 'danger';
+  busy?: boolean;
+  onConfirm?: () => void;
+  onCancel?: () => void;
+}
+
 const ConfirmDialog = ({
   isOpen,
   title,
   body,
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
-  // 'danger' renders confirm as a red danger button; 'primary' renders it
-  // as the standard accent. Use 'danger' for delete / drop / discard.
   confirmTone = 'primary',
   busy = false,
   onConfirm,
   onCancel,
-}) => {
+}: ConfirmDialogProps) => {
   // Close on Escape — matches the broader modal idiom in the app.
   // Intentionally no global Enter-binding: for destructive actions the
   // confirm button must be clicked deliberately. Enter-to-cancel happens
   // naturally because Cancel is the autofocused button.
   useEffect(() => {
     if (!isOpen) return undefined;
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !busy) onCancel?.();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [isOpen, busy, onCancel]);
 
-  const handleOverlay = useCallback((e) => {
+  const handleOverlay = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget && !busy) onCancel?.();
   }, [onCancel, busy]);
 

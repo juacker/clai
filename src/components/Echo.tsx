@@ -9,7 +9,17 @@
 import React from 'react';
 import styles from './Echo.module.css';
 
-const Echo = ({ command }) => {
+interface EchoCommand {
+  args?: {
+    positional?: string[];
+  };
+}
+
+interface EchoProps {
+  command?: EchoCommand | null;
+}
+
+const Echo = ({ command }: EchoProps) => {
   // Extract the text from command arguments
   const text = command?.args?.positional?.join(' ') || '';
 
@@ -21,4 +31,3 @@ const Echo = ({ command }) => {
 };
 
 export default Echo;
-

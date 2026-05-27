@@ -27,4 +27,3 @@ const TabView = () => {
 };
 
 export default TabView;
-
