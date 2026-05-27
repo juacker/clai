@@ -32,7 +32,7 @@ We can call this work finished when **all** of the following are true:
 4. CI runs `typecheck` + `test` + `gen:bindings` (and fails if bindings drift). Every push is gated.
 5. The 4 highest-traffic UI surfaces (Workspace page, Fleet page, AskUserPanel, ChatMessageList) have component-level tests covering at least their happy path.
 
-We're roughly **95%** of the way there as of 2026-05-27. **P0 and P1 complete; P1-1's skill-binding carve-out closed under P2-1b.** A **dead-code sweep (P2-0)** removed the orphaned pre-workspace tabs/tiles + command-visualization subsystem (~8800 lines / 36 files, −348KB bundle). P2-1 is nearly done: Fleet, the full Settings cluster, ContextPanel, the terminal + workspace-task components, the app shell, the leaf utils/hooks/handlers, `api/client`, `fleet/client`, and the FleetContext/TabContext/ChatManagerContext/CommandContext contexts are all converted (**68 `.ts`/`.tsx` files**). **Only one `.jsx` remains: `src/contexts/TabManagerContext.jsx`** (plus `src/commands/CommandRegistry.js` and `src/test/setup.js`). That last conversion is the deferred tile-internal untangle (see P2-0) — once it lands, drop `allowJs` (P2-2), then coverage (P2-3), provider-adapter tests (P2-5), and E2E (P2-6). The conversion has caught 3 latent snake_case wire-field bugs so far — evidence the typing effort is worth it beyond pure hygiene.
+**P2-1 is complete as of 2026-05-27 — `src/` is 100% TypeScript** (the only remaining `.js` is `src/test/setup.js`, intentionally JS). **P0 and P1 complete; P1-1's skill-binding carve-out closed under P2-1b.** A **dead-code sweep (P2-0)** removed the orphaned pre-workspace tabs/tiles + command-visualization subsystem (~8800 lines / 36 files, −358KB bundle). Everything else was converted: Fleet, the full Settings cluster, ContextPanel, the terminal + workspace-task components, the app shell, the leaf utils/hooks/handlers, `api/client`, `fleet/client`, all the contexts, and finally **`TabManagerContext`** — whose conversion also carried the deferred tile-internal removal (the dead tile-grid ops + per-tab command registry, and `src/commands/` deleted; a vestigial `rootTile` leaf is kept so the persist shape still deserializes into the stubbed Rust `WorkspaceState`). The conversion caught 3 latent snake_case wire-field bugs — evidence the typing effort is worth it beyond pure hygiene. **Next: drop `allowJs` (P2-2)**, then coverage (P2-3), provider-adapter tests (P2-5), and E2E (P2-6).
 
 ## House rules in effect today
 
@@ -92,10 +92,9 @@ A reachability audit from the real render roots (`MainLayout` → `TerminalEmula
 - [x] Emptied `utils/commandRegistry.js` (`COMMAND_COMPONENTS`/`getCommandComponent` were only used by `TileView`); kept `isCommandSupported`.
 - [x] Utils/hooks: `tileCommandHandler`, `canvasElementValidator`, `dashboardElementValidator`, `performance/*`, `useCommandRegistration`, `useWorkspaceSelectors`.
 - [x] `CommandMessagingContext` + its `MainLayout` provider; the dead `/tile` command branch in `TabManagerContext`.
-- [ ] **Deferred internal untangle:** `TabManagerContext` (1777-line, untyped, no tests) still carries tile state (`activeTileId`, `splitTile/closeTile/resizeTile`, tile-tree helpers, per-tab `CommandRegistry`, the `currentCommand` effect, `executeCommand('help')` on init), and `workspaceStore` still persists `rootTile` to SQLite. Removing these is entangled with the live `/tab`//`/ctx`/history/persistence paths. **Folded into P2-1: do it during the TS conversion of `TabManagerContext` + `CommandContext` + `workspaceStore`, with the compiler guarding the live flow + a persistence migration.** (Known minor fallout: the terminal's `/help` hint now points to a removed command.)
+- [x] **Internal untangle — done under P2-1 (commit `2ea1b65`).** When `TabManagerContext` was converted to `.tsx`, the dead tile state (`activeTileId`, `splitTile/closeTile/resizeTile`, tile-tree helpers, per-tab `CommandRegistry`, the `currentCommand` effect, `executeCommand('help')` init) was removed with the compiler guarding the live `/tab`//`/ctx` paths — verified first that none of those methods had a live consumer. `src/commands/` (the CommandRegistry class) deleted. A vestigial `rootTile` leaf is still created per tab so the persist shape deserializes into the Rust `WorkspaceState` — note that `save_workspace_state`/`load_workspace_state` are **already stubbed** (vestigial), so no real persistence migration was needed; fully ripping out `rootTile`/`commands` from `workspaceStore` + the Rust struct is a separate, optional cleanup. (Known minor fallout: the terminal's `/help` hint points to a removed command.)
 
-**P2-1. Convert the remaining `.jsx` files.** _In progress as of 2026-05-27. Dead-code sweep (P2-0) deleted most of the previously-listed queue (Dashboard/Canvas/Anomalies/Echo/Help/Tab*/Tile*/chart blocks/DesktopChatPanel/AssistantChat)._
-Touch as you go, don't batch. Done so far this pass:
+**P2-1. Convert the remaining `.jsx` files.** _Done 2026-05-27 — `src/` is 100% TypeScript (only `src/test/setup.js` stays JS)._ Dead-code sweep (P2-0) deleted most of the original queue; the rest was converted:
 
 - [x] Pinned leaf components: `MarkdownMessage`, `StreamingMarkdown`, `VirtualizedList` (`<T,>` generic, `memo(Inner) as typeof Inner` export). Casts removed from consumers.
 - [x] Trivial leaves: `utils/openExternal`, `hooks/useDebounce`, `hooks/usePlatform`, and pure re-export indexes.
@@ -109,10 +108,14 @@ Touch as you go, don't batch. Done so far this pass:
 - [x] Contexts: `FleetContext`, `TabContext`, `ChatManagerContext`, `CommandContext`.
 - [x] Terminal + workspace-task: `TerminalEmulator`, `TerminalEmulatorWrapper`, `WorkspaceTaskNotifications`, `WorkspaceTaskTranscriptPanel`, `WorkspaceContextBar`.
 
-Remaining — **just one file** (the deferred capstone):
+- [x] Contexts: `CommandContext` (CommandRecord/CommandContextValue typed).
+- [x] **`TabManagerContext` → `.tsx`** (commit `2ea1b65`) with the P2-0 tile-internal removal; `src/commands/` deleted; `useTabManager` casts removed from the terminal components. **This was the last `.jsx`.**
 
-- [ ] `src/contexts/TabManagerContext.jsx` → `.tsx` **with the P2-0 tile-internal removal**: strip `activeTileId`/`splitTile`/`closeTile`/`resizeTile`/tile-tree helpers/per-tab `CommandRegistry`/the `currentCommand` effect/`executeCommand('help')` init; keep tabs/activeTabId/context/`/tab`/`/ctx`/`/reset-all`. Then delete `src/commands/CommandRegistry.js` (only the per-tab registry used it) and drop `rootTile`/`TileNode` from `src/stores/workspaceStore.ts` (+ SQLite persistence migration). Remove the `useTabManager` call-site cast in `TerminalEmulator`/`TerminalEmulatorWrapper` once typed.
-- After it lands: `src/test/setup.js` stays `.js`; rename remaining `.test.js` → `.test.ts` (mechanical).
+Optional follow-ups (not blocking 100%-TS):
+
+- `src/test/setup.js` stays `.js`; rename remaining `.test.js` → `.test.ts` (mechanical).
+- Fully remove `rootTile`/`TileNode`/`commands` from `workspaceStore.ts` + the Rust `WorkspaceState` struct (the persistence is already stubbed/vestigial, so this is pure cleanup, not a migration).
+- Fix the terminal's stale `/help` hint copy.
 
 **P2-1b. Skill-catalog bindings.** _Done 2026-05-26._
 
