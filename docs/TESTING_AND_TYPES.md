@@ -32,7 +32,7 @@ We can call this work finished when **all** of the following are true:
 4. CI runs `typecheck` + `test` + `gen:bindings` (and fails if bindings drift). Every push is gated.
 5. The 4 highest-traffic UI surfaces (Workspace page, Fleet page, AskUserPanel, ChatMessageList) have component-level tests covering at least their happy path.
 
-We're roughly **70-75%** of the way there as of 2026-05-26. **P0 and P1 complete; P1-1's skill-binding carve-out closed under P2-1b.** P2 is underway: the three pinned leaf components + a batch of trivial leaves/indexes are converted (30 `.ts`/`.tsx` files now). Remaining: ~43 `.jsx` + ~22 non-test `.js` to convert (Fleet + the full Settings cluster done; next: the chat/chart components under `src/components/Chat/*` + `AssistantChat/*`, then `ContextPanel/*`, `TabBar`/`TabContent`/`TabView`/`TileView`/`TerminalEmulator/*`/`Dashboard`, then Canvas, contexts, hooks/utils, `api/client.js`, and the app shell), then drop `allowJs` (P2-2), coverage (P2-3), provider-adapter tests (P2-5), and E2E (P2-6). The conversion has caught 3 latent snake_case wire-field bugs so far — evidence the typing effort is worth it beyond pure hygiene.
+We're roughly **80%** of the way there as of 2026-05-27. **P0 and P1 complete; P1-1's skill-binding carve-out closed under P2-1b.** A **dead-code sweep (P2-0)** removed the orphaned pre-workspace tabs/tiles + command-visualization subsystem (~8800 lines / 36 files, −348KB bundle), which deleted most of the remaining conversion queue. P2-1 is underway: Fleet, the full Settings cluster, the ContextPanel cluster, and assorted leaves are converted (**44 `.ts`/`.tsx`**). Remaining: **14 `.jsx` + 12 non-test `.js`** — TerminalEmulator + workspace-task components, the contexts (incl. the deferred `TabManagerContext` tile-internal removal), remaining hooks/utils/stores, `api/client.js`, and the app shell — then drop `allowJs` (P2-2), coverage (P2-3), provider-adapter tests (P2-5), and E2E (P2-6). The conversion has caught 3 latent snake_case wire-field bugs so far — evidence the typing effort is worth it beyond pure hygiene.
 
 ## House rules in effect today
 
@@ -84,23 +84,33 @@ These already apply — don't wait for the roadmap to finish:
 
 ### P2 — Longer tail (multi-day, opportunistic)
 
-**P2-1. Convert the remaining `.jsx` files.** _In progress — ~53 `.jsx` + ~22 non-test `.js` left as of 2026-05-26 (30 files already `.ts`/`.tsx`)._
+**P2-0. Dead-code sweep.** _Done 2026-05-27 (commits `a3727fe`, `d14e592`, `ad46400`)._
+A reachability audit from the real render roots (`MainLayout` → `TerminalEmulatorWrapper`/`Fleet`/`Workspace`) found that the entire pre-workspace **tabs/tiles + command-visualization subsystem** was orphaned when the Home page was deleted (see `Routes.jsx`). Removed ~8800 lines / 36 files and ~348KB of bundle:
+
+- [x] Render tree: `TabView`, `TabBar`, `TabContent`, `TileView`, `DesktopChatPanel`, `AssistantChat` wrapper (kept `ChatMessageList`), `ToolBlock`.
+- [x] Visualization components: `Dashboard`, `Canvas`+nodes, `Anomalies`, `ChartsView/ContextChart`, `common/DashboardPicker`, `common/NetdataSpinner`, `Echo`, `Help`.
+- [x] Emptied `utils/commandRegistry.js` (`COMMAND_COMPONENTS`/`getCommandComponent` were only used by `TileView`); kept `isCommandSupported`.
+- [x] Utils/hooks: `tileCommandHandler`, `canvasElementValidator`, `dashboardElementValidator`, `performance/*`, `useCommandRegistration`, `useWorkspaceSelectors`.
+- [x] `CommandMessagingContext` + its `MainLayout` provider; the dead `/tile` command branch in `TabManagerContext`.
+- [ ] **Deferred internal untangle:** `TabManagerContext` (1777-line, untyped, no tests) still carries tile state (`activeTileId`, `splitTile/closeTile/resizeTile`, tile-tree helpers, per-tab `CommandRegistry`, the `currentCommand` effect, `executeCommand('help')` on init), and `workspaceStore` still persists `rootTile` to SQLite. Removing these is entangled with the live `/tab`//`/ctx`/history/persistence paths. **Folded into P2-1: do it during the TS conversion of `TabManagerContext` + `CommandContext` + `workspaceStore`, with the compiler guarding the live flow + a persistence migration.** (Known minor fallout: the terminal's `/help` hint now points to a removed command.)
+
+**P2-1. Convert the remaining `.jsx` files.** _In progress as of 2026-05-27. Dead-code sweep (P2-0) deleted most of the previously-listed queue (Dashboard/Canvas/Anomalies/Echo/Help/Tab*/Tile*/chart blocks/DesktopChatPanel/AssistantChat)._
 Touch as you go, don't batch. Done so far this pass:
 
 - [x] Pinned leaf components: `MarkdownMessage`, `StreamingMarkdown`, `VirtualizedList` (`<T,>` generic, `memo(Inner) as typeof Inner` export). Casts removed from consumers.
-- [x] Trivial leaves: `utils/openExternal`, `hooks/useDebounce`, `hooks/usePlatform`, and pure re-export indexes (assistant, commands, Dashboard, TerminalEmulator, TileView, ContextPanel, Settings).
+- [x] Trivial leaves: `utils/openExternal`, `hooks/useDebounce`, `hooks/usePlatform`, and pure re-export indexes.
+- [x] `src/pages/Fleet.jsx` → `.tsx`.
+- [x] `src/components/Settings/*` — **9 of 9 done**. Surfaced + fixed 3 latent snake_case bugs (`has_secret` ×2, `local_path` ×1).
+- [x] `src/components/ContextPanel/*` (ContextBadge, ContextPanel, McpServerAvatar, McpServerSelector) — typed against `McpServerResponse`/`ProviderConnection`.
+- [x] Leaf components: `NotFound`, `ConfirmDialog`.
 
 Remaining, order roughly:
 
-- [x] `src/pages/Fleet.jsx` → `.tsx` (typed against WorkspaceListEntry/Snapshot/ScheduleKind; `n()` coercion for the bigint counts; context hooks cast at call site).
-- [x] `src/components/Settings/*` — **9 of 9 done**: SettingsModal, McpServersSettings, AgentCard, IntervalSelect, ProviderSettings, McpServerFormModal, SkillsSettings, AssistantProviderSettings, and WorkspaceSettingsModal (1937 lines). Surfaced + fixed 3 latent snake_case bugs (`has_secret` ×2, `local_path` ×1).
-- `src/components/AssistantChat/*` (the rest beyond ChatMessageList).
-- `src/components/Chat/*` chart blocks + `ToolBlock`, `DesktopChatPanel`.
-- `src/components/ContextPanel/*`, `TabBar`, `TabContent`, `TabView`, `TileView`, `TerminalEmulator/*`, `Dashboard`, `Canvas/*`.
-- `src/components/Canvas/*` — **gotcha**: `Canvas/index.js` re-exports a nonexistent `TextNode`; drop it when converting. xyflow/d3 typing needs care.
-- `src/contexts/*`, remaining `src/hooks/*`, `src/utils/*`, `src/stores/chatManagerStore.js`.
+- `src/components/TerminalEmulator/*` (TerminalEmulator, TerminalEmulatorWrapper) + `WorkspaceTaskNotifications`, `WorkspaceTaskTranscriptPanel`, `workspace/components/WorkspaceContextBar`.
+- `src/contexts/*` — **incl. the P2-0 deferred tile-internal removal** for `TabManagerContext`/`CommandContext`; also `TabContext`, `ChatManagerContext`, `FleetContext`.
+- remaining `src/hooks/*`, `src/utils/*`, `src/commands/CommandRegistry.js`, `src/fleet/client.js`, `src/stores/chatManagerStore.js`, `src/stores/workspaceStore.ts` (drop `rootTile`/`TileNode` here).
 - `src/api/client.js` (486 lines, mixed concern) — also where the skill-command consumer typing lands.
-- `src/App.jsx`, `src/main.jsx`, `src/Routes.jsx`, `src/layouts/MainLayout.jsx`, `src/pages/NotFound.jsx`.
+- `src/App.jsx`, `src/main.jsx`, `src/Routes.jsx`, `src/layouts/MainLayout.jsx`.
 - The remaining test files — rename `.test.js` → `.test.ts`.
 
 **P2-1b. Skill-catalog bindings.** _Done 2026-05-26._
