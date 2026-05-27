@@ -48,13 +48,7 @@ const errorMessage = (err: unknown, fallback: string): string =>
 
 const TerminalEmulatorWrapper = () => {
   const location = useLocation();
-  // TabManagerContext is still untyped .jsx (createContext(null) ⇒ the hook
-  // return infers as `never`). Cast until it's converted under Batch 7.
-  const { tabs, activeTabId, updateTabContext } = useTabManager() as {
-    tabs: TabLike[];
-    activeTabId: string | null;
-    updateTabContext: (tabId: string, context: unknown) => void;
-  };
+  const { tabs, activeTabId, updateTabContext } = useTabManager();
   const { openChat } = useChatManager();
   const { isFleetRoute, selectedAgent, refresh: refreshFleet } = useFleet();
   const { ensureSession, isStreaming: tabIsStreaming } = useAssistantSession(activeTabId || '');
@@ -96,7 +90,7 @@ const TerminalEmulatorWrapper = () => {
   // Handle context changes from the terminal
   const handleContextChange = (context: unknown) => {
     if (activeTab) {
-      updateTabContext(activeTab.id, context);
+      updateTabContext(activeTab.id, context as Record<string, unknown>);
     }
   };
 

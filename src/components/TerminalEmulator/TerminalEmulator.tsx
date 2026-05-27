@@ -5,7 +5,6 @@ import { useTabManager } from '../../contexts/TabManagerContext';
 import { useChatManager } from '../../contexts/ChatManagerContext';
 import TabContext from '../../contexts/TabContext';
 import { parseCommand, isLayoutCommand } from '../../utils/commandParser';
-import type { ParsedCommand } from '../../utils/commandParser';
 import { handleContextCommand, isContextCommand } from '../../utils/contextCommandHandler';
 import { isCommandSupported } from '../../utils/commandRegistry';
 import { createWorkspace } from '../../workspace/client';
@@ -34,12 +33,7 @@ interface TerminalEmulatorProps {
 
 const TerminalEmulator = ({ onSendToChat, disabled = false }: TerminalEmulatorProps) => {
   const { executeCommand, commandHistory } = useCommand();
-  // TabManagerContext is still untyped .jsx (its createContext(null) makes
-  // the hook return type infer as `never`). Cast until it's converted.
-  const { handleLayoutCommand, getActiveTab } = useTabManager() as {
-    handleLayoutCommand: (command: ParsedCommand) => { success?: boolean; message?: string } | null | void;
-    getActiveTab: () => { id: string } | null;
-  };
+  const { handleLayoutCommand, getActiveTab } = useTabManager();
   const { setActiveContext, openChat, isCurrentChatOpen } = useChatManager();
   const location = useLocation();
   const navigate = useNavigate();

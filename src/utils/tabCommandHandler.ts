@@ -29,7 +29,7 @@ export interface TabCommandApi {
   closeTab: (tabId: string) => void;
   renameTab: (tabId: string, title: string) => void;
   resetTab: (tabId: string) => CommandResult | void;
-  duplicateTab: (tabId: string) => TabInfo;
+  duplicateTab: (tabId: string) => TabInfo | null;
 }
 
 /**
