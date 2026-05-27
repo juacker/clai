@@ -81,13 +81,13 @@ const findWindow = (
   let start = 0;
   while (
     start < positions.length - 1
-    && positions[start].top + positions[start].size < startPx
+    && positions[start]!.top + positions[start]!.size < startPx
   ) {
     start += 1;
   }
 
   let end = start;
-  while (end < positions.length && positions[end].top < endPx) {
+  while (end < positions.length && positions[end]!.top < endPx) {
     end += 1;
   }
 
@@ -238,7 +238,7 @@ const VirtualizedListInner = <T,>({
     let top = 0;
 
     for (let index = 0; index < items.length; index += 1) {
-      const key = itemKey(items[index], index);
+      const key = itemKey(items[index]!, index);
       const cached = heightsRef.current.get(key);
       const size = cached !== undefined ? cached : estimateSize;
       const entry = { top, size, key };
@@ -301,7 +301,7 @@ const VirtualizedListInner = <T,>({
     let anchorIdx = 0;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      if (prev.positions[mid].top <= currentScrollTop) {
+      if (prev.positions[mid]!.top <= currentScrollTop) {
         anchorIdx = mid;
         lo = mid + 1;
       } else {
@@ -310,6 +310,7 @@ const VirtualizedListInner = <T,>({
     }
 
     const anchor = prev.positions[anchorIdx];
+    if (!anchor) return;
     const newPos = layout.positionsByKey.get(anchor.key);
     if (!newPos) return;
 
@@ -327,8 +328,10 @@ const VirtualizedListInner = <T,>({
 
   const visibleItems: { item: T; index: number; position: Position }[] = [];
   for (let index = layout.start; index <= layout.end; index += 1) {
-    if (!items[index]) continue;
-    visibleItems.push({ item: items[index], index, position: layout.positions[index] });
+    const item = items[index];
+    const position = layout.positions[index];
+    if (!item || !position) continue;
+    visibleItems.push({ item, index, position });
   }
 
   return (

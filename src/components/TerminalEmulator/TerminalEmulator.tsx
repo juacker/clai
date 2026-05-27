@@ -57,7 +57,7 @@ const TerminalEmulator = ({ onSendToChat, disabled = false }: TerminalEmulatorPr
   const isFleetRoute = location.pathname === '/fleet';
   const isWorkspaceRoute = location.pathname === '/workspace' || location.pathname.startsWith('/workspace/');
   const workspaceRouteMatch = location.pathname.match(/^\/workspace\/([^/]+)\/?$/);
-  const currentWorkspaceId = workspaceRouteMatch ? decodeURIComponent(workspaceRouteMatch[1]) : null;
+  const currentWorkspaceId = workspaceRouteMatch ? decodeURIComponent(workspaceRouteMatch[1]!) : null;
   // Hide ContextPanel on Fleet and workspace routes (workspace has its own context bar)
   const hideContextPanel = isFleetRoute || isWorkspaceRoute;
 

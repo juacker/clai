@@ -47,7 +47,7 @@ export function handleTabCommand(
     return handleNewTab([], tabManager);
   }
 
-  const firstArg = positional[0].toLowerCase();
+  const firstArg = positional[0]!.toLowerCase();
 
   // Check if first arg is a subcommand
   const subcommands = ['new', 'close', 'rename', 'list', 'reset', 'duplicate', 'next', 'prev'];
@@ -140,7 +140,7 @@ function handleSwitchTab(index: number, tabManager: TabCommandApi): CommandResul
     };
   }
 
-  const targetTab = tabs[index - 1];
+  const targetTab = tabs[index - 1]!;
   switchToTab(targetTab.id);
   return {
     success: true,
@@ -240,7 +240,7 @@ function handleCloseTab(args: string[], tabManager: TabCommandApi): CommandResul
     };
   }
 
-  const targetTab = tabs[index - 1];
+  const targetTab = tabs[index - 1]!;
   closeTab(targetTab.id);
 
   return {

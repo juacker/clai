@@ -121,7 +121,7 @@ const createTile = (commandId: string | null = null): LeafTileNode => ({
 
 const extractTabNumber = (title: string): number | null => {
   const match = title.match(/^Tab (\d+)$/);
-  return match ? parseInt(match[1], 10) : null;
+  return match ? parseInt(match[1]!, 10) : null;
 };
 
 const getNextTabNumber = (tabs: WorkspaceTab[]): number => {
@@ -179,7 +179,9 @@ export const TabManagerProvider = ({ children }: { children: React.ReactNode }) 
 
     let tabsFromStore: WorkspaceTab[];
     if (storedTabOrder && storedTabOrder.length > 0) {
-      tabsFromStore = storedTabOrder.map((id) => storedTabs[id]).filter(Boolean);
+      tabsFromStore = storedTabOrder
+        .map((id) => storedTabs[id])
+        .filter((t): t is WorkspaceTab => Boolean(t));
     } else {
       tabsFromStore = Object.values(storedTabs);
     }
@@ -188,7 +190,7 @@ export const TabManagerProvider = ({ children }: { children: React.ReactNode }) 
       // Skip the next sync to avoid immediately rewriting what we just loaded.
       skipNextSync.current = true;
       setTabs(tabsFromStore);
-      setActiveTabId(storedActiveTabId || tabsFromStore[0].id);
+      setActiveTabId(storedActiveTabId || tabsFromStore[0]!.id);
       tabsLoaded = true;
     }
 
@@ -215,7 +217,7 @@ export const TabManagerProvider = ({ children }: { children: React.ReactNode }) 
             });
 
             setTabs(migratedTabs);
-            setActiveTabId(savedActiveTabId || migratedTabs[0].id);
+            setActiveTabId(savedActiveTabId || migratedTabs[0]!.id);
 
             localStorage.removeItem('netdata_tabs');
             localStorage.removeItem('netdata_active_tab_id');
@@ -332,7 +334,7 @@ export const TabManagerProvider = ({ children }: { children: React.ReactNode }) 
       const filtered = prev.filter((t) => t.id !== tabId);
       if (tabId === activeTabId) {
         if (filtered.length > 0) {
-          setActiveTabId(filtered[filtered.length - 1].id);
+          setActiveTabId(filtered[filtered.length - 1]!.id);
         } else {
           setActiveTabId(null);
         }
@@ -350,7 +352,7 @@ export const TabManagerProvider = ({ children }: { children: React.ReactNode }) 
 
   const switchToTabByIndex = useCallback((index: number) => {
     if (index > 0 && index <= tabs.length) {
-      const tab = tabs[index - 1];
+      const tab = tabs[index - 1]!;
       switchToTab(tab.id);
     }
   }, [tabs, switchToTab]);
@@ -359,7 +361,7 @@ export const TabManagerProvider = ({ children }: { children: React.ReactNode }) 
     if (tabs.length === 0) return null;
     const currentIndex = tabs.findIndex((t) => t.id === activeTabId);
     const nextIndex = (currentIndex + 1) % tabs.length;
-    const nextTabId = tabs[nextIndex].id;
+    const nextTabId = tabs[nextIndex]!.id;
     switchToTab(nextTabId);
     return nextTabId;
   }, [tabs, activeTabId, switchToTab]);
@@ -368,7 +370,7 @@ export const TabManagerProvider = ({ children }: { children: React.ReactNode }) 
     if (tabs.length === 0) return null;
     const currentIndex = tabs.findIndex((t) => t.id === activeTabId);
     const prevIndex = currentIndex === 0 ? tabs.length - 1 : currentIndex - 1;
-    const prevTabId = tabs[prevIndex].id;
+    const prevTabId = tabs[prevIndex]!.id;
     switchToTab(prevTabId);
     return prevTabId;
   }, [tabs, activeTabId, switchToTab]);
@@ -383,7 +385,7 @@ export const TabManagerProvider = ({ children }: { children: React.ReactNode }) 
     setTabs((prev) => {
       const newTabs = [...prev];
       const [movedTab] = newTabs.splice(fromIndex, 1);
-      newTabs.splice(toIndex, 0, movedTab);
+      if (movedTab) newTabs.splice(toIndex, 0, movedTab);
       return newTabs;
     });
     useWorkspaceStore.getState().reorderTabs(fromIndex, toIndex);

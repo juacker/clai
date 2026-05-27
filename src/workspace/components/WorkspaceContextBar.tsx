@@ -56,7 +56,7 @@ const WorkspaceContextBar = memo(({ workspaceId }: WorkspaceContextBarProps) => 
         }
         // Pick up the preferred provider from the snapshot binding
         if (!agent && (snap?.providerConnectionIds?.length || 0) > 0) {
-          setSelectedProviderId((prev) => prev || snap.providerConnectionIds[0]);
+          setSelectedProviderId((prev) => prev || snap.providerConnectionIds[0]!);
         }
       } catch {
         // Snapshot not available yet — fine

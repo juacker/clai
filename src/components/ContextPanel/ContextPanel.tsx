@@ -120,7 +120,7 @@ const ContextPanel = () => {
 
     if (!tabContext?.assistantConnectionId) {
       updateTabContext(activeTab.id, {
-        assistantConnectionId: enabledProviderConnections[0].id,
+        assistantConnectionId: enabledProviderConnections[0]!.id,
       });
     }
   }, [activeTab, enabledProviderConnections, isAgentManagedTab, tabContext?.assistantConnectionId, updateTabContext]);

@@ -131,7 +131,7 @@ const getLastRunInfo = (runs: AssistantRun[] | null | undefined): AssistantRun |
   const last = [...runs].sort(
     (a, b) => (toNumber(b.startedAt) || 0) - (toNumber(a.startedAt) || 0)
   )[0];
-  return last;
+  return last ?? null;
 };
 
 const RUN_STATUS_LABEL: Partial<Record<AssistantRun['status'], string>> = {
@@ -446,7 +446,7 @@ const buildArtifactTree = (artifacts: WorkspaceFileEntry[]): ArtifactFolderNode 
     if (parts.length === 0) continue;
     let node = root;
     for (let i = 0; i < parts.length; i += 1) {
-      const part = parts[i];
+      const part = parts[i]!; // bounded by the loop condition
       const isLeaf = i === parts.length - 1;
       const childPath = node.path ? `${node.path}/${part}` : part;
       let child = node.children.get(part);
@@ -667,8 +667,8 @@ const ArtifactsList = ({ artifacts, onSelect }: ArtifactsListProps) => {
     if (initializedRef.current) return;
     if (tree.children.length === 0) return;
     initializedRef.current = true;
-    if (tree.children.length === 1 && tree.children[0].kind === 'folder') {
-      setExpanded(new Set([tree.children[0].path]));
+    if (tree.children.length === 1 && tree.children[0]!.kind === 'folder') {
+      setExpanded(new Set([tree.children[0]!.path]));
     }
   }, [tree]);
 
@@ -741,7 +741,7 @@ const WorkspaceAttentionBanner = ({ tasks }: { tasks: WorkspaceTaskResponse[] })
     return null;
   }
 
-  const primary = attentionTasks[0];
+  const primary = attentionTasks[0]!;
   const statusLabel = TASK_STATUS_LABEL[primary.status] || primary.status;
   const detail = primary.error || primary.resultSummary || primary.instructions;
 

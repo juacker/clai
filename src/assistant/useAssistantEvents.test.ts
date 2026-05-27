@@ -68,7 +68,7 @@ describe('useAssistantEvents — ask_user envelope', () => {
         extra_context: 'because reasons',
       },
     });
-    const pending = useAssistantStore.getState().sessions[SESSION.id].pendingAskUser;
+    const pending = useAssistantStore.getState().sessions[SESSION.id]!.pendingAskUser;
     expect(pending).toEqual({
       pendingId: 'p-1',
       question: 'Do the thing?',
@@ -89,7 +89,7 @@ describe('useAssistantEvents — ask_user envelope', () => {
     mount();
     await Promise.resolve();
     fire({ type: 'ask_user_resolved', payload: { pending_id: 'p-1' } });
-    expect(useAssistantStore.getState().sessions[SESSION.id].pendingAskUser).toBeNull();
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.pendingAskUser).toBeNull();
   });
 });
 
@@ -104,7 +104,7 @@ describe('useAssistantEvents — run lifecycle', () => {
       type: 'run_completed',
       payload: { run: { id: 'run-1', status: 'completed' } },
     });
-    const s = useAssistantStore.getState().sessions[SESSION.id];
+    const s = useAssistantStore.getState().sessions[SESSION.id]!;
     expect(s.runs).toEqual([{ id: 'run-1', status: 'completed' }]);
     expect(s.isStreaming).toBe(false);
   });
@@ -123,7 +123,7 @@ describe('useAssistantEvents — run lifecycle', () => {
       payload: { message_id: 'msg-1', text: 'world' },
     });
     expect(
-      useAssistantStore.getState().sessions[SESSION.id].streamingTextByMessageId['msg-1'],
+      useAssistantStore.getState().sessions[SESSION.id]!.streamingTextByMessageId['msg-1'],
     ).toBe('Hello world');
   });
 });

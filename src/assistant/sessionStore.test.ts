@@ -32,7 +32,7 @@ beforeEach(() => {
 describe('initSession', () => {
   it('creates a fresh entry when none exists', () => {
     useAssistantStore.getState().initSession(SESSION);
-    const s = useAssistantStore.getState().sessions[SESSION.id];
+    const s = useAssistantStore.getState().sessions[SESSION.id]!;
     expect(s).toBeDefined();
     expect(s.messages).toEqual([]);
     expect(s.pendingAskUser).toBeNull();
@@ -43,7 +43,7 @@ describe('initSession', () => {
     store.initSession(SESSION);
     store.setAskUserPending(SESSION.id, ASK_REQUEST);
     store.initSession(SESSION);
-    expect(useAssistantStore.getState().sessions[SESSION.id].pendingAskUser).toEqual(
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.pendingAskUser).toEqual(
       ASK_REQUEST,
     );
   });
@@ -54,7 +54,7 @@ describe('setAskUserPending / clearAskUserPending', () => {
     const store = useAssistantStore.getState();
     store.initSession(SESSION);
     store.setAskUserPending(SESSION.id, ASK_REQUEST);
-    expect(useAssistantStore.getState().sessions[SESSION.id].pendingAskUser).toEqual(
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.pendingAskUser).toEqual(
       ASK_REQUEST,
     );
   });
@@ -69,7 +69,7 @@ describe('setAskUserPending / clearAskUserPending', () => {
     store.initSession(SESSION);
     store.setAskUserPending(SESSION.id, ASK_REQUEST);
     store.clearAskUserPending(SESSION.id, ASK_REQUEST.pendingId);
-    expect(useAssistantStore.getState().sessions[SESSION.id].pendingAskUser).toBeNull();
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.pendingAskUser).toBeNull();
   });
 
   it('ignores a clear with a stale pendingId so a late resolve does not wipe a newer question', () => {
@@ -80,7 +80,7 @@ describe('setAskUserPending / clearAskUserPending', () => {
     store.initSession(SESSION);
     store.setAskUserPending(SESSION.id, ASK_REQUEST);
     store.clearAskUserPending(SESSION.id, 'stale-pending-id');
-    expect(useAssistantStore.getState().sessions[SESSION.id].pendingAskUser).toEqual(
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.pendingAskUser).toEqual(
       ASK_REQUEST,
     );
   });
@@ -97,7 +97,7 @@ describe('loadSessionData — snapshot refresh preserves in-flight FE state', ()
     store.initSession(SESSION);
     store.setAskUserPending(SESSION.id, ASK_REQUEST);
     store.loadSessionData(SESSION.id, SESSION, [], [], []);
-    expect(useAssistantStore.getState().sessions[SESSION.id].pendingAskUser).toEqual(
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.pendingAskUser).toEqual(
       ASK_REQUEST,
     );
   });
@@ -109,9 +109,9 @@ describe('loadSessionData — snapshot refresh preserves in-flight FE state', ()
     store.appendDelta(SESSION.id, 'msg-1', 'world');
     store.loadSessionData(SESSION.id, SESSION, [], [], []);
     expect(
-      useAssistantStore.getState().sessions[SESSION.id].streamingTextByMessageId['msg-1'],
+      useAssistantStore.getState().sessions[SESSION.id]!.streamingTextByMessageId['msg-1'],
     ).toBe('Hello world');
-    expect(useAssistantStore.getState().sessions[SESSION.id].isStreaming).toBe(true);
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.isStreaming).toBe(true);
   });
 
   it('overwrites messages/runs/toolCalls with the snapshot payload', () => {
@@ -125,7 +125,7 @@ describe('loadSessionData — snapshot refresh preserves in-flight FE state', ()
       [run('run-1', 'completed')],
       [],
     );
-    const s = useAssistantStore.getState().sessions[SESSION.id];
+    const s = useAssistantStore.getState().sessions[SESSION.id]!;
     expect(s.messages.map((m) => m.id)).toEqual(['new-msg-1', 'new-msg-2']);
     expect(s.runs.map((r) => r.id)).toEqual(['run-1']);
   });
@@ -137,7 +137,7 @@ describe('addMessage', () => {
     store.initSession(SESSION);
     store.addMessage(SESSION.id, msg('msg-1'));
     store.addMessage(SESSION.id, msg('msg-1'));
-    expect(useAssistantStore.getState().sessions[SESSION.id].messages).toHaveLength(1);
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.messages).toHaveLength(1);
   });
 });
 
@@ -147,7 +147,7 @@ describe('setRunStatus', () => {
     store.initSession(SESSION);
     store.appendDelta(SESSION.id, 'msg-1', 'partial');
     store.setRunStatus(SESSION.id, run('run-1', 'completed'));
-    const s = useAssistantStore.getState().sessions[SESSION.id];
+    const s = useAssistantStore.getState().sessions[SESSION.id]!;
     expect(s.isStreaming).toBe(false);
     expect(s.streamingTextByMessageId).toEqual({});
   });
@@ -156,6 +156,6 @@ describe('setRunStatus', () => {
     const store = useAssistantStore.getState();
     store.initSession(SESSION);
     store.setRunStatus(SESSION.id, run('run-1', 'queued'));
-    expect(useAssistantStore.getState().sessions[SESSION.id].isStreaming).toBe(true);
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.isStreaming).toBe(true);
   });
 });

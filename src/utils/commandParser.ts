@@ -42,19 +42,19 @@ export const parseArguments = (args: string[]): CommandArgs => {
   const positional: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
+    const arg = args[i]!; // bounded by the loop condition
 
     // Handle --key=value format
     if (arg.startsWith('--') && arg.includes('=')) {
-      const [key, ...valueParts] = arg.slice(2).split('=');
+      const [key = '', ...valueParts] = arg.slice(2).split('=');
       options[key] = valueParts.join('=');
     }
     // Handle --flag or --key value format
     else if (arg.startsWith('--')) {
       const key = arg.slice(2);
       // Check if next arg is a value (doesn't start with --)
-      if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
-        options[key] = args[i + 1];
+      if (i + 1 < args.length && !args[i + 1]!.startsWith('--')) {
+        options[key] = args[i + 1]!;
         i++; // Skip next arg since we consumed it
       } else {
         // It's a boolean flag
@@ -65,8 +65,8 @@ export const parseArguments = (args: string[]): CommandArgs => {
     else if (arg.startsWith('-') && arg.length === 2) {
       const key = arg.slice(1);
       // Check if next arg is a value
-      if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
-        options[key] = args[i + 1];
+      if (i + 1 < args.length && !args[i + 1]!.startsWith('-')) {
+        options[key] = args[i + 1]!;
         i++;
       } else {
         options[key] = true;

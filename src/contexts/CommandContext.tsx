@@ -238,7 +238,7 @@ export const CommandProvider = ({ children }: { children: React.ReactNode }) => 
       return null;
     }
 
-    return commandHistory[actualIndex];
+    return commandHistory[actualIndex] ?? null;
   }, [commandHistory]);
 
   /**

@@ -78,7 +78,7 @@ const AskUserPanel = ({ sessionId }: AskUserPanelProps) => {
       if (!hasOptions || selectedIndex === OTHER_INDEX || selectedIndex === null) {
         answer = otherText.trim();
       } else {
-        answer = options[selectedIndex].label;
+        answer = options[selectedIndex]!.label;
         selectedOptionIndex = selectedIndex;
       }
       await invoke('assistant_submit_user_input', {

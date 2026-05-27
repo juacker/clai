@@ -197,7 +197,7 @@ const InlinePathGrantCard = ({ workspaceId }: InlinePathGrantCardProps) => {
     ) => {
       setPerCardState((current) => ({
         ...current,
-        [requestId]: { ...current[requestId], [field]: value },
+        [requestId]: { ...current[requestId], [field]: value } as PathGrantCardState,
       }));
     },
     [],

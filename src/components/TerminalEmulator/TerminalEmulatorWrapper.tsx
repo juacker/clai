@@ -121,7 +121,7 @@ const TerminalEmulatorWrapper = () => {
     }
 
     const existingId = tab.context?.assistantConnectionId;
-    const selected = connections.find((connection) => connection.id === existingId) || connections[0];
+    const selected = connections.find((connection) => connection.id === existingId) || connections[0]!;
     if (selected.id !== existingId) {
       updateTabContext(tab.id, { assistantConnectionId: selected.id });
     }

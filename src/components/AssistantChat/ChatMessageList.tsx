@@ -110,7 +110,7 @@ const cleanToolName = (name: string): string => {
   if (!name) return name;
   // Match mcp.<uuid-or-id>.<actual_tool_name>
   const match = name.match(/^mcp\.[^.]+\.(.+)$/);
-  return match ? match[1] : name;
+  return match ? match[1]! : name;
 };
 
 /**
@@ -212,7 +212,7 @@ const groupMessages = (messages: AssistantMessage[]): RenderItem[] => {
   let i = 0;
 
   while (i < messages.length) {
-    const msg = messages[i];
+    const msg = messages[i]!; // bounded by the while condition
 
     if (isHiddenMessage(msg)) {
       i++;
@@ -224,13 +224,14 @@ const groupMessages = (messages: AssistantMessage[]): RenderItem[] => {
       const group = [msg];
       let j = i + 1;
       while (j < messages.length) {
+        const candidate = messages[j]!;
         // Skip non-rendered messages between assistant turns.
-        if (isHiddenMessage(messages[j])) {
+        if (isHiddenMessage(candidate)) {
           j++;
           continue;
         }
-        if (isToolOnlyMessage(messages[j])) {
-          group.push(messages[j]);
+        if (isToolOnlyMessage(candidate)) {
+          group.push(candidate);
           j++;
         } else {
           break;
@@ -243,7 +244,7 @@ const groupMessages = (messages: AssistantMessage[]): RenderItem[] => {
         result.push({
           type: 'tool-group',
           id: group.map((m) => m.id).join('-'),
-          createdAt: group[0].createdAt,
+          createdAt: group[0]!.createdAt,
           messages: group,
           toolUses: allToolUses,
         });
@@ -613,7 +614,7 @@ const ToolCallGroup = memo(({ toolUses }: { toolUses: EnrichedToolUse[] }) => {
 
   // Single tool call — render inline, no grouping needed
   if (toolUses.length === 1) {
-    const tu = toolUses[0];
+    const tu = toolUses[0]!;
     return (
       <ToolCallBlock
         key={tu.toolCallId}

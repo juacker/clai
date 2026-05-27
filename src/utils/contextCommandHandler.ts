@@ -38,7 +38,7 @@ export function handleContextCommand(
     return printContext(tabContext);
   }
 
-  const subcommand = positional[0].toLowerCase();
+  const subcommand = positional[0]!.toLowerCase();
 
   switch (subcommand) {
     case 'space':
@@ -121,7 +121,7 @@ function handleSetContext(args: string[], tabContext: ContextCommandApi): Comman
     };
   }
 
-  const key = args[0];
+  const key = args[0]!;
   const value = args.slice(1).join(' ');
 
   const { setCustomContext } = tabContext;
@@ -159,7 +159,7 @@ function handleAddContext(args: string[], tabContext: ContextCommandApi): Comman
     };
   }
 
-  const key = args[0];
+  const key = args[0]!;
   const value = args.slice(1).join(' ');
 
   const { customContext, setCustomContext } = tabContext;
@@ -199,7 +199,7 @@ function handleDeleteContext(args: string[], tabContext: ContextCommandApi): Com
     };
   }
 
-  const key = args[0];
+  const key = args[0]!;
   const { customContext, setCustomContext, deleteCustomContext } = tabContext;
 
   if (!(key in customContext)) {

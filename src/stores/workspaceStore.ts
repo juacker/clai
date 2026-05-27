@@ -331,7 +331,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
       closeTab: (tabId) => {
         set((state) => {
           for (const cmdId of Object.keys(state.commands)) {
-            if (state.commands[cmdId].tabId === tabId) {
+            if (state.commands[cmdId]!.tabId === tabId) {
               delete state.commands[cmdId];
             }
           }
@@ -341,7 +341,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           }
           delete state.tabs[tabId];
           if (state.activeTabId === tabId) {
-            state.activeTabId = state.tabOrder.length > 0 ? state.tabOrder[0] : null;
+            state.activeTabId = state.tabOrder.length > 0 ? state.tabOrder[0]! : null;
           }
         });
         debouncedSave(get());
@@ -384,7 +384,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           if (toIndex < 0 || toIndex >= state.tabOrder.length) return;
           if (fromIndex === toIndex) return;
           const [movedId] = state.tabOrder.splice(fromIndex, 1);
-          state.tabOrder.splice(toIndex, 0, movedId);
+          if (movedId !== undefined) state.tabOrder.splice(toIndex, 0, movedId);
         });
         debouncedSave(get());
       },

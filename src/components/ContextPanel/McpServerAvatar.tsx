@@ -22,7 +22,7 @@ const getFallbackLabel = (server?: McpServerResponse | null): string => {
   const source = server?.name || command || 'M';
   const parts = source.trim().split(/\s+/).filter(Boolean);
   if (parts.length >= 2) {
-    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    return `${parts[0]![0]}${parts[1]![0]}`.toUpperCase();
   }
   return source.slice(0, 2).toUpperCase();
 };

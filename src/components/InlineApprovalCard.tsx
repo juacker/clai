@@ -189,7 +189,7 @@ const InlineApprovalCard = ({ workspaceId }: InlineApprovalCardProps) => {
         const allDecided = req.segments.every((_, i) => updatedCard[i]?.decision);
         if (allDecided) {
           const decisions = req.segments.map((seg, i) => {
-            const cell = updatedCard[i];
+            const cell = updatedCard[i]!; // allDecided guarantees every segment has a cell
             const prefix = (cell.prefix || '').trim() || seg.text;
             switch (cell.decision) {
               case 'allowOnce':
@@ -254,7 +254,7 @@ const InlineApprovalCard = ({ workspaceId }: InlineApprovalCardProps) => {
                     : `${req.segments.length} parts need a decision (submits as soon as every part is decided):`}
                 </p>
                 {req.segments.map((seg, idx) => {
-                  const cell = cardState[idx] || {};
+                  const cell: SegmentCellState = cardState[idx] || { prefix: '', decision: null };
                   const isOpaque = seg.kind === 'opaque';
                   return (
                     <div key={idx} className={styles.segmentRow}>

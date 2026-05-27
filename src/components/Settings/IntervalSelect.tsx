@@ -81,7 +81,7 @@ const IntervalSelect = ({ value, onChange, disabled, id }: IntervalSelectProps) 
   // Find the label for current value
   const selectedOption = value === 0
     ? { value: 0, label: 'On demand' }
-    : INTERVAL_OPTIONS.find(opt => opt.value === value) || INTERVAL_OPTIONS[2];
+    : INTERVAL_OPTIONS.find(opt => opt.value === value) || INTERVAL_OPTIONS[2]!;
 
   // Update dropdown position when opened
   useEffect(() => {
@@ -145,7 +145,7 @@ const IntervalSelect = ({ value, onChange, disabled, id }: IntervalSelectProps) 
         } else {
           const currentIndex = INTERVAL_OPTIONS.findIndex(opt => opt.value === value);
           const nextIndex = Math.min(currentIndex + 1, INTERVAL_OPTIONS.length - 1);
-          onChange(INTERVAL_OPTIONS[nextIndex].value);
+          onChange(INTERVAL_OPTIONS[nextIndex]!.value);
         }
         break;
       case 'ArrowUp':
@@ -153,7 +153,7 @@ const IntervalSelect = ({ value, onChange, disabled, id }: IntervalSelectProps) 
         if (isOpen) {
           const currentIndex = INTERVAL_OPTIONS.findIndex(opt => opt.value === value);
           const prevIndex = Math.max(currentIndex - 1, 0);
-          onChange(INTERVAL_OPTIONS[prevIndex].value);
+          onChange(INTERVAL_OPTIONS[prevIndex]!.value);
         }
         break;
       default:
