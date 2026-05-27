@@ -32,7 +32,7 @@ We can call this work finished when **all** of the following are true:
 4. CI runs `typecheck` + `test` + `gen:bindings` (and fails if bindings drift). Every push is gated.
 5. The 4 highest-traffic UI surfaces (Workspace page, Fleet page, AskUserPanel, ChatMessageList) have component-level tests covering at least their happy path.
 
-**P2-1 is complete as of 2026-05-27 — `src/` is 100% TypeScript** (the only remaining `.js` is `src/test/setup.js`, intentionally JS). **P0 and P1 complete; P1-1's skill-binding carve-out closed under P2-1b.** A **dead-code sweep (P2-0)** removed the orphaned pre-workspace tabs/tiles + command-visualization subsystem (~8800 lines / 36 files, −358KB bundle). Everything else was converted: Fleet, the full Settings cluster, ContextPanel, the terminal + workspace-task components, the app shell, the leaf utils/hooks/handlers, `api/client`, `fleet/client`, all the contexts, and finally **`TabManagerContext`** — whose conversion also carried the deferred tile-internal removal (the dead tile-grid ops + per-tab command registry, and `src/commands/` deleted; a vestigial `rootTile` leaf is kept so the persist shape still deserializes into the stubbed Rust `WorkspaceState`). The conversion caught 3 latent snake_case wire-field bugs — evidence the typing effort is worth it beyond pure hygiene. **Next: drop `allowJs` (P2-2)**, then coverage (P2-3), provider-adapter tests (P2-5), and E2E (P2-6).
+**P2-0 through P2-4 are complete as of 2026-05-27 — `src/` is 100% TypeScript** with `allowJs:false` + `noUncheckedIndexedAccess` + `noImplicitOverride`, and coverage tooling is wired (P2-3). Remaining: ratchet coverage up (P2-3), opportunistic adapter tests (P2-5, mostly already covered), and E2E (P2-6, deferred by design). **P0 and P1 complete; P1-1's skill-binding carve-out closed under P2-1b.** A **dead-code sweep (P2-0)** removed the orphaned pre-workspace tabs/tiles + command-visualization subsystem (~8800 lines / 36 files, −358KB bundle). Everything else was converted: Fleet, the full Settings cluster, ContextPanel, the terminal + workspace-task components, the app shell, the leaf utils/hooks/handlers, `api/client`, `fleet/client`, all the contexts, and finally **`TabManagerContext`** — whose conversion also carried the deferred tile-internal removal (the dead tile-grid ops + per-tab command registry, and `src/commands/` deleted; a vestigial `rootTile` leaf is kept so the persist shape still deserializes into the stubbed Rust `WorkspaceState`). The conversion caught 3 latent snake_case wire-field bugs — evidence the typing effort is worth it beyond pure hygiene. **Next: drop `allowJs` (P2-2)**, then coverage (P2-3), provider-adapter tests (P2-5), and E2E (P2-6).
 
 ## House rules in effect today
 
@@ -121,29 +121,35 @@ Optional follow-ups (not blocking 100%-TS):
 
 - [x] `SkillSourceKind/Config`, `SkillDefinition`, `SkillSourceDiagnostic`, and the `skills.rs` request/response structs derive `TS`. `#[ts(flatten)]` added alongside `#[serde(flatten)]` on `SkillSourceResponse`. Consumer typing (`api/client.js` skill commands) lands when that file is converted under P2-1.
 
-**P2-2. Drop `allowJs`; tighten compiler.** _Effort: ~30min once P2-1 is done._
+**P2-2. Drop `allowJs`; tighten compiler.** _Done 2026-05-27._
 
-- Set `"allowJs": false` and `"checkJs": true` (defensive — no .js should remain, but catches accidents).
-- Enable `noUncheckedIndexedAccess`, `noImplicitOverride`, `exactOptionalPropertyTypes`. Each will surface real bugs; fix them.
+- [x] `allowJs: false`; include glob restricted to `.ts`/`.tsx` (a stray `.js` under `src/` no longer escapes type-checking). `checkJs` can't coexist with `allowJs:false`, so it's omitted.
+- [x] `noImplicitOverride` (0 errors).
+- [x] `noUncheckedIndexedAccess` — **enabled; fixed 126 sites** across ~18 files (`!` only where provably in-bounds; real guards / `?? null` / typed defaults where genuinely nullable). The highest-value flag here.
+- [x] `exactOptionalPropertyTypes` — **evaluated, intentionally left OFF.** It surfaced ~24 errors that were all "widen an optional prop to `| undefined`" (modelling React's `prop={cond ? v : undefined}` idiom, not real bugs). Poor cost/benefit; revisit only if a concrete undefined-vs-absent bug motivates it.
 
-**P2-3. Coverage tracking.** _Effort: ~1-2h._
+**P2-3. Coverage tracking.** _Tooling done 2026-05-27; ratcheting is ongoing._
 
-- `vitest --coverage` with c8.
-- Aim for 80% on `src/assistant/` first; ratchet up across the codebase.
-- CI gate: fail the build if coverage drops more than 2% in any package.
+- [x] `@vitest/coverage-v8` + `npm run test:coverage` + coverage config (v8; text/html/json-summary; excludes generated/tests/barrels/entrypoint). `coverage/` gitignored.
+- Baseline with the current 5-file suite: **~7% overall, ~36% `src/assistant/`**. No failing threshold yet.
+- [ ] Ratchet a gate up (assistant/ first → 80%) as tests are added. CI gate: fail if coverage drops >2%.
 
-**P2-4. Convert FE test files to `.ts`.** _Effort: 30min._
-After enough of P2-1 lands. Mechanical.
+**P2-4. Convert FE test files to `.ts`.** _Done 2026-05-27._
 
-**P2-5. Provider adapter tests.** _Effort: 1 day._
-The Anthropic / OpenAI / Claude Code stream parsers in `src-tauri/src/assistant/providers/` have zero unit coverage. A regression here would be catastrophic. Each adapter:
+- [x] `setup.ts` + `sessionStore.test.ts` + `useAssistantEvents.test.ts`; vitest `setupFiles` updated; typed fixtures via cast helpers.
 
-- Add `tests/<adapter>_stream.rs`.
-- Feed a recorded stream (capture a few real ones into `tests/fixtures/`).
-- Assert the parsed events match a known sequence.
+**P2-5. Provider adapter tests.** _Largely already covered — original "zero coverage" claim was stale._
+The Anthropic / OpenAI stream parsers in `src-tauri/src/assistant/providers/` **already have ~5 unit tests each**, including `parse_sse_frame` coverage and the critical `sse_stream_handles_split_utf8_across_transport_chunks` edge case (the exact catastrophic-regression class this task worried about). Remaining opportunistic work:
 
-**P2-6. End-to-end smoke tests.** _Effort: 1-2 days, plus ongoing maintenance cost._
-Defer unless P0-P2 stops catching regressions. Tauri-driver + Playwright on the dev build. Cover just the golden path: open workspace → send message → see streaming → see ask_user panel → submit answer.
+- [ ] `cli.rs` (Claude Code adapter) has no tests yet — add a few.
+- [ ] Broaden event-sequence assertions (full message lifecycle, tool-call frames) if a parser regression ever slips through.
+
+**P2-6. End-to-end smoke tests.** _Deferred (per this section's own guidance)._
+Defer unless P0-P2 stops catching regressions — and P0-P2 still is (the typing migration caught 3 wire-field bugs). Tauri-driver + Playwright on the dev build is 1-2 days + ongoing maintenance. Cover just the golden path when picked up: open workspace → send message → see streaming → see ask_user panel → submit answer.
+
+## Vestigial workspace persistence (optional cleanup)
+
+`workspaceStore.ts` still carries `rootTile`/`TileNode`/`commands` and `TabManagerContext` creates a minimal `rootTile` leaf, purely so the persist payload deserializes into the Rust `WorkspaceState`. Both `save_workspace_state` and `load_workspace_state` are **stubbed** (load returns `default()`, save ignores its arg) — nothing actually persists. Fully removing `rootTile`/`commands` is a **cross-stack** change (the Rust `WorkspaceState`/`Tab`/`Command` structs + `workspace_virtual_artifacts`/`command_to_virtual_artifact`/`tab_agent_id`), so it's left as coherent-but-vestigial: harmless, and not worth the cross-stack churn for stubbed code.
 
 ## Out of scope (explicitly deferred)
 
