@@ -8,6 +8,12 @@ const ASSISTANT_EVENT_NAME = 'assistant://event';
 const RUN_START_TYPES = new Set(['run_started', 'run_queued']);
 const RUN_END_TYPES = new Set(['run_completed', 'run_failed', 'run_cancelled']);
 
+interface AssistantEventEnvelopeLike {
+  workspaceId?: string | null;
+  runId?: string | null;
+  event?: { type?: string } | null;
+}
+
 /**
  * Tracks which workspaces have at least one assistant run currently in
  * flight. Sources its state from the assistant event stream
@@ -25,40 +31,45 @@ const RUN_END_TYPES = new Set(['run_completed', 'run_failed', 'run_cancelled']);
  * Returns an object keyed by workspaceId → number of active runs.
  * Callers can treat any positive value as "processing".
  */
-export function useFleetActivity() {
-  const [activeRunsByWorkspace, setActiveRunsByWorkspace] = useState({});
+export function useFleetActivity(): Record<string, number> {
+  const [activeRunsByWorkspace, setActiveRunsByWorkspace] = useState<
+    Record<string, Set<string>>
+  >({});
 
   useEffect(() => {
-    const unlistenPromise = listen(ASSISTANT_EVENT_NAME, (event) => {
-      const envelope = event.payload;
-      if (!envelope || !envelope.workspaceId || !envelope.runId) return;
-      const type = envelope.event?.type;
-      if (!type) return;
-      const wsId = envelope.workspaceId;
-      const runId = envelope.runId;
+    const unlistenPromise = listen<AssistantEventEnvelopeLike>(
+      ASSISTANT_EVENT_NAME,
+      (event) => {
+        const envelope = event.payload;
+        if (!envelope || !envelope.workspaceId || !envelope.runId) return;
+        const type = envelope.event?.type;
+        if (!type) return;
+        const wsId = envelope.workspaceId;
+        const runId = envelope.runId;
 
-      if (RUN_START_TYPES.has(type)) {
-        setActiveRunsByWorkspace((current) => {
-          const existing = current[wsId];
-          if (existing && existing.has(runId)) return current;
-          const nextSet = new Set(existing || []);
-          nextSet.add(runId);
-          return { ...current, [wsId]: nextSet };
-        });
-      } else if (RUN_END_TYPES.has(type)) {
-        setActiveRunsByWorkspace((current) => {
-          const existing = current[wsId];
-          if (!existing || !existing.has(runId)) return current;
-          const nextSet = new Set(existing);
-          nextSet.delete(runId);
-          if (nextSet.size === 0) {
-            const { [wsId]: _removed, ...rest } = current;
-            return rest;
-          }
-          return { ...current, [wsId]: nextSet };
-        });
+        if (RUN_START_TYPES.has(type)) {
+          setActiveRunsByWorkspace((current) => {
+            const existing = current[wsId];
+            if (existing && existing.has(runId)) return current;
+            const nextSet = new Set(existing || []);
+            nextSet.add(runId);
+            return { ...current, [wsId]: nextSet };
+          });
+        } else if (RUN_END_TYPES.has(type)) {
+          setActiveRunsByWorkspace((current) => {
+            const existing = current[wsId];
+            if (!existing || !existing.has(runId)) return current;
+            const nextSet = new Set(existing);
+            nextSet.delete(runId);
+            if (nextSet.size === 0) {
+              const { [wsId]: _removed, ...rest } = current;
+              return rest;
+            }
+            return { ...current, [wsId]: nextSet };
+          });
+        }
       }
-    });
+    );
 
     return () => {
       unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
@@ -68,7 +79,7 @@ export function useFleetActivity() {
   // Derive {[workspaceId]: count} from the Set map so consumers can
   // keep the previous numeric API (e.g., `counts[wsId] > 0`).
   return useMemo(() => {
-    const out = {};
+    const out: Record<string, number> = {};
     for (const [wsId, set] of Object.entries(activeRunsByWorkspace)) {
       out[wsId] = set.size;
     }

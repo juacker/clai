@@ -16,17 +16,13 @@
  */
 
 /**
- * Command Component Registry
- * Maps command names to their React components.
- * @type {Record<string, React.ComponentType<{ command: unknown }>>}
+ * Command Component Registry — maps command names to their React components.
  */
-export const COMMAND_COMPONENTS = {};
+export const COMMAND_COMPONENTS: Record<string, unknown> = {};
 
 /**
- * Check if a command is supported (has a component)
- * @param {string} commandName - Command name to check
- * @returns {boolean} True if command is supported
+ * Check if a command is supported (has a component).
  */
-export const isCommandSupported = (commandName) => {
+export const isCommandSupported = (commandName: string): boolean => {
   return commandName in COMMAND_COMPONENTS;
 };

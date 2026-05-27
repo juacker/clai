@@ -18,23 +18,54 @@
 import { useEffect, useCallback } from 'react';
 import { usePlatform } from './usePlatform';
 
+export interface KeyboardShortcutHandlers {
+  /** Called with tab index (1-9) when Alt+Number is pressed */
+  onSwitchTab?: (index: number) => void;
+  /** Ctrl/Cmd+T */
+  onNewTab?: () => void;
+  /** Ctrl/Cmd+W */
+  onCloseTab?: () => void;
+  /** Ctrl/Cmd+Tab */
+  onNextTab?: () => void;
+  /** Ctrl/Cmd+Shift+Tab */
+  onPrevTab?: () => void;
+  /** Ctrl/Cmd+Shift+T */
+  onReopenTab?: () => void;
+  /** Ctrl/Cmd+Shift+V (vim-style: side by side) */
+  onSplitVertical?: () => void;
+  /** Ctrl/Cmd+- (vim-style: stacked) */
+  onSplitHorizontal?: () => void;
+  /** Ctrl/Cmd+Shift+W */
+  onCloseTile?: () => void;
+  /** Ctrl/Cmd+] */
+  onNextTile?: () => void;
+  /** Ctrl/Cmd+[ */
+  onPrevTile?: () => void;
+  /** Ctrl/Cmd+Shift+C */
+  onToggleChat?: () => void;
+}
+
+export interface ShortcutCategory {
+  category: string;
+  items: { keys: string[]; description: string }[];
+}
+
+export interface KeyboardShortcutsInfo {
+  shortcuts: ShortcutCategory[];
+}
+
 /**
  * Normalize key names across browsers
- * @param {string} key - Event key
- * @returns {string} Normalized key
  */
-const normalizeKey = (key) => {
+const normalizeKey = (key: string): string => {
   return key.toLowerCase();
 };
 
 /**
  * Check if the primary modifier key is pressed
  * (Cmd on Mac, Ctrl on Windows/Linux)
- * @param {KeyboardEvent} event - Keyboard event
- * @param {string} os - Operating system
- * @returns {boolean} True if primary modifier is pressed
  */
-const isPrimaryModifier = (event, os) => {
+const isPrimaryModifier = (event: KeyboardEvent, os: string): boolean => {
   if (os === 'macos') {
     return event.metaKey && !event.ctrlKey;
   }
@@ -43,41 +74,22 @@ const isPrimaryModifier = (event, os) => {
 
 /**
  * Check if only Alt key is pressed (no other modifiers)
- * @param {KeyboardEvent} event - Keyboard event
- * @returns {boolean} True if only Alt is pressed
  */
-const isOnlyAlt = (event) => {
+const isOnlyAlt = (event: KeyboardEvent): boolean => {
   return event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
 };
 
 /**
  * Hook to manage global keyboard shortcuts
- * @param {Object} handlers - Shortcut handlers
- * @param {Function} handlers.onSwitchTab - Called with tab index (1-9) when Alt+Number is pressed
- * @param {Function} handlers.onNewTab - Called when Ctrl/Cmd+T is pressed
- * @param {Function} handlers.onCloseTab - Called when Ctrl/Cmd+W is pressed
- * @param {Function} handlers.onNextTab - Called when Ctrl/Cmd+Tab is pressed
- * @param {Function} handlers.onPrevTab - Called when Ctrl/Cmd+Shift+Tab is pressed
- * @param {Function} handlers.onReopenTab - Called when Ctrl/Cmd+Shift+T is pressed
- * @param {Function} handlers.onSplitVertical - Called when Ctrl/Cmd+Shift+V is pressed (vim-style: side by side)
- * @param {Function} handlers.onSplitHorizontal - Called when Ctrl/Cmd+- is pressed (vim-style: stacked)
- * @param {Function} handlers.onCloseTile - Called when Ctrl/Cmd+Shift+W is pressed
- * @param {Function} handlers.onNextTile - Called when Ctrl/Cmd+] is pressed
- * @param {Function} handlers.onPrevTile - Called when Ctrl/Cmd+[ is pressed
- * @param {Function} handlers.onToggleChat - Called when Ctrl/Cmd+Shift+C is pressed
- * @param {boolean} enabled - Whether shortcuts are enabled (default: true)
  */
-export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
+export const useKeyboardShortcuts = (
+  handlers: KeyboardShortcutHandlers = {},
+  enabled = true
+): KeyboardShortcutsInfo => {
   const { os } = usePlatform();
 
-  const handleKeyDown = useCallback((event) => {
+  const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (!enabled) return;
-
-    // Ignore shortcuts when typing in input fields (except for specific cases)
-    const target = event.target;
-    const isInput = target.tagName === 'INPUT' ||
-                    target.tagName === 'TEXTAREA' ||
-                    target.isContentEditable;
 
     // Get normalized key
     const key = normalizeKey(event.key);
@@ -212,7 +224,7 @@ export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
           { keys: ['Alt', '1-9'], description: 'Switch to tab by position' },
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'Tab'], description: 'Next tab' },
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'Shift', 'Tab'], description: 'Previous tab' },
-        ]
+        ],
       },
       {
         category: 'Tab Management',
@@ -220,7 +232,7 @@ export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'T'], description: 'New tab' },
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'W'], description: 'Close tab' },
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'Shift', 'T'], description: 'Reopen closed tab' },
-        ]
+        ],
       },
       {
         category: 'Tile Management',
@@ -230,23 +242,22 @@ export const useKeyboardShortcuts = (handlers = {}, enabled = true) => {
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'Shift', 'W'], description: 'Close current tile' },
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', ']'], description: 'Next tile' },
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', '['], description: 'Previous tile' },
-        ]
+        ],
       },
       {
         category: 'Terminal',
         items: [
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'L'], description: 'Focus terminal input' },
-        ]
+        ],
       },
       {
         category: 'Chat',
         items: [
           { keys: [os === 'macos' ? 'Cmd' : 'Ctrl', 'Shift', 'C'], description: 'Toggle chat panel' },
-        ]
-      }
-    ]
+        ],
+      },
+    ],
   };
 };
 
 export default useKeyboardShortcuts;
-

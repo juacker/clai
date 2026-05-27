@@ -6,24 +6,40 @@
  */
 
 import { COMMAND_STATUS } from './commandTypes';
+import type { CommandStatus } from './commandTypes';
+
+export type CommandOptionValue = string | boolean;
+
+export interface CommandArgs {
+  options: Record<string, CommandOptionValue>;
+  positional: string[];
+}
+
+export interface ParsedCommand {
+  id: string;
+  type: string;
+  raw: string;
+  name: string;
+  args: CommandArgs;
+  timestamp: number;
+  status: CommandStatus;
+  error?: string;
+}
 
 /**
  * Generate a unique command ID
  */
-const generateCommandId = () => {
+const generateCommandId = (): string => {
   return `cmd_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
 /**
  * Parse command line arguments into key-value pairs
  * Supports both --flag and --key=value formats
- *
- * @param {string[]} args - Array of argument strings
- * @returns {Object} Parsed options and positional arguments
  */
-export const parseArguments = (args) => {
-  const options = {};
-  const positional = [];
+export const parseArguments = (args: string[]): CommandArgs => {
+  const options: Record<string, CommandOptionValue> = {};
+  const positional: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -68,26 +84,15 @@ export const parseArguments = (args) => {
 /**
  * Parse a command string into a structured command object
  *
- * @param {string} commandString - The raw command string
- * @returns {Object} Parsed command object
- *
  * @example
  * parseCommand('metrics --range 1h')
- * // Returns:
  * // {
- * //   id: 'cmd_1234567890_abc123',
- * //   type: 'metrics',
- * //   raw: 'metrics --range 1h',
- * //   name: 'metrics',
- * //   args: {
- * //     options: { range: '1h' },
- * //     positional: []
- * //   },
- * //   timestamp: 1234567890,
- * //   status: 'pending'
+ * //   id: 'cmd_1234567890_abc123', type: 'metrics', raw: 'metrics --range 1h',
+ * //   name: 'metrics', args: { options: { range: '1h' }, positional: [] },
+ * //   timestamp: 1234567890, status: 'pending'
  * // }
  */
-export const parseCommand = (commandString) => {
+export const parseCommand = (commandString: string): ParsedCommand => {
   // Trim and handle empty commands
   const trimmed = commandString.trim();
   if (!trimmed) {
@@ -99,7 +104,7 @@ export const parseCommand = (commandString) => {
       args: { options: {}, positional: [] },
       timestamp: Date.now(),
       status: COMMAND_STATUS.PENDING,
-      error: 'Empty command'
+      error: 'Empty command',
     };
   }
 
@@ -120,17 +125,16 @@ export const parseCommand = (commandString) => {
     name: commandName,
     args,
     timestamp: Date.now(),
-    status: COMMAND_STATUS.PENDING
+    status: COMMAND_STATUS.PENDING,
   };
 };
 
 /**
  * Format a command object back to a string
- *
- * @param {Object} command - Command object
- * @returns {string} Formatted command string
  */
-export const formatCommand = (command) => {
+export const formatCommand = (
+  command: Pick<ParsedCommand, 'name' | 'args'> | null | undefined
+): string => {
   if (!command) return '';
 
   let formatted = command.name;
@@ -156,9 +160,7 @@ export const formatCommand = (command) => {
 
 /**
  * Check if a command is a layout command
- * @param {Object} command - Command object
- * @returns {boolean} True if it's a layout command
  */
-export const isLayoutCommand = (command) => {
+export const isLayoutCommand = (command: { type: string }): boolean => {
   return ['tab', 'tile', 'reset-all'].includes(command.type);
 };
