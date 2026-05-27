@@ -140,7 +140,7 @@ const ProviderSettings = () => {
       // Fetch models for the newly selected provider
       setLoadingModels(true);
       const providerType = providerInfo.provider.type;
-      const modelsResult = await getProviderModels(providerType);
+      const modelsResult = (await getProviderModels(providerType)) as AiModel[];
       setModels(modelsResult);
       setSelectedModel(null); // Reset model selection
     } catch (err) {

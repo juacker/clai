@@ -380,7 +380,7 @@ const WorkspaceSettingsModal = ({
         mcpServers: servers.status === 'fulfilled' ? (servers.value || []) : [],
         skills: skills.status === 'fulfilled' ? (skills.value || []) : [],
         providerConnections: connections.status === 'fulfilled' ? (connections.value || []) : [],
-        agentTemplates: templates.status === 'fulfilled' ? (templates.value || []) : [],
+        agentTemplates: templates.status === 'fulfilled' ? ((templates.value || []) as AgentTemplate[]) : [],
         defaultExecution: defaults.status === 'fulfilled' ? (defaults.value || null) : null,
       });
     })();
@@ -1340,7 +1340,7 @@ const AgentSection = ({
       .then((detail) => {
         if (cancelled || !detail) return;
         lastFetchedId.current = agentId;
-        setAgent(detail);
+        setAgent(detail as unknown as AgentDetail);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -1574,12 +1574,12 @@ const AgentSection = ({
   }));
 
   const handleDelete = useCallback(async () => {
-    if (!canDelete) return;
+    if (!canDelete || !agent?.id) return;
     if (!window.confirm(`Delete agent "${agent?.name}"? This cannot be undone.`)) return;
     setDeleting(true);
     setError(null);
     try {
-      await workspaceDeleteAgent(workspaceId, agent?.id);
+      await workspaceDeleteAgent(workspaceId, agent.id);
       onDeleted?.();
     } catch (err) {
       setError(typeof err === 'string' ? err : err instanceof Error ? err.message : 'Failed to delete agent.');
