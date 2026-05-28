@@ -27,7 +27,7 @@ pub fn available_tools(
         ));
         tools.push(tool::<AskUserParams>(
             "ask_user",
-            "Ask the human a question and BLOCK until they answer. The question is rendered inline in the chat with an interactive answer control (radio buttons when `options` are provided, with an automatic \"Other\" free-text fallback; a plain textarea otherwise). Use this whenever you need a human decision before proceeding — do NOT phrase the question as plain assistant text expecting them to reply in the next turn; use this tool instead so the run pauses, the question is unmistakable, and the answer is returned to you as the tool_result. Returns `{answer: string, selectedOptionIndex?: number}`.",
+            "Ask the human a question and BLOCK until they answer. The question is rendered inline in the chat with an interactive answer control (radio buttons when `options` are provided, with an automatic \"Other\" free-text fallback; a plain textarea otherwise). Do NOT add an \"Other\" entry to `options` yourself — the FE always appends one. Use this whenever you need a human decision before proceeding — do NOT phrase the question as plain assistant text expecting them to reply in the next turn; use this tool instead so the run pauses, the question is unmistakable, and the answer is returned to you as the tool_result. Returns `{answer: string, selectedOptionIndex?: number}`.",
         ));
     }
 

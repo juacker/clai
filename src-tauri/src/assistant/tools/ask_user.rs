@@ -149,7 +149,7 @@ pub async fn execute(
         AssistantUiEvent::AskUserRequested {
             pending_id: pending_id.clone(),
             question: question.clone(),
-            options: params.options.clone(),
+            options: sanitize_options(params.options.clone()),
             extra_context: params.context.clone(),
         },
     );
@@ -176,4 +176,66 @@ pub async fn execute(
         );
     }
     Ok(serde_json::Value::Object(result))
+}
+
+/// Strip any LLM-supplied option whose label is literally "Other" (the FE
+/// always appends its own "Other" free-text fallback, so a duplicate
+/// shows up as two identical radios). Returns `None` when filtering
+/// leaves no options, so the FE falls back to a plain textarea.
+fn sanitize_options(options: Option<Vec<AskUserOption>>) -> Option<Vec<AskUserOption>> {
+    let filtered: Vec<AskUserOption> = options?
+        .into_iter()
+        .filter(|opt| !opt.label.trim().eq_ignore_ascii_case("other"))
+        .collect();
+    if filtered.is_empty() {
+        None
+    } else {
+        Some(filtered)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opt(label: &str) -> AskUserOption {
+        AskUserOption {
+            label: label.to_string(),
+            description: None,
+        }
+    }
+
+    #[test]
+    fn sanitize_options_strips_other_variants() {
+        let input = Some(vec![
+            opt("Option A"),
+            opt("Other"),
+            opt("Option B"),
+            opt("  other  "),
+            opt("OTHER"),
+        ]);
+        let result = sanitize_options(input).unwrap();
+        let labels: Vec<&str> = result.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(labels, vec!["Option A", "Option B"]);
+    }
+
+    #[test]
+    fn sanitize_options_returns_none_when_only_other_supplied() {
+        let input = Some(vec![opt("Other"), opt("other")]);
+        assert!(sanitize_options(input).is_none());
+    }
+
+    #[test]
+    fn sanitize_options_passes_through_when_empty() {
+        assert!(sanitize_options(None).is_none());
+        assert!(sanitize_options(Some(vec![])).is_none());
+    }
+
+    #[test]
+    fn sanitize_options_keeps_other_like_labels_intact() {
+        let input = Some(vec![opt("Other option"), opt("None of the above")]);
+        let result = sanitize_options(input).unwrap();
+        let labels: Vec<&str> = result.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(labels, vec!["Other option", "None of the above"]);
+    }
 }
