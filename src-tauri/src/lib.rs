@@ -355,8 +355,10 @@ pub fn run() {
             commands::workspace_agents::workspace_agent_default_execution,
             commands::permissions::submit_permission_decision,
             commands::permissions::list_pending_permission_requests,
+            commands::permissions::list_pending_permission_counts,
             commands::path_grants::submit_path_grant_decision,
             commands::path_grants::list_pending_path_grant_requests,
+            commands::path_grants::list_pending_path_grant_counts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

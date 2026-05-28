@@ -28,3 +28,21 @@ export async function listPendingPermissionRequests(
 ): Promise<PermissionRequest[]> {
   return invoke('list_pending_permission_requests', { workspaceId });
 }
+
+/**
+ * Returns the current per-workspace pending-approval count. Used by
+ * attention listeners that need a snapshot — the event stream alone
+ * only reports transitions, so a listener that mounted after a request
+ * fired would otherwise miss it.
+ */
+export async function listPendingPermissionCounts(): Promise<Record<string, number>> {
+  return invoke('list_pending_permission_counts');
+}
+
+/**
+ * Symmetric to `listPendingPermissionCounts` for filesystem path-grant
+ * requests.
+ */
+export async function listPendingPathGrantCounts(): Promise<Record<string, number>> {
+  return invoke('list_pending_path_grant_counts');
+}

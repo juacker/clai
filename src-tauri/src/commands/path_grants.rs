@@ -169,6 +169,18 @@ impl PendingPathGrants {
             .collect()
     }
 
+    /// See [`crate::commands::permissions::PendingApprovals::counts_snapshot`].
+    /// Returns the pending-count per workspace id, dropping the
+    /// workspace-less bucket since the consumer keys by id.
+    pub async fn counts_snapshot(&self) -> HashMap<String, u32> {
+        let inner = self.inner.lock().await;
+        inner
+            .counts
+            .iter()
+            .filter_map(|(workspace, count)| workspace.as_ref().map(|id| (id.clone(), *count)))
+            .collect()
+    }
+
     /// See [`crate::commands::permissions::PendingApprovals::purge_workspace`].
     /// Same semantics — drops every pending path-grant request for the
     /// given workspace and clears its count. Used by `workspace_delete`.
@@ -221,6 +233,17 @@ pub async fn list_pending_path_grant_requests(
         .pending_path_grants
         .list_for_workspace(&workspace_id)
         .await)
+}
+
+/// Tauri command — returns the current pending path-grant count per
+/// workspace. Symmetric to `list_pending_permission_counts`; used by
+/// global attention listeners to seed badges that mounted after the
+/// originating event fired.
+#[tauri::command]
+pub async fn list_pending_path_grant_counts(
+    state: State<'_, AppState>,
+) -> Result<HashMap<String, u32>, String> {
+    Ok(state.pending_path_grants.counts_snapshot().await)
 }
 
 /// Tauri command invoked by the frontend modal when the user resolves a

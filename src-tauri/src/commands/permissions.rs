@@ -200,6 +200,17 @@ impl PendingApprovals {
             .collect()
     }
 
+    /// Returns the pending-count per workspace id. Workspace-less requests
+    /// (the `None` bucket) are dropped since the consumer keys by id.
+    pub async fn counts_snapshot(&self) -> HashMap<String, u32> {
+        let inner = self.inner.lock().await;
+        inner
+            .counts
+            .iter()
+            .filter_map(|(workspace, count)| workspace.as_ref().map(|id| (id.clone(), *count)))
+            .collect()
+    }
+
     /// Drops every pending entry belonging to `workspace_id` and clears
     /// its count. Used by `workspace_delete` so requests scoped to a
     /// just-deleted workspace don't linger in memory until restart.
@@ -264,6 +275,18 @@ pub async fn list_pending_permission_requests(
         .pending_approvals
         .list_for_workspace(&workspace_id)
         .await)
+}
+
+/// Tauri command — returns the current pending-approval count per
+/// workspace. Fleet and any global attention listener call this on mount
+/// so badges reflect requests that fired before the subscription was
+/// established (e.g., the user was on another page when the agent
+/// requested approval).
+#[tauri::command]
+pub async fn list_pending_permission_counts(
+    state: State<'_, AppState>,
+) -> Result<HashMap<String, u32>, String> {
+    Ok(state.pending_approvals.counts_snapshot().await)
 }
 
 /// Tauri command — invoked by the frontend modal when the user submits
@@ -468,5 +491,19 @@ mod tests {
         let list = pending.list_for_workspace("ws-A").await;
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].request_id, req_a.request_id);
+    }
+
+    #[tokio::test]
+    async fn counts_snapshot_aggregates_by_workspace_and_drops_anon() {
+        let pending = PendingApprovals::new();
+        let _ = pending.register(fake_request(Some("ws-A"))).await;
+        let _ = pending.register(fake_request(Some("ws-A"))).await;
+        let _ = pending.register(fake_request(Some("ws-B"))).await;
+        let _ = pending.register(fake_request(None)).await;
+
+        let snapshot = pending.counts_snapshot().await;
+        assert_eq!(snapshot.get("ws-A"), Some(&2));
+        assert_eq!(snapshot.get("ws-B"), Some(&1));
+        assert_eq!(snapshot.len(), 2);
     }
 }
