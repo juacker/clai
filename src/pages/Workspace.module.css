@@ -896,9 +896,11 @@
   flex-direction: column;
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-lg);
-  background: var(--glass-bg-tinted);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  /* Neutral elevated surface — calmer and more legible than the old
+     indigo-tinted glass (the `saturate(180%)` backdrop boosted that tint
+     toward purple, which read poorly in dark mode). The thin indigo top
+     line below keeps a subtle brand accent against this neutral panel. */
+  background: var(--color-bg-elevated);
   box-shadow: var(--shadow-md);
   overflow: auto;
   max-width: 860px;
