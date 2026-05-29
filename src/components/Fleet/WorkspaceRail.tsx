@@ -55,6 +55,15 @@ const PauseIcon = () => (
   </svg>
 );
 
+// Shown on scheduled rows to mark them as periodic without a second text
+// line. The cadence (e.g. "every 30m") lives in the title tooltip.
+const ClockIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7.5V12l3 1.8" />
+  </svg>
+);
+
 /**
  * Persistent left navigator for the unified Fleet/Workspace view. Lists
  * every workspace; clicking a row selects it (the host navigates to
@@ -205,16 +214,20 @@ const WorkspaceRail = ({
                 </>
               ) : (
                 <>
-                  <span className={styles.rowBody}>
-                    <span className={styles.rowTitle}>{ws.title}</span>
-                    <span className={styles.rowMeta}>
-                      {ws.scheduleEnabled && scheduleLabel
-                        ? isPaused
-                          ? `Paused · ${scheduleLabel}`
-                          : scheduleLabel
-                        : `${num(ws.messageCount)} msgs`}
+                  <span className={styles.rowTitle}>{ws.title}</span>
+
+                  {ws.scheduleEnabled && (
+                    <span
+                      className={`${styles.scheduleIcon} ${isPaused ? styles.scheduleIconPaused : ''}`}
+                      title={
+                        isPaused
+                          ? `Paused${scheduleLabel ? ` · ${scheduleLabel}` : ''}`
+                          : scheduleLabel || 'Scheduled'
+                      }
+                    >
+                      <ClockIcon />
                     </span>
-                  </span>
+                  )}
 
                   {attentionCount > 0 && (
                     <span className={styles.attentionBadge} title="Needs attention">
