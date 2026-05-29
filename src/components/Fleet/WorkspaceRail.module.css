@@ -163,22 +163,28 @@
   gap: 2px;
 }
 
+/* Fixed height (not min-height): the content area (40px − 2px border =
+   38px, items vertically centered) is taller than the tallest inline
+   element — the 24px hover action buttons — so nothing that appears or
+   disappears per row (the hover run/pause/⋯ buttons, the attention
+   badge, the schedule clock) can change the row height. */
 .row {
   position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 9px;
+  padding: 0 9px;
+  height: 40px;
+  box-sizing: border-box;
   border-radius: var(--radius-sm);
   cursor: pointer;
   border: 1px solid transparent;
   transition: background var(--transition-fast), border-color var(--transition-fast);
-  min-height: 40px;
 }
 
 .railCollapsed .row {
   justify-content: center;
-  padding: 8px 0;
+  padding: 0;
   gap: 0;
 }
 
