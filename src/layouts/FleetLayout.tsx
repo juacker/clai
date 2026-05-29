@@ -24,6 +24,16 @@ const REFRESH_INTERVAL_MS = 5000;
 const OPTIMISTIC_RUN_TTL_MS = 12000;
 const COLLAPSED_KEY = 'fleet.rail.collapsed';
 
+/**
+ * Shared via `<Outlet context={...}>` so the nested Workspace view can read
+ * the rail's workspace list and trigger an immediate refresh (e.g. after an
+ * inline title rename) instead of waiting for the 5s poll.
+ */
+export interface FleetOutletContext {
+  workspaces: WorkspaceListEntry[];
+  loadWorkspaces: () => Promise<void>;
+}
+
 interface SettingsState {
   open: boolean;
   workspaceId: string | null;

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useOutletContext, useParams } from 'react-router-dom';
+import type { FleetOutletContext } from '../layouts/FleetLayout';
 import { workspaceDeleteAgent } from '../api/client';
 import WorkspaceSettingsModal from '../components/Settings/WorkspaceSettingsModal';
 import WorkspaceTaskTranscriptPanel from '../components/WorkspaceTaskTranscriptPanel';
@@ -18,6 +19,7 @@ import {
   getWorkspaceSnapshot,
   runWorkspaceNow,
   setWorkspaceSchedulePaused,
+  setWorkspaceTitle,
 } from '../workspace/client';
 import type {
   AssistantMessage,
@@ -796,6 +798,7 @@ const WorkspaceHeader = ({
   onRunNow,
   onTogglePause,
   onStop,
+  onTitleSaved,
   activeRunId,
   hasActiveRun,
   runNowBusy,
@@ -810,6 +813,7 @@ const WorkspaceHeader = ({
   artifacts: WorkspaceFileEntry[];
   activePanel: ActivePanel;
   setActivePanel: React.Dispatch<React.SetStateAction<ActivePanel>>;
+  onTitleSaved: (title: string) => void;
   onRunNow: () => void | Promise<void>;
   onTogglePause: (paused: boolean) => void | Promise<void>;
   onStop: (runId: string | null) => void | Promise<void>;
@@ -845,6 +849,64 @@ const WorkspaceHeader = ({
   // null = no panel open, chat takes the full content area.
   const togglePanel = (panel: ActivePanel) => {
     setActivePanel((current) => (current === panel ? null : panel));
+  };
+
+  // ── Inline title rename ────────────────────────────────────────────
+  // Click the title to edit it in place; Enter/blur commits, Escape
+  // cancels. The generic workspace has no real title to rename.
+  const currentTitle = snapshot?.title || (isGenericWorkspace ? 'Workspace' : workspaceId);
+  const canEditTitle = !isGenericWorkspace && !!snapshot;
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [savingTitle, setSavingTitle] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  // Escape unmounts the input, whose trailing blur would otherwise commit the
+  // edited value. This flag makes the blur a no-op for that one transition.
+  const skipBlurCommitRef = useRef(false);
+
+  useEffect(() => {
+    if (isEditingTitle) {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    }
+  }, [isEditingTitle]);
+
+  const beginEditTitle = () => {
+    if (!canEditTitle) return;
+    skipBlurCommitRef.current = false;
+    setDraftTitle(snapshot?.title || '');
+    setIsEditingTitle(true);
+  };
+
+  const cancelEditTitle = () => {
+    skipBlurCommitRef.current = true;
+    setIsEditingTitle(false);
+    setDraftTitle('');
+  };
+
+  const commitTitle = async () => {
+    if (skipBlurCommitRef.current) {
+      skipBlurCommitRef.current = false;
+      return;
+    }
+    if (savingTitle) return;
+    const trimmed = draftTitle.trim();
+    // Empty, too long, or unchanged → close without a write.
+    if (!trimmed || trimmed.length > 100 || trimmed === (snapshot?.title || '').trim()) {
+      cancelEditTitle();
+      return;
+    }
+    setSavingTitle(true);
+    try {
+      await setWorkspaceTitle(workspaceId, trimmed);
+      onTitleSaved(trimmed);
+      setIsEditingTitle(false);
+      setDraftTitle('');
+    } catch {
+      // Leave the field open so the user can retry or press Escape.
+    } finally {
+      setSavingTitle(false);
+    }
   };
 
   const renderCounter = (
@@ -886,9 +948,48 @@ const WorkspaceHeader = ({
   return (
     <div className={styles.header}>
       <div className={styles.headerLeft}>
-        <h1 className={styles.title}>
-          {snapshot?.title || (isGenericWorkspace ? 'Workspace' : workspaceId)}
-        </h1>
+        {isEditingTitle ? (
+          <input
+            ref={titleInputRef}
+            type="text"
+            className={styles.titleInput}
+            value={draftTitle}
+            maxLength={100}
+            disabled={savingTitle}
+            onChange={(e) => setDraftTitle(e.target.value)}
+            onBlur={() => void commitTitle()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void commitTitle();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cancelEditTitle();
+              }
+            }}
+            aria-label="Workspace title"
+          />
+        ) : (
+          <h1
+            className={`${styles.title} ${canEditTitle ? styles.titleEditable : ''}`}
+            onClick={beginEditTitle}
+            title={canEditTitle ? 'Click to rename' : undefined}
+            role={canEditTitle ? 'button' : undefined}
+            tabIndex={canEditTitle ? 0 : undefined}
+            onKeyDown={
+              canEditTitle
+                ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      beginEditTitle();
+                    }
+                  }
+                : undefined
+            }
+          >
+            {currentTitle}
+          </h1>
+        )}
         {scheduleEnabled && (
           <span
             className={`${styles.schedulePill} ${schedulePaused ? styles.schedulePillPaused : styles.schedulePillActive}`}
@@ -1057,6 +1158,11 @@ const ChatFirstLayout = ({
 const Workspace = () => {
   const params = useParams();
   const { toggleChat } = useChatManager() as { toggleChat: () => void };
+  // Provided by FleetLayout's <Outlet>; lets us refresh the workspace rail
+  // immediately after changes (e.g. a title rename) instead of waiting for
+  // its 5s poll. Optional-chained so the page is resilient if ever rendered
+  // outside that layout.
+  const { loadWorkspaces } = useOutletContext<FleetOutletContext>() ?? {};
   const workspaceId = params.workspaceId || DEFAULT_WORKSPACE_ID;
   const isGenericWorkspace = workspaceId === DEFAULT_WORKSPACE_ID;
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
@@ -1262,6 +1368,16 @@ const Workspace = () => {
   // workspace page can drive the periodic schedule without the user having
   // to jump back to the Fleet view.
   const [runNowBusy, setRunNowBusy] = useState(false);
+  // Reflect an inline title rename immediately on the page, then refresh the
+  // Fleet rail so its row updates at once rather than on the next 5s poll.
+  const handleTitleSaved = useCallback(
+    (title: string) => {
+      setSnapshot((current) => (current ? { ...current, title } : current));
+      void loadWorkspaces?.();
+    },
+    [loadWorkspaces]
+  );
+
   const handleRunNow = useCallback(async () => {
     if (runNowBusy) return;
     setRunNowBusy(true);
@@ -1386,6 +1502,7 @@ const Workspace = () => {
         artifacts={artifacts}
         activePanel={activePanel}
         setActivePanel={setActivePanel}
+        onTitleSaved={handleTitleSaved}
         onRunNow={handleRunNow}
         onTogglePause={handleTogglePause}
         onStop={handleStop}
