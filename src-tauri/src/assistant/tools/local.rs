@@ -905,6 +905,18 @@ pub(crate) fn evaluate_command_policy(
             continue;
         }
 
+        // Benign shell constructs never need approval. Test expressions
+        // (`[ ... ]`, `[[ ... ]]`, `test ...`) only compare strings/files,
+        // and segments that are purely variable assignments (`FOO=bar`)
+        // just set shell state — neither runs a program of its own. The
+        // checked-for carve-out (a command substitution / backtick inside
+        // them) is handled in `is_benign_shell_construct`: those DO run
+        // code, so they fall through to normal approval. Blocklist was
+        // already applied above, so this can't bypass a hard deny.
+        if is_benign_shell_construct(text) {
+            continue;
+        }
+
         // Run-scoped allowlist holds prefixes accepted this run via
         // `AllowOnce`/`AllowAlways`. Without consulting it, every bash
         // call after a fresh approval would re-prompt mid-run: durable
@@ -914,21 +926,26 @@ pub(crate) fn evaluate_command_policy(
 
         match segment {
             Segment::Opaque(_) => {
-                // Opaque segments can never be allowlisted *durably*
-                // (substitutions, executor heads, redirects, control
-                // flow have no safe prefix to save). Within a single
-                // run, however, the run-scoped cache may hold the exact
-                // segment text from a prior `AllowOnce` on the same
-                // command — honor that, otherwise the user gets
-                // re-prompted for the same `$(...)` every time the
-                // LLM retries.
-                if run_match.is_some() {
+                // Opaque segments include redirects, heredocs, command
+                // substitutions, brace groups, and executor heads. Even
+                // though the *whole* segment can't be safely encoded as
+                // a literal prefix, the binary head (what `suggest_prefix`
+                // returns) IS a stable identifier — the redirect or
+                // substitution doesn't change which program runs. We
+                // honor a durable allowlist match against that head AND
+                // fill in a non-empty `suggested_prefix` so the modal
+                // surfaces an "Always allow" button for Opaque rows the
+                // same way it does for Simple ones. The user opts into
+                // the broader trust explicitly.
+                let durable_match =
+                    find_matching_prefix(&execution.shell.allowed_command_prefixes, text);
+                if durable_match.is_some() || run_match.is_some() {
                     continue;
                 }
                 approvals.push(SegmentApproval {
                     text: text.to_string(),
                     kind: SegmentKind::Opaque,
-                    suggested_prefix: String::new(),
+                    suggested_prefix: suggest_prefix(text),
                 });
             }
             Segment::Simple(_) => {
@@ -950,6 +967,69 @@ pub(crate) fn evaluate_command_policy(
     } else {
         PolicyResult::NeedsApproval(approvals)
     }
+}
+
+/// True for shell segments that have no execution surface of their own and
+/// therefore never need approval:
+///
+/// - **Test expressions** — `[ ... ]`, `[[ ... ]]`, or the `test` builtin.
+///   These only compare strings/files; they spawn no program.
+/// - **Pure assignments** — a segment whose every token is `NAME=value`
+///   (`FOO=bar`, `A=1 B=2`). These just set shell variables.
+///
+/// Carve-out: if the segment embeds a command substitution (`$(...)`) or
+/// backticks, it DOES run code — `[ -n "$(curl x)" ]` or `V=$(git log)` —
+/// so we report it as non-benign and let the normal approval path gate the
+/// embedded command. An assignment used as a *prefix* to a real command
+/// (`FOO=bar mycmd`) is likewise not benign: `mycmd` is a token that isn't
+/// an assignment, so the all-assignments check fails and we fall through.
+fn is_benign_shell_construct(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    // A command substitution or backtick runs arbitrary code — defer to
+    // normal approval so the embedded command is gated.
+    if trimmed.contains("$(") || trimmed.contains('`') {
+        return false;
+    }
+
+    let mut tokens = trimmed.split_whitespace();
+    let Some(first) = tokens.next() else {
+        return false;
+    };
+
+    // Test expressions: the head token is the `test` builtin in one of its
+    // three spellings. Contents are side-effect-free (we already ruled out
+    // embedded substitutions above).
+    if first == "[" || first == "[[" || first == "test" {
+        return true;
+    }
+
+    // Pure assignments: the head and every remaining token are `NAME=value`.
+    std::iter::once(first)
+        .chain(tokens)
+        .all(is_pure_assignment_token)
+}
+
+/// True if `tok` is a `NAME=value` assignment with a shell-valid name
+/// (leading letter/underscore, then alphanumerics/underscores). Mirrors the
+/// env-assignment recognizer used by the splitter and prefix detector.
+fn is_pure_assignment_token(tok: &str) -> bool {
+    let Some(eq) = tok.find('=') else {
+        return false;
+    };
+    if eq == 0 {
+        return false;
+    }
+    let mut chars = tok[..eq].chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Cleans up an abandoned permission request when the approval-wait future
@@ -2096,10 +2176,22 @@ mod tests {
     }
 
     #[test]
-    fn policy_opaque_segment_in_restricted_always_denies_until_approval_flow() {
-        // `bash -c "..."` is Opaque. Even if a permissive prefix appears to
-        // cover it, Opaque can't be allowlisted in the new design.
+    fn policy_opaque_segment_in_restricted_passes_when_head_allowlisted() {
+        // `bash -c "..."` is Opaque, but its binary head matches the
+        // allowlist via `matches_prefix`. The user explicitly opting
+        // into a broad prefix like `bash` is treated as consent — the
+        // modal had to show "Always allow bash" for this entry to land
+        // on the durable list. Same flow as Simple segments.
         let exec = restricted_execution_config(&["bash"], &[]);
+        assert!(enforce_command_policy(&exec, None, r#"bash -c "echo hi""#).is_ok());
+    }
+
+    #[test]
+    fn policy_opaque_segment_in_restricted_denies_when_head_not_allowlisted() {
+        // Negative case: only commands whose head matches the allowlist
+        // pass. An Opaque `bash -c` doesn't get a free ride just because
+        // `find` is allowlisted.
+        let exec = restricted_execution_config(&["find"], &[]);
         let err = enforce_command_policy(&exec, None, r#"bash -c "echo hi""#).unwrap_err();
         assert!(matches!(err, CommandDenial::NotInAllowList(_)));
     }
@@ -2120,18 +2212,35 @@ mod tests {
     }
 
     #[test]
-    fn policy_mixed_pipeline_with_opaque_segment_denies_in_restricted() {
-        // `find . | xargs rm` — xargs is Opaque. Even if `find .` is allowed,
-        // the xargs Opaque segment in Restricted mode forces denial.
+    fn policy_mixed_pipeline_with_opaque_passes_when_all_heads_allowlisted() {
+        // `find . | xargs rm` — `xargs` head triggers Opaque (executor),
+        // `find .` is Simple. With both heads on the allowlist the
+        // pipeline passes. Caller still has the blocklist as the final
+        // safety net for catastrophic verbs like `rm`.
         let exec = restricted_execution_config(&["find", "xargs"], &[]);
+        assert!(enforce_command_policy(&exec, None, "find . | xargs rm").is_ok());
+    }
+
+    #[test]
+    fn policy_mixed_pipeline_denies_when_opaque_head_missing() {
+        // If the Opaque segment's head isn't allowlisted, the pipeline
+        // still hits NeedsApproval — only `find` covered, `xargs` is not.
+        let exec = restricted_execution_config(&["find"], &[]);
         let err = enforce_command_policy(&exec, None, "find . | xargs rm").unwrap_err();
         assert!(matches!(err, CommandDenial::NotInAllowList(_)));
     }
 
     #[test]
-    fn policy_redirect_segment_in_restricted_denies() {
-        // Redirects mark the segment Opaque (can't safely allowlist).
+    fn policy_redirect_segment_in_restricted_allows_when_head_allowlisted() {
+        // `cat /etc/hosts > /tmp/x` — the redirect forces Opaque, but
+        // `cat` is the head and it's on the allowlist. Passes.
         let exec = restricted_execution_config(&["cat"], &[]);
+        assert!(enforce_command_policy(&exec, None, "cat /etc/hosts > /tmp/x").is_ok());
+    }
+
+    #[test]
+    fn policy_redirect_segment_in_restricted_denies_when_head_not_allowlisted() {
+        let exec = restricted_execution_config(&["ls"], &[]);
         let err = enforce_command_policy(&exec, None, "cat /etc/hosts > /tmp/x").unwrap_err();
         assert!(matches!(err, CommandDenial::NotInAllowList(_)));
     }
@@ -2185,10 +2294,11 @@ mod tests {
 
     #[test]
     fn policy_run_scoped_prefix_covers_opaque_segment() {
-        // Opaque segments can never be allowlisted *durably*, but the
-        // run-scoped cache holds the exact segment text from a prior
-        // AllowOnce — honor it so the user isn't re-prompted for the
-        // same `bash -c "..."` in the same run.
+        // The run-scoped cache holds the exact segment text from a
+        // prior AllowOnce — honor it so the user isn't re-prompted for
+        // the same `bash -c "..."` in the same run. (Opaque is also
+        // honored on the durable allowlist now; see
+        // `policy_durable_allowlist_covers_opaque_segment_by_head`.)
         let exec = restricted_execution_config(&[], &[]);
         let run_allowed = vec![r#"bash -c "echo hi""#.to_string()];
         assert!(matches!(
@@ -2198,13 +2308,169 @@ mod tests {
     }
 
     #[test]
-    fn policy_durable_allowlist_does_not_cover_opaque_segment() {
-        // Regression guard: the durable allowlist must NOT allowlist an
-        // Opaque segment. Only the run-scoped cache does.
-        let exec = restricted_execution_config(&["bash"], &[]);
+    fn policy_durable_allowlist_covers_opaque_segment_by_head() {
+        // The durable allowlist matches Opaque segments by their binary
+        // head (via `matches_prefix`), same as it does for Simple. This
+        // lets users persist trust for tools whose syntactic shape
+        // forces Opaque classification (heredocs, redirects, $()) using
+        // the same "Always allow <prefix>" flow as Simple segments.
+        //
+        // For `bash -c "echo hi"` the allowlist entry `bash -c` matches
+        // because `matches_prefix` accepts the prefix plus tail args.
+        // Note: allowlisting `bash` would also match — this is the user
+        // explicitly opting into a very broad trust grant.
+        let exec = restricted_execution_config(&["bash -c"], &[]);
         assert!(matches!(
             evaluate_command_policy(&exec, r#"bash -c "echo hi""#, &[], &[]),
+            PolicyResult::Allow,
+        ));
+    }
+
+    #[test]
+    fn policy_durable_allowlist_covers_redirect_opaque() {
+        // Real-world case from the friction screenshots: a redirect
+        // (`2>/dev/null`) turns a perfectly safe `which go` into an
+        // Opaque segment. With this fix, allowlisting `which` covers
+        // both `which go` and `which go 2>/dev/null` without re-asking.
+        let exec = restricted_execution_config(&["which"], &[]);
+        assert!(matches!(
+            evaluate_command_policy(&exec, "which go 2>/dev/null", &[], &[]),
+            PolicyResult::Allow,
+        ));
+    }
+
+    #[test]
+    fn policy_opaque_segment_suggests_prefix_when_unmatched() {
+        // When an Opaque segment isn't allowlisted, the approval payload
+        // now carries a non-empty `suggested_prefix` so the FE can
+        // surface an "Always allow <prefix>" button — the affordance that
+        // makes the user's trust persistable. Previously this was empty
+        // and only "Allow once" was offered for Opaque rows.
+        let exec = restricted_execution_config(&[], &[]);
+        let result = evaluate_command_policy(&exec, "find /tmp -name foo 2>/dev/null", &[], &[]);
+        let PolicyResult::NeedsApproval(approvals) = result else {
+            panic!("expected NeedsApproval, got {:?}", policy_label(&result));
+        };
+        assert_eq!(approvals.len(), 1);
+        assert!(approvals[0].kind == crate::commands::permissions::SegmentKind::Opaque);
+        assert_eq!(approvals[0].suggested_prefix, "find");
+    }
+
+    #[test]
+    fn policy_opaque_segment_no_match_still_needs_approval() {
+        // An Opaque segment whose head is NOT on the allowlist still
+        // hits NeedsApproval. The durable-allowlist check is added, not
+        // replacing the gate — it only short-circuits when the user has
+        // explicitly trusted the prefix.
+        let exec = restricted_execution_config(&["ls"], &[]);
+        assert!(matches!(
+            evaluate_command_policy(&exec, "find /tmp -name foo 2>/dev/null", &[], &[]),
             PolicyResult::NeedsApproval(_),
+        ));
+    }
+
+    fn policy_label(result: &PolicyResult) -> &'static str {
+        match result {
+            PolicyResult::Allow => "Allow",
+            PolicyResult::Block { .. } => "Block",
+            PolicyResult::NeedsApproval(_) => "NeedsApproval",
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Benign shell constructs — test expressions and pure assignments
+    // never need approval (no execution surface of their own).
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn policy_single_bracket_test_auto_allows() {
+        // From the drift-detection screenshot: `[ "$CURRENT" != "61dda97" ]`
+        // is a string comparison with no side effects. Should not prompt
+        // even with an empty allowlist.
+        let exec = restricted_execution_config(&[], &[]);
+        assert!(matches!(
+            evaluate_command_policy(&exec, r#"[ "$CURRENT" != "61dda97" ]"#, &[], &[]),
+            PolicyResult::Allow,
+        ));
+    }
+
+    #[test]
+    fn policy_double_bracket_test_auto_allows() {
+        let exec = restricted_execution_config(&[], &[]);
+        assert!(matches!(
+            evaluate_command_policy(&exec, "[[ -f /tmp/foo ]]", &[], &[]),
+            PolicyResult::Allow,
+        ));
+    }
+
+    #[test]
+    fn policy_test_builtin_auto_allows() {
+        let exec = restricted_execution_config(&[], &[]);
+        assert!(matches!(
+            evaluate_command_policy(&exec, "test -d /tmp", &[], &[]),
+            PolicyResult::Allow,
+        ));
+    }
+
+    #[test]
+    fn policy_pure_assignment_auto_allows() {
+        let exec = restricted_execution_config(&[], &[]);
+        assert!(matches!(
+            evaluate_command_policy(&exec, "FOO=bar", &[], &[]),
+            PolicyResult::Allow,
+        ));
+    }
+
+    #[test]
+    fn policy_multiple_pure_assignments_auto_allow() {
+        let exec = restricted_execution_config(&[], &[]);
+        assert!(matches!(
+            evaluate_command_policy(&exec, "A=1 B=2 C=3", &[], &[]),
+            PolicyResult::Allow,
+        ));
+    }
+
+    #[test]
+    fn policy_assignment_with_substitution_still_prompts() {
+        // `CURRENT=$(git log ...)` runs `git log` via the substitution, so
+        // it is NOT benign — the embedded command must still be gated.
+        let exec = restricted_execution_config(&[], &[]);
+        assert!(matches!(
+            evaluate_command_policy(&exec, "CURRENT=$(git log -1 --format='%h')", &[], &[]),
+            PolicyResult::NeedsApproval(_),
+        ));
+    }
+
+    #[test]
+    fn policy_test_with_substitution_still_prompts() {
+        // A test that embeds a command substitution runs that command.
+        let exec = restricted_execution_config(&[], &[]);
+        assert!(matches!(
+            evaluate_command_policy(&exec, r#"[ -n "$(curl http://x)" ]"#, &[], &[]),
+            PolicyResult::NeedsApproval(_),
+        ));
+    }
+
+    #[test]
+    fn policy_assignment_prefix_to_command_still_prompts() {
+        // `FOO=bar mycmd` is an assignment-prefixed command, not a pure
+        // assignment — the real command `mycmd` must still be gated.
+        let exec = restricted_execution_config(&[], &[]);
+        assert!(matches!(
+            evaluate_command_policy(&exec, "FOO=bar mycmd --opt", &[], &[]),
+            PolicyResult::NeedsApproval(_),
+        ));
+    }
+
+    #[test]
+    fn policy_benign_construct_still_subject_to_blocklist() {
+        // The benign carve-out sits AFTER the blocklist check, so a
+        // blocklisted prefix still blocks. (Contrived, but proves the
+        // ordering: `[` is blstd.)
+        let exec = restricted_execution_config(&[], &["["]);
+        assert!(matches!(
+            evaluate_command_policy(&exec, "[ -f /tmp/x ]", &[], &[]),
+            PolicyResult::Block { .. },
         ));
     }
 

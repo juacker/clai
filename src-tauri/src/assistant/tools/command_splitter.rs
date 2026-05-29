@@ -6,18 +6,19 @@
 //!
 //! Segments are classified as either:
 //!
-//! - [`Segment::Simple`] — a plain command whose prefix can be matched against
-//!   the allow/blocklist with the usual word-boundary prefix matcher.
-//! - [`Segment::Opaque`] — a segment that cannot be safely allowlisted. This
-//!   covers command substitution (`$(...)`, backticks), subshells, command
-//!   groups, control-flow keywords, test expressions, heredocs, redirects,
-//!   process substitution, and executor-style heads (`bash -c`, `xargs`,
-//!   `eval`, ...). The caller must require fresh approval for Opaque
-//!   segments and may not persist a prefix derived from them.
-//!
-//! The splitter is intentionally conservative: anything ambiguous becomes
-//! Opaque, which is safe (it only blocks persistent allowlisting, not the
-//! one-shot approval flow).
+//! - [`Segment::Simple`] — a plain command whose head (binary + canonical
+//!   subcommand) is unambiguous from textual inspection.
+//! - [`Segment::Opaque`] — a segment whose surface form includes one of
+//!   command substitution (`$(...)`, backticks), subshells, command groups,
+//!   control-flow keywords, test expressions, heredocs, redirects, process
+//!   substitution, or an executor-style head (`bash -c`, `xargs`, `eval`,
+//!   ...). The shape is harder to reason about than a plain command, but the
+//!   policy layer still matches an Opaque segment's binary head against the
+//!   allow/blocklist via the same prefix matcher — the `Opaque` tag mostly
+//!   informs the UI ("this is more than a bare command") rather than gating
+//!   persistence. The splitter is intentionally conservative: anything
+//!   ambiguous becomes Opaque, surfaced to the user, and only allowlisted
+//!   after an explicit "Always allow" click on the prefix.
 
 #![allow(dead_code)] // wired into enforce_command_policy in commit 6
 
@@ -148,6 +149,27 @@ pub fn split_command(input: &str) -> Vec<Segment> {
         }
 
         // depth == 0, outside all quotes: full logic applies.
+
+        // Shell comment: `#` at token start (preceded by whitespace or at
+        // the start of input/segment) consumes the rest of the line. Bare
+        // `#` mid-token (e.g. `foo#bar`) is a literal — the previous-char
+        // check filters that out. We DON'T consume the trailing `\n` so
+        // the newline-as-separator handling below still flushes any
+        // command that preceded the inline comment (`ls # listing` →
+        // segment "ls", comment dropped).
+        if c == '#' {
+            let at_token_start = buf
+                .chars()
+                .last()
+                .map(|ch| ch.is_whitespace())
+                .unwrap_or(true);
+            if at_token_start {
+                while i < n && bytes[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+        }
 
         match c {
             '\\' => {
@@ -360,6 +382,23 @@ pub fn split_command(input: &str) -> Vec<Segment> {
             continue;
         }
         if c == '{' {
+            // `{` is ambiguous between brace expansion (`a{b,c}d` inside
+            // an argument) and a command group (`{ cmd1; cmd2; }`). The
+            // shell distinguishes by tokenisation: a command group is its
+            // own token, so `{` is preceded by whitespace or starts the
+            // input. If `{` is glued to the preceding token, it's brace
+            // expansion — treat it as a literal so file-glob patterns
+            // like `docs/00{08,09,10}*.md` don't get flagged Opaque.
+            let glued = buf
+                .chars()
+                .last()
+                .map(|ch| !ch.is_whitespace())
+                .unwrap_or(false);
+            if glued {
+                buf.push(c);
+                i += 1;
+                continue;
+            }
             buf.push(c);
             depth += 1;
             opaque = true;
@@ -905,6 +944,93 @@ mod tests {
     #[test]
     fn brace_group_opaque() {
         assert_eq!(split("{ a; b; }"), vec![opaque("{ a; b; }")]);
+    }
+
+    #[test]
+    fn brace_expansion_in_argument_stays_simple() {
+        // The motivating real-world case: file-glob brace expansion
+        // glued to a path-shaped argument should NOT be treated as a
+        // command group. The current splitter previously marked
+        // `wc -l docs/00{08,09}*.md` Opaque, forcing fresh approval on
+        // every run.
+        assert_eq!(
+            split("wc -l docs/00{08,09,10}*.md"),
+            vec![simple("wc -l docs/00{08,09,10}*.md")]
+        );
+    }
+
+    #[test]
+    fn brace_expansion_with_pipe_after_stays_simple() {
+        assert_eq!(
+            split("wc -l docs/00{08,09}*.md | tail -10"),
+            vec![simple("wc -l docs/00{08,09}*.md"), simple("tail -10"),]
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // Shell comments — discarded at top level
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn full_line_comment_dropped() {
+        // A line that is only a comment yields no segment.
+        assert_eq!(split("# this is a comment"), vec![]);
+    }
+
+    #[test]
+    fn full_line_comment_between_commands() {
+        // The LLM frequently emits multi-line scripts with section
+        // header comments. Each comment line should disappear; the
+        // surrounding commands stay intact.
+        assert_eq!(
+            split("# Phase 1\nls docs/\n# Phase 2\nwc -l docs/*.md"),
+            vec![simple("ls docs/"), simple("wc -l docs/*.md")]
+        );
+    }
+
+    #[test]
+    fn trailing_inline_comment_dropped() {
+        // Inline `# …` after a command, separated by whitespace, is a
+        // comment — drop it; the command segment stays.
+        assert_eq!(split("ls -la # listing"), vec![simple("ls -la")]);
+    }
+
+    #[test]
+    fn hash_inside_token_is_literal() {
+        // `#` glued to the previous char is part of the token, not a
+        // comment start (e.g. an anchor in a URL).
+        assert_eq!(
+            split("curl https://example.com/path#anchor"),
+            vec![simple("curl https://example.com/path#anchor")]
+        );
+    }
+
+    #[test]
+    fn hash_inside_quotes_is_literal() {
+        // Inside a quoted string `#` is a plain char.
+        assert_eq!(
+            split(r#"echo "value has # in it""#),
+            vec![simple(r#"echo "value has # in it""#)]
+        );
+    }
+
+    #[test]
+    fn comment_does_not_consume_following_newline_separator() {
+        // The trailing newline must still act as a separator between
+        // the (post-comment-strip) leading content and the next command.
+        // Without preserving the newline, `ls\n# c\necho` would merge.
+        let segs = split("ls\n# c\necho hi");
+        assert_eq!(segs, vec![simple("ls"), simple("echo hi")]);
+    }
+
+    #[test]
+    fn brace_at_token_start_still_opaque() {
+        // Regression guard: `{` preceded by whitespace is still a
+        // command-group opener and must remain Opaque.
+        assert_eq!(
+            split("ls && { echo a; echo b; }"),
+            vec![simple("ls"), opaque("{ echo a; echo b; }")]
+        );
     }
 
     #[test]

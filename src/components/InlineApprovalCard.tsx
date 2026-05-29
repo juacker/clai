@@ -238,6 +238,26 @@ const InlineApprovalCard = ({ workspaceId }: InlineApprovalCardProps) => {
     [sendDecisions],
   );
 
+  // Batch "trust this whole command" shortcut. For each segment that
+  // has a suggestedPrefix (either Simple or Opaque whose head is
+  // recognized), submits AllowAlways with the user's edited prefix or
+  // the suggestion; segments without a stable prefix fall back to
+  // AllowOnce so the run still proceeds. Mirrors the per-row
+  // "Always allow" buttons collapsed into a single click for multi-
+  // segment commands like `cd && go run foo` or `which … || find …`.
+  const allowAllAlways = useCallback(
+    (req: PermissionRequest) => {
+      const cardState = perCardState[req.requestId] || {};
+      const decisions = req.segments.map((seg, idx) => {
+        const cell = cardState[idx];
+        const prefix = (cell?.prefix ?? seg.suggestedPrefix ?? '').trim();
+        return prefix ? allowAlways(prefix) : allowOnce();
+      });
+      sendDecisions(req.requestId, decisions);
+    },
+    [perCardState, sendDecisions],
+  );
+
   if (requests.length === 0) {
     return null;
   }
@@ -274,6 +294,14 @@ const InlineApprovalCard = ({ workspaceId }: InlineApprovalCardProps) => {
                 {req.segments.map((seg, idx) => {
                   const cell: SegmentCellState = cardState[idx] || { prefix: '', decision: null };
                   const isOpaque = seg.kind === 'opaque';
+                  // The backend now fills `suggestedPrefix` for Opaque
+                  // segments too (the binary head IS a stable identifier
+                  // even when the surrounding syntax is opaque). The
+                  // persistence affordances key off the prefix being
+                  // non-empty rather than the kind tag, so any Opaque
+                  // segment whose head was recognized gets the same
+                  // "Always allow" workflow as Simple ones.
+                  const canPersist = Boolean(seg.suggestedPrefix);
                   return (
                     <div key={idx} className={styles.segmentRow}>
                       {req.segments.length > 1 && (
@@ -282,14 +310,14 @@ const InlineApprovalCard = ({ workspaceId }: InlineApprovalCardProps) => {
                           {isOpaque && (
                             <span
                               className={styles.opaqueTag}
-                              title="Contains substitution, executor, redirect, or control-flow — can't be safely allowlisted."
+                              title="Contains substitution, executor, redirect, or control-flow — review carefully before allowing."
                             >
                               opaque
                             </span>
                           )}
                         </div>
                       )}
-                      {!isOpaque && (
+                      {canPersist && (
                         <label className={styles.prefixField}>
                           Save as prefix:
                           <input
@@ -311,7 +339,7 @@ const InlineApprovalCard = ({ workspaceId }: InlineApprovalCardProps) => {
                         >
                           Allow once
                         </button>
-                        {!isOpaque && (
+                        {canPersist && (
                           <button
                             type="button"
                             className={`${styles.btn} ${styles.btnAllow} ${cell.decision === 'allowAlways' ? styles.btnSelected : ''}`}
@@ -349,6 +377,15 @@ const InlineApprovalCard = ({ workspaceId }: InlineApprovalCardProps) => {
               )}
               {req.segments.length > 1 && (
                 <footer className={styles.cardFooter}>
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnAllow}`}
+                    onClick={() => allowAllAlways(req)}
+                    disabled={isSubmitting}
+                    title="Persist every persistable prefix and run. Segments without a stable prefix fall back to allow-once."
+                  >
+                    Allow all (always)
+                  </button>
                   <button
                     type="button"
                     className={`${styles.btn} ${styles.btnDenyAll}`}
