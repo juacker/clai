@@ -124,13 +124,13 @@
 }
 
 .enabled {
-  background: rgba(16, 185, 129, 0.12);
-  color: #047857;
+  background: var(--color-success-bg);
+  color: var(--color-success-dark);
 }
 
 .disabled {
-  background: rgba(107, 114, 128, 0.12);
-  color: #4B5563;
+  background: var(--color-overlay-08);
+  color: var(--color-text-secondary);
 }
 
 .serverActions {

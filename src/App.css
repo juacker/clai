@@ -11,8 +11,8 @@
   line-height: 24px;
   font-weight: 400;
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-secondary);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -58,10 +58,10 @@ body {
 h1 {
   font-size: 3em;
   margin-bottom: 0.5em;
-  color: #0f0f0f;
+  color: var(--color-text-primary);
 }
 
 p {
   font-size: 1.2em;
-  color: #666;
+  color: var(--color-text-secondary);
 }

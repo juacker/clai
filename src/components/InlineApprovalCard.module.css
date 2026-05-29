@@ -9,7 +9,7 @@
   position: relative;
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-light);
-  border-left: 4px solid rgba(220, 38, 38, 0.7);
+  border-left: 4px solid var(--color-critical);
   border-radius: var(--radius-md);
   padding: 14px 16px 14px 18px;
   box-shadow: var(--shadow-sm);

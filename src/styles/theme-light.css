@@ -393,6 +393,10 @@
      SPECIAL COLORS
      ============================================ */
 
+  /* Cyan accent — used for the MCP-server badge category. RGB form so
+     translucent tints can be built with rgba(var(--color-cyan-rgb), a). */
+  --color-cyan-rgb: 6, 182, 212;
+
   /* Code Blocks */
   --color-code-bg: rgba(99, 102, 241, 0.04);
   --color-code-border: rgba(99, 102, 241, 0.08);

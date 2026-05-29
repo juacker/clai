@@ -7,8 +7,8 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: rgba(15, 95, 117, 0.12);
-  color: #0f5f75;
+  background: var(--color-overlay-08);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -22,6 +22,6 @@
 }
 
 .fallbackDisabled {
-  background: rgba(148, 163, 184, 0.18);
-  color: #64748b;
+  background: var(--color-overlay-10);
+  color: var(--color-text-secondary);
 }

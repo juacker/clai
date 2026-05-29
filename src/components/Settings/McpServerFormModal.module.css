@@ -11,7 +11,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-overlay-60);
   backdrop-filter: blur(4px);
   z-index: 10001;
   display: flex;
@@ -24,7 +24,7 @@
 .modal {
   background: var(--color-bg-primary, #FDFCFB);
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-xl);
   /* Form has grown to include templates, skills with descriptions,
    * schedule, local capabilities and exposed tools — 480px left long
    * skill rows and the description textarea uncomfortably narrow.
@@ -635,7 +635,7 @@
   background: white;
   border-radius: 50%;
   transition: transform 0.2s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-sm);
 }
 
 .toggleOn .toggleThumb {

@@ -73,8 +73,7 @@
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-light);
   border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12),
-              0 2px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-lg);
   z-index: 10002; /* Above modal overlay (10001) */
   overflow: hidden;
   animation: dropdownAppear 0.15s ease;

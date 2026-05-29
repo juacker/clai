@@ -138,8 +138,8 @@
 /* User Message */
 .userMessage {
   padding: 14px 16px;
-  background: linear-gradient(135deg, rgba(0, 171, 148, 0.06) 0%, rgba(0, 171, 148, 0.10) 100%);
-  border: 1px solid rgba(0, 171, 148, 0.15);
+  background: var(--color-accent-alpha-08);
+  border: 1px solid var(--color-accent-alpha-15);
   border-left: 3px solid var(--color-accent);
   border-radius: var(--radius-md);
   animation: slideIn var(--transition-base) ease-out;
@@ -149,8 +149,8 @@
 /* Agent Query Message - when agent initiates a query with [@clai] */
 .agentQueryMessage {
   padding: 14px 16px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(99, 102, 241, 0.12) 100%);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: var(--color-primary-alpha-10);
+  border: 1px solid var(--color-primary-alpha-20);
   border-left: 3px solid var(--color-primary);
   border-radius: var(--radius-md);
   animation: slideIn var(--transition-base) ease-out;
@@ -211,7 +211,7 @@
 .spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(99, 102, 241, 0.2);
+  border: 2px solid var(--color-primary-alpha-20);
   border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -492,7 +492,7 @@
   font-size: 11px;
   color: var(--color-primary);
   padding: 2px 8px;
-  background: rgba(99, 102, 241, 0.1);
+  background: var(--color-primary-alpha-10);
   border-radius: var(--radius-sm);
 }
 
@@ -509,7 +509,7 @@
   font-size: 11px;
   color: var(--color-success);
   padding: 2px 8px;
-  background: rgba(16, 185, 129, 0.1);
+  background: var(--color-success-bg);
   border-radius: var(--radius-sm);
 }
 
@@ -533,9 +533,9 @@
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: #f59e0b;
+  color: var(--color-warning-light);
   padding: 2px 8px;
-  background: rgba(245, 158, 11, 0.1);
+  background: var(--color-warning-alpha-10);
   border-radius: var(--radius-sm);
 }
 
@@ -549,11 +549,11 @@
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  background: var(--color-warning-alpha-06);
+  border: 1px solid var(--color-warning-border);
   border-radius: 8px;
   font-size: 12px;
-  color: #f59e0b;
+  color: var(--color-warning-light);
   cursor: pointer;
 }
 
@@ -574,7 +574,7 @@
 .noticeItem code {
   font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
   font-size: 11px;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--color-overlay-04);
   padding: 1px 4px;
   border-radius: 3px;
 }
@@ -586,15 +586,15 @@
   gap: 12px;
   padding: 14px 16px;
   margin-top: 12px;
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.25);
+  background: var(--color-warning-alpha-06);
+  border: 1px solid var(--color-warning-border);
   border-radius: var(--radius-md);
   animation: slideIn var(--transition-base) ease-out;
 }
 
 .warningIcon {
   font-size: 18px;
-  color: #f59e0b;
+  color: var(--color-warning-light);
   flex-shrink: 0;
 }
 
@@ -606,7 +606,7 @@
 .malformedTitle {
   font-size: 13px;
   font-weight: 600;
-  color: #f59e0b;
+  color: var(--color-warning-light);
   margin-bottom: 4px;
 }
 

@@ -4,7 +4,7 @@
   border: 1px solid var(--color-border-light);
   /* Distinct accent (teal/cyan) so this is visually different from
    * command-approval (red) and path-grant (amber) inline cards. */
-  border-left: 4px solid rgba(20, 184, 166, 0.75);
+  border-left: 4px solid var(--color-accent);
   border-radius: var(--radius-md);
   padding: 14px 16px 14px 18px;
   margin: 12px 0;
@@ -28,9 +28,9 @@
   letter-spacing: 0.5px;
   text-transform: uppercase;
   font-weight: 600;
-  background: rgba(20, 184, 166, 0.12);
-  color: rgba(15, 118, 110, 1);
-  border: 1px solid rgba(20, 184, 166, 0.5);
+  background: var(--color-accent-alpha-10);
+  color: var(--color-accent-dark);
+  border: 1px solid var(--color-accent-alpha-40);
   padding: 2px 8px;
   border-radius: var(--radius-xs);
   width: fit-content;
@@ -120,8 +120,8 @@
 
 .textarea:focus {
   outline: none;
-  border-color: rgba(20, 184, 166, 0.75);
-  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.18);
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-ring-accent);
 }
 
 .actions {
@@ -131,7 +131,7 @@
 }
 
 .submitButton {
-  background: rgba(15, 118, 110, 1);
+  background: var(--color-accent-dark);
   color: white;
   border: none;
   padding: 6px 14px;
@@ -143,7 +143,7 @@
 }
 
 .submitButton:hover:not(:disabled) {
-  background: rgba(13, 100, 92, 1);
+  background: var(--color-accent-darker);
 }
 
 .submitButton:disabled {
