@@ -16,11 +16,11 @@
   flex-shrink: 0;
 }
 
-.title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--color-text-primary);
+.brandIcon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: block;
 }
 
 .counters {

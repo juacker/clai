@@ -256,7 +256,7 @@ const FleetLayout = () => {
   return (
     <div className={styles.layout}>
       <div className={styles.topBar}>
-        <h1 className={styles.title}>Fleet</h1>
+        <img src="/icon.svg" alt="Clai" className={styles.brandIcon} />
         <div className={styles.counters} role="status" aria-label="Fleet summary">
           <span className={styles.counterChip}>
             <strong>{counters.total}</strong> workspace{counters.total === 1 ? '' : 's'}

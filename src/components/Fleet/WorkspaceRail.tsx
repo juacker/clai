@@ -86,6 +86,7 @@ const WorkspaceRail = ({
   pauseBusyId,
 }: WorkspaceRailProps) => {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
 
   // Sort: attention first, then scheduled, then most-recently-updated.
   const sorted = useMemo(
@@ -101,6 +102,14 @@ const WorkspaceRail = ({
       }),
     [workspaces, attentionCounts],
   );
+
+  // Name filter. Applied only when expanded — collapsed has no input, so
+  // it shows the full list. Case-insensitive substring match on title.
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (collapsed || !q) return sorted;
+    return sorted.filter((ws) => (ws.title || '').toLowerCase().includes(q));
+  }, [sorted, query, collapsed]);
 
   return (
     <nav
@@ -134,8 +143,34 @@ const WorkspaceRail = ({
         </button>
       </div>
 
+      {!collapsed && workspaces.length > 0 && (
+        <div className={styles.filterRow}>
+          <input
+            type="text"
+            className={styles.filterInput}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter workspaces…"
+            aria-label="Filter workspaces by name"
+            spellCheck={false}
+            autoComplete="off"
+          />
+          {query && (
+            <button
+              type="button"
+              className={styles.filterClear}
+              onClick={() => setQuery('')}
+              title="Clear filter"
+              aria-label="Clear filter"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+
       <div className={styles.railList}>
-        {sorted.map((ws) => {
+        {visible.map((ws) => {
           const processing = isProcessing(ws, activeRuns);
           const pending = attentionCounts[ws.id] || 0;
           const status = deriveCardStatus(ws, processing, pending > 0);
@@ -297,6 +332,10 @@ const WorkspaceRail = ({
           <div className={styles.emptyRail}>
             No workspaces yet. Click ＋ New to start.
           </div>
+        )}
+
+        {workspaces.length > 0 && visible.length === 0 && !collapsed && (
+          <div className={styles.emptyRail}>No workspaces match “{query.trim()}”.</div>
         )}
       </div>
     </nav>
