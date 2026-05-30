@@ -269,9 +269,12 @@ pub async fn run_session_turn(
             },
         );
 
-        // Consume the stream
-        let mut accumulated_text = String::new();
-        let mut accumulated_thinking = String::new();
+        // Consume the stream. `content_parts` grows in the order events
+        // arrive so the assistant message preserves the model's real
+        // text↔thinking↔tool interleaving (e.g. think → call tool → think →
+        // answer) instead of hoisting all reasoning to the top. `tool_calls`
+        // is tracked separately because the execution loop below needs it.
+        let mut content_parts: Vec<ContentPart> = Vec::new();
         let mut tool_calls: Vec<ToolInvocationDraft> = Vec::new();
 
         loop {
@@ -293,7 +296,7 @@ pub async fn run_session_turn(
                 Some(Ok(event)) => match event {
                     ProviderEvent::MessageStart => {}
                     ProviderEvent::TextDelta { text } => {
-                        accumulated_text.push_str(&text);
+                        push_text_delta(&mut content_parts, &text);
                         let _ = emit_event(
                             &deps.app,
                             &session,
@@ -305,7 +308,7 @@ pub async fn run_session_turn(
                         );
                     }
                     ProviderEvent::ThinkingDelta { text } => {
-                        accumulated_thinking.push_str(&text);
+                        push_thinking_delta(&mut content_parts, &text);
                         let _ = emit_event(
                             &deps.app,
                             &session,
@@ -316,10 +319,24 @@ pub async fn run_session_turn(
                             },
                         );
                     }
+                    ProviderEvent::ThinkingSignature { signature } => {
+                        // Anthropic sends the signature in its own event after a
+                        // thinking block's text; bind it to that block so it can
+                        // be replayed verbatim. A later thinking_delta opens a new
+                        // block, so each block keeps its own signature.
+                        set_thinking_signature(&mut content_parts, signature);
+                    }
                     ProviderEvent::Usage { usage: u } => {
                         usage = Some(u);
                     }
                     ProviderEvent::ToolCallReady { tool_call } => {
+                        // Record it in content (in position) and in tool_calls
+                        // (for the execution loop below).
+                        content_parts.push(ContentPart::ToolUse {
+                            tool_call_id: tool_call.tool_call_id.clone(),
+                            tool_name: tool_call.tool_name.clone(),
+                            arguments: tool_call.params.clone(),
+                        });
                         tool_calls.push(tool_call);
                     }
                     ProviderEvent::ToolCallDelta { .. } => {
@@ -351,27 +368,10 @@ pub async fn run_session_turn(
         // tool case: tool_calls captured via `finish_reason: tool_calls` but
         // [DONE] never arriving, leaving the assistant row with empty content
         // while tool result rows get persisted just below.
-        let mut final_content = Vec::new();
-        // Thinking comes first so the eventual outbound serializer sees
-        // a stable ordering and can extract `reasoning_content` from a
-        // known position.
-        if !accumulated_thinking.is_empty() {
-            final_content.push(ContentPart::Thinking {
-                text: accumulated_thinking.clone(),
-            });
-        }
-        if !accumulated_text.is_empty() {
-            final_content.push(ContentPart::Text {
-                text: accumulated_text.clone(),
-            });
-        }
-        for tc in &tool_calls {
-            final_content.push(ContentPart::ToolUse {
-                tool_call_id: tc.tool_call_id.clone(),
-                tool_name: tc.tool_name.clone(),
-                arguments: tc.params.clone(),
-            });
-        }
+        //
+        // `content_parts` is already in arrival order. Guarantee non-empty so
+        // the assistant row never persists with zero content.
+        let mut final_content = content_parts;
         if final_content.is_empty() {
             final_content.push(ContentPart::Text {
                 text: String::new(),
@@ -1457,6 +1457,7 @@ mod tests {
     fn assistant_message_with_thinking(text: &str) -> AssistantMessage {
         assistant_message_with_content(vec![ContentPart::Thinking {
             text: text.to_string(),
+            signature: None,
         }])
     }
 
@@ -1677,7 +1678,7 @@ mod tests {
         assert_eq!(normalized[1].role, MessageRole::Assistant);
         assert!(matches!(
             &normalized[1].content[0],
-            ContentPart::Thinking { text } if text == "internal monologue"
+            ContentPart::Thinking { text, .. } if text == "internal monologue"
         ));
         assert_eq!(normalized[2].role, MessageRole::User);
     }
@@ -1698,7 +1699,8 @@ mod tests {
         }]));
         // Only-thinking with empty string → empty.
         assert!(assistant_content_is_empty(&[ContentPart::Thinking {
-            text: String::new()
+            text: String::new(),
+            signature: None,
         }]));
         // Empty text + empty thinking → still empty.
         assert!(assistant_content_is_empty(&[
@@ -1706,7 +1708,8 @@ mod tests {
                 text: String::new()
             },
             ContentPart::Thinking {
-                text: String::new()
+                text: String::new(),
+                signature: None,
             },
         ]));
         // Non-empty text → not empty.
@@ -1715,7 +1718,8 @@ mod tests {
         }]));
         // Non-empty thinking → not empty.
         assert!(!assistant_content_is_empty(&[ContentPart::Thinking {
-            text: "ponder".into()
+            text: "ponder".into(),
+            signature: None,
         }]));
         // ToolUse alone is always non-empty.
         assert!(!assistant_content_is_empty(&[ContentPart::ToolUse {
@@ -1832,6 +1836,61 @@ mod tests {
             panic!("expected text");
         };
         assert_eq!(text, "header\n\nline1\nline2");
+    }
+
+    #[test]
+    fn stream_parts_preserve_interleaved_order() {
+        // think → answer → tool → think → answer, the way an interleaved
+        // reasoning model streams it. Order and per-block signatures must hold.
+        let mut parts: Vec<ContentPart> = Vec::new();
+        push_thinking_delta(&mut parts, "let me think");
+        set_thinking_signature(&mut parts, "sig-1".into());
+        push_text_delta(&mut parts, "Here is ");
+        push_text_delta(&mut parts, "the plan.");
+        parts.push(ContentPart::ToolUse {
+            tool_call_id: "call_1".into(),
+            tool_name: "bash".into(),
+            arguments: serde_json::json!({}),
+        });
+        push_thinking_delta(&mut parts, "tool worked");
+        set_thinking_signature(&mut parts, "sig-2".into());
+        push_text_delta(&mut parts, "Done.");
+
+        assert_eq!(parts.len(), 5);
+        assert!(matches!(
+            &parts[0],
+            ContentPart::Thinking { text, signature: Some(s) }
+                if text == "let me think" && s == "sig-1"
+        ));
+        assert!(matches!(&parts[1], ContentPart::Text { text } if text == "Here is the plan."));
+        assert!(matches!(&parts[2], ContentPart::ToolUse { .. }));
+        assert!(matches!(
+            &parts[3],
+            ContentPart::Thinking { text, signature: Some(s) }
+                if text == "tool worked" && s == "sig-2"
+        ));
+        assert!(matches!(&parts[4], ContentPart::Text { text } if text == "Done."));
+    }
+
+    #[test]
+    fn stream_parts_coalesce_consecutive_deltas() {
+        // Consecutive same-kind deltas merge into one part; a signed thinking
+        // block is sealed so the next thinking delta opens a fresh block.
+        let mut parts: Vec<ContentPart> = Vec::new();
+        push_thinking_delta(&mut parts, "a");
+        push_thinking_delta(&mut parts, "b");
+        set_thinking_signature(&mut parts, "sig".into());
+        push_thinking_delta(&mut parts, "c"); // new block (previous sealed)
+
+        assert_eq!(parts.len(), 2);
+        assert!(matches!(
+            &parts[0],
+            ContentPart::Thinking { text, signature: Some(s) } if text == "ab" && s == "sig"
+        ));
+        assert!(matches!(
+            &parts[1],
+            ContentPart::Thinking { text, signature: None } if text == "c"
+        ));
     }
 
     #[test]
@@ -2080,13 +2139,59 @@ fn normalize_history_for_provider(messages: &[AssistantMessage]) -> Vec<Provider
     out
 }
 
+/// Append a streamed text delta, coalescing into the trailing Text part so a
+/// run of deltas becomes one part. A non-text part (thinking/tool) in between
+/// starts a fresh text run, preserving interleaving.
+fn push_text_delta(parts: &mut Vec<ContentPart>, text: &str) {
+    if let Some(ContentPart::Text { text: existing }) = parts.last_mut() {
+        existing.push_str(text);
+    } else {
+        parts.push(ContentPart::Text {
+            text: text.to_string(),
+        });
+    }
+}
+
+/// Append a streamed thinking delta. Coalesces into the trailing thinking part
+/// only while it is still open (unsigned); a signed block is sealed, so the
+/// next delta starts a new thinking block — which keeps each block paired with
+/// its own signature.
+fn push_thinking_delta(parts: &mut Vec<ContentPart>, text: &str) {
+    if let Some(ContentPart::Thinking {
+        text: existing,
+        signature: None,
+    }) = parts.last_mut()
+    {
+        existing.push_str(text);
+    } else {
+        parts.push(ContentPart::Thinking {
+            text: text.to_string(),
+            signature: None,
+        });
+    }
+}
+
+/// Bind a signature to the open (unsigned) trailing thinking block. If the last
+/// part isn't an open thinking block, the signature has nothing to attach to.
+fn set_thinking_signature(parts: &mut [ContentPart], signature: String) {
+    if let Some(ContentPart::Thinking {
+        signature: slot @ None,
+        ..
+    }) = parts.last_mut()
+    {
+        *slot = Some(signature);
+    } else {
+        tracing::warn!("signature delta with no open thinking block; ignored");
+    }
+}
+
 fn assistant_content_is_empty(content: &[ContentPart]) -> bool {
     content.iter().all(|part| match part {
         ContentPart::Text { text } => text.is_empty(),
         // A message with only thinking and no other content is
         // semantically empty from the user/provider standpoint —
         // there's no answer or action to take.
-        ContentPart::Thinking { text } => text.is_empty(),
+        ContentPart::Thinking { text, .. } => text.is_empty(),
         ContentPart::ToolUse { .. } | ContentPart::ToolResult { .. } => false,
     })
 }

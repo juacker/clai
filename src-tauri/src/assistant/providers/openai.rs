@@ -270,7 +270,7 @@ fn build_message(msg: &crate::assistant::types::ProviderInputMessage) -> serde_j
             .content
             .iter()
             .filter_map(|p| match p {
-                ContentPart::Thinking { text } => Some(text.clone()),
+                ContentPart::Thinking { text, .. } => Some(text.clone()),
                 _ => None,
             })
             .collect::<Vec<_>>()

@@ -240,6 +240,24 @@ fn build_message(msg: &crate::assistant::types::ProviderInputMessage) -> Option<
 
             for part in &msg.content {
                 match part {
+                    // Replay the signed thinking block verbatim. The engine
+                    // places Thinking first in content, so it lands first here —
+                    // which Anthropic requires for tool-use continuation. Do NOT
+                    // reformat the text; the signature signs it byte-for-byte.
+                    ContentPart::Thinking {
+                        text,
+                        signature: Some(signature),
+                    } if !text.is_empty() => {
+                        content.push(json!({
+                            "type": "thinking",
+                            "thinking": text,
+                            "signature": signature,
+                        }));
+                    }
+                    // Unsigned thinking (OpenAI reasoning_content, CLI agents, or
+                    // pre-feature history) can't be re-signed; Anthropic rejects
+                    // thinking blocks without a valid signature, so drop it.
+                    ContentPart::Thinking { .. } => {}
                     ContentPart::Text { text } if !text.is_empty() => {
                         content.push(json!({ "type": "text", "text": text }));
                     }
@@ -481,19 +499,33 @@ fn parse_sse_frame(
                 *emitted_start = true;
                 events.push(Ok(ProviderEvent::MessageStart));
             }
-            // Check if this is a tool_use block
             if let Some(cb) = json.get("content_block") {
-                if cb.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                    let index = json.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
-                    while tool_calls.len() <= index {
-                        tool_calls.push(PartialToolCall::default());
+                match cb.get("type").and_then(|t| t.as_str()) {
+                    Some("tool_use") => {
+                        let index =
+                            json.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
+                        while tool_calls.len() <= index {
+                            tool_calls.push(PartialToolCall::default());
+                        }
+                        if let Some(id) = cb.get("id").and_then(|i| i.as_str()) {
+                            tool_calls[index].id = id.to_string();
+                        }
+                        if let Some(name) = cb.get("name").and_then(|n| n.as_str()) {
+                            tool_calls[index].name = name.to_string();
+                        }
                     }
-                    if let Some(id) = cb.get("id").and_then(|i| i.as_str()) {
-                        tool_calls[index].id = id.to_string();
+                    // A thinking block opens empty; its text/signature arrive as
+                    // content_block_delta. Nothing to capture at start.
+                    Some("thinking") => {}
+                    // Encrypted reasoning we can't read or re-sign. We don't
+                    // round-trip it, which can break tool-use continuation
+                    // against strict Anthropic; MiniMax does not emit these.
+                    Some("redacted_thinking") => {
+                        tracing::warn!(
+                            "anthropic: redacted_thinking block dropped (not round-tripped)"
+                        );
                     }
-                    if let Some(name) = cb.get("name").and_then(|n| n.as_str()) {
-                        tool_calls[index].name = name.to_string();
-                    }
+                    _ => {}
                 }
             }
         }
@@ -516,6 +548,24 @@ fn parse_sse_frame(
                         if let Some(partial) = delta.get("partial_json").and_then(|p| p.as_str()) {
                             if index < tool_calls.len() {
                                 tool_calls[index].arguments.push_str(partial);
+                            }
+                        }
+                    }
+                    "thinking_delta" => {
+                        if let Some(text) = delta.get("thinking").and_then(|t| t.as_str()) {
+                            if !text.is_empty() {
+                                events.push(Ok(ProviderEvent::ThinkingDelta {
+                                    text: text.to_string(),
+                                }));
+                            }
+                        }
+                    }
+                    "signature_delta" => {
+                        if let Some(sig) = delta.get("signature").and_then(|s| s.as_str()) {
+                            if !sig.is_empty() {
+                                events.push(Ok(ProviderEvent::ThinkingSignature {
+                                    signature: sig.to_string(),
+                                }));
                             }
                         }
                     }
@@ -718,5 +768,81 @@ mod tests {
             event,
             Ok(ProviderEvent::TextDelta { text }) if text == "€"
         )));
+    }
+
+    #[test]
+    fn parse_thinking_delta_emits_thinking() {
+        let frame = "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"pondering\"}}";
+        let mut emitted_start = true;
+        let mut tool_calls = Vec::new();
+        let events = parse_sse_frame(frame, &mut emitted_start, &mut tool_calls);
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Ok(ProviderEvent::ThinkingDelta { text }) if text == "pondering"
+        )));
+    }
+
+    #[test]
+    fn parse_signature_delta_emits_thinking_signature() {
+        let frame = "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"abc123\"}}";
+        let mut emitted_start = true;
+        let mut tool_calls = Vec::new();
+        let events = parse_sse_frame(frame, &mut emitted_start, &mut tool_calls);
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Ok(ProviderEvent::ThinkingSignature { signature }) if signature == "abc123"
+        )));
+    }
+
+    #[test]
+    fn build_message_round_trips_signed_thinking_first() {
+        let msg = ProviderInputMessage {
+            role: MessageRole::Assistant,
+            content: vec![
+                ContentPart::Thinking {
+                    text: "reasoning".into(),
+                    signature: Some("sig-xyz".into()),
+                },
+                ContentPart::Text {
+                    text: "answer".into(),
+                },
+                ContentPart::ToolUse {
+                    tool_call_id: "toolu_1".into(),
+                    tool_name: "bash".into(),
+                    arguments: json!({}),
+                },
+            ],
+        };
+
+        let built = build_message(&msg).unwrap();
+        let content = built["content"].as_array().unwrap();
+        // Thinking must come first (Anthropic requires it for tool-use turns).
+        assert_eq!(content[0]["type"], "thinking");
+        assert_eq!(content[0]["thinking"], "reasoning");
+        assert_eq!(content[0]["signature"], "sig-xyz");
+        assert_eq!(content[1]["type"], "text");
+        assert_eq!(content[2]["type"], "tool_use");
+    }
+
+    #[test]
+    fn build_message_drops_unsigned_thinking() {
+        let msg = ProviderInputMessage {
+            role: MessageRole::Assistant,
+            content: vec![
+                ContentPart::Thinking {
+                    text: "reasoning".into(),
+                    signature: None,
+                },
+                ContentPart::Text {
+                    text: "answer".into(),
+                },
+            ],
+        };
+
+        let built = build_message(&msg).unwrap();
+        let content = built["content"].as_array().unwrap();
+        // Unsigned thinking can't be re-signed → dropped; only text remains.
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0]["type"], "text");
     }
 }

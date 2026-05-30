@@ -25,7 +25,7 @@ export type AttentionUpdate = { workspaceId: string | null, pendingCount: number
 
 export type AuthMode = "subscription_login" | "subscription_api_key" | "developer_api_key" | "workspace_token";
 
-export type ContentPart = { "type": "text", text: string, } | { "type": "thinking", text: string, } | { "type": "tool_use", tool_call_id: string, tool_name: string, arguments: JsonValue, } | { "type": "tool_result", tool_call_id: string, payload: JsonValue, started_at?: bigint | null, completed_at?: bigint | null, };
+export type ContentPart = { "type": "text", text: string, } | { "type": "thinking", text: string, signature?: string | null, } | { "type": "tool_use", tool_call_id: string, tool_name: string, arguments: JsonValue, } | { "type": "tool_result", tool_call_id: string, payload: JsonValue, started_at?: bigint | null, completed_at?: bigint | null, };
 
 export type CreateMcpServerRequest = { name: string, enabled: boolean, transport: McpServerTransport, integrationType: McpServerIntegrationType, auth: McpServerAuthRequest, };
 

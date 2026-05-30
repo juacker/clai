@@ -750,6 +750,7 @@ async fn handle_stream_event(
                 Some("thinking") => {
                     state.parts.push(ContentPart::Thinking {
                         text: String::new(),
+                        signature: None,
                     });
                     let parts_index = state.parts.len() - 1;
                     state
@@ -833,13 +834,14 @@ async fn handle_stream_event(
                                 } else {
                                     state.parts.push(ContentPart::Thinking {
                                         text: String::new(),
+                                        signature: None,
                                     });
                                     Some(state.parts.len() - 1)
                                 }
                             }
                         };
                         if let Some(idx) = parts_index {
-                            if let Some(ContentPart::Thinking { text: t }) =
+                            if let Some(ContentPart::Thinking { text: t, .. }) =
                                 state.parts.get_mut(idx)
                             {
                                 t.push_str(text);
@@ -1293,7 +1295,7 @@ fn message_text(message: &AssistantMessage) -> String {
 
 fn content_part_text(part: &ContentPart) -> Option<String> {
     match part {
-        ContentPart::Text { text } | ContentPart::Thinking { text } => Some(text.clone()),
+        ContentPart::Text { text } | ContentPart::Thinking { text, .. } => Some(text.clone()),
         ContentPart::ToolUse {
             tool_name,
             arguments,

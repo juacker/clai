@@ -199,8 +199,19 @@ pub enum ContentPart {
     /// that require it (LiteLLM-fronted OpenAI rejects assistant
     /// tool_call messages with `thinking enabled but reasoning_content
     /// missing` when this is absent).
+    ///
+    /// `signature` carries the Anthropic extended-thinking signature
+    /// (from `signature_delta`). It must be replayed verbatim alongside
+    /// the text when this block is sent back in history — required for
+    /// tool-use turns, and improves output quality for MiniMax over the
+    /// Anthropic protocol. `None` for providers that don't sign thinking
+    /// (OpenAI `reasoning_content`, CLI-backed agents). Thinking blocks are
+    /// kept in arrival order and each retains its own signature, so a turn
+    /// with multiple (or interleaved) thinking blocks round-trips correctly.
     Thinking {
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
     },
     ToolUse {
         tool_call_id: ToolCallId,
@@ -397,6 +408,13 @@ pub enum ProviderEvent {
     /// accept the conversation history.
     ThinkingDelta {
         text: String,
+    },
+    /// Cryptographic signature for the preceding thinking block
+    /// (Anthropic `signature_delta`). Arrives once, after the thinking
+    /// text. Engines attach it to the finalized `ContentPart::Thinking`
+    /// so it can be replayed verbatim in history.
+    ThinkingSignature {
+        signature: String,
     },
     ToolCallDelta {
         tool_call_id: ToolCallId,
