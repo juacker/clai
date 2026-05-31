@@ -86,7 +86,7 @@ include_dir = "0.7"
 # - server: Core server functionality
 # - transport-streamable-http-server: Full HTTP/SSE transport for AI CLI connections
 # - macros: #[tool] and #[tool_router] procedural macros
-rmcp = { version = "0.12", features = ["client", "server", "transport-streamable-http-server", "transport-streamable-http-client-reqwest", "macros"] }
+rmcp = { version = "1.7", features = ["client", "server", "transport-streamable-http-server", "transport-streamable-http-client-reqwest", "macros"] }
 
 # JSON Schema generation for MCP tool definitions
 schemars = "1"

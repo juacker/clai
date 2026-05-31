@@ -48,6 +48,21 @@ fn cli_stream_logging_enabled() -> bool {
     })
 }
 
+/// When `CLAI_CC_DEBUG` is truthy, the spawned Claude Code process is launched
+/// with `--debug-file`, capturing its internal debug logs (including the MCP
+/// client) to a temp file. Diagnostic-only; off by default.
+fn cc_debug_logging_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("CLAI_CC_DEBUG")
+            .map(|value| {
+                let value = value.trim();
+                !value.is_empty() && value != "0" && !value.eq_ignore_ascii_case("false")
+            })
+            .unwrap_or(false)
+    })
+}
+
 fn log_cli_stream_line(provider: &str, run_id: &str, line: &str) {
     if cli_stream_logging_enabled() {
         tracing::info!(target: "clai::cli_stream", provider, run_id, raw = %line, "CLI stream line");
@@ -468,6 +483,17 @@ async fn run_claude_turn(
     // tool "ask_user" was lost`. Bump to 1h — runs are already bounded by
     // `cancel_token`, so an actually-stuck tool doesn't sit indefinitely.
     command.env("MCP_TIMEOUT", "3600000");
+    // Force Claude Code's "tool search" off. CC 2.1.x can *optimistically*
+    // enable tool search (a server-driven experiment, seen as
+    // `[ToolSearch:optimistic] mode=tst, result=true` in its debug log), which
+    // withholds tool definitions from the model for on-demand lookup via a
+    // `ToolSearchTool`. But CLAI disallows that search tool (`--tools ""` +
+    // `--disallowedTools`), so when the experiment fires the model ends up with
+    // neither the MCP tools nor a way to find them -> `tools:[]`, intermittently
+    // (it's an experiment bucket, hence the coin-flip). Pinning it off makes CC
+    // inject our tool defs directly every run. Harmless: we only expose ~12
+    // tools, well under any threshold where search would matter. See #63120.
+    command.env("ENABLE_TOOL_SEARCH", "false");
     command
         .arg("-p")
         .arg("--output-format")
@@ -497,6 +523,22 @@ async fn run_claude_turn(
         .stderr(Stdio::piped());
     if !connection.model_id.trim().is_empty() {
         command.arg("--model").arg(connection.model_id.trim());
+    }
+
+    // Opt-in: when `CLAI_CC_DEBUG` is truthy, route Claude Code's own debug
+    // logging (incl. its MCP client) to a dedicated file. `--debug-file`
+    // implicitly enables debug mode and keeps the output off stdout/stderr so
+    // it can't corrupt the `stream-json` envelope we parse. Diagnostic hook for
+    // the CC 2.1.153+ "tools/list served but tools:[] / status pending" issue
+    // (#63120) — lets us see CC's side of the MCP handshake.
+    if cc_debug_logging_enabled() {
+        let debug_path = std::env::temp_dir().join("clai-cc-debug.log");
+        tracing::info!(
+            target: "clai::mcp",
+            path = %debug_path.display(),
+            "Claude Code debug logging enabled (--debug-file)"
+        );
+        command.arg("--debug-file").arg(&debug_path);
     }
 
     // Pin the subprocess cwd to the agent's workspace root. Without

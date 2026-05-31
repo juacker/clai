@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::time::Duration;
 
 use rmcp::{
     model::{
-        CallToolRequestParam, CallToolResult, Content as McpContent, ResourceContents,
+        CallToolRequestParams, CallToolResult, Content as McpContent, ResourceContents,
         Tool as RmcpTool,
     },
     service::{RoleClient, RunningService, ServiceExt},
@@ -103,11 +102,13 @@ impl ConnectedMcpServer {
         tool_name: &str,
         arguments: Option<serde_json::Map<String, serde_json::Value>>,
     ) -> Result<CallToolResult, String> {
+        // CallToolRequestParams is #[non_exhaustive] in rmcp 1.7, so build it
+        // from Default and set the fields we care about.
+        let mut params = CallToolRequestParams::default();
+        params.name = tool_name.to_string().into();
+        params.arguments = arguments;
         self.service()
-            .call_tool(CallToolRequestParam {
-                name: tool_name.to_string().into(),
-                arguments,
-            })
+            .call_tool(params)
             .await
             .map_err(|error| format!("Failed to call MCP tool `{}`: {}", tool_name, error))
     }
@@ -394,30 +395,24 @@ impl McpClientManager {
     ) -> Result<ConnectedMcpServer, String> {
         match &config.transport {
             crate::config::McpServerTransport::Http { url } => {
-                let client = reqwest::Client::builder()
-                    .connect_timeout(Duration::from_secs(10))
-                    .timeout(Duration::from_secs(60))
-                    .build()
-                    .map_err(|error| format!("Failed to build HTTP client: {}", error))?;
-
+                // Build on rmcp's own bundled reqwest client via `from_config`
+                // so CLAI doesn't have to share reqwest's major version with
+                // rmcp (rmcp 1.7 uses reqwest 0.13; CLAI stays on 0.12).
                 let mut transport_config =
                     StreamableHttpClientTransportConfig::with_uri(url.clone());
                 if let Some(token) = bearer_token {
                     transport_config = transport_config.auth_header(token);
                 }
 
-                let service = ()
-                    .serve(StreamableHttpClientTransport::with_client(
-                        client,
-                        transport_config,
-                    ))
-                    .await
-                    .map_err(|error| {
-                        format!(
-                            "Failed to connect to HTTP MCP server `{}`: {}",
-                            config.name, error
-                        )
-                    })?;
+                let service =
+                    ().serve(StreamableHttpClientTransport::from_config(transport_config))
+                        .await
+                        .map_err(|error| {
+                            format!(
+                                "Failed to connect to HTTP MCP server `{}`: {}",
+                                config.name, error
+                            )
+                        })?;
 
                 Ok(ConnectedMcpServer::Http(service))
             }

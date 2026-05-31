@@ -6,8 +6,8 @@ use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
 use axum::Router;
 use rmcp::model::{
-    CallToolRequestParam, CallToolResult, ErrorData as McpError, JsonObject, ListToolsResult,
-    PaginatedRequestParam, ServerCapabilities, ServerInfo, Tool as RmcpTool, ToolAnnotations,
+    CallToolRequestParams, CallToolResult, ErrorData as McpError, JsonObject, ListToolsResult,
+    PaginatedRequestParams, ServerCapabilities, ServerInfo, Tool as RmcpTool, ToolAnnotations,
 };
 use rmcp::service::{RequestContext, RoleServer};
 use rmcp::transport::streamable_http_server::{
@@ -178,10 +178,17 @@ pub async fn ensure_started(app: &AppHandle) -> Result<Arc<LocalMcpRuntime>, Str
                 })
             },
             Default::default(),
-            StreamableHttpServerConfig {
-                stateful_mode: true,
-                sse_keep_alive: None,
-                cancellation_token: cancellation_token.child_token(),
+            {
+                // rmcp 1.7's StreamableHttpServerConfig is #[non_exhaustive]
+                // (added DNS-rebinding host/origin allowlists, session store,
+                // etc.), so build from Default and override only what we need.
+                // The default allowed_hosts (loopback) already covers our
+                // 127.0.0.1 bind, port-agnostically.
+                let mut config = StreamableHttpServerConfig::default();
+                config.stateful_mode = true;
+                config.sse_keep_alive = None;
+                config.cancellation_token = cancellation_token.child_token();
+                config
             },
         );
     let router = Router::new().nest_service("/mcp", service);
@@ -208,19 +215,22 @@ struct ClaiMcpService {
 #[allow(clippy::manual_async_fn)]
 impl ServerHandler for ClaiMcpService {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            instructions: Some(
-                "Use only these CLAI MCP tools. Do not use CLI-native filesystem or shell tools."
-                    .into(),
-            ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+        // ServerInfo (InitializeResult) is #[non_exhaustive] in rmcp 1.7, so we
+        // can't use struct-literal syntax. Default sets protocol_version to
+        // rmcp's LATEST (2025-11-25), which is what Claude Code >=2.1.153
+        // negotiates — the version mismatch that previously left runs tool-less.
+        let mut info = ServerInfo::default();
+        info.instructions = Some(
+            "Use only these CLAI MCP tools. Do not use CLI-native filesystem or shell tools."
+                .into(),
+        );
+        info.capabilities = ServerCapabilities::builder().enable_tools().build();
+        info
     }
 
     fn list_tools(
         &self,
-        _request: Option<PaginatedRequestParam>,
+        _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
         async move {
@@ -248,7 +258,7 @@ impl ServerHandler for ClaiMcpService {
 
     fn call_tool(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
         async move {
@@ -345,23 +355,19 @@ fn tool_definition_to_mcp(definition: ToolDefinition) -> RmcpTool {
         serde_json::Value::Object(map) => map,
         _ => JsonObject::default(),
     };
-    RmcpTool {
-        name: definition.name.clone().into(),
-        title: Some(definition.name),
-        description: Some(definition.description.into()),
-        input_schema: Arc::new(input_schema),
-        output_schema: None,
-        annotations: tool_annotations(),
-        icons: None,
-        meta: None,
-    }
+    // RmcpTool is #[non_exhaustive] in rmcp 1.7 (new `execution`, `icons`,
+    // `meta` fields), so construct via the builder rather than a literal.
+    let title = definition.name.clone();
+    let mut tool = RmcpTool::new(definition.name, definition.description, input_schema);
+    tool.title = Some(title);
+    tool.annotations = tool_annotations();
+    tool
 }
 
 fn tool_annotations() -> Option<ToolAnnotations> {
-    Some(ToolAnnotations {
-        open_world_hint: Some(true),
-        ..Default::default()
-    })
+    let mut annotations = ToolAnnotations::default();
+    annotations.open_world_hint = Some(true);
+    Some(annotations)
 }
 
 fn bearer_token(context: &RequestContext<RoleServer>) -> Option<String> {
