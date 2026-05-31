@@ -4,6 +4,7 @@ import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { save } from '@tauri-apps/plugin-dialog';
 import MarkdownMessage from './Chat/MarkdownMessage';
 import { downloadWorkspaceFile, readWorkspaceFile } from '../workspace/client';
+import { bundleHtmlForPreview, resolveWorkspacePath } from '../utils/htmlBundle';
 import { openExternal } from '../utils/openExternal';
 import type { WorkspaceFileContent, WorkspaceFileEntry } from '../generated/bindings';
 import styles from './WorkspaceFilePreviewPanel.module.css';
@@ -25,6 +26,11 @@ interface WorkspaceFilePreviewPanelProps {
   kind: 'memory' | 'artifact';
   entry: WorkspaceFileEntry | null;
   onClose: () => void;
+  // Called when a link inside an HTML preview points at another file in the
+  // same workspace; receives the resolved workspace-relative path so the
+  // parent can swap the previewed artifact. Omit to disable in-app link
+  // navigation (links then do nothing rather than escaping the sandbox).
+  onNavigate?: (path: string) => void;
 }
 
 // ── Syntax-highlighting setup ──────────────────────────────────────────────
@@ -157,43 +163,75 @@ const CodeView = ({ content, language }: { content: string; language: string | n
 // `EXTERNAL_LINK_INTERCEPTOR_SCRIPT` below.
 const EXTERNAL_LINK_MESSAGE_TYPE = 'clai-html-preview-open-external';
 
-// Script injected into the HTML preview iframe. Captures clicks on
-// `<a>` elements with http(s)/mailto/ftp targets, suppresses the
-// iframe's own navigation, and posts the URL up to the parent so it
-// can route it through Tauri's opener (OS default browser). In-page
-// anchors (`#section`) and `javascript:` URIs are left alone.
+// postMessage `type` used when the iframe link points at another file in
+// the same workspace (e.g. an index page linking to a report). The parent
+// resolves the relative href against the current artifact's directory and
+// opens the target as an artifact instead of navigating the iframe (which a
+// sandboxed frame can't do) or leaking it to a browser tab.
+const INTERNAL_LINK_MESSAGE_TYPE = 'clai-html-preview-open-artifact';
+
+// Script injected into the HTML preview iframe. Captures clicks on `<a>`
+// elements, suppresses the iframe's own (sandbox-broken) navigation, and
+// posts the target up to the parent, which routes it one of two ways:
+//   • external targets (http(s)/mailto/ftp/tel) → OS default browser;
+//   • everything else relative (another file in the workspace) → opened as
+//     an artifact in the preview panel.
+// In-page anchors (`#section`) and `javascript:` URIs are left to the
+// browser's native handling.
 //
-// The script needs `allow-scripts` in the iframe sandbox but
-// deliberately runs WITHOUT `allow-same-origin`, so the iframe stays
-// in a unique-origin sandbox — it can postMessage to the parent but
-// cannot read the parent's DOM, cookies, or storage.
+// The script needs `allow-scripts` in the iframe sandbox but deliberately
+// runs WITHOUT `allow-same-origin`, so the iframe stays in a unique-origin
+// sandbox — it can postMessage to the parent but cannot read the parent's
+// DOM, cookies, or storage.
 const EXTERNAL_LINK_INTERCEPTOR_SCRIPT = `
 <script>
 (function () {
-  var MESSAGE_TYPE = ${JSON.stringify(EXTERNAL_LINK_MESSAGE_TYPE)};
-  var EXTERNAL_PROTOCOLS = ['http:', 'https:', 'mailto:', 'ftp:'];
+  var EXTERNAL_TYPE = ${JSON.stringify(EXTERNAL_LINK_MESSAGE_TYPE)};
+  var INTERNAL_TYPE = ${JSON.stringify(INTERNAL_LINK_MESSAGE_TYPE)};
+  var EXTERNAL_PROTOCOLS = ['http:', 'https:', 'mailto:', 'ftp:', 'tel:'];
 
-  function shouldRoute(anchor) {
-    if (!anchor) return false;
-    var href = anchor.getAttribute('href');
-    if (!href) return false;
-    if (href.charAt(0) === '#') return false;
-    try {
-      var url = new URL(anchor.href, document.baseURI);
-      return EXTERNAL_PROTOCOLS.indexOf(url.protocol) !== -1;
-    } catch (_) {
-      return false;
+  // Decide how a clicked anchor should be routed, based on the RAW href.
+  // We must NOT resolve against document.baseURI: in an about:srcdoc frame
+  // the spec resolves relative URLs against the *parent* document, so a
+  // sibling link like "report.html" comes back as "http://localhost/report.html"
+  // and would look external. The author's raw href is the real intent.
+  // Returns null to let the browser handle it natively.
+  function classify(anchor) {
+    if (!anchor) return null;
+    var raw = anchor.getAttribute('href');
+    if (!raw) return null;
+    raw = raw.trim();
+    if (!raw || raw.charAt(0) === '#') return null; // empty or in-page anchor
+
+    // Protocol-relative ("//host/…") is always external.
+    if (raw.indexOf('//') === 0) {
+      return { type: EXTERNAL_TYPE, url: anchor.href };
     }
+    // An explicit URL scheme ("https:", "mailto:", "javascript:", …).
+    var scheme = /^([a-z][a-z0-9+.-]*):/i.exec(raw);
+    if (scheme) {
+      var proto = scheme[1].toLowerCase() + ':';
+      if (EXTERNAL_PROTOCOLS.indexOf(proto) !== -1) {
+        return { type: EXTERNAL_TYPE, url: anchor.href };
+      }
+      // javascript:, data:, blob:, file:, unknown — leave to the browser.
+      return null;
+    }
+    // No scheme and not protocol-relative → a relative (or root-absolute)
+    // path inside the workspace. Send the RAW href so the parent can resolve
+    // it against the current artifact's directory.
+    return { type: INTERNAL_TYPE, href: raw };
   }
 
   function handler(event) {
     var target = event.target;
     if (!target || typeof target.closest !== 'function') return;
     var anchor = target.closest('a');
-    if (!shouldRoute(anchor)) return;
+    var routed = classify(anchor);
+    if (!routed) return;
     event.preventDefault();
     try {
-      window.parent.postMessage({ type: MESSAGE_TYPE, url: anchor.href }, '*');
+      window.parent.postMessage(routed, '*');
     } catch (_) {
       // postMessage shouldn't throw, but the parent might be gone (e.g.
       // the panel was unmounted while the click was in flight). Nothing
@@ -253,7 +291,12 @@ const looksLikeHtml = (viewer: string | undefined, path: string | undefined): bo
   return lower.endsWith('.html') || lower.endsWith('.htm');
 };
 
-const renderBody = (file: LoadedFile | null, htmlMode: HtmlMode) => {
+const renderBody = (
+  file: LoadedFile | null,
+  htmlMode: HtmlMode,
+  htmlBundle: string | null,
+  bundling: boolean,
+) => {
   if (!file) return null;
   if (file.error) {
     return <div className={styles.error}>{file.error}</div>;
@@ -269,6 +312,17 @@ const renderBody = (file: LoadedFile | null, htmlMode: HtmlMode) => {
     );
   }
   if (looksLikeHtml(file.viewer, file.path) && htmlMode === 'preview') {
+    // The bundler inlines any local siblings (stylesheets, scripts, images,
+    // fonts) the report references by relative path — `srcDoc` has no base
+    // URL, so without this they'd silently fail to load. We wait for it
+    // before mounting the iframe so the preview never flashes unstyled.
+    if (bundling || htmlBundle === null) {
+      return (
+        <div className={styles.htmlBody}>
+          <div className={styles.empty}>Loading preview…</div>
+        </div>
+      );
+    }
     // `allow-scripts` is required for the injected link-interceptor to
     // run. We intentionally do NOT add `allow-same-origin` — the iframe
     // stays in a unique-origin sandbox, so any artifact JS is isolated
@@ -279,7 +333,7 @@ const renderBody = (file: LoadedFile | null, htmlMode: HtmlMode) => {
         <iframe
           className={styles.htmlFrame}
           title={`${file.path} preview`}
-          srcDoc={augmentHtmlForPreview(file.content)}
+          srcDoc={augmentHtmlForPreview(htmlBundle)}
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
         />
@@ -307,11 +361,17 @@ export default function WorkspaceFilePreviewPanel({
   kind,
   entry,
   onClose,
+  onNavigate,
 }: WorkspaceFilePreviewPanelProps) {
   const [file, setFile] = useState<LoadedFile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [htmlMode, setHtmlMode] = useState<HtmlMode>('preview');
+  // Self-contained HTML for the preview iframe: the raw markup with every
+  // local resource inlined. Null until the bundler resolves for the current
+  // file; `bundling` gates the iframe so it never mounts mid-inline.
+  const [htmlBundle, setHtmlBundle] = useState<string | null>(null);
+  const [bundling, setBundling] = useState(false);
   // `justCopied` flips for ~1.2s after a successful copy so the button can
   // swap its icon/label to a checkmark — purely a visual confirmation, not
   // gating the action. Cleared on file change so reopening a preview
@@ -330,6 +390,7 @@ export default function WorkspaceFilePreviewPanel({
     setLoading(true);
     setError('');
     setFile(null);
+    setHtmlBundle(null);
 
     const load = async () => {
       try {
@@ -357,6 +418,32 @@ export default function WorkspaceFilePreviewPanel({
     setHtmlMode('preview');
     setJustCopied(false);
   }, [entry?.path]);
+
+  // Build the self-contained preview bundle once a loaded file turns out to
+  // be HTML and the user is in preview mode. Runs off the main load so the
+  // panel can paint immediately; falls back to the raw markup if inlining
+  // fails so a broken asset never blanks the preview.
+  useEffect(() => {
+    if (!file || file.error || htmlMode !== 'preview' || !looksLikeHtml(file.viewer, file.path)) {
+      return undefined;
+    }
+    let cancelled = false;
+    setBundling(true);
+    setHtmlBundle(null);
+    bundleHtmlForPreview(workspaceId, file.path, file.content)
+      .then((bundled) => {
+        if (!cancelled) setHtmlBundle(bundled);
+      })
+      .catch(() => {
+        if (!cancelled) setHtmlBundle(file.content);
+      })
+      .finally(() => {
+        if (!cancelled) setBundling(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, file, htmlMode]);
 
   const canAct = Boolean(
     !loading && !error && file && typeof file.content === 'string' && file.content.length > 0,
@@ -412,6 +499,25 @@ export default function WorkspaceFilePreviewPanel({
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, []);
+
+  // Route in-workspace link clicks (one report linking to another) to the
+  // parent so it can swap the previewed artifact. The href is resolved
+  // against the file currently on screen, which is what the link is relative
+  // to. No-ops without an `onNavigate` handler.
+  useEffect(() => {
+    const currentPath = file?.path || entry?.path;
+    if (!onNavigate || !currentPath) return undefined;
+    const handler = (event: MessageEvent) => {
+      const data = event?.data as { type?: string; href?: string } | null;
+      if (!data || data.type !== INTERNAL_LINK_MESSAGE_TYPE) return;
+      const { href } = data;
+      if (typeof href !== 'string' || href.length === 0) return;
+      const resolved = resolveWorkspacePath(currentPath, href);
+      if (resolved) onNavigate(resolved);
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [file?.path, entry?.path, onNavigate]);
 
   if (!entry) return null;
 
@@ -509,7 +615,7 @@ export default function WorkspaceFilePreviewPanel({
         )}
         {loading && <div className={styles.empty}>Loading…</div>}
         {!loading && error && <div className={styles.error}>{error}</div>}
-        {!loading && !error && renderBody(file, htmlMode)}
+        {!loading && !error && renderBody(file, htmlMode, htmlBundle, bundling)}
       </div>
     </aside>
   );

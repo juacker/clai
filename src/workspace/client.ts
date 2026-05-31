@@ -7,6 +7,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   WorkspaceAgentResponse,
+  WorkspaceFileBytes,
   WorkspaceFileContent,
   WorkspaceListEntry,
   WorkspaceSessionBinding,
@@ -36,6 +37,21 @@ export async function readWorkspaceFile(
   path: string
 ): Promise<WorkspaceFileContent> {
   return invoke('workspace_read_file', {
+    request: { workspaceId, path },
+  });
+}
+
+/**
+ * Read a workspace file as base64-encoded bytes plus a best-effort MIME
+ * type. Used by the HTML-preview bundler to inline local resources
+ * (stylesheets, scripts, images, fonts) that a report references by
+ * relative path. Resolution is confined to the workspace root server-side.
+ */
+export async function readWorkspaceFileBase64(
+  workspaceId: string,
+  path: string
+): Promise<WorkspaceFileBytes> {
+  return invoke('workspace_read_file_base64', {
     request: { workspaceId, path },
   });
 }

@@ -1467,6 +1467,28 @@ const Workspace = () => {
 
   const memories = snapshot?.memories || [];
   const artifacts = snapshot?.artifacts || [];
+
+  // Open another workspace file as an artifact preview — used when a link
+  // inside an HTML preview points at a sibling file (e.g. an index page
+  // linking to a report). Prefer the real artifact entry when the target is
+  // already tracked; otherwise synthesize a minimal entry so any in-root file
+  // (the preview panel resolves its own viewer from the path) still opens.
+  const navigatePreviewArtifact = useCallback(
+    (path: string) => {
+      const existing = artifacts.find((item) => item.path === path);
+      const entry: WorkspaceFileEntry = existing ?? {
+        path,
+        relativePath: path,
+        name: path.slice(path.lastIndexOf('/') + 1),
+        viewer: '',
+        size: null,
+        updatedAt: null,
+        preview: null,
+      };
+      patchWorkspaceUi({ previewEntry: { kind: 'artifact', entry }, viewingTask: null });
+    },
+    [artifacts, patchWorkspaceUi]
+  );
   const messages = sessionState?.messages || snapshot?.messages || [];
   const toolCalls = sessionState?.toolCalls || snapshot?.toolCalls || [];
   const streamingText = sessionState?.streamingTextByMessageId || {};
@@ -1543,6 +1565,7 @@ const Workspace = () => {
             kind={previewEntry.kind}
             entry={previewEntry.entry}
             onClose={closePreview}
+            onNavigate={navigatePreviewArtifact}
           />
         )}
 

@@ -182,6 +182,14 @@ execution: unknown, createdAt: bigint, updatedAt: bigint, };
 
 export type WorkspaceAgentSummary = { id: string, agentDefinitionId: string, displayName: string, role: string, isDefault: boolean, description?: string | null, };
 
+/**
+ * A workspace file returned as base64-encoded bytes plus a best-effort
+ * MIME type. Used by the HTML-artifact preview bundler to inline local
+ * resources (stylesheets, scripts, images, fonts) so a multi-file report
+ * renders correctly inside the unique-origin preview iframe.
+ */
+export type WorkspaceFileBytes = { path: string, mime: string, base64: string, };
+
 export type WorkspaceFileContent = { path: string, viewer: string, content: string, };
 
 export type WorkspaceFileEntry = { path: string, relativePath: string, name: string, viewer: string, size: bigint | null, updatedAt: bigint | null, preview: string | null, };

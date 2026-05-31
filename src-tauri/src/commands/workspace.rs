@@ -89,6 +89,11 @@ pub struct WorkspaceState {
 const DEFAULT_WORKSPACE_ID: &str = "default";
 const MAX_ENTRY_COUNT: usize = 500;
 const MAX_FILE_CONTENT_BYTES: usize = 200_000;
+
+/// Upper bound on a single resource inlined into an HTML preview bundle.
+/// Larger assets (e.g. multi-megabyte videos) are left as broken links
+/// rather than ballooning the `srcDoc` string and stalling the webview.
+const MAX_PREVIEW_ASSET_BYTES: usize = 10_000_000;
 const SKIPPED_ARTIFACT_DIRS: &[&str] = &[
     ".cache",
     ".cargo",
@@ -284,6 +289,19 @@ pub struct WorkspaceFileContent {
     pub content: String,
 }
 
+/// A workspace file returned as base64-encoded bytes plus a best-effort
+/// MIME type. Used by the HTML-artifact preview bundler to inline local
+/// resources (stylesheets, scripts, images, fonts) so a multi-file report
+/// renders correctly inside the unique-origin preview iframe.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
+pub struct WorkspaceFileBytes {
+    pub path: String,
+    pub mime: String,
+    pub base64: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceReadFileRequest {
@@ -469,6 +487,44 @@ fn viewer_for_path(path: &Path) -> String {
     }
 
     "text".to_string()
+}
+
+/// Best-effort MIME type from a file extension, used to build `data:` URIs
+/// when inlining preview resources. Falls back to `application/octet-stream`
+/// for unknown extensions — browsers still load most binary assets from a
+/// generic data URI, and unknown text resources are read as UTF-8 elsewhere.
+fn mime_for_path(path: &Path) -> &'static str {
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "css" => "text/css",
+        "js" | "mjs" | "cjs" => "text/javascript",
+        "json" => "application/json",
+        "html" | "htm" => "text/html",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "ico" => "image/x-icon",
+        "bmp" => "image/bmp",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "otf" => "font/otf",
+        "eot" => "application/vnd.ms-fontobject",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "txt" => "text/plain",
+        _ => "application/octet-stream",
+    }
 }
 
 fn sort_workspace_entries(entries: &mut [WorkspaceFileEntry]) {
@@ -1600,6 +1656,48 @@ pub async fn workspace_read_file(
             Err(format!("File not found: {}", request.path))
         }
     }
+}
+
+/// Read an arbitrary workspace file as base64-encoded bytes plus a
+/// best-effort MIME type.
+///
+/// Backs the HTML-artifact preview bundler: when a report references local
+/// siblings (`<link href="assets/x.css">`, `<img src>`, fonts, …) the
+/// frontend resolves each path relative to the HTML file and pulls the bytes
+/// through here to inline them. Resolution is constrained to the workspace
+/// root by `resolve_workspace_file_path`, so this cannot read outside it, and
+/// oversized assets are rejected to keep the preview bundle bounded.
+#[tauri::command]
+pub async fn workspace_read_file_base64(
+    request: WorkspaceReadFileRequest,
+    state: State<'_, AppState>,
+) -> Result<WorkspaceFileBytes, String> {
+    use base64::Engine as _;
+
+    let descriptor =
+        resolve_workspace_descriptor(state.inner(), Some(request.workspace_id.clone()))?;
+    let root_path = descriptor
+        .root_path
+        .as_ref()
+        .ok_or_else(|| "This workspace does not expose a filesystem root".to_string())?;
+
+    ensure_agent_workspace_root(root_path)?;
+    let resolved = resolve_workspace_file_path(root_path, &request.path)?;
+    let bytes = fs::read(&resolved)
+        .map_err(|error| format!("Failed to read {}: {}", resolved.display(), error))?;
+    if bytes.len() > MAX_PREVIEW_ASSET_BYTES {
+        return Err(format!(
+            "{} is too large to inline ({} bytes)",
+            resolved.display(),
+            bytes.len()
+        ));
+    }
+
+    Ok(WorkspaceFileBytes {
+        path: request.path,
+        mime: mime_for_path(&resolved).to_string(),
+        base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+    })
 }
 
 /// Copy a workspace file to a destination path chosen by the user.

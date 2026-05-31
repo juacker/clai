@@ -600,6 +600,7 @@ version = "26.5.30"
 dependencies = [
  "async-trait",
  "axum",
+ "base64 0.22.1",
  "chrono",
  "chrono-tz",
  "cron",
