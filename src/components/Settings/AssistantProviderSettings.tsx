@@ -139,11 +139,8 @@ const AssistantProviderSettings = () => {
         if (cancelled) return;
         const list = models || [];
         setDescriptorModels(list);
-        setForm((current) => {
-          if (current.providerId !== form.providerId) return current;
-          if (current.modelId.trim()) return current;
-          return { ...current, modelId: list[0]?.id || '' };
-        });
+        // Don't auto-select a model for CLI adapters: an empty model lets the
+        // CLI fall back to whatever model it is configured to use itself.
       } catch (err) {
         console.error('[AssistantProviderSettings] Failed to load CLI models:', err);
         if (!cancelled) setDescriptorModels([]);
@@ -189,7 +186,7 @@ const AssistantProviderSettings = () => {
       setError('Connection name is required.');
       return;
     }
-    if (!form.modelId.trim()) {
+    if (!isCliAdapter && !form.modelId.trim()) {
       setError('Model ID is required.');
       return;
     }
@@ -355,7 +352,7 @@ const AssistantProviderSettings = () => {
                 )}
               </div>
               <span className={styles.providerCommand}>
-                <code>{connection.modelId}</code> • <code>
+                <code>{connection.modelId.trim() || 'default model'}</code> • <code>
                   {connection.authMode === 'subscription_login'
                     ? (connection.baseUrl || CLI_BINARY_PLACEHOLDERS[connection.providerId] || connection.providerId)
                     : (connection.baseUrl || 'api.openai.com/v1')}
@@ -426,7 +423,13 @@ const AssistantProviderSettings = () => {
           <select
             className={styles.select}
             value={form.providerId}
-            onChange={(e) => setForm((current) => ({ ...current, providerId: e.target.value }))}
+            onChange={(e) =>
+              // Reset the model when switching providers: a model id valid for
+              // one CLI (e.g. `sonnet`) is meaningless for another (Codex), and
+              // a controlled <select> would otherwise keep the stale value in
+              // state while visually showing the new provider's first option.
+              setForm((current) => ({ ...current, providerId: e.target.value, modelId: '' }))
+            }
             disabled={saving || editingId !== null}
           >
             {(adapters.length > 0 ? adapters : [{ id: 'openai', displayName: 'OpenAI-Compatible' }]).map((adapter) => (
@@ -449,7 +452,7 @@ const AssistantProviderSettings = () => {
           }}>
             This provider runs through your local <strong>{selectedAdapter?.displayName}</strong> CLI
             using its own authentication (typically a paid subscription). Make sure the binary is
-            installed and you have signed in (e.g. <code>claude /login</code>) in your terminal
+            installed and you have signed in (e.g. <code>claude /login</code> or <code>codex login</code>) in your terminal
             before testing this connection. No API key is stored.
           </div>
         )}
@@ -471,7 +474,12 @@ const AssistantProviderSettings = () => {
 
         <div>
           <label style={labelStyle}>
-            Model ID <span style={{ color: 'var(--color-critical, #DC2626)' }}>*</span>
+            Model ID{' '}
+            {isCliAdapter ? (
+              <span style={{ fontWeight: 400, color: 'var(--color-text-tertiary)' }}>(optional)</span>
+            ) : (
+              <span style={{ color: 'var(--color-critical, #DC2626)' }}>*</span>
+            )}
           </label>
           {isCliAdapter && descriptorModels.length > 0 ? (
             <select
@@ -480,18 +488,26 @@ const AssistantProviderSettings = () => {
               onChange={(e) => setForm((current) => ({ ...current, modelId: e.target.value }))}
               disabled={saving}
             >
+              <option value="">Default (use the CLI&apos;s configured model)</option>
               {descriptorModels.map((model) => (
                 <option key={model.id} value={model.id}>
                   {model.displayName} ({model.id})
                 </option>
               ))}
+              {form.modelId.trim() &&
+                !descriptorModels.some((model) => model.id === form.modelId) && (
+                  // Surface a stale/unknown stored value (e.g. a model saved
+                  // for a different CLI) so the select reflects state honestly
+                  // instead of silently displaying a non-matching option.
+                  <option value={form.modelId}>{form.modelId} (unrecognized)</option>
+                )}
             </select>
           ) : (
             <input
               type="text"
               value={form.modelId}
               onChange={(e) => setForm((current) => ({ ...current, modelId: e.target.value }))}
-              placeholder={isCliAdapter ? 'e.g. sonnet' : 'e.g. gpt-4o-mini'}
+              placeholder={isCliAdapter ? 'Leave blank to use the CLI default' : 'e.g. gpt-4o-mini'}
               style={inputStyle}
             />
           )}

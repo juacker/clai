@@ -269,19 +269,16 @@ impl ServerHandler for ClaiMcpService {
     }
 }
 
-/// Execute the requested tool for a Claude Code MCP call.
+/// Execute the requested tool for a CLI-provider MCP call.
 ///
 /// This is a silent executor — it does **not** persist tool_call records,
 /// emit ToolCall* UI events, or create Tool-role messages. The Claude
 /// stream parser in `local_agent::handle_claude_event` owns all that
-/// bookkeeping (it sees the matching `tool_use` and `tool_result` blocks
-/// in the stream and uses Claude's `tool_use_id` as the canonical id, so
-/// the chat UI can wire results back to the originating assistant
-/// message). If this function did its own writes we'd end up with two
-/// disconnected tool_call records per invocation — one with a random
-/// UUID from here and one with Claude's id from the stream parser — and
-/// the chat couldn't enrich the assistant's `ContentPart::ToolUse` with
-/// a result.
+/// bookkeeping (it sees the matching provider-side tool events and uses
+/// the provider's tool id as the canonical id, so the chat UI can wire
+/// results back to the originating assistant message). If this function
+/// did its own writes we'd end up with two disconnected tool_call records
+/// per invocation.
 async fn execute_bound_tool(
     app: &AppHandle,
     binding: &ToolBinding,

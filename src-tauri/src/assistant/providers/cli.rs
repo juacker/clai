@@ -68,11 +68,28 @@ pub fn models_for_provider(provider_id: &str) -> Option<Vec<ModelInfo>> {
                 supports_tools: true,
             },
         ],
-        CODEX_PROVIDER_ID => vec![ModelInfo {
-            id: "default".to_string(),
-            display_name: "Default".to_string(),
-            supports_tools: true,
-        }],
+        CODEX_PROVIDER_ID => vec![
+            ModelInfo {
+                id: "gpt-5.5".to_string(),
+                display_name: "GPT-5.5".to_string(),
+                supports_tools: true,
+            },
+            ModelInfo {
+                id: "gpt-5.4".to_string(),
+                display_name: "GPT-5.4".to_string(),
+                supports_tools: true,
+            },
+            ModelInfo {
+                id: "gpt-5.4-mini".to_string(),
+                display_name: "GPT-5.4 Mini".to_string(),
+                supports_tools: true,
+            },
+            ModelInfo {
+                id: "gpt-5.3-codex".to_string(),
+                display_name: "GPT-5.3 Codex".to_string(),
+                supports_tools: true,
+            },
+        ],
         OPENCODE_PROVIDER_ID => vec![ModelInfo {
             id: "default".to_string(),
             display_name: "Default".to_string(),

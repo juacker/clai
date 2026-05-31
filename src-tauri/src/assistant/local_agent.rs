@@ -17,7 +17,7 @@ use crate::assistant::engine::{
 };
 use crate::assistant::events::{emit_event, AssistantUiEvent};
 use crate::assistant::local_mcp::{self, ToolBinding};
-use crate::assistant::providers::cli::CLAUDE_CODE_PROVIDER_ID;
+use crate::assistant::providers::cli::{CLAUDE_CODE_PROVIDER_ID, CODEX_PROVIDER_ID};
 use crate::assistant::repository::{
     self, CreateMessageParams, CreateRunParams, CreateToolCallParams,
 };
@@ -28,6 +28,61 @@ use crate::assistant::types::{
 use crate::AppState;
 
 const CLAUDE_DISABLED_TOOLS: &str = "Bash,Read,Edit,Write,Glob,Grep,WebFetch,WebSearch,Task,TodoWrite,NotebookEdit,NotebookRead,LSP";
+const CODEX_MCP_TOKEN_ENV: &str = "CLAI_MCP_TOKEN";
+
+/// When `CLAI_LOG_CLI_STREAM` is set to a truthy value, every raw JSONL line
+/// received from a CLI provider (Claude Code / Codex) is logged verbatim at
+/// `info!` (visible under the default `info` filter). This is a diagnostic
+/// hook for capturing the exact event envelope — e.g. to inspect what a
+/// usage/rate-limit failure actually looks like on the wire, including any
+/// structured fields (subtype, error code) we don't yet parse.
+fn cli_stream_logging_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("CLAI_LOG_CLI_STREAM")
+            .map(|value| {
+                let value = value.trim();
+                !value.is_empty() && value != "0" && !value.eq_ignore_ascii_case("false")
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn log_cli_stream_line(provider: &str, run_id: &str, line: &str) {
+    if cli_stream_logging_enabled() {
+        tracing::info!(target: "clai::cli_stream", provider, run_id, raw = %line, "CLI stream line");
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CliProviderRuntime {
+    ClaudeCode,
+    Codex,
+}
+
+impl CliProviderRuntime {
+    fn for_provider_id(provider_id: &str) -> Option<Self> {
+        match provider_id {
+            CLAUDE_CODE_PROVIDER_ID => Some(Self::ClaudeCode),
+            CODEX_PROVIDER_ID => Some(Self::Codex),
+            _ => None,
+        }
+    }
+
+    fn display_name(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "Claude Code",
+            Self::Codex => "Codex",
+        }
+    }
+
+    fn metadata_source(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "claude-code",
+            Self::Codex => "codex",
+        }
+    }
+}
 
 pub async fn run_session_turn(
     deps: &AssistantDeps,
@@ -64,27 +119,30 @@ pub async fn run_session_turn(
         return Ok(());
     }
 
-    if connection.provider_id != CLAUDE_CODE_PROVIDER_ID {
-        let message = format!(
-            "CLI provider '{}' is registered but not implemented yet",
-            connection.provider_id
-        );
-        fail_run(deps, &session, &run_id, None, &message).await?;
-        return Err(AssistantEngineError::Provider(
-            crate::assistant::providers::types::ProviderError::RequestFailed(message),
-        ));
-    }
+    let provider_runtime =
+        match CliProviderRuntime::for_provider_id(connection.provider_id.as_str()) {
+            Some(runtime) => runtime,
+            None => {
+                let message = format!(
+                    "CLI provider '{}' is registered but not implemented yet",
+                    connection.provider_id
+                );
+                fail_run(deps, &session, &run_id, None, &message).await?;
+                return Err(AssistantEngineError::Provider(
+                    crate::assistant::providers::types::ProviderError::RequestFailed(message),
+                ));
+            }
+        };
+    let had_existing_cli_session = session.context.cli_session_id.is_some();
 
-    let (cli_session_id, is_new_session) = ensure_cli_session_id(deps, &mut session).await?;
     let mcp_runtime = local_mcp::ensure_started(&deps.app).await?;
     let notices = Arc::new(Mutex::new(Vec::<RunNotice>::new()));
     let session_grants = Arc::new(Mutex::new(Vec::new()));
     let session_allowed_command_prefixes = Arc::new(Mutex::new(Vec::new()));
     let session_blocked_command_prefixes = Arc::new(Mutex::new(Vec::new()));
     // `binding_guard` removes the bearer token from the MCP runtime on
-    // drop, including on panic or early return — keep it alive until
-    // after `run_claude_turn` returns and the Claude subprocess has
-    // finished making MCP calls.
+    // drop, including on panic or early return. Keep it alive until
+    // after the CLI subprocess has finished making MCP calls.
     let binding_guard = mcp_runtime.bind_run(ToolBinding {
         pool: deps.pool.clone(),
         session_id: session.id.clone(),
@@ -96,32 +154,52 @@ pub async fn run_session_turn(
         session_allowed_command_prefixes,
         session_blocked_command_prefixes,
     });
-    let mcp_config_path = match write_mcp_config(mcp_runtime.url(), binding_guard.token()) {
-        Ok(path) => path,
-        Err(error) => {
-            let message = error.message();
-            fail_run(deps, &session, &run_id, None, &message).await?;
-            return Err(AssistantEngineError::Provider(
-                crate::assistant::providers::types::ProviderError::RequestFailed(message),
-            ));
+
+    let run_result = match provider_runtime {
+        CliProviderRuntime::ClaudeCode => {
+            let (cli_session_id, is_new_session) =
+                ensure_cli_session_id(deps, &mut session).await?;
+            let mcp_config_path = match write_mcp_config(mcp_runtime.url(), binding_guard.token()) {
+                Ok(path) => path,
+                Err(error) => {
+                    let message = error.message();
+                    fail_run(deps, &session, &run_id, None, &message).await?;
+                    return Err(AssistantEngineError::Provider(
+                        crate::assistant::providers::types::ProviderError::RequestFailed(message),
+                    ));
+                }
+            };
+            let result = run_claude_turn(
+                deps,
+                &session,
+                &connection,
+                &run_id,
+                &cli_session_id,
+                is_new_session,
+                &mcp_config_path,
+                &input.cancel_token,
+                &input.trigger,
+            )
+            .await;
+            let _ = std::fs::remove_file(&mcp_config_path);
+            result
+        }
+        CliProviderRuntime::Codex => {
+            run_codex_turn(
+                deps,
+                &mut session,
+                &connection,
+                &run_id,
+                mcp_runtime.url(),
+                binding_guard.token(),
+                &input.cancel_token,
+                &input.trigger,
+            )
+            .await
         }
     };
 
-    let run_result = run_claude_turn(
-        deps,
-        &session,
-        &connection,
-        &run_id,
-        &cli_session_id,
-        is_new_session,
-        &mcp_config_path,
-        &input.cancel_token,
-        &input.trigger,
-    )
-    .await;
-
     drop(binding_guard);
-    let _ = std::fs::remove_file(&mcp_config_path);
 
     match run_result {
         Ok(usage) => {
@@ -155,12 +233,30 @@ pub async fn run_session_turn(
             cancel_run(deps, &session, &run_id, usage.as_ref()).await
         }
         Err(LocalAgentRunError::Failed { message, usage }) => {
-            let resolved_message = if !is_new_session && is_session_lost_error(&message) {
+            let resolved_message = if had_existing_cli_session
+                && is_session_lost_error(provider_runtime, &message)
+            {
                 clear_cli_session_id(deps, &mut session).await?;
-                "The Claude session was lost (likely because a previous turn failed before Claude \
-                 stored it). Send your message again and a fresh session will be started."
-                    .to_string()
+                format!(
+                    "The {} session was lost. Send your message again and a fresh session will be started.",
+                    provider_runtime.display_name()
+                )
             } else {
+                if is_usage_limit_error(&message) {
+                    // A usage/rate limit is a non-retryable failure (the user
+                    // must wait until the stated reset time), distinct from a
+                    // transient crash. Log it as such so it's diagnosable; the
+                    // provider's message is already user-facing so we pass it
+                    // through unchanged.
+                    tracing::warn!(
+                        target: "clai::usage_limit",
+                        provider = provider_runtime.metadata_source(),
+                        run_id = %run_id,
+                        "{} reported a usage/rate limit: {}",
+                        provider_runtime.display_name(),
+                        message
+                    );
+                }
                 message
             };
             fail_run(deps, &session, &run_id, usage.as_ref(), &resolved_message).await?;
@@ -171,8 +267,34 @@ pub async fn run_session_turn(
     }
 }
 
-fn is_session_lost_error(message: &str) -> bool {
-    message.contains("No conversation found with session ID")
+fn is_session_lost_error(provider_runtime: CliProviderRuntime, message: &str) -> bool {
+    match provider_runtime {
+        CliProviderRuntime::ClaudeCode => message.contains("No conversation found with session ID"),
+        CliProviderRuntime::Codex => {
+            message.contains("Session not found")
+                || message.contains("No session found")
+                || message.contains("failed to read thread")
+        }
+    }
+}
+
+/// Detects a provider usage/rate-limit failure from a CLI error message.
+///
+/// Both CLI providers surface these as free-text only (no structured error
+/// code on the wire), so we match on the message:
+///   - Claude Code: "You've hit your session limit · resets 4:40pm (…)"
+///   - Codex:       "You've hit your usage limit. … try again at 9:47 PM."
+///
+/// Unlike a transient crash these are non-retryable until the stated reset
+/// time, so callers treat them distinctly.
+fn is_usage_limit_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("usage limit")
+        || lower.contains("session limit")
+        || lower.contains("rate limit")
+        || lower.contains("rate_limit")
+        || lower.contains("quota")
+        || (lower.contains("you've hit your") && lower.contains("limit"))
 }
 
 async fn clear_cli_session_id(
@@ -182,6 +304,22 @@ async fn clear_cli_session_id(
     session.context.cli_session_id = None;
     session.updated_at = chrono::Utc::now().timestamp_millis();
     *session = repository::update_session(&deps.pool, session).await?;
+    Ok(())
+}
+
+async fn set_cli_session_id(
+    deps: &AssistantDeps,
+    session: &mut AssistantSession,
+    cli_session_id: String,
+) -> Result<(), LocalAgentRunError> {
+    if session.context.cli_session_id.as_deref() == Some(cli_session_id.as_str()) {
+        return Ok(());
+    }
+    session.context.cli_session_id = Some(cli_session_id);
+    session.updated_at = chrono::Utc::now().timestamp_millis();
+    *session = repository::update_session(&deps.pool, session)
+        .await
+        .map_err(LocalAgentRunError::failed)?;
     Ok(())
 }
 
@@ -248,7 +386,15 @@ async fn run_claude_turn(
     cancel_token: &CancellationToken,
     trigger: &crate::assistant::types::RunTrigger,
 ) -> Result<Option<RunUsage>, LocalAgentRunError> {
-    let prompt = prepare_prompt(deps, session, run_id, trigger).await?;
+    let prompt = prepare_prompt(
+        deps,
+        session,
+        run_id,
+        trigger,
+        CliProviderRuntime::ClaudeCode.metadata_source(),
+        CliProviderRuntime::ClaudeCode.display_name(),
+    )
+    .await?;
     let system_prompt = system_prompt_text(&deps.app, session, trigger).await;
     let assistant_message = repository::create_message(
         &deps.pool,
@@ -259,7 +405,7 @@ async fn run_claude_turn(
                 text: String::new(),
             }],
             provider_metadata: Some(serde_json::json!({
-                "source": "claude-code",
+                "source": CliProviderRuntime::ClaudeCode.metadata_source(),
             })),
         },
     )
@@ -353,7 +499,12 @@ async fn run_claude_turn(
     let stderr_tail: Arc<Mutex<VecDeque<String>>> =
         Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_TAIL_LINES)));
     if let Some(stderr) = child.stderr.take() {
-        spawn_stderr_logger(run_id.to_string(), stderr, stderr_tail.clone());
+        spawn_stderr_logger(
+            run_id.to_string(),
+            CliProviderRuntime::ClaudeCode.display_name(),
+            stderr,
+            stderr_tail.clone(),
+        );
     }
     let stdout = child
         .stdout
@@ -382,6 +533,7 @@ async fn run_claude_turn(
         if line.trim().is_empty() {
             continue;
         }
+        log_cli_stream_line("claude-code", run_id, &line);
         let value: Value = serde_json::from_str(&line).map_err(|e| {
             LocalAgentRunError::failed(format!("Invalid Claude stream-json event: {}", e))
         })?;
@@ -421,6 +573,265 @@ async fn run_claude_turn(
     Ok(usage)
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn run_codex_turn(
+    deps: &AssistantDeps,
+    session: &mut AssistantSession,
+    connection: &ProviderConnection,
+    run_id: &str,
+    mcp_url: &str,
+    mcp_token: &str,
+    cancel_token: &CancellationToken,
+    trigger: &crate::assistant::types::RunTrigger,
+) -> Result<Option<RunUsage>, LocalAgentRunError> {
+    let prompt = prepare_prompt(
+        deps,
+        session,
+        run_id,
+        trigger,
+        CliProviderRuntime::Codex.metadata_source(),
+        CliProviderRuntime::Codex.display_name(),
+    )
+    .await?;
+    let system_prompt = system_prompt_text(&deps.app, session, trigger).await;
+    let prompt = codex_turn_prompt(&system_prompt, &prompt);
+    let existing_thread_id = session.context.cli_session_id.clone();
+
+    let assistant_message = repository::create_message(
+        &deps.pool,
+        CreateMessageParams {
+            session_id: session.id.clone(),
+            role: MessageRole::Assistant,
+            content: vec![ContentPart::Text {
+                text: String::new(),
+            }],
+            provider_metadata: Some(serde_json::json!({
+                "source": CliProviderRuntime::Codex.metadata_source(),
+            })),
+        },
+    )
+    .await?;
+    let _ = emit_event(
+        &deps.app,
+        session,
+        Some(run_id),
+        AssistantUiEvent::MessageCreated {
+            message: assistant_message.clone(),
+        },
+    );
+
+    let binary = connection
+        .base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("codex");
+    let workspace_root = workspace_root_for_session(deps, session);
+    let mut command = Command::new(binary);
+    command.arg("exec");
+    match existing_thread_id.as_deref() {
+        Some(thread_id) => {
+            command.arg("resume");
+            add_codex_common_args(&mut command, connection, mcp_url, false, None);
+            command.arg(thread_id);
+        }
+        None => {
+            add_codex_common_args(
+                &mut command,
+                connection,
+                mcp_url,
+                true,
+                workspace_root.as_ref(),
+            );
+        }
+    }
+    command
+        .arg("-")
+        .env(CODEX_MCP_TOKEN_ENV, mcp_token)
+        .env("MCP_TIMEOUT", "3600000")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(root) = workspace_root.as_ref() {
+        command.current_dir(root);
+    }
+
+    let mut child = command.spawn().map_err(|e| {
+        LocalAgentRunError::failed(format!(
+            "Failed to launch `{}`: {}. Is Codex CLI installed and on PATH?",
+            binary, e
+        ))
+    })?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use tokio::io::AsyncWriteExt;
+        stdin
+            .write_all(prompt.as_bytes())
+            .await
+            .map_err(|e| LocalAgentRunError::failed(format!("Failed to write prompt: {}", e)))?;
+        drop(stdin);
+    }
+
+    let stderr_tail: Arc<Mutex<VecDeque<String>>> =
+        Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_TAIL_LINES)));
+    if let Some(stderr) = child.stderr.take() {
+        spawn_stderr_logger(
+            run_id.to_string(),
+            CliProviderRuntime::Codex.display_name(),
+            stderr,
+            stderr_tail.clone(),
+        );
+    }
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| LocalAgentRunError::failed("Codex stdout was not captured"))?;
+    let mut lines = BufReader::new(stdout).lines();
+    let mut state = CodexStreamState::new();
+    let mut usage: Option<RunUsage> = None;
+    let mut result_error: Option<String> = None;
+
+    loop {
+        let line = tokio::select! {
+            _ = cancel_token.cancelled() => {
+                let _ = child.kill().await;
+                finalize_assistant_message_from_parts(
+                    deps,
+                    session,
+                    run_id,
+                    &assistant_message,
+                    &state.parts,
+                )
+                .await?;
+                return Err(LocalAgentRunError::Cancelled { usage });
+            }
+            next = lines.next_line() => next
+        }
+        .map_err(|e| LocalAgentRunError::failed(e.to_string()))?;
+
+        let Some(line) = line else {
+            break;
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
+        log_cli_stream_line("codex", run_id, &line);
+        let value: Value = serde_json::from_str(&line)
+            .map_err(|e| LocalAgentRunError::failed(format!("Invalid Codex JSONL event: {}", e)))?;
+        handle_codex_event(
+            deps,
+            session,
+            run_id,
+            &assistant_message,
+            &value,
+            &mut state,
+            &mut usage,
+            &mut result_error,
+        )
+        .await?;
+    }
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| LocalAgentRunError::failed(e.to_string()))?;
+    finalize_assistant_message_from_parts(deps, session, run_id, &assistant_message, &state.parts)
+        .await?;
+
+    if let Some(message) = result_error {
+        let enriched = append_stderr_tail(&message, &stderr_tail);
+        return Err(LocalAgentRunError::Failed {
+            message: enriched,
+            usage,
+        });
+    }
+    if !status.success() {
+        let base = format!("Codex exited with status {}", status);
+        return Err(LocalAgentRunError::Failed {
+            message: append_stderr_tail(&base, &stderr_tail),
+            usage,
+        });
+    }
+    Ok(usage)
+}
+
+fn codex_turn_prompt(system_prompt: &str, prompt: &str) -> String {
+    format!(
+        "System instructions for this CLAI run:\n{}\n\nUse the connected `clai` MCP tools for workspace work, shell execution, file access, and user interaction.\n\nUser/task prompt:\n{}",
+        system_prompt, prompt
+    )
+}
+
+fn workspace_root_for_session(deps: &AssistantDeps, session: &AssistantSession) -> Option<PathBuf> {
+    session
+        .context
+        .workspace_id
+        .as_deref()
+        .and_then(|workspace_id| {
+            deps.app
+                .state::<crate::AppState>()
+                .workspace_root(workspace_id)
+        })
+}
+
+fn add_codex_common_args(
+    command: &mut Command,
+    connection: &ProviderConnection,
+    mcp_url: &str,
+    include_new_session_flags: bool,
+    workspace_root: Option<&PathBuf>,
+) {
+    command
+        .arg("--json")
+        .arg("--skip-git-repo-check")
+        .arg("--ignore-user-config")
+        .arg("--ignore-rules")
+        .arg("--disable")
+        .arg("shell_tool")
+        .arg("-c")
+        .arg(format!(
+            "mcp_servers.clai.url={}",
+            toml_string_value(mcp_url)
+        ))
+        .arg("-c")
+        .arg(format!(
+            "mcp_servers.clai.bearer_token_env_var={}",
+            toml_string_value(CODEX_MCP_TOKEN_ENV)
+        ))
+        .arg("-c")
+        .arg("mcp_servers.clai.enabled=true")
+        .arg("-c")
+        .arg("mcp_servers.clai.required=true")
+        .arg("-c")
+        .arg("mcp_servers.clai.tool_timeout_sec=3600")
+        // Bypass Codex's own approval/sandbox layer entirely — this is the
+        // direct parallel of `--permission-mode bypassPermissions` that we pass
+        // to Claude Code. CLAI provides the external sandbox (our MCP
+        // `bash_exec` runs under bwrap) and permission system, and Codex's
+        // native `shell_tool` is disabled, so Codex has no unmediated execution
+        // path of its own. Without this, non-interactive `exec` has no approval
+        // channel and auto-cancels every MCP tool call as "user cancelled MCP
+        // tool call" — neither `approval_policy=never` nor `--sandbox` fixes
+        // that, because the MCP call still goes through Codex's confirmation
+        // gate. The flag is documented for exactly this "externally sandboxed"
+        // case and is accepted by both `exec` and `exec resume`.
+        .arg("--dangerously-bypass-approvals-and-sandbox");
+
+    let model = connection.model_id.trim();
+    if !model.is_empty() && model != "default" {
+        command.arg("--model").arg(model);
+    }
+
+    if include_new_session_flags {
+        if let Some(root) = workspace_root {
+            command.arg("--cd").arg(root);
+        }
+    }
+}
+
+fn toml_string_value(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
+}
+
 fn append_stderr_tail(message: &str, tail: &Arc<Mutex<VecDeque<String>>>) -> String {
     let Ok(buffer) = tail.lock() else {
         return message.to_string();
@@ -437,6 +848,8 @@ async fn prepare_prompt(
     session: &AssistantSession,
     run_id: &str,
     trigger: &crate::assistant::types::RunTrigger,
+    metadata_source: &str,
+    provider_display_name: &str,
 ) -> Result<String, LocalAgentRunError> {
     if let Some(trigger_content) = build_trigger_message(session, trigger) {
         let boundary_msg = repository::create_message(
@@ -446,7 +859,7 @@ async fn prepare_prompt(
                 role: trigger_content.role.clone(),
                 content: trigger_content.content.clone(),
                 provider_metadata: Some(serde_json::json!({
-                    "source": "claude-code-trigger",
+                    "source": format!("{}-trigger", metadata_source),
                 })),
             },
         )
@@ -479,7 +892,12 @@ async fn prepare_prompt(
         .find(|message| message.role == MessageRole::User)
         .map(message_text)
         .filter(|text| !text.trim().is_empty())
-        .ok_or_else(|| LocalAgentRunError::failed("No user message found for Claude Code run"))
+        .ok_or_else(|| {
+            LocalAgentRunError::failed(format!(
+                "No user message found for {} run",
+                provider_display_name
+            ))
+        })
 }
 
 fn queued_messages_prompt(messages: &[AssistantMessage]) -> String {
@@ -603,6 +1021,463 @@ impl ClaudeStreamState {
             text.push_str(extra);
         }
     }
+}
+
+struct CodexStreamState {
+    parts: Vec<ContentPart>,
+    persisted_tool_item_ids: std::collections::HashSet<String>,
+    tool_item_to_call_id: HashMap<String, String>,
+    last_update_emit_at: Option<std::time::Instant>,
+}
+
+impl CodexStreamState {
+    fn new() -> Self {
+        Self {
+            parts: Vec::new(),
+            persisted_tool_item_ids: std::collections::HashSet::new(),
+            tool_item_to_call_id: HashMap::new(),
+            last_update_emit_at: None,
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_codex_event(
+    deps: &AssistantDeps,
+    session: &mut AssistantSession,
+    run_id: &str,
+    assistant_message: &AssistantMessage,
+    value: &Value,
+    state: &mut CodexStreamState,
+    usage: &mut Option<RunUsage>,
+    result_error: &mut Option<String>,
+) -> Result<(), LocalAgentRunError> {
+    match value.get("type").and_then(Value::as_str) {
+        Some("thread.started") => {
+            if let Some(thread_id) = value.get("thread_id").and_then(Value::as_str) {
+                set_cli_session_id(deps, session, thread_id.to_string()).await?;
+            }
+        }
+        Some("turn.completed") => {
+            if let Some(parsed) = codex_usage_from_value(value.get("usage")) {
+                *usage = Some(parsed);
+            }
+        }
+        Some("turn.failed") => {
+            *result_error = Some(
+                value
+                    .get("error")
+                    .and_then(|error| error.get("message"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("Codex run failed")
+                    .to_string(),
+            );
+        }
+        Some("error") => {
+            *result_error = Some(
+                value
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Codex stream error")
+                    .to_string(),
+            );
+        }
+        Some("item.started") | Some("item.updated") | Some("item.completed") => {
+            let terminal = value.get("type").and_then(Value::as_str) == Some("item.completed");
+            if let Some(item) = value.get("item") {
+                handle_codex_item(
+                    deps,
+                    session,
+                    run_id,
+                    assistant_message,
+                    state,
+                    item,
+                    terminal,
+                )
+                .await?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_codex_item(
+    deps: &AssistantDeps,
+    session: &AssistantSession,
+    run_id: &str,
+    assistant_message: &AssistantMessage,
+    state: &mut CodexStreamState,
+    item: &Value,
+    terminal: bool,
+) -> Result<(), LocalAgentRunError> {
+    match item.get("type").and_then(Value::as_str) {
+        Some("agent_message") if terminal => {
+            if let Some(text) = item.get("text").and_then(Value::as_str) {
+                push_codex_text(state, text);
+                let _ = emit_event(
+                    &deps.app,
+                    session,
+                    Some(run_id),
+                    AssistantUiEvent::AssistantDelta {
+                        message_id: assistant_message.id.clone(),
+                        text: text.to_string(),
+                    },
+                );
+            }
+        }
+        Some("reasoning") if terminal => {
+            if let Some(text) = item.get("text").and_then(Value::as_str) {
+                state.parts.push(ContentPart::Thinking {
+                    text: text.to_string(),
+                    signature: None,
+                });
+                let _ = emit_event(
+                    &deps.app,
+                    session,
+                    Some(run_id),
+                    AssistantUiEvent::AssistantThinkingDelta {
+                        message_id: assistant_message.id.clone(),
+                        text: text.to_string(),
+                    },
+                );
+            }
+        }
+        Some("mcp_tool_call") => {
+            persist_codex_mcp_tool_use(deps, session, run_id, assistant_message, state, item)
+                .await?;
+            if terminal {
+                apply_codex_mcp_tool_result(deps, session, run_id, state, item).await?;
+            }
+        }
+        Some("command_execution") | Some("file_change") | Some("web_search") if terminal => {
+            if let Some(summary) = codex_auxiliary_item_summary(item) {
+                state.parts.push(ContentPart::Thinking {
+                    text: summary.clone(),
+                    signature: None,
+                });
+                let _ = emit_event(
+                    &deps.app,
+                    session,
+                    Some(run_id),
+                    AssistantUiEvent::AssistantThinkingDelta {
+                        message_id: assistant_message.id.clone(),
+                        text: summary,
+                    },
+                );
+            }
+        }
+        Some("error") if terminal => {
+            if let Some(message) = item.get("message").and_then(Value::as_str) {
+                state.parts.push(ContentPart::Thinking {
+                    text: message.to_string(),
+                    signature: None,
+                });
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn push_codex_text(state: &mut CodexStreamState, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    if let Some(ContentPart::Text { text: existing }) = state.parts.last_mut() {
+        if !existing.is_empty() && !existing.ends_with('\n') {
+            existing.push_str("\n\n");
+        }
+        existing.push_str(text);
+    } else {
+        state.parts.push(ContentPart::Text {
+            text: text.to_string(),
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn persist_codex_mcp_tool_use(
+    deps: &AssistantDeps,
+    session: &AssistantSession,
+    run_id: &str,
+    assistant_message: &AssistantMessage,
+    state: &mut CodexStreamState,
+    item: &Value,
+) -> Result<(), LocalAgentRunError> {
+    let raw_item_id = item
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    if state.persisted_tool_item_ids.contains(&raw_item_id) {
+        return Ok(());
+    }
+
+    let tool_call_id = codex_tool_call_id(run_id, &raw_item_id);
+    let tool_name = codex_tool_name(item);
+    let params = item
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    let invocation = repository::create_tool_call(
+        &deps.pool,
+        CreateToolCallParams {
+            id: tool_call_id.clone(),
+            run_id: run_id.to_string(),
+            session_id: session.id.clone(),
+            tool_name: tool_name.clone(),
+            params: params.clone(),
+            status: ToolCallStatus::Running,
+        },
+    )
+    .await
+    .map_err(LocalAgentRunError::failed)?;
+
+    let _ = emit_event(
+        &deps.app,
+        session,
+        Some(run_id),
+        AssistantUiEvent::ToolCallStarted {
+            tool_call: invocation,
+        },
+    );
+
+    state.parts.push(ContentPart::ToolUse {
+        tool_call_id: tool_call_id.clone(),
+        tool_name,
+        arguments: params,
+    });
+    state.persisted_tool_item_ids.insert(raw_item_id.clone());
+    state.tool_item_to_call_id.insert(raw_item_id, tool_call_id);
+    flush_codex_assistant_message_content(deps, session, run_id, assistant_message, state).await
+}
+
+async fn apply_codex_mcp_tool_result(
+    deps: &AssistantDeps,
+    session: &AssistantSession,
+    run_id: &str,
+    state: &mut CodexStreamState,
+    item: &Value,
+) -> Result<(), LocalAgentRunError> {
+    let raw_item_id = item
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| LocalAgentRunError::failed("Codex MCP tool item missing id"))?;
+    let tool_call_id = state
+        .tool_item_to_call_id
+        .get(raw_item_id)
+        .cloned()
+        .unwrap_or_else(|| codex_tool_call_id(run_id, raw_item_id));
+
+    let status_value = item.get("status").and_then(Value::as_str);
+    let error_text = item
+        .get("error")
+        .and_then(|error| error.get("message"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let is_error = status_value == Some("failed") || error_text.is_some();
+    let payload = if is_error {
+        serde_json::json!({
+            "error": error_text
+                .clone()
+                .unwrap_or_else(|| "MCP tool execution failed".to_string()),
+        })
+    } else {
+        codex_mcp_result_payload(item.get("result"))
+    };
+
+    let updated = match repository::update_tool_call(
+        &deps.pool,
+        &tool_call_id,
+        if is_error {
+            ToolCallStatus::Failed
+        } else {
+            ToolCallStatus::Completed
+        },
+        (!is_error).then_some(&payload),
+        error_text.as_deref(),
+    )
+    .await
+    {
+        Ok(tc) => tc,
+        Err(err) => {
+            tracing::warn!(
+                tool_call_id = %tool_call_id,
+                error = %err,
+                "Codex MCP tool update failed even after tool_use was registered"
+            );
+            return Ok(());
+        }
+    };
+
+    let started_at = updated.started_at;
+    let completed_at = updated.completed_at;
+    let ui_event = if is_error {
+        AssistantUiEvent::ToolCallFailed { tool_call: updated }
+    } else {
+        AssistantUiEvent::ToolCallCompleted { tool_call: updated }
+    };
+    let _ = emit_event(&deps.app, session, Some(run_id), ui_event);
+
+    let result_message = repository::create_message(
+        &deps.pool,
+        CreateMessageParams {
+            session_id: session.id.clone(),
+            role: MessageRole::Tool,
+            content: vec![ContentPart::ToolResult {
+                tool_call_id,
+                payload,
+                started_at: Some(started_at),
+                completed_at,
+            }],
+            provider_metadata: Some(serde_json::json!({
+                "source": CliProviderRuntime::Codex.metadata_source(),
+            })),
+        },
+    )
+    .await?;
+
+    let _ = emit_event(
+        &deps.app,
+        session,
+        Some(run_id),
+        AssistantUiEvent::MessageCreated {
+            message: result_message,
+        },
+    );
+    Ok(())
+}
+
+fn codex_tool_call_id(run_id: &str, raw_item_id: &str) -> String {
+    format!("codex:{}:{}", run_id, raw_item_id)
+}
+
+fn codex_tool_name(item: &Value) -> String {
+    let server = item.get("server").and_then(Value::as_str).unwrap_or("mcp");
+    let tool = item
+        .get("tool")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    if server == "clai" {
+        tool.to_string()
+    } else {
+        format!("{}/{}", server, tool)
+    }
+}
+
+fn codex_mcp_result_payload(result: Option<&Value>) -> Value {
+    let Some(result) = result else {
+        return Value::Null;
+    };
+    if let Some(value) = result.get("structured_content") {
+        if !value.is_null() {
+            return value.clone();
+        }
+    }
+    if let Some(value) = result.get("content") {
+        if !value.is_null() {
+            return value.clone();
+        }
+    }
+    result.clone()
+}
+
+fn codex_auxiliary_item_summary(item: &Value) -> Option<String> {
+    match item.get("type").and_then(Value::as_str)? {
+        "command_execution" => {
+            let command = item.get("command").and_then(Value::as_str)?;
+            let status = item
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("completed");
+            Some(format!("Codex command `{}` {}", command, status))
+        }
+        "file_change" => {
+            let status = item
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("completed");
+            Some(format!("Codex file change {}", status))
+        }
+        "web_search" => item
+            .get("query")
+            .and_then(Value::as_str)
+            .map(|query| format!("Codex web search `{}`", query)),
+        _ => None,
+    }
+}
+
+fn codex_usage_from_value(value: Option<&Value>) -> Option<RunUsage> {
+    let value = value?;
+    let input_tokens = value
+        .get("input_tokens")
+        .and_then(Value::as_i64)
+        .and_then(|v| u64::try_from(v).ok());
+    let output_tokens = value
+        .get("output_tokens")
+        .and_then(Value::as_i64)
+        .and_then(|v| u64::try_from(v).ok());
+    let reasoning_tokens = value
+        .get("reasoning_output_tokens")
+        .and_then(Value::as_i64)
+        .and_then(|v| u64::try_from(v).ok());
+    let total_tokens = match (input_tokens, output_tokens, reasoning_tokens) {
+        (None, None, None) => None,
+        _ => Some(
+            input_tokens.unwrap_or(0) + output_tokens.unwrap_or(0) + reasoning_tokens.unwrap_or(0),
+        ),
+    };
+    Some(RunUsage {
+        input_tokens,
+        output_tokens,
+        reasoning_tokens,
+        total_tokens,
+    })
+}
+
+async fn flush_codex_assistant_message_content(
+    deps: &AssistantDeps,
+    session: &AssistantSession,
+    run_id: &str,
+    assistant_message: &AssistantMessage,
+    state: &mut CodexStreamState,
+) -> Result<(), LocalAgentRunError> {
+    let content = non_empty_content_parts(&state.parts);
+    if content.is_empty() {
+        return Ok(());
+    }
+    let updated =
+        match repository::update_message_content(&deps.pool, &assistant_message.id, &content).await
+        {
+            Ok(m) => m,
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    message_id = %assistant_message.id,
+                    "Failed to flush Codex assistant message content mid-turn"
+                );
+                return Ok(());
+            }
+        };
+    let now = std::time::Instant::now();
+    let should_emit = match state.last_update_emit_at {
+        None => true,
+        Some(last) => now.duration_since(last).as_millis() >= ASSISTANT_UPDATE_EMIT_THROTTLE_MS,
+    };
+    if should_emit {
+        state.last_update_emit_at = Some(now);
+        let _ = emit_event(
+            &deps.app,
+            session,
+            Some(run_id),
+            AssistantUiEvent::AssistantMessageUpdated { message: updated },
+        );
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1273,6 +2148,17 @@ async fn finalize_assistant_message(
     assistant_message: &AssistantMessage,
     state: &ClaudeStreamState,
 ) -> Result<(), LocalAgentRunError> {
+    finalize_assistant_message_from_parts(deps, session, run_id, assistant_message, &state.parts)
+        .await
+}
+
+async fn finalize_assistant_message_from_parts(
+    deps: &AssistantDeps,
+    session: &AssistantSession,
+    run_id: &str,
+    assistant_message: &AssistantMessage,
+    parts: &[ContentPart],
+) -> Result<(), LocalAgentRunError> {
     // Build the final content from the ordered parts vec. Drop empty
     // Text parts (left over when a turn was purely tool calls — the
     // assistant_message row was seeded with a placeholder empty Text
@@ -1280,12 +2166,7 @@ async fn finalize_assistant_message(
     // run that errored before any content was emitted) we still write
     // a single empty Text to keep the message row schema consistent
     // with what the UI expects.
-    let mut content: Vec<ContentPart> = state
-        .parts
-        .iter()
-        .filter(|p| !matches!(p, ContentPart::Text { text } if text.is_empty()))
-        .cloned()
-        .collect();
+    let mut content = non_empty_content_parts(parts);
     if content.is_empty() {
         content.push(ContentPart::Text {
             text: String::new(),
@@ -1301,6 +2182,14 @@ async fn finalize_assistant_message(
         AssistantUiEvent::AssistantMessageCompleted { message: updated },
     );
     Ok(())
+}
+
+fn non_empty_content_parts(parts: &[ContentPart]) -> Vec<ContentPart> {
+    parts
+        .iter()
+        .filter(|p| !matches!(p, ContentPart::Text { text } if text.is_empty()))
+        .cloned()
+        .collect()
 }
 
 fn provider_message_text(message: &ProviderInputMessage) -> String {
@@ -1393,13 +2282,14 @@ fn write_mcp_config(url: &str, token: &str) -> Result<PathBuf, LocalAgentRunErro
 
 fn spawn_stderr_logger(
     run_id: String,
+    provider_name: &'static str,
     stderr: tokio::process::ChildStderr,
     tail: Arc<Mutex<VecDeque<String>>>,
 ) {
     tauri::async_runtime::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            tracing::warn!(run_id = %run_id, stderr = %line, "Claude Code stderr");
+            tracing::warn!(run_id = %run_id, provider = %provider_name, stderr = %line, "CLI provider stderr");
             if let Ok(mut buffer) = tail.lock() {
                 if buffer.len() == STDERR_TAIL_LINES {
                     buffer.pop_front();
@@ -1481,5 +2371,67 @@ impl LocalAgentRunError {
 impl From<String> for LocalAgentRunError {
     fn from(value: String) -> Self {
         LocalAgentRunError::failed(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_real_usage_limit_messages() {
+        // Captured verbatim from the live CLI streams.
+        assert!(is_usage_limit_error(
+            "You've hit your usage limit. To get more access now, send a request to your admin or try again at 9:47 PM."
+        ));
+        assert!(is_usage_limit_error(
+            "You've hit your session limit · resets 4:40pm (Europe/Madrid)"
+        ));
+        // Common API-style phrasings should also classify.
+        assert!(is_usage_limit_error("rate limit exceeded"));
+        assert!(is_usage_limit_error("Error: rate_limit_error"));
+        assert!(is_usage_limit_error("You have exceeded your quota"));
+    }
+
+    #[test]
+    fn does_not_flag_unrelated_failures() {
+        assert!(!is_usage_limit_error(
+            "Codex exited with status exit status: 2"
+        ));
+        assert!(!is_usage_limit_error("user cancelled MCP tool call"));
+        assert!(!is_usage_limit_error(
+            "No conversation found with session ID"
+        ));
+        assert!(!is_usage_limit_error(""));
+    }
+
+    #[test]
+    fn codex_usage_maps_jsonl_turn_usage() {
+        let usage = codex_usage_from_value(Some(&serde_json::json!({
+            "input_tokens": 10,
+            "output_tokens": 7,
+            "reasoning_output_tokens": 3
+        })))
+        .expect("usage");
+
+        assert_eq!(usage.input_tokens, Some(10));
+        assert_eq!(usage.output_tokens, Some(7));
+        assert_eq!(usage.reasoning_tokens, Some(3));
+        assert_eq!(usage.total_tokens, Some(20));
+    }
+
+    #[test]
+    fn codex_mcp_result_prefers_structured_content() {
+        let payload = codex_mcp_result_payload(Some(&serde_json::json!({
+            "content": [{"type": "text", "text": "fallback"}],
+            "structured_content": {"ok": true}
+        })));
+
+        assert_eq!(payload, serde_json::json!({"ok": true}));
+    }
+
+    #[test]
+    fn codex_tool_call_ids_are_run_scoped() {
+        assert_eq!(codex_tool_call_id("run-a", "item_0"), "codex:run-a:item_0");
     }
 }

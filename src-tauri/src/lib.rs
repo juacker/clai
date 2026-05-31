@@ -204,11 +204,11 @@ pub fn run() {
     );
 
     // First-run convenience: if the user has no provider connections yet,
-    // auto-detect the supported CLI providers (claude-code only) and register
-    // a connection for each one found, so the app is usable without a manual
-    // trip to Settings. The model is left empty so claude-code uses its own
-    // configured default. Runs before the default-workspace bootstrap so that
-    // first workspace picks the connection up.
+    // auto-detect supported CLI providers and register a connection for each
+    // one found, so the app is usable without a manual trip to Settings. The
+    // model is left empty so the CLI uses its own configured default. Runs
+    // before the default-workspace bootstrap so that first workspace picks the
+    // connection up.
     if config_manager.get().provider_connections.is_empty() {
         for provider_id in providers::detect_supported_cli_providers() {
             let now = chrono::Utc::now().timestamp_millis();

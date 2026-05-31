@@ -222,8 +222,7 @@ pub fn check_provider(provider: &AiProvider) -> AvailableProvider {
     AvailableProvider::available(provider.clone(), None)
 }
 
-/// First-run detection of the CLI providers clai supports. Currently
-/// claude-code only — the single fully-supported provider. Returns the
+/// First-run detection of the CLI providers clai supports. Returns the
 /// `provider_id`s (matching `ProviderConnection.provider_id`) whose CLI is
 /// present on the host so the caller can auto-register connections, removing
 /// the need for the user to configure a provider manually before first use.
@@ -231,6 +230,9 @@ pub fn detect_supported_cli_providers() -> Vec<&'static str> {
     let mut found = Vec::new();
     if check_provider(&AiProvider::Claude { model: None }).available {
         found.push(crate::assistant::providers::cli::CLAUDE_CODE_PROVIDER_ID);
+    }
+    if check_provider(&AiProvider::Codex { model: None }).available {
+        found.push(crate::assistant::providers::cli::CODEX_PROVIDER_ID);
     }
     found
 }
@@ -374,25 +376,24 @@ pub fn get_models_for_provider(provider_type: &str) -> Vec<ModelInfo> {
                 recommended: false,
             },
         ],
-        // Codex CLI uses --model flag with model names
-        // Common models: o4-mini, gpt-4o, gpt-4o-mini
+        // Codex CLI uses --model flag with model names.
         "codex" => vec![
             ModelInfo {
-                id: "o4-mini".to_string(),
-                name: "O4 Mini".to_string(),
-                description: "Fast reasoning model for coding tasks".to_string(),
+                id: "gpt-5.5".to_string(),
+                name: "GPT-5.5".to_string(),
+                description: "Frontier model for complex coding tasks".to_string(),
                 recommended: true,
             },
             ModelInfo {
-                id: "gpt-4o".to_string(),
-                name: "GPT-4o".to_string(),
-                description: "Most capable, best for complex tasks".to_string(),
+                id: "gpt-5.4".to_string(),
+                name: "GPT-5.4".to_string(),
+                description: "Strong model for everyday coding".to_string(),
                 recommended: false,
             },
             ModelInfo {
-                id: "gpt-4o-mini".to_string(),
-                name: "GPT-4o Mini".to_string(),
-                description: "Faster and more cost-effective".to_string(),
+                id: "gpt-5.4-mini".to_string(),
+                name: "GPT-5.4 Mini".to_string(),
+                description: "Fast, cost-efficient coding model".to_string(),
                 recommended: false,
             },
         ],

@@ -450,18 +450,22 @@ async fn test_cli_provider_connection(
         .or_else(|| cli::command_for_provider(&connection.provider_id).map(str::to_string))
         .ok_or_else(|| format!("Unsupported CLI provider: {}", connection.provider_id))?;
 
-    let output = if connection.provider_id == cli::CLAUDE_CODE_PROVIDER_ID {
-        Command::new(&command)
+    let output = match connection.provider_id.as_str() {
+        cli::CLAUDE_CODE_PROVIDER_ID => Command::new(&command)
             .args(["auth", "status"])
             .output()
             .await
-            .map_err(|e| format!("Failed to run `{}`: {}", command, e))?
-    } else {
-        Command::new(&command)
+            .map_err(|e| format!("Failed to run `{}`: {}", command, e))?,
+        cli::CODEX_PROVIDER_ID => Command::new(&command)
+            .args(["login", "status"])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run `{}`: {}", command, e))?,
+        _ => Command::new(&command)
             .arg("--version")
             .output()
             .await
-            .map_err(|e| format!("Failed to run `{}`: {}", command, e))?
+            .map_err(|e| format!("Failed to run `{}`: {}", command, e))?,
     };
 
     if !output.status.success() {
@@ -485,6 +489,14 @@ async fn test_cli_provider_connection(
             return Ok(TestResult {
                 success: false,
                 error: Some("Claude Code is installed but not logged in".to_string()),
+            });
+        }
+    } else if connection.provider_id == cli::CODEX_PROVIDER_ID {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !stdout.contains("Logged in") {
+            return Ok(TestResult {
+                success: false,
+                error: Some("Codex CLI is installed but not logged in".to_string()),
             });
         }
     }
