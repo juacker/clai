@@ -6,7 +6,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mockRead = vi.hoisted(() => vi.fn());
 vi.mock('../workspace/client', () => ({ readWorkspaceFileBase64: mockRead }));
 
-import { bundleHtmlForPreview, resolveWorkspacePath } from './htmlBundle';
+import {
+  bundleHtmlForPreview,
+  isWorkspaceRelativeHref,
+  resolveWorkspacePath,
+} from './htmlBundle';
 
 // Test fixtures are ASCII, so btoa is an adequate (and tsc-clean) base64.
 const b64 = (text: string): string => btoa(text);
@@ -165,5 +169,23 @@ describe('resolveWorkspacePath', () => {
   it('returns empty for an empty or hash-only href', () => {
     expect(resolveWorkspacePath('reports/index.html', '')).toBe('');
     expect(resolveWorkspacePath('reports/index.html', '#section')).toBe('');
+  });
+});
+
+describe('isWorkspaceRelativeHref', () => {
+  it('accepts relative and root-absolute paths', () => {
+    expect(isWorkspaceRelativeHref('ARCHITECTURE.md')).toBe(true);
+    expect(isWorkspaceRelativeHref('./docs/x.md')).toBe(true);
+    expect(isWorkspaceRelativeHref('../top.md')).toBe(true);
+    expect(isWorkspaceRelativeHref('/reports/index.html')).toBe(true);
+  });
+
+  it('rejects external links, anchors, and empties', () => {
+    expect(isWorkspaceRelativeHref('https://example.com')).toBe(false);
+    expect(isWorkspaceRelativeHref('mailto:a@b.com')).toBe(false);
+    expect(isWorkspaceRelativeHref('//cdn.example.com/x')).toBe(false);
+    expect(isWorkspaceRelativeHref('#section')).toBe(false);
+    expect(isWorkspaceRelativeHref('')).toBe(false);
+    expect(isWorkspaceRelativeHref(null)).toBe(false);
   });
 });

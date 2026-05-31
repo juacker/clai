@@ -1,10 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { save } from '@tauri-apps/plugin-dialog';
 import MarkdownMessage from './Chat/MarkdownMessage';
 import { downloadWorkspaceFile, readWorkspaceFile } from '../workspace/client';
-import { bundleHtmlForPreview, resolveWorkspacePath } from '../utils/htmlBundle';
+import {
+  bundleHtmlForPreview,
+  isWorkspaceRelativeHref,
+  resolveWorkspacePath,
+} from '../utils/htmlBundle';
 import { openExternal } from '../utils/openExternal';
 import type { WorkspaceFileContent, WorkspaceFileEntry } from '../generated/bindings';
 import styles from './WorkspaceFilePreviewPanel.module.css';
@@ -296,6 +300,7 @@ const renderBody = (
   htmlMode: HtmlMode,
   htmlBundle: string | null,
   bundling: boolean,
+  onMarkdownLinkClick: (event: React.MouseEvent) => void,
 ) => {
   if (!file) return null;
   if (file.error) {
@@ -305,8 +310,15 @@ const renderBody = (
     return <div className={styles.empty}>This file is empty.</div>;
   }
   if (looksLikeMarkdown(file.viewer, file.path)) {
+    // Capture-phase so we intercept relative links (sibling workspace files)
+    // before the anchor's default opens them in a browser tab. External links
+    // fall through to the default target="_blank" handling.
     return (
-      <div className={styles.markdownBody}>
+      <div
+        className={styles.markdownBody}
+        onClickCapture={onMarkdownLinkClick}
+        onAuxClickCapture={onMarkdownLinkClick}
+      >
         <MarkdownMessage content={file.content} />
       </div>
     );
@@ -519,6 +531,26 @@ export default function WorkspaceFilePreviewPanel({
     return () => window.removeEventListener('message', handler);
   }, [file?.path, entry?.path, onNavigate]);
 
+  // Markdown previews render in the app DOM (not an iframe), so we intercept
+  // link clicks here directly. Relative links point at sibling workspace
+  // files — resolve them against the current file and open as an artifact;
+  // external links fall through to the anchor's default (OS browser).
+  const handleMarkdownLinkClick = useCallback(
+    (event: React.MouseEvent) => {
+      const anchor = (event.target as HTMLElement | null)?.closest('a');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      const currentPath = file?.path || entry?.path;
+      if (!onNavigate || !currentPath || !isWorkspaceRelativeHref(href)) return;
+      const resolved = resolveWorkspacePath(currentPath, href!);
+      if (!resolved) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onNavigate(resolved);
+    },
+    [onNavigate, file?.path, entry?.path],
+  );
+
   if (!entry) return null;
 
   const kindLabel = kind === 'memory' ? 'Memory' : 'Artifact';
@@ -615,7 +647,7 @@ export default function WorkspaceFilePreviewPanel({
         )}
         {loading && <div className={styles.empty}>Loading…</div>}
         {!loading && error && <div className={styles.error}>{error}</div>}
-        {!loading && !error && renderBody(file, htmlMode, htmlBundle, bundling)}
+        {!loading && !error && renderBody(file, htmlMode, htmlBundle, bundling, handleMarkdownLinkClick)}
       </div>
     </aside>
   );

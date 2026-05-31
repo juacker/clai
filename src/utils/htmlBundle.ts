@@ -71,6 +71,20 @@ const isInlinableUrl = (url: string | null | undefined): url is string => {
 };
 
 /**
+ * Whether a link href points at another file in the workspace (a relative or
+ * root-absolute path) rather than somewhere external. External = empty, an
+ * in-page `#anchor`, protocol-relative `//host`, or any explicit URL scheme
+ * (`https:`, `mailto:`, …). Used to decide whether a click in a preview
+ * should navigate to a sibling artifact or open in the OS browser.
+ */
+export function isWorkspaceRelativeHref(href: string | null | undefined): boolean {
+  const h = (href ?? '').trim();
+  if (!h || h.startsWith('#') || h.startsWith('//')) return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(h)) return false; // has a scheme → external
+  return true;
+}
+
+/**
  * Resolve a relative href that appears *inside* the artifact `baseFilePath`
  * into a clean workspace-relative path, dropping any `?query`/`#fragment`.
  * Used to turn an in-document link (`<a href="2026-05-31.html">`) into the

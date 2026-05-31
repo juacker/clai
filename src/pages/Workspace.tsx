@@ -1468,26 +1468,29 @@ const Workspace = () => {
   const memories = snapshot?.memories || [];
   const artifacts = snapshot?.artifacts || [];
 
-  // Open another workspace file as an artifact preview — used when a link
-  // inside an HTML preview points at a sibling file (e.g. an index page
-  // linking to a report). Prefer the real artifact entry when the target is
-  // already tracked; otherwise synthesize a minimal entry so any in-root file
-  // (the preview panel resolves its own viewer from the path) still opens.
-  const navigatePreviewArtifact = useCallback(
+  // Open another workspace file in the preview — used when a link inside a
+  // previewed file points at a sibling (an index page linking to a report, a
+  // doc linking to another .md). Resolve against the tracked artifact/memory
+  // lists to keep the right kind/label; otherwise synthesize a minimal entry
+  // so any in-root file still opens (the panel derives its viewer from path).
+  const navigatePreviewFile = useCallback(
     (path: string) => {
-      const existing = artifacts.find((item) => item.path === path);
-      const entry: WorkspaceFileEntry = existing ?? {
-        path,
-        relativePath: path,
-        name: path.slice(path.lastIndexOf('/') + 1),
-        viewer: '',
-        size: null,
-        updatedAt: null,
-        preview: null,
-      };
-      patchWorkspaceUi({ previewEntry: { kind: 'artifact', entry }, viewingTask: null });
+      const artifactMatch = artifacts.find((item) => item.path === path);
+      const memoryMatch = artifactMatch ? null : memories.find((item) => item.path === path);
+      const kind: PreviewEntry['kind'] = memoryMatch ? 'memory' : 'artifact';
+      const entry: WorkspaceFileEntry = artifactMatch ??
+        memoryMatch ?? {
+          path,
+          relativePath: path,
+          name: path.slice(path.lastIndexOf('/') + 1),
+          viewer: '',
+          size: null,
+          updatedAt: null,
+          preview: null,
+        };
+      patchWorkspaceUi({ previewEntry: { kind, entry }, viewingTask: null });
     },
-    [artifacts, patchWorkspaceUi]
+    [artifacts, memories, patchWorkspaceUi]
   );
   const messages = sessionState?.messages || snapshot?.messages || [];
   const toolCalls = sessionState?.toolCalls || snapshot?.toolCalls || [];
@@ -1565,7 +1568,7 @@ const Workspace = () => {
             kind={previewEntry.kind}
             entry={previewEntry.entry}
             onClose={closePreview}
-            onNavigate={navigatePreviewArtifact}
+            onNavigate={navigatePreviewFile}
           />
         )}
 
