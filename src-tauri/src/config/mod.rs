@@ -84,11 +84,6 @@ impl ConfigManager {
             ClaiConfig::default()
         };
 
-        bundled::materialize_bundled_skills().map_err(|e| ConfigError::Io {
-            operation: "materialize bundled building blocks".to_string(),
-            source: e,
-        })?;
-
         let needs_save = bundled::ensure_bundled_skill_source(&mut config);
 
         let manager = Self {

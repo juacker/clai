@@ -3,7 +3,6 @@ import { open } from '@tauri-apps/plugin-dialog';
 import {
   addSkillSource,
   deleteSkillSource,
-  forkBundledSkill,
   getSkillsCatalog,
   refreshSkillSource,
   setSkillSourceEnabled,
@@ -46,11 +45,8 @@ const basename = (path: string): string => {
 const repoNameFromUri = (uri: string): string => basename(uri).replace(/\.git$/, '') || 'Skills repo';
 const isBundledSource = (source: SkillSourceResponse | undefined): boolean =>
   source?.managedKind === 'bundled';
-const isPersonalSource = (source: SkillSourceResponse | undefined): boolean =>
-  source?.managedKind === 'personal';
 const managedLabel = (source: SkillSourceResponse | undefined): string | null => {
-  if (isBundledSource(source)) return 'Bundled';
-  if (isPersonalSource(source)) return 'Personal';
+  if (isBundledSource(source)) return 'Default';
   return null;
 };
 
@@ -69,7 +65,6 @@ const SkillsSettings = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [forkingSkillId, setForkingSkillId] = useState<string | null>(null);
 
   const skillsBySource = useMemo(() => {
     const counts = new Map();
@@ -220,29 +215,6 @@ const SkillsSettings = () => {
     }
   };
 
-  const handleForkSkill = async (skill: SkillDefinition) => {
-    if (forkingSkillId) {
-      return;
-    }
-    const defaultName = `${skill.name} Copy`;
-    const newName = window.prompt('Name for the personal fork', defaultName);
-    if (newName === null || !newName.trim()) {
-      return;
-    }
-
-    setForkingSkillId(skill.id);
-    setError(null);
-    try {
-      await forkBundledSkill(skill.id, newName.trim());
-      await loadCatalog();
-    } catch (forkError) {
-      console.error('[SkillsSettings] Failed to fork bundled skill:', forkError);
-      setError(errText(forkError, 'Failed to fork bundled skill.'));
-    } finally {
-      setForkingSkillId(null);
-    }
-  };
-
   return (
     <div className={styles.container}>
       <div className={styles.header}>
@@ -380,10 +352,7 @@ const SkillsSettings = () => {
                       </div>
                       <div className={styles.sourcePath}>{sourcePath(source)}</div>
                       {isBundledSource(source) && (
-                        <div className={styles.sourceMeta}>Read-only. App upgrades refresh this source automatically.</div>
-                      )}
-                      {isPersonalSource(source) && (
-                        <div className={styles.sourceMeta}>Personal forks live here and are not overwritten by app upgrades.</div>
+                        <div className={styles.sourceMeta}>Read-only. Refresh pulls updates from the CLAI skills repository.</div>
                       )}
                       {source.source?.kind === 'git' && source.source?.reference && (
                         <div className={styles.sourceMeta}>Ref: {source.source.reference}</div>
@@ -464,16 +433,6 @@ const SkillsSettings = () => {
                       )}
                       <div className={styles.skillFooter}>
                         <code className={styles.skillPath}>{skill.sourcePath}</code>
-                        {bundled && (
-                          <button
-                            type="button"
-                            className={styles.actionButton}
-                            onClick={() => handleForkSkill(skill)}
-                            disabled={forkingSkillId === skill.id}
-                          >
-                            {forkingSkillId === skill.id ? 'Forking...' : 'Fork to personal...'}
-                          </button>
-                        )}
                       </div>
                     </div>
                   );

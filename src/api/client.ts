@@ -311,17 +311,6 @@ export const deleteSkillSource = async (id: string): Promise<void> => {
   }
 };
 
-export const forkBundledSkill = async (
-  sourceSkillId: string,
-  newName: string
-): Promise<unknown> => {
-  try {
-    return await invoke('skill_fork_bundled', { sourceSkillId, newName });
-  } catch (error) {
-    return handleApiError(error, 'Failed to fork bundled skill');
-  }
-};
-
 // ============================================================================
 // MCP Server Management
 // ============================================================================

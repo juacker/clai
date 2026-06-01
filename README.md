@@ -48,8 +48,8 @@ flagged, and selecting a card slides in a live chat preview.
 - **Local execution sandbox** — Per-agent filesystem grants and three shell
   modes: *Off*, *Restricted* (only allowed command prefixes — `kubectl get`
   permits `kubectl get pods` but not `kubectl delete`), and *Full*.
-- **Bundled skills + templates** — Reusable skills (iterative review,
-  delegation, second opinion, SoW workflow) and agent templates
+- **Default skills + templates** — CLAI registers the read-only
+  `juacker/clai-skills` repository by default and ships agent templates
   (`code-reviewer`, `sow-tracker`) ready to drop in.
 - **Inspectable tasks** — Delegated work streams a live transcript: the
   helper agent's full conversation, tool calls, and verdict.
@@ -131,8 +131,9 @@ cargo test --manifest-path src-tauri/Cargo.toml
   MCP tools, gated by each agent's policy.
 - **Scheduler** — Periodic workspaces run from the agent runner, emitting the
   same streaming events as interactive chat.
-- **Skills + templates** — Bundled via `include_dir!` and re-materialized under
-  the user's data directory on startup; personal skill sources sit alongside.
+- **Skills + templates** — Skills are discovered from read-only local or git
+  sources. The app-managed default source is `juacker/clai-skills`; agent
+  templates are embedded via `include_dir!`.
 
 ## License
 

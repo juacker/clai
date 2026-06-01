@@ -48,9 +48,12 @@ impl PromptBuildFixture {
         let clai_home_path = temp_dir.path().join("clai-home");
         let clai_home = ClaiHomeGuard::set(&clai_home_path);
         let workspace_parent = temp_dir.path().join("workspaces");
-        let bundled_skills_root = clai_home_path.join("cache").join("bundled").join("skills");
+        let default_skills_root = clai_home_path
+            .join("cache")
+            .join("skill-sources")
+            .join("clai-skills");
 
-        let skill_dir = bundled_skills_root.join("prompt-build-skill");
+        let skill_dir = default_skills_root.join("prompt-build-skill");
         std::fs::create_dir_all(&skill_dir).expect("skill dir");
         std::fs::write(
             skill_dir.join("SKILL.md"),
@@ -58,13 +61,15 @@ impl PromptBuildFixture {
         )
         .expect("skill file");
 
-        let bundled_source = SkillSourceConfig::new_local(
-            "Bundled Skills".to_string(),
-            bundled_skills_root.display().to_string(),
+        let default_source = SkillSourceConfig::new_git(
+            "CLAI Skills".to_string(),
+            "https://github.com/juacker/clai-skills.git".to_string(),
+            None,
+            Some(default_skills_root.display().to_string()),
         );
         let app_config = AppConfig {
             workspace_dirs: vec![workspace_parent.clone()],
-            skill_sources: vec![bundled_source],
+            skill_sources: vec![default_source],
             ..AppConfig::default()
         };
         let config_manager =

@@ -429,9 +429,14 @@ async fn test_user_message_queue_lifecycle() {
     .await
     .unwrap();
 
-    mark_queued_messages_delivered(&pool, &session.id, &run.id, &[queued.id.clone()])
-        .await
-        .unwrap();
+    mark_queued_messages_delivered(
+        &pool,
+        &session.id,
+        &run.id,
+        std::slice::from_ref(&queued.id),
+    )
+    .await
+    .unwrap();
 
     assert!(list_pending_queued_messages(&pool, &session.id)
         .await

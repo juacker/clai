@@ -1,11 +1,13 @@
-//! Bundled building blocks shipped with CLAI.
+//! App-managed building blocks enabled by CLAI.
 //!
-//! Bundled skill slugs and bundled agent-template ids are stable public
+//! The default skills are loaded from the CLAI skills repository, not embedded
+//! in the app binary. The `bundled:<slug>` workspace ref name is retained as a
+//! compatibility contract for existing workspace configs and agent templates.
+//!
+//! Bundled agent-template ids and default skill slugs are stable public
 //! references. Do not rename them across releases without adding an alias or
 //! explicit migration for existing configs.
 
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 
 use include_dir::{include_dir, Dir, DirEntry};
@@ -13,30 +15,25 @@ use serde::{Deserialize, Serialize};
 
 use super::{ClaiConfig, ExecutionCapabilityConfig, SkillSourceConfig, SkillSourceKind};
 
-static BUNDLED_SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/embedded/skills");
 static BUNDLED_AGENT_TEMPLATES: Dir<'_> =
     include_dir!("$CARGO_MANIFEST_DIR/embedded/agent-templates");
 
-#[cfg(test)]
-const BUNDLED_SKILL_SLUGS: &[&str] = &[
-    "code-review-checklist",
-    "delegation",
-    "iterative-review",
-    "self-reflection",
-    "sow-workflow",
-    "unbiased-second-opinion",
-];
+pub const DEFAULT_SKILL_SOURCE_NAME: &str = "CLAI Skills";
+pub const DEFAULT_SKILL_SOURCE_URI: &str = "https://github.com/juacker/clai-skills.git";
+const DEFAULT_SKILL_SOURCE_CACHE_DIR: &str = "clai-skills";
 
 pub fn bundled_root() -> PathBuf {
     crate::paths::clai_cache_bundled_root()
 }
 
+/// Legacy embedded-skill cache path. Kept only to identify and migrate
+/// pre-repository configs that still reference this local source.
 pub fn bundled_skills_root() -> PathBuf {
     bundled_root().join("skills")
 }
 
-pub fn bundled_agent_templates_root() -> PathBuf {
-    bundled_root().join("agent-templates")
+pub fn default_skill_source_cache_root() -> PathBuf {
+    crate::paths::clai_cache_skill_sources_root().join(DEFAULT_SKILL_SOURCE_CACHE_DIR)
 }
 
 pub fn personal_skills_root() -> PathBuf {
@@ -44,25 +41,19 @@ pub fn personal_skills_root() -> PathBuf {
 }
 
 pub fn is_bundled_source(source: &SkillSourceConfig) -> bool {
-    source_local_path_matches(source, &bundled_skills_root())
+    is_bundled_source_at(source, &bundled_skills_root())
 }
 
 pub fn is_personal_source(source: &SkillSourceConfig) -> bool {
     source_local_path_matches(source, &personal_skills_root())
 }
 
-pub fn materialize_bundled_skills() -> io::Result<()> {
-    materialize_embedded_dir(&BUNDLED_SKILLS, &bundled_skills_root())?;
-    materialize_embedded_dir(&BUNDLED_AGENT_TEMPLATES, &bundled_agent_templates_root())
-}
-
 pub fn ensure_bundled_skill_source(config: &mut ClaiConfig) -> bool {
-    ensure_bundled_skill_source_at(config, &bundled_skills_root())
-}
-
-pub fn ensure_personal_skill_source_lazy(config: &mut ClaiConfig) -> Result<bool, String> {
-    ensure_personal_skill_source_at(config, &personal_skills_root())
-        .map_err(|error| format!("Failed to prepare personal skill source: {}", error))
+    ensure_bundled_skill_source_at(
+        config,
+        &default_skill_source_cache_root(),
+        &bundled_skills_root(),
+    )
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -109,71 +100,85 @@ pub fn resolve_bundled_skill_id(slug: &str, config: &ClaiConfig) -> Option<Strin
         .map(|source| format!("{}:{}", source.id, slug))
 }
 
-fn materialize_embedded_dir(source: &Dir<'_>, target: &Path) -> io::Result<()> {
-    if target.exists() {
-        fs::remove_dir_all(target)?;
-    }
-    fs::create_dir_all(target)?;
-    write_dir_entries(source, target)
-}
-
-fn write_dir_entries(source: &Dir<'_>, target: &Path) -> io::Result<()> {
-    for entry in source.entries() {
-        match entry {
-            DirEntry::Dir(dir) => {
-                let dir_target = target.join(dir.path());
-                fs::create_dir_all(&dir_target)?;
-                write_dir_entries(dir, target)?;
-            }
-            DirEntry::File(file) => {
-                let path = target.join(file.path());
-                if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                fs::write(path, file.contents())?;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn ensure_bundled_skill_source_at(config: &mut ClaiConfig, root: &Path) -> bool {
-    if config
+fn ensure_bundled_skill_source_at(
+    config: &mut ClaiConfig,
+    cache_root: &Path,
+    legacy_root: &Path,
+) -> bool {
+    if let Some(index) = config
         .skill_sources
         .iter()
-        .any(|source| source_local_path_matches(source, root))
+        .position(|source| is_bundled_source_at(source, legacy_root))
     {
-        return false;
+        let mut changed = {
+            let source = &mut config.skill_sources[index];
+            let mut changed = false;
+            if source.name != DEFAULT_SKILL_SOURCE_NAME {
+                source.name = DEFAULT_SKILL_SOURCE_NAME.to_string();
+                changed = true;
+            }
+
+            match &mut source.source {
+                SkillSourceKind::Git {
+                    uri,
+                    reference,
+                    local_path,
+                } => {
+                    if uri != DEFAULT_SKILL_SOURCE_URI {
+                        *uri = DEFAULT_SKILL_SOURCE_URI.to_string();
+                        changed = true;
+                    }
+                    if reference.is_some() {
+                        *reference = None;
+                        changed = true;
+                    }
+                    if local_path.is_none() {
+                        *local_path = Some(cache_root.display().to_string());
+                        changed = true;
+                    }
+                }
+                SkillSourceKind::Local { .. } => {
+                    source.source = SkillSourceKind::Git {
+                        uri: DEFAULT_SKILL_SOURCE_URI.to_string(),
+                        reference: None,
+                        local_path: Some(cache_root.display().to_string()),
+                    };
+                    changed = true;
+                }
+            }
+            changed
+        };
+
+        let before_len = config.skill_sources.len();
+        let mut seen_default_source = false;
+        config.skill_sources.retain(|source| {
+            if !is_bundled_source_at(source, legacy_root) {
+                return true;
+            }
+            if seen_default_source {
+                return false;
+            }
+            seen_default_source = true;
+            true
+        });
+        if config.skill_sources.len() != before_len {
+            changed = true;
+        }
+
+        if changed {
+            let source = &mut config.skill_sources[index];
+            source.updated_at = chrono::Utc::now().to_rfc3339();
+        }
+        return changed;
     }
 
-    config.skill_sources.push(SkillSourceConfig::new_local(
-        "Bundled Skills".to_string(),
-        root.display().to_string(),
+    config.skill_sources.push(SkillSourceConfig::new_git(
+        DEFAULT_SKILL_SOURCE_NAME.to_string(),
+        DEFAULT_SKILL_SOURCE_URI.to_string(),
+        None,
+        Some(cache_root.display().to_string()),
     ));
     true
-}
-
-fn ensure_personal_skill_source_at(config: &mut ClaiConfig, root: &Path) -> io::Result<bool> {
-    fs::create_dir_all(root)?;
-    let Some(source) = config
-        .skill_sources
-        .iter_mut()
-        .find(|source| source_local_path_matches(source, root))
-    else {
-        config.skill_sources.push(SkillSourceConfig::new_local(
-            "Personal Skills".to_string(),
-            root.display().to_string(),
-        ));
-        return Ok(true);
-    };
-
-    if source.enabled {
-        return Ok(false);
-    }
-
-    source.enabled = true;
-    source.updated_at = chrono::Utc::now().to_rfc3339();
-    Ok(true)
 }
 
 fn source_local_path_matches(source: &SkillSourceConfig, expected: &Path) -> bool {
@@ -183,90 +188,130 @@ fn source_local_path_matches(source: &SkillSourceConfig, expected: &Path) -> boo
     )
 }
 
+fn is_bundled_source_at(source: &SkillSourceConfig, legacy_root: &Path) -> bool {
+    match &source.source {
+        SkillSourceKind::Git { uri, .. } => is_default_skill_source_uri(uri),
+        SkillSourceKind::Local { path } => Path::new(path) == legacy_root,
+    }
+}
+
+fn is_default_skill_source_uri(uri: &str) -> bool {
+    let value = uri.trim().trim_end_matches('/');
+    let value = value.strip_suffix(".git").unwrap_or(value);
+    value == "https://github.com/juacker/clai-skills"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
 
     #[test]
-    fn materialize_bundled_skills_writes_and_overwrites_files() {
+    fn ensure_bundled_skill_source_registers_default_git_source() {
         let temp_dir = TempDir::new().unwrap();
-        let target = temp_dir.path().join("skills");
-        let edited = target.join("iterative-review").join("SKILL.md");
+        let cache_root = temp_dir.path().join("skill-sources").join("clai-skills");
+        let legacy_root = temp_dir.path().join("bundled").join("skills");
+        let mut config = ClaiConfig::default();
 
-        materialize_embedded_dir(&BUNDLED_SKILLS, &target).unwrap();
-        assert!(target.join("iterative-review").join("SKILL.md").exists());
+        assert!(ensure_bundled_skill_source_at(
+            &mut config,
+            &cache_root,
+            &legacy_root
+        ));
+        assert!(!ensure_bundled_skill_source_at(
+            &mut config,
+            &cache_root,
+            &legacy_root
+        ));
 
-        fs::write(&edited, "user edit").unwrap();
-        materialize_embedded_dir(&BUNDLED_SKILLS, &target).unwrap();
-
-        let content = fs::read_to_string(edited).unwrap();
-        assert!(content.contains("name: \"Iterative Review\""));
-        assert!(!content.contains("user edit"));
+        assert_eq!(config.skill_sources.len(), 1);
+        assert_eq!(config.skill_sources[0].name, DEFAULT_SKILL_SOURCE_NAME);
+        assert!(matches!(
+            &config.skill_sources[0].source,
+            SkillSourceKind::Git {
+                uri,
+                reference: None,
+                local_path: Some(local_path),
+            } if uri == DEFAULT_SKILL_SOURCE_URI
+                && local_path == &cache_root.display().to_string()
+        ));
     }
 
     #[test]
-    fn ensure_bundled_skill_source_is_idempotent() {
+    fn ensure_bundled_skill_source_migrates_legacy_local_source_in_place() {
         let temp_dir = TempDir::new().unwrap();
-        let root = temp_dir.path().join("bundled").join("skills");
+        let cache_root = temp_dir.path().join("skill-sources").join("clai-skills");
+        let legacy_root = temp_dir.path().join("bundled").join("skills");
         let mut config = ClaiConfig::default();
+        config.skill_sources.push(SkillSourceConfig::new_local(
+            "Bundled Skills".to_string(),
+            legacy_root.display().to_string(),
+        ));
+        let source_id = config.skill_sources[0].id.clone();
 
-        assert!(ensure_bundled_skill_source_at(&mut config, &root));
-        assert!(!ensure_bundled_skill_source_at(&mut config, &root));
+        assert!(ensure_bundled_skill_source_at(
+            &mut config,
+            &cache_root,
+            &legacy_root
+        ));
 
         assert_eq!(config.skill_sources.len(), 1);
-        assert!(source_local_path_matches(&config.skill_sources[0], &root));
+        assert_eq!(config.skill_sources[0].id, source_id);
+        assert_eq!(config.skill_sources[0].name, DEFAULT_SKILL_SOURCE_NAME);
+        assert!(matches!(
+            &config.skill_sources[0].source,
+            SkillSourceKind::Git {
+                uri,
+                reference: None,
+                local_path: Some(local_path),
+            } if uri == DEFAULT_SKILL_SOURCE_URI
+                && local_path == &cache_root.display().to_string()
+        ));
     }
 
     #[test]
-    fn ensure_personal_skill_source_is_lazy_and_idempotent() {
+    fn ensure_bundled_skill_source_removes_duplicate_default_sources() {
         let temp_dir = TempDir::new().unwrap();
-        let root = temp_dir.path().join("personal");
+        let cache_root = temp_dir.path().join("skill-sources").join("clai-skills");
+        let legacy_root = temp_dir.path().join("bundled").join("skills");
         let mut config = ClaiConfig::default();
+        config.skill_sources.push(SkillSourceConfig::new_git(
+            DEFAULT_SKILL_SOURCE_NAME.to_string(),
+            DEFAULT_SKILL_SOURCE_URI.to_string(),
+            None,
+            Some(cache_root.display().to_string()),
+        ));
+        let source_id = config.skill_sources[0].id.clone();
+        config.skill_sources.push(SkillSourceConfig::new_local(
+            "Bundled Skills".to_string(),
+            legacy_root.display().to_string(),
+        ));
 
-        assert!(ensure_personal_skill_source_at(&mut config, &root).unwrap());
-        assert!(root.exists());
-        assert!(!ensure_personal_skill_source_at(&mut config, &root).unwrap());
+        assert!(ensure_bundled_skill_source_at(
+            &mut config,
+            &cache_root,
+            &legacy_root
+        ));
 
         assert_eq!(config.skill_sources.len(), 1);
-        assert!(source_local_path_matches(&config.skill_sources[0], &root));
+        assert_eq!(config.skill_sources[0].id, source_id);
     }
 
     #[test]
     fn resolve_bundled_skill_id_uses_config_source_id() {
         let mut config = ClaiConfig::default();
-        ensure_bundled_skill_source(&mut config);
+        config.skill_sources.push(SkillSourceConfig::new_git(
+            DEFAULT_SKILL_SOURCE_NAME.to_string(),
+            DEFAULT_SKILL_SOURCE_URI.to_string(),
+            None,
+            Some("/tmp/clai-skills".to_string()),
+        ));
 
         let source_id = config.skill_sources[0].id.clone();
         assert_eq!(
             resolve_bundled_skill_id("iterative-review", &config),
             Some(format!("{}:iterative-review", source_id))
         );
-    }
-
-    #[test]
-    fn bundled_skill_slugs_are_stable() {
-        let mut actual: Vec<String> = BUNDLED_SKILLS
-            .entries()
-            .iter()
-            .filter_map(|entry| match entry {
-                DirEntry::Dir(dir) => dir
-                    .path()
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .map(str::to_string),
-                DirEntry::File(_) => None,
-            })
-            .collect();
-        actual.sort();
-
-        let mut expected: Vec<String> = BUNDLED_SKILL_SLUGS
-            .iter()
-            .map(|slug| (*slug).to_string())
-            .collect();
-        expected.sort();
-
-        assert_eq!(actual, expected);
     }
 
     #[test]

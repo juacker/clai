@@ -714,7 +714,7 @@ When a scheduled agent runs, the runner needs the per-workspace pool to write it
 - **Provider connection deletion races.** Today an in-flight run holds a `connection_id`. With the connection living in JSON, deletion is just an array removal — but a running tool might still need to read it. Keep the existing "soft delete" semantics: removal marks `enabled=false` until no runs reference it, then garbage-collected by a background task. (May be overkill for solo use — could just allow deletion and accept transient errors.)
 - **Performance.** Filesystem scan on startup at the author's scale is microseconds. We're not adding caches we don't need.
 - **Snapshot semantics during phase 6.** While moving runtime data per-workspace, sessions and tasks live in both old (global) and new (per-workspace) places. The phase 6 PR should do the move + drop in a single commit to avoid that window. Acceptable since "no BC" means we can just wipe.
-- **`~/.clai/cache/` is disposable.** Document the "wipe-only-caches" idiom (`rm -rf ~/.clai/cache/`) in the README. App must tolerate a missing cache dir on every startup, not just first run: `materialize_bundled_skills` already does `remove_dir_all` + recreate, and git-source sync re-clones on missing `local_path`. Verify both code paths are robust to a user manually deleting `cache/` while the app is closed.
+- **`~/.clai/cache/` is disposable.** Document the "wipe-only-caches" idiom (`rm -rf ~/.clai/cache/`) in the README. App must tolerate a missing cache dir on every startup, not just first run: app-managed and user-added git skill sources re-clone on missing `local_path`. Verify those code paths are robust to a user manually deleting `cache/` while the app is closed.
 
 ---
 

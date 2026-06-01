@@ -115,16 +115,13 @@ impl From<SkillSourceConfig> for SkillSourceResponse {
     fn from(source: SkillSourceConfig) -> Self {
         let managed_kind = if bundled::is_bundled_source(&source) {
             Some("bundled".to_string())
-        } else if bundled::is_personal_source(&source) {
-            Some("personal".to_string())
         } else {
             None
         };
-        let read_only = managed_kind.as_deref() == Some("bundled");
         Self {
             source,
             managed_kind,
-            read_only,
+            read_only: true,
         }
     }
 }
@@ -177,100 +174,6 @@ pub fn skills_catalog(state: State<'_, AppState>) -> Result<SkillCatalogResponse
         skills,
         diagnostics,
     })
-}
-
-#[tauri::command]
-pub fn skill_fork_bundled(
-    source_skill_id: String,
-    new_name: String,
-    state: State<'_, AppState>,
-) -> Result<SkillDefinition, String> {
-    let trimmed_name = new_name.trim();
-    if trimmed_name.is_empty() {
-        return Err("New skill name is required.".to_string());
-    }
-    let slug = slugify_skill_name(trimmed_name);
-    if slug.is_empty() {
-        return Err("New skill name must contain at least one ASCII letter or number.".to_string());
-    }
-
-    let (source_skill, source_config) = {
-        let config_manager = state
-            .config_manager
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        let config = config_manager.get();
-        let skills = discover_skills(&config)?;
-        let skill = skills
-            .into_iter()
-            .find(|skill| skill.id == source_skill_id)
-            .ok_or_else(|| format!("Skill not found: {}", source_skill_id))?;
-        let source = config
-            .skill_sources
-            .iter()
-            .find(|source| source.id == skill.source_id)
-            .cloned()
-            .ok_or_else(|| format!("Skill source not found: {}", skill.source_id))?;
-        (skill, source)
-    };
-
-    if !bundled::is_bundled_source(&source_config) {
-        return Err("Only bundled skills can be forked to the personal source.".to_string());
-    }
-
-    let target_dir = bundled::personal_skills_root().join(&slug);
-    if target_dir.exists() {
-        return Err(format!(
-            "A personal skill with slug '{}' already exists.",
-            slug
-        ));
-    }
-
-    {
-        let config_manager = state
-            .config_manager
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        let mut ensure_result: Result<bool, String> = Ok(false);
-        config_manager
-            .update(|config| {
-                ensure_result = bundled::ensure_personal_skill_source_lazy(config);
-            })
-            .map_err(|e| format!("Failed to update skill sources: {}", e))?;
-        ensure_result?;
-    }
-
-    fs::create_dir_all(&target_dir)
-        .map_err(|error| format!("Failed to create personal skill directory: {}", error))?;
-    let forked_at = chrono::Utc::now().to_rfc3339();
-    let body = skill_body_without_frontmatter(&source_skill.content);
-    let forked_content = build_forked_skill_content(
-        trimmed_name,
-        &source_skill.description,
-        &source_skill.id,
-        &forked_at,
-        body,
-    );
-    fs::write(target_dir.join("SKILL.md"), forked_content)
-        .map_err(|error| format!("Failed to write forked skill: {}", error))?;
-
-    let config = {
-        let config_manager = state
-            .config_manager
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        config_manager.get()
-    };
-    let personal_source = config
-        .skill_sources
-        .iter()
-        .find(|source| bundled::is_personal_source(source))
-        .ok_or_else(|| "Personal skill source was not registered.".to_string())?;
-    let expected_id = format!("{}:{}", personal_source.id, slug);
-    discover_skills(&config)?
-        .into_iter()
-        .find(|skill| skill.id == expected_id)
-        .ok_or_else(|| format!("Forked skill was not discovered: {}", expected_id))
 }
 
 #[tauri::command]
@@ -422,10 +325,9 @@ pub async fn skill_source_delete(id: String, state: State<'_, AppState>) -> Resu
 
     if let Some(source) = &source {
         if bundled::is_bundled_source(source) {
-            return Err("Bundled skill sources are app-managed and cannot be deleted.".to_string());
-        }
-        if bundled::is_personal_source(source) {
-            return Err("Personal skill source is app-managed and cannot be deleted.".to_string());
+            return Err(
+                "The default CLAI skills source is app-managed and cannot be deleted.".to_string(),
+            );
         }
     }
 
@@ -457,68 +359,46 @@ fn skill_source_cache_root() -> Result<PathBuf, String> {
     Ok(crate::paths::clai_cache_skill_sources_root())
 }
 
-fn slugify_skill_name(name: &str) -> String {
-    let mut slug = String::new();
-    let mut last_was_dash = false;
-
-    for ch in name.chars() {
-        if ch.is_ascii_alphanumeric() {
-            slug.push(ch.to_ascii_lowercase());
-            last_was_dash = false;
-        } else if !last_was_dash && !slug.is_empty() {
-            slug.push('-');
-            last_was_dash = true;
-        }
-    }
-
-    while slug.ends_with('-') {
-        slug.pop();
-    }
-
-    slug
-}
-
-fn skill_body_without_frontmatter(content: &str) -> &str {
-    let Some(rest) = content.strip_prefix("---") else {
-        return content;
-    };
-    let Some(rest) = rest
-        .strip_prefix('\n')
-        .or_else(|| rest.strip_prefix("\r\n"))
-    else {
-        return content;
+pub async fn sync_default_skill_source(state: &AppState) -> Result<(), String> {
+    let source = {
+        let config_manager = state
+            .config_manager
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        config_manager
+            .get_skill_sources()
+            .into_iter()
+            .find(bundled::is_bundled_source)
     };
 
-    let mut offset = content.len() - rest.len();
-    for line in rest.split_inclusive('\n') {
-        let trimmed = line.trim();
-        offset += line.len();
-        if trimmed == "---" {
-            return content[offset..].trim_start_matches(['\n', '\r']);
-        }
+    let Some(mut source) = source else {
+        return Ok(());
+    };
+    if !source.enabled {
+        return Ok(());
+    }
+    if !matches!(source.source, SkillSourceKind::Git { .. }) {
+        return Ok(());
     }
 
-    content
-}
+    source = sync_git_skill_source_blocking(source, false).await?;
+    source.updated_at = chrono::Utc::now().to_rfc3339();
 
-fn build_forked_skill_content(
-    name: &str,
-    description: &str,
-    forked_from: &str,
-    forked_at: &str,
-    body: &str,
-) -> String {
-    let yaml_name = serde_json::to_string(name).unwrap_or_else(|_| "\"Forked Skill\"".to_string());
-    let yaml_description =
-        serde_json::to_string(description).unwrap_or_else(|_| "\"\"".to_string());
-    let yaml_forked_from =
-        serde_json::to_string(forked_from).unwrap_or_else(|_| "\"\"".to_string());
-    let yaml_forked_at = serde_json::to_string(forked_at).unwrap_or_else(|_| "\"\"".to_string());
-
-    format!(
-        "---\nname: {}\ndescription: {}\nforked_from: {}\nforked_at: {}\n---\n{}",
-        yaml_name, yaml_description, yaml_forked_from, yaml_forked_at, body
-    )
+    let config_manager = state
+        .config_manager
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    config_manager
+        .update(|config| {
+            if let Some(existing) = config
+                .skill_sources
+                .iter_mut()
+                .find(|existing| existing.id == source.id)
+            {
+                *existing = source.clone();
+            }
+        })
+        .map_err(|e| format!("Failed to update default skill source: {}", e))
 }
 
 async fn sync_git_skill_source_blocking(

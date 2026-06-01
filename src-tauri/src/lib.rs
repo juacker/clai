@@ -285,6 +285,18 @@ pub fn run() {
         .manage(state)
         // Setup hook - runs after app is built, gives us AppHandle
         .setup(move |app| {
+            // Keep the app-managed skills repository current without making
+            // startup depend on network availability.
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    if let Err(e) = commands::skills::sync_default_skill_source(state.inner()).await
+                    {
+                        tracing::warn!("Failed to sync default skill source: {}", e);
+                    }
+                }
+            });
+
             // Open per-workspace DBs and populate the scheduler.
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -362,7 +374,6 @@ pub fn run() {
             commands::skills::skill_source_refresh,
             commands::skills::skill_source_set_enabled,
             commands::skills::skill_source_delete,
-            commands::skills::skill_fork_bundled,
             commands::fleet::fleet_get_snapshot,
             commands::fleet::fleet_run_now,
             // Workspace state persistence commands
