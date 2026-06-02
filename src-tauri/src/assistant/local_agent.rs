@@ -165,7 +165,6 @@ pub async fn run_session_turn(
     {
         clear_cli_session_id(deps, &mut session).await?;
     }
-    let had_existing_cli_session = session.context.cli_session_id.is_some();
 
     let mcp_runtime = local_mcp::ensure_started(&deps.app).await?;
     let notices = Arc::new(Mutex::new(Vec::<RunNotice>::new()));
@@ -187,48 +186,88 @@ pub async fn run_session_turn(
         session_blocked_command_prefixes,
     });
 
-    let run_result = match provider_runtime {
-        CliProviderRuntime::ClaudeCode => {
-            let (cli_session_id, is_new_session) =
-                ensure_cli_session_id(deps, &mut session, &connection.provider_id).await?;
-            let mcp_config_path = match write_mcp_config(mcp_runtime.url(), binding_guard.token()) {
-                Ok(path) => path,
-                Err(error) => {
-                    let message = error.message();
-                    fail_run(deps, &session, &run_id, None, &message).await?;
-                    return Err(AssistantEngineError::Provider(
-                        crate::assistant::providers::types::ProviderError::RequestFailed(message),
-                    ));
+    // A single assistant message is reused across attempts (see
+    // `ensure_assistant_message_slot`): if the first attempt fails because the
+    // CLI session was lost, we transparently restart with a fresh session and
+    // refill the same chat bubble, so the user never sees a stray empty turn or
+    // a "send your message again" error.
+    let mut assistant_slot: Option<AssistantMessage> = None;
+    let mut retried = false;
+
+    let run_result = loop {
+        let attempt = match provider_runtime {
+            CliProviderRuntime::ClaudeCode => {
+                let (cli_session_id, is_new_session) =
+                    ensure_cli_session_id(deps, &mut session, &connection.provider_id).await?;
+                let mcp_config_path =
+                    match write_mcp_config(mcp_runtime.url(), binding_guard.token()) {
+                        Ok(path) => path,
+                        Err(error) => {
+                            let message = error.message();
+                            fail_run(deps, &session, &run_id, None, &message).await?;
+                            return Err(AssistantEngineError::Provider(
+                                crate::assistant::providers::types::ProviderError::RequestFailed(
+                                    message,
+                                ),
+                            ));
+                        }
+                    };
+                let result = run_claude_turn(
+                    deps,
+                    &session,
+                    &connection,
+                    &run_id,
+                    &cli_session_id,
+                    is_new_session,
+                    &mcp_config_path,
+                    &input.cancel_token,
+                    &input.trigger,
+                    &mut assistant_slot,
+                )
+                .await;
+                let _ = std::fs::remove_file(&mcp_config_path);
+                result
+            }
+            CliProviderRuntime::Codex => {
+                run_codex_turn(
+                    deps,
+                    &mut session,
+                    &connection,
+                    &run_id,
+                    mcp_runtime.url(),
+                    binding_guard.token(),
+                    &input.cancel_token,
+                    &input.trigger,
+                    &mut assistant_slot,
+                )
+                .await
+            }
+        };
+
+        // The CLI session id is provider-specific and can also be pruned/expired
+        // server-side, so resuming it can fail with "no rollout found" / "No
+        // conversation found with session ID". When that happens, drop the stale
+        // id and retry exactly once with a fresh session — transparently. The
+        // retried turn reuses `assistant_slot`, and a freshly-minted session
+        // can't itself be "lost", so this is naturally bounded.
+        if !retried {
+            if let Err(LocalAgentRunError::Failed { message, .. }) = &attempt {
+                if is_session_lost_error(provider_runtime, message) {
+                    tracing::info!(
+                        target: "clai::cli_session",
+                        provider = provider_runtime.metadata_source(),
+                        run_id = %run_id,
+                        "{} session was lost; restarting with a fresh session",
+                        provider_runtime.display_name()
+                    );
+                    clear_cli_session_id(deps, &mut session).await?;
+                    retried = true;
+                    continue;
                 }
-            };
-            let result = run_claude_turn(
-                deps,
-                &session,
-                &connection,
-                &run_id,
-                &cli_session_id,
-                is_new_session,
-                &mcp_config_path,
-                &input.cancel_token,
-                &input.trigger,
-            )
-            .await;
-            let _ = std::fs::remove_file(&mcp_config_path);
-            result
+            }
         }
-        CliProviderRuntime::Codex => {
-            run_codex_turn(
-                deps,
-                &mut session,
-                &connection,
-                &run_id,
-                mcp_runtime.url(),
-                binding_guard.token(),
-                &input.cancel_token,
-                &input.trigger,
-            )
-            .await
-        }
+
+        break attempt;
     };
 
     drop(binding_guard);
@@ -265,35 +304,23 @@ pub async fn run_session_turn(
             cancel_run(deps, &session, &run_id, usage.as_ref()).await
         }
         Err(LocalAgentRunError::Failed { message, usage }) => {
-            let resolved_message = if had_existing_cli_session
-                && is_session_lost_error(provider_runtime, &message)
-            {
-                clear_cli_session_id(deps, &mut session).await?;
-                format!(
-                    "The {} session was lost. Send your message again and a fresh session will be started.",
-                    provider_runtime.display_name()
-                )
-            } else {
-                if is_usage_limit_error(&message) {
-                    // A usage/rate limit is a non-retryable failure (the user
-                    // must wait until the stated reset time), distinct from a
-                    // transient crash. Log it as such so it's diagnosable; the
-                    // provider's message is already user-facing so we pass it
-                    // through unchanged.
-                    tracing::warn!(
-                        target: "clai::usage_limit",
-                        provider = provider_runtime.metadata_source(),
-                        run_id = %run_id,
-                        "{} reported a usage/rate limit: {}",
-                        provider_runtime.display_name(),
-                        message
-                    );
-                }
-                message
-            };
-            fail_run(deps, &session, &run_id, usage.as_ref(), &resolved_message).await?;
+            if is_usage_limit_error(&message) {
+                // A usage/rate limit is a non-retryable failure (the user must
+                // wait until the stated reset time), distinct from a transient
+                // crash. Log it as such so it's diagnosable; the provider's
+                // message is already user-facing so we pass it through unchanged.
+                tracing::warn!(
+                    target: "clai::usage_limit",
+                    provider = provider_runtime.metadata_source(),
+                    run_id = %run_id,
+                    "{} reported a usage/rate limit: {}",
+                    provider_runtime.display_name(),
+                    message
+                );
+            }
+            fail_run(deps, &session, &run_id, usage.as_ref(), &message).await?;
             Err(AssistantEngineError::Provider(
-                crate::assistant::providers::types::ProviderError::RequestFailed(resolved_message),
+                crate::assistant::providers::types::ProviderError::RequestFailed(message),
             ))
         }
     }
@@ -424,28 +451,24 @@ async fn ensure_cli_session_id(
     Ok((id, true))
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn run_claude_turn(
+/// Resolve the turn's assistant message from a reusable slot.
+///
+/// The slot lets `run_session_turn` keep a single assistant message across an
+/// automatic retry (when a stale CLI session is dropped and restarted fresh),
+/// so the retry refills the *same* chat bubble instead of leaving a stray empty
+/// one behind. On first use it creates the message (seeded with an empty Text
+/// placeholder, like the rest of the streaming path expects) and emits
+/// `MessageCreated`; subsequent calls return the stored message unchanged.
+async fn ensure_assistant_message_slot(
     deps: &AssistantDeps,
     session: &AssistantSession,
-    connection: &ProviderConnection,
     run_id: &str,
-    cli_session_id: &str,
-    is_new_session: bool,
-    mcp_config_path: &PathBuf,
-    cancel_token: &CancellationToken,
-    trigger: &crate::assistant::types::RunTrigger,
-) -> Result<Option<RunUsage>, LocalAgentRunError> {
-    let prompt = prepare_prompt(
-        deps,
-        session,
-        run_id,
-        trigger,
-        CliProviderRuntime::ClaudeCode.metadata_source(),
-        CliProviderRuntime::ClaudeCode.display_name(),
-    )
-    .await?;
-    let system_prompt = system_prompt_text(&deps.app, session, trigger).await;
+    metadata_source: &str,
+    slot: &mut Option<AssistantMessage>,
+) -> Result<AssistantMessage, LocalAgentRunError> {
+    if let Some(existing) = slot.as_ref() {
+        return Ok(existing.clone());
+    }
     let assistant_message = repository::create_message(
         &deps.pool,
         CreateMessageParams {
@@ -454,9 +477,7 @@ async fn run_claude_turn(
             content: vec![ContentPart::Text {
                 text: String::new(),
             }],
-            provider_metadata: Some(serde_json::json!({
-                "source": CliProviderRuntime::ClaudeCode.metadata_source(),
-            })),
+            provider_metadata: Some(serde_json::json!({ "source": metadata_source })),
         },
     )
     .await?;
@@ -468,6 +489,41 @@ async fn run_claude_turn(
             message: assistant_message.clone(),
         },
     );
+    *slot = Some(assistant_message.clone());
+    Ok(assistant_message)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_claude_turn(
+    deps: &AssistantDeps,
+    session: &AssistantSession,
+    connection: &ProviderConnection,
+    run_id: &str,
+    cli_session_id: &str,
+    is_new_session: bool,
+    mcp_config_path: &PathBuf,
+    cancel_token: &CancellationToken,
+    trigger: &crate::assistant::types::RunTrigger,
+    assistant_slot: &mut Option<AssistantMessage>,
+) -> Result<Option<RunUsage>, LocalAgentRunError> {
+    let prompt = prepare_prompt(
+        deps,
+        session,
+        run_id,
+        trigger,
+        CliProviderRuntime::ClaudeCode.metadata_source(),
+        CliProviderRuntime::ClaudeCode.display_name(),
+    )
+    .await?;
+    let system_prompt = system_prompt_text(&deps.app, session, trigger).await;
+    let assistant_message = ensure_assistant_message_slot(
+        deps,
+        session,
+        run_id,
+        CliProviderRuntime::ClaudeCode.metadata_source(),
+        assistant_slot,
+    )
+    .await?;
 
     let binary = connection
         .base_url
@@ -660,6 +716,7 @@ async fn run_codex_turn(
     mcp_token: &str,
     cancel_token: &CancellationToken,
     trigger: &crate::assistant::types::RunTrigger,
+    assistant_slot: &mut Option<AssistantMessage>,
 ) -> Result<Option<RunUsage>, LocalAgentRunError> {
     let prompt = prepare_prompt(
         deps,
@@ -674,28 +731,14 @@ async fn run_codex_turn(
     let prompt = codex_turn_prompt(&system_prompt, &prompt);
     let existing_thread_id = session.context.cli_session_id.clone();
 
-    let assistant_message = repository::create_message(
-        &deps.pool,
-        CreateMessageParams {
-            session_id: session.id.clone(),
-            role: MessageRole::Assistant,
-            content: vec![ContentPart::Text {
-                text: String::new(),
-            }],
-            provider_metadata: Some(serde_json::json!({
-                "source": CliProviderRuntime::Codex.metadata_source(),
-            })),
-        },
+    let assistant_message = ensure_assistant_message_slot(
+        deps,
+        session,
+        run_id,
+        CliProviderRuntime::Codex.metadata_source(),
+        assistant_slot,
     )
     .await?;
-    let _ = emit_event(
-        &deps.app,
-        session,
-        Some(run_id),
-        AssistantUiEvent::MessageCreated {
-            message: assistant_message.clone(),
-        },
-    );
 
     let binary = connection
         .base_url

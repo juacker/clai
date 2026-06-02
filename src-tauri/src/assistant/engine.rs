@@ -980,6 +980,7 @@ pub(crate) fn build_system_prompt(
                     "### Memory in user-driven runs\n\
                      - Do NOT read memory unless the user's request specifically needs historical context.\n\
                      - Focus on the user's latest message. Memory is supporting context, not the starting point.\n\
+                     - If the message seems to assume earlier context you don't have — it references prior decisions, files, or an ongoing task, but you see no conversation history — your session may have been reset (e.g. switching the underlying provider starts a fresh session). Before asking the user to repeat anything, read `.clai/memory/` (start with `index.md`, then `state.md` and any relevant file) to recover the lost context, then continue.\n\
                      - If you discover something worth remembering for future runs, write it to the appropriate memory file.\n\
                      - If the user's request produces a durable finding, consider filing it into knowledge or a checkpoint.\n",
                 );
@@ -1060,6 +1061,28 @@ mod tests {
         assert!(text.contains("### Startup protocol (autonomous runs)"));
         assert!(text.contains("Read `index.md`"));
         assert!(text.contains("Read `state.md`"));
+    }
+
+    #[test]
+    fn build_system_prompt_tells_user_runs_to_recover_lost_context_from_memory() {
+        let context = SessionContext {
+            agent_workspace_id: Some("agent-123".to_string()),
+            execution: ExecutionCapabilityConfig::default(),
+            ..Default::default()
+        };
+
+        let message = build_system_prompt(&context, None, &[], &RunTrigger::UserMessage);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        // A turn whose session was reset (e.g. provider switch) should recover
+        // context from memory rather than asking the user to repeat themselves.
+        assert!(text.contains("### Memory in user-driven runs"));
+        assert!(text.contains("your session may have been reset"));
+        assert!(text.contains("`.clai/memory/`"));
+        assert!(text.contains("Before asking the user to repeat anything"));
     }
 
     #[test]
