@@ -56,6 +56,7 @@ const mountWithPending = (pending: PendingAskUser | null) => {
         toolCalls: [],
         streamingTextByMessageId: {},
         isStreaming: false,
+        runStartedAt: null,
         pendingAskUser: pending,
       },
     },

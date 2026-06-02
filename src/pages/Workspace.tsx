@@ -1129,6 +1129,7 @@ interface ChatFirstLayoutProps {
   isStreaming: boolean;
   runError: string | null;
   runErrorIsLimit: boolean;
+  runStartedAt: number | null;
 }
 
 const ChatFirstLayout = ({
@@ -1140,6 +1141,7 @@ const ChatFirstLayout = ({
   isStreaming,
   runError,
   runErrorIsLimit,
+  runStartedAt,
 }: ChatFirstLayoutProps) => (
   <div className={styles.chatFirstContent}>
     {messages.length > 0 ? (
@@ -1151,6 +1153,7 @@ const ChatFirstLayout = ({
           isStreaming={isStreaming}
           runError={runError}
           runErrorIsLimit={runErrorIsLimit}
+          runStartedAt={runStartedAt}
         />
         <AskUserPanel sessionId={sessionId} />
         <InlineApprovalCard workspaceId={workspaceId} />
@@ -1528,6 +1531,7 @@ const Workspace = () => {
   const toolCalls = sessionState?.toolCalls || snapshot?.toolCalls || [];
   const streamingText = sessionState?.streamingTextByMessageId || {};
   const isStreaming = sessionState?.isStreaming || false;
+  const runStartedAt = sessionState?.runStartedAt ?? null;
   const tasks = snapshot?.tasks || [];
   // The manager session's currently-in-flight run, if any. Drives the
   // header Stop button + hides Run-now while a run is mid-stream.
@@ -1600,6 +1604,7 @@ const Workspace = () => {
             isStreaming={isStreaming}
             runError={runError}
             runErrorIsLimit={runErrorIsLimit}
+            runStartedAt={runStartedAt}
           />
         </div>
 

@@ -10,15 +10,18 @@ vi.mock('../common/VirtualizedList', () => ({
     items,
     renderItem,
     itemKey,
+    footer,
   }: {
     items: T[];
     renderItem: (item: T, index: number) => React.ReactNode;
     itemKey: (item: T) => string;
+    footer?: React.ReactNode;
   }) => (
     <div data-testid="virtual-list">
       {items.map((item, index) => (
         <div key={itemKey(item)}>{renderItem(item, index)}</div>
       ))}
+      {footer}
     </div>
   ),
 }));
@@ -192,5 +195,15 @@ describe('ChatMessageList', () => {
     expect(screen.getByText('Bash')).toBeInTheDocument();
     expect(screen.getByText('npm run build')).toBeInTheDocument();
     expect(screen.getByText('exit 0')).toBeInTheDocument();
+  });
+
+  it('shows an elapsed timer in the running footer', () => {
+    const messages: AssistantMessage[] = [
+      msg({ id: 'm1', role: 'assistant', content: [{ type: 'text', text: 'working…' }] }),
+    ];
+    render(<ChatMessageList messages={messages} isStreaming runStartedAt={Date.now() - 8000} />);
+    // An m:ss timer (~0:08), and no token count.
+    expect(screen.getByText(/^0:0\d$/)).toBeInTheDocument();
+    expect(screen.queryByText(/tokens/)).toBeNull();
   });
 });

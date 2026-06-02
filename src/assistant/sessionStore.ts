@@ -35,6 +35,9 @@ export interface SessionState {
   streamingTextByMessageId: Record<string, string>;
   /** True while a run is queued/running/waiting_for_tool. Drives the chat activity indicator. */
   isStreaming: boolean;
+  /** Epoch ms (client clock) when the current run started running, for the
+   * running indicator's elapsed-time readout. Null when no run is active. */
+  runStartedAt: number | null;
   /** Non-null while the agent is blocked on an ask_user question. */
   pendingAskUser: PendingAskUser | null;
 }
@@ -72,6 +75,7 @@ const createInitialSessionState = (session: AssistantSession): SessionState => (
   toolCalls: [],
   streamingTextByMessageId: {},
   isStreaming: false,
+  runStartedAt: null,
   pendingAskUser: null,
 });
 
@@ -174,8 +178,15 @@ const useAssistantStore = create<AssistantStoreState>()(
           if ((TERMINAL_STATUSES as readonly string[]).includes(run.status)) {
             s.isStreaming = false;
             s.streamingTextByMessageId = {};
+            s.runStartedAt = null;
           } else if ((ACTIVE_STATUSES as readonly string[]).includes(run.status)) {
             s.isStreaming = true;
+            // Stamp the start the first time this run is seen running, so the
+            // elapsed timer measures from the real run start (a fresh run
+            // cleared runStartedAt on the previous terminal transition).
+            if (run.status === 'running' && s.runStartedAt == null) {
+              s.runStartedAt = Date.now();
+            }
           }
         }),
 
@@ -221,6 +232,9 @@ const useAssistantStore = create<AssistantStoreState>()(
             // user is watching arrive, making text flicker on and off.
             streamingTextByMessageId: existing?.streamingTextByMessageId || {},
             isStreaming: existing?.isStreaming || false,
+            // Run start is FE-only live state the BE snapshot doesn't carry;
+            // preserve it so a poll tick mid-run doesn't reset the elapsed timer.
+            runStartedAt: existing?.runStartedAt ?? null,
             // Same rationale for the pending ask_user request: it's
             // FE-only state that the BE snapshot doesn't carry, so a
             // poll tick landing while a question is open would unmount

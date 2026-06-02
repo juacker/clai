@@ -5,7 +5,7 @@
  * Handles markdown rendering, tool call display, and auto-scrolling.
  */
 
-import React, { useState, useCallback, useMemo, memo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, memo } from 'react';
 import MarkdownMessage from '../Chat/MarkdownMessage';
 import StreamingMarkdown from '../Chat/StreamingMarkdown';
 import VirtualizedList from '../common/VirtualizedList';
@@ -319,6 +319,38 @@ const formatParams = (params: unknown): string | null => {
   return JSON.stringify(params, null, 2);
 };
 
+const formatElapsed = (ms: number): string => {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+};
+
+/**
+ * RunningIndicator — the in-flight footer (left-aligned): the Clai mark on a
+ * steady constant-speed spin, plus an elapsed timer so it's clear the run is
+ * progressing. The timer always advances (even before any output) so it never
+ * looks frozen.
+ */
+const RunningIndicator = memo(({ runStartedAt }: { runStartedAt?: number | null }) => {
+  // Tick once a second to advance the elapsed readout. The footer only mounts
+  // while streaming, so the interval is short-lived.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const elapsed = runStartedAt != null ? formatElapsed(now - runStartedAt) : null;
+
+  return (
+    <div className={styles.runningIndicator}>
+      <img src="/icon.svg" alt="Clai" className={styles.runningIcon} />
+      {elapsed && <span className={styles.runningMeta}>{elapsed}</span>}
+    </div>
+  );
+});
+RunningIndicator.displayName = 'RunningIndicator';
+
 /**
  * ChatMessageList - Renders a list of assistant messages with markdown and tool calls
  */
@@ -334,6 +366,9 @@ interface ChatMessageListProps {
   // usage/rate limits, which resolve on their own at a stated reset time.
   runError?: string | null;
   runErrorIsLimit?: boolean;
+  // Epoch ms when the in-flight run started, for the running indicator's
+  // elapsed-time readout.
+  runStartedAt?: number | null;
 }
 
 const ChatMessageList = ({
@@ -348,6 +383,7 @@ const ChatMessageList = ({
   userLabel = 'You',
   runError = null,
   runErrorIsLimit = false,
+  runStartedAt = null,
 }: ChatMessageListProps) => {
   const [isNearBottom, setIsNearBottom] = useState(true);
 
@@ -411,13 +447,7 @@ const ChatMessageList = ({
   // show the failure (if any) attached to the turn it belongs to. These are
   // mutually exclusive — a failed run is no longer streaming.
   const footer = isStreaming ? (
-    <div className={styles.runningIndicator}>
-      <img
-        src="/icon.svg"
-        alt="Clai"
-        className={styles.runningIcon}
-      />
-    </div>
+    <RunningIndicator runStartedAt={runStartedAt} />
   ) : runError ? (
     <div
       className={runErrorIsLimit ? styles.runLimitBanner : styles.runErrorBanner}

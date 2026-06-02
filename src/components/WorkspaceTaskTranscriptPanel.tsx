@@ -153,6 +153,7 @@ export default function WorkspaceTaskTranscriptPanel({
               toolCalls={toolCalls}
               streamingText={streamingText}
               isStreaming={isStreaming}
+              runStartedAt={sessionState?.runStartedAt ?? null}
               userLabel="Main agent"
             />
           </div>
