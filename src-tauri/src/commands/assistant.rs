@@ -351,6 +351,35 @@ pub async fn assistant_send_message(
     })
 }
 
+/// Delete a user message that is still waiting in the queue (written while
+/// a run was active, not yet picked up). Atomic against delivery: if a run
+/// grabbed it in the meantime, this errors and the message stays. Emits
+/// `MessageDeleted` on success so every open view drops it.
+#[tauri::command]
+pub async fn assistant_delete_queued_message(
+    session_id: String,
+    message_id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let (target_pool, session) = session_pool(state.inner(), &session_id).await?;
+    let deleted =
+        repository::delete_pending_queued_message(&target_pool, &session.id, &message_id).await?;
+    if !deleted {
+        return Err(
+            "This message was already picked up by the agent and can no longer be removed."
+                .to_string(),
+        );
+    }
+    emit_event(
+        &app,
+        &session,
+        None,
+        AssistantUiEvent::MessageDeleted { message_id },
+    )?;
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssistantSubmitUserInputRequest {
@@ -568,6 +597,17 @@ pub(crate) async fn start_queued_followup_if_idle(
             repository::update_run_status(&pool, &run.id, RunStatus::Failed, Some(&error)).await;
         return Err(error);
     }
+
+    // The pending messages now belong to this follow-up run — clear their
+    // "Queued" chips in the FE.
+    let _ = emit_event(
+        &app,
+        &session,
+        Some(&run.id),
+        AssistantUiEvent::QueuedMessagesDelivered {
+            message_ids: message_ids.clone(),
+        },
+    );
 
     emit_event(
         &app,

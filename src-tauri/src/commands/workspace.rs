@@ -198,6 +198,12 @@ pub struct WorkspaceSnapshot {
     /// the artifacts panel keys its tree refresh on this. 0 when empty.
     #[serde(default)]
     pub artifact_latest_modified_at: i64,
+    /// Ids of user messages still pending in the queue (written while a
+    /// run was active, not yet picked up). The chat renders these with a
+    /// "Queued" chip + remove affordance; live updates flow through the
+    /// `QueuedMessagesDelivered` / `MessageDeleted` events.
+    #[serde(default)]
+    pub queued_message_ids: Vec<String>,
     // Agent schedule info (only for agent workspaces)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
@@ -1527,6 +1533,13 @@ pub async fn workspace_get_snapshot(
     } else {
         (Vec::new(), Vec::new(), Vec::new())
     };
+    // Cheap single-table query, so it rides along even on lightweight polls —
+    // the "Queued" chips stay accurate without the full session payload.
+    let queued_message_ids = if let Some(session) = &session {
+        repository::list_pending_queued_message_ids(&workspace_pool, &session.id).await?
+    } else {
+        Vec::new()
+    };
 
     // Memories are still returned in full (their panel renders the flat list);
     // artifacts are no longer walked here — the panel lazy-loads each directory
@@ -1607,6 +1620,7 @@ pub async fn workspace_get_snapshot(
         artifacts,
         artifact_count,
         artifact_latest_modified_at,
+        queued_message_ids,
         enabled,
         schedule_enabled,
         schedule_paused,

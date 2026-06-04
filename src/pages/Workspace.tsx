@@ -1137,6 +1137,8 @@ interface ChatFirstLayoutProps {
   runError: string | null;
   runErrorIsLimit: boolean;
   runStartedAt: number | null;
+  queuedMessageIds: string[];
+  onDeleteQueuedMessage: (messageId: string) => void;
 }
 
 const ChatFirstLayout = ({
@@ -1149,6 +1151,8 @@ const ChatFirstLayout = ({
   runError,
   runErrorIsLimit,
   runStartedAt,
+  queuedMessageIds,
+  onDeleteQueuedMessage,
 }: ChatFirstLayoutProps) => (
   <div className={styles.chatFirstContent}>
     {messages.length > 0 ? (
@@ -1166,6 +1170,8 @@ const ChatFirstLayout = ({
           runError={runError}
           runErrorIsLimit={runErrorIsLimit}
           runStartedAt={runStartedAt}
+          queuedMessageIds={queuedMessageIds}
+          onDeleteQueuedMessage={onDeleteQueuedMessage}
         />
         <AskUserPanel sessionId={sessionId} />
         <InlineApprovalCard workspaceId={workspaceId} />
@@ -1367,7 +1373,8 @@ const Workspace = () => {
               nextSnapshot.session,
               messages,
               runs,
-              toolCalls
+              toolCalls,
+              nextSnapshot.queuedMessageIds || []
             );
             lastLoadedSessionUpdatedAtRef.current = nextSnapshot.session.updatedAt || null;
           }
@@ -1544,6 +1551,21 @@ const Workspace = () => {
   const streamingText = sessionState?.streamingTextByMessageId || {};
   const isStreaming = sessionState?.isStreaming || false;
   const runStartedAt = sessionState?.runStartedAt ?? null;
+  // Store is the live source once the session is hydrated; the snapshot
+  // covers the first render before hydration.
+  const queuedMessageIds = sessionState?.queuedMessageIds ?? snapshot?.queuedMessageIds ?? [];
+  const handleDeleteQueuedMessage = useCallback(
+    (messageId: string) => {
+      if (!sessionId) return;
+      // MessageDeleted from the backend removes it from the store; on a
+      // lost race ("already picked up") the chip clears via
+      // queued_messages_delivered instead, so both outcomes self-resolve.
+      assistantClient.deleteQueuedMessage(sessionId, messageId).catch((err) => {
+        console.error('[Workspace] Failed to delete queued message:', err);
+      });
+    },
+    [sessionId]
+  );
   const tasks = snapshot?.tasks || [];
   // The manager session's currently-in-flight run, if any. Drives the
   // header Stop button + hides Run-now while a run is mid-stream.
@@ -1629,6 +1651,8 @@ const Workspace = () => {
             runError={runError}
             runErrorIsLimit={runErrorIsLimit}
             runStartedAt={runStartedAt}
+            queuedMessageIds={queuedMessageIds}
+            onDeleteQueuedMessage={handleDeleteQueuedMessage}
           />
         </div>
 

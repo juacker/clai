@@ -191,6 +191,50 @@
   contain: layout paint style;
 }
 
+/* Queued: written while a run was active, not yet picked up. Dashed edge +
+   slight fade so it reads as "not part of the conversation yet". */
+.userMessageQueued {
+  border-style: dashed;
+  border-left-style: solid;
+  opacity: 0.75;
+}
+
+.queuedChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  border: 1px dashed var(--color-accent-alpha-15);
+  background: var(--color-accent-alpha-08);
+}
+
+.queuedRemove {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.queuedRemove:hover {
+  background: var(--color-overlay-08, rgba(0, 0, 0, 0.06));
+  color: var(--color-critical);
+}
+
 /* Agent Query Message - when agent initiates a query with [@clai] */
 .agentQueryMessage {
   padding: 14px 16px;

@@ -40,6 +40,10 @@ export interface SessionState {
   runStartedAt: number | null;
   /** Non-null while the agent is blocked on an ask_user question. */
   pendingAskUser: PendingAskUser | null;
+  /** Ids of user messages still waiting in the queue (written while a run
+   *  was active, not yet picked up). Rendered with a "Queued" chip; cleared
+   *  by `queued_messages_delivered` / `message_deleted` events. */
+  queuedMessageIds: string[];
 }
 
 export interface AssistantStoreState {
@@ -52,6 +56,8 @@ export interface AssistantStoreState {
   initSession: (session: AssistantSession & { tabId?: string | null }) => void;
   addMessage: (sessionId: string, message: AssistantMessage) => void;
   removeMessage: (sessionId: string, messageId: string) => void;
+  markMessageQueued: (sessionId: string, messageId: string) => void;
+  markQueuedMessagesDelivered: (sessionId: string, messageIds: string[]) => void;
   appendDelta: (sessionId: string, messageId: string, text: string) => void;
   completeMessage: (sessionId: string, message: AssistantMessage) => void;
   updateMessageContent: (sessionId: string, message: AssistantMessage) => void;
@@ -65,6 +71,7 @@ export interface AssistantStoreState {
     messages: AssistantMessage[],
     runs?: AssistantRun[],
     toolCalls?: ToolInvocation[],
+    queuedMessageIds?: string[],
   ) => void;
   removeSession: (sessionId: string) => void;
 }
@@ -78,6 +85,7 @@ const createInitialSessionState = (session: AssistantSession): SessionState => (
   isStreaming: false,
   runStartedAt: null,
   pendingAskUser: null,
+  queuedMessageIds: [],
 });
 
 const TERMINAL_STATUSES = ['completed', 'completed_with_warnings', 'failed', 'cancelled'] as const;
@@ -127,7 +135,25 @@ const useAssistantStore = create<AssistantStoreState>()(
           const s = state.sessions[sessionId];
           if (!s) return;
           s.messages = s.messages.filter((m) => m.id !== messageId);
+          s.queuedMessageIds = s.queuedMessageIds.filter((id) => id !== messageId);
           delete s.streamingTextByMessageId[messageId];
+        }),
+
+      markMessageQueued: (sessionId, messageId) =>
+        set((state) => {
+          const s = state.sessions[sessionId];
+          if (!s) return;
+          if (!s.queuedMessageIds.includes(messageId)) {
+            s.queuedMessageIds.push(messageId);
+          }
+        }),
+
+      markQueuedMessagesDelivered: (sessionId, messageIds) =>
+        set((state) => {
+          const s = state.sessions[sessionId];
+          if (!s) return;
+          const delivered = new Set(messageIds);
+          s.queuedMessageIds = s.queuedMessageIds.filter((id) => !delivered.has(id));
         }),
 
       appendDelta: (sessionId, messageId, text) =>
@@ -231,7 +257,7 @@ const useAssistantStore = create<AssistantStoreState>()(
           }
         }),
 
-      loadSessionData: (sessionId, session, messages, runs = [], toolCalls = []) =>
+      loadSessionData: (sessionId, session, messages, runs = [], toolCalls = [], queuedMessageIds) =>
         set((state) => {
           const existing = state.sessions[sessionId];
           state.sessions[sessionId] = {
@@ -239,6 +265,10 @@ const useAssistantStore = create<AssistantStoreState>()(
             messages,
             runs,
             toolCalls,
+            // Snapshot-sourced when provided; otherwise preserve the live
+            // event-driven set so a hydration that didn't fetch queue state
+            // doesn't wipe the chips.
+            queuedMessageIds: queuedMessageIds ?? existing?.queuedMessageIds ?? [],
             // Preserve in-flight streaming state across snapshot refreshes.
             // The DB only persists assistant text at end-of-run, so a poll
             // tick that lands mid-stream would otherwise wipe the deltas the

@@ -369,6 +369,12 @@ interface ChatMessageListProps {
   // Epoch ms when the in-flight run started, for the running indicator's
   // elapsed-time readout.
   runStartedAt?: number | null;
+  // Ids of user messages still waiting in the queue (written while a run
+  // was active, not yet picked up). Rendered with a "Queued" chip.
+  queuedMessageIds?: string[];
+  // Remove a still-queued message before any run picks it up. Omit to
+  // hide the remove affordance (e.g. read-only transcript views).
+  onDeleteQueuedMessage?: (messageId: string) => void;
 }
 
 const ChatMessageList = ({
@@ -384,6 +390,8 @@ const ChatMessageList = ({
   runError = null,
   runErrorIsLimit = false,
   runStartedAt = null,
+  queuedMessageIds,
+  onDeleteQueuedMessage,
 }: ChatMessageListProps) => {
   // Build a Map of toolCalls keyed by id once per render, so every
   // tool_use part lookup is O(1) instead of an Array.find walk. Memoized
@@ -435,6 +443,13 @@ const ChatMessageList = ({
       : `message:${item.message.id}`
   ), []);
 
+  // Set lookup for the queued chip; stable reference while the id list
+  // doesn't change so memoized MessageBlocks don't re-render.
+  const queuedIdSet = useMemo(
+    () => new Set(queuedMessageIds ?? []),
+    [queuedMessageIds],
+  );
+
   const renderItem = useCallback((item: RenderItem, idx: number) => (
     item.type === 'tool-group' ? (
       <MergedToolGroup
@@ -449,9 +464,11 @@ const ChatMessageList = ({
         toolCallsById={toolCallsById}
         userLabel={userLabel}
         isContinuation={continuationFlags[idx]}
+        isQueued={queuedIdSet.has(item.message.id)}
+        onDeleteQueued={onDeleteQueuedMessage}
       />
     )
-  ), [continuationFlags, streamingText, toolCallsById, userLabel]);
+  ), [continuationFlags, streamingText, toolCallsById, userLabel, queuedIdSet, onDeleteQueuedMessage]);
 
   // Footer rendered inside the scroll area, right after the last message.
   // While a run is in flight we show the activity indicator; once it ends we
@@ -505,10 +522,20 @@ interface MessageBlockProps {
   toolCallsById: Map<string, ToolInvocation>;
   userLabel?: string;
   isContinuation?: boolean;
+  isQueued?: boolean;
+  onDeleteQueued?: (messageId: string) => void;
 }
 
 const MessageBlock = memo(
-  ({ message, streamingText, toolCallsById, userLabel = 'You', isContinuation = false }: MessageBlockProps) => {
+  ({
+    message,
+    streamingText,
+    toolCallsById,
+    userLabel = 'You',
+    isContinuation = false,
+    isQueued = false,
+    onDeleteQueued,
+  }: MessageBlockProps) => {
   const { role, createdAt } = message;
 
   if (role === 'user') {
@@ -521,10 +548,26 @@ const MessageBlock = memo(
     }
 
     return (
-      <div className={styles.userMessage}>
+      <div className={`${styles.userMessage} ${isQueued ? styles.userMessageQueued : ''}`}>
         <div className={styles.messageHeader}>
           <span className={styles.messageRoleText}>{userLabel}</span>
           {createdAt && <span className={styles.messageTimestamp}>{formatTimestamp(createdAt)}</span>}
+          {isQueued && (
+            <span className={styles.queuedChip} title="Waiting for the agent to pick this up">
+              Queued
+            </span>
+          )}
+          {isQueued && onDeleteQueued && (
+            <button
+              type="button"
+              className={styles.queuedRemove}
+              onClick={() => onDeleteQueued(message.id)}
+              title="Remove before it's picked up"
+              aria-label="Remove queued message"
+            >
+              ×
+            </button>
+          )}
         </div>
         <div className={styles.messageContent}>
           <MarkdownMessage content={textContent} />

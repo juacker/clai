@@ -284,6 +284,18 @@ pub async fn run_session_turn(
             fail_run(deps, &session, &run_id, usage.as_ref(), &e).await?;
             return Err(AssistantEngineError::Persistence(e));
         }
+        if !queued_message_ids_in_request.is_empty() {
+            // The queued messages just became part of this run's request —
+            // tell the FE so their "Queued" chips clear.
+            let _ = emit_event(
+                &deps.app,
+                &session,
+                Some(&run_id),
+                AssistantUiEvent::QueuedMessagesDelivered {
+                    message_ids: queued_message_ids_in_request.clone(),
+                },
+            );
+        }
 
         // Create assistant message placeholder
         let assistant_message = repository::create_message(

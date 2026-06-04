@@ -49,6 +49,15 @@ export async function sendMessage(
   return invoke('assistant_send_message', { sessionId, message, connectionId });
 }
 
+/**
+ * Delete a user message that is still waiting in the queue (not yet picked
+ * up by a run). Errors if a run grabbed it in the meantime. The backend
+ * emits MessageDeleted, which removes it from the store.
+ */
+export async function deleteQueuedMessage(sessionId: string, messageId: string): Promise<void> {
+  return invoke('assistant_delete_queued_message', { sessionId, messageId });
+}
+
 export async function listRuns(sessionId: string): Promise<AssistantRun[]> {
   return invoke('assistant_list_runs', { sessionId });
 }

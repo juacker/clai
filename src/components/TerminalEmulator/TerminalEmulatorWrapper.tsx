@@ -135,6 +135,11 @@ const TerminalEmulatorWrapper = () => {
 
           const result = await assistantClient.sendMessage(binding.session.id, query, connectionId);
           store.addMessage(binding.session.id, result.message);
+          if (result.queued) {
+            // Sent while a run was active — show the "Queued" chip until a
+            // run picks it up (queued_messages_delivered clears it).
+            store.markMessageQueued(binding.session.id, result.message.id);
+          }
           return {};
         } catch (err) {
           console.error('[TerminalEmulatorWrapper] Workspace assistant error:', err);
@@ -165,6 +170,9 @@ const TerminalEmulatorWrapper = () => {
         const result = await assistantClient.sendMessage(sessionId, query, connectionId);
         const store = useAssistantStore.getState();
         store.addMessage(sessionId, result.message);
+        if (result.queued) {
+          store.markMessageQueued(sessionId, result.message.id);
+        }
         return {};
       } catch (err) {
         console.error('[TerminalEmulatorWrapper] Assistant error:', err);

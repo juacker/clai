@@ -57,6 +57,7 @@ const mountWithPending = (pending: PendingAskUser | null) => {
         isStreaming: false,
         runStartedAt: null,
         pendingAskUser: pending,
+        queuedMessageIds: [],
       },
     },
     activeSessionByTab: {},

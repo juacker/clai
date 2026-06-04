@@ -294,6 +294,50 @@ pub async fn delete_message(pool: &DbPool, message_id: &str) -> Result<(), Strin
     Ok(())
 }
 
+/// Delete a message that is still *pending* in the queue — i.e. the user
+/// wrote it while a run was active and no run has picked it up yet.
+/// Returns `false` (without touching anything) when the message has
+/// already been delivered or was never queued: the queue-row delete is
+/// conditioned on `status = 'pending'`, so the check-and-remove is one
+/// atomic statement and can't race a concurrent delivery.
+pub async fn delete_pending_queued_message(
+    pool: &DbPool,
+    session_id: &str,
+    message_id: &str,
+) -> Result<bool, String> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("Failed to start queued message delete transaction: {}", e))?;
+
+    let removed = sqlx::query(
+        r#"
+        DELETE FROM assistant_message_queue
+        WHERE message_id = ? AND session_id = ? AND status = 'pending'
+        "#,
+    )
+    .bind(message_id)
+    .bind(session_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| format!("Failed to delete queued assistant message: {}", e))?;
+
+    if removed.rows_affected() == 0 {
+        return Ok(false);
+    }
+
+    sqlx::query("DELETE FROM assistant_messages WHERE id = ?")
+        .bind(message_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("Failed to delete assistant message: {}", e))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("Failed to commit queued message delete transaction: {}", e))?;
+    Ok(true)
+}
+
 pub async fn create_message(
     pool: &DbPool,
     params: CreateMessageParams,
@@ -1007,5 +1051,62 @@ mod tests {
 
         // Deleting an unknown id is a no-op, not an error.
         delete_message(&pool, "missing").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_pending_queued_message_only_removes_pending() {
+        let (_tmp, pool) = create_test_pool().await;
+        insert_session(&pool, "s1").await;
+
+        // Pending → deleted, returns true.
+        let pending = create_user_message(
+            &pool,
+            "s1".to_string(),
+            "queued".to_string(),
+            Some("conn-1"),
+        )
+        .await
+        .unwrap();
+        assert!(delete_pending_queued_message(&pool, "s1", &pending.id)
+            .await
+            .unwrap());
+        assert!(get_message(&pool, &pending.id).await.unwrap().is_none());
+        assert_eq!(queue_rows_for(&pool, &pending.id).await, 0);
+
+        // Already delivered → untouched, returns false.
+        let delivered =
+            create_user_message(&pool, "s1".to_string(), "taken".to_string(), Some("conn-1"))
+                .await
+                .unwrap();
+        sqlx::query("UPDATE assistant_message_queue SET status = 'delivered' WHERE message_id = ?")
+            .bind(&delivered.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(!delete_pending_queued_message(&pool, "s1", &delivered.id)
+            .await
+            .unwrap());
+        assert!(get_message(&pool, &delivered.id).await.unwrap().is_some());
+
+        // Wrong session → untouched, returns false.
+        let other =
+            create_user_message(&pool, "s1".to_string(), "mine".to_string(), Some("conn-1"))
+                .await
+                .unwrap();
+        assert!(
+            !delete_pending_queued_message(&pool, "other-session", &other.id)
+                .await
+                .unwrap()
+        );
+        assert!(get_message(&pool, &other.id).await.unwrap().is_some());
+
+        // Never queued → untouched, returns false.
+        let direct = create_user_message(&pool, "s1".to_string(), "direct".to_string(), None)
+            .await
+            .unwrap();
+        assert!(!delete_pending_queued_message(&pool, "s1", &direct.id)
+            .await
+            .unwrap());
+        assert!(get_message(&pool, &direct.id).await.unwrap().is_some());
     }
 }

@@ -36,9 +36,15 @@ const handleEvent = (envelope: AssistantEventEnvelope): void => {
 
     case 'message_deleted':
       // A user message whose run failed before the provider produced
-      // anything (or its empty assistant placeholder) was retracted by
-      // the backend — drop it so it doesn't linger unanswered.
+      // anything (or its empty assistant placeholder), or a queued
+      // message the user removed before pickup — drop it so it doesn't
+      // linger unanswered.
       store.removeMessage(sessionId, event.payload.message_id);
+      break;
+
+    case 'queued_messages_delivered':
+      // The queued messages were handed to a run — clear their chips.
+      store.markQueuedMessagesDelivered(sessionId, event.payload.message_ids);
       break;
 
     case 'run_queued':
