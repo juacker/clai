@@ -2199,6 +2199,10 @@ pub struct WorkspaceListEntry {
     // this session — the scheduler is only populated at startup).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_run_in_seconds: Option<u64>,
+    /// A run completed in this workspace after the user last opened it —
+    /// the rail renders an "unread" dot until `workspace_mark_opened`
+    /// clears it.
+    pub unread: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -2345,6 +2349,10 @@ pub async fn workspace_clone_config(
         title: format!("{} (Copy)", source_config.title),
         created_at: now,
         updated_at: now,
+        // A fresh clone has no runs — don't inherit the source's
+        // unread/seen state.
+        last_run_completed_at: 0,
+        last_opened_at: 0,
         default_agent_id,
         schedule,
         agents,
@@ -2452,6 +2460,8 @@ pub async fn workspace_list(state: State<'_, AppState>) -> Result<Vec<WorkspaceL
             schedule_paused,
             schedule_kind,
             next_run_in_seconds,
+            unread: locator.last_run_completed_at > 0
+                && locator.last_run_completed_at > locator.last_opened_at,
             created_at: load_workspace_config_for_id(state.inner(), &locator.id)
                 .map(|(_, config)| config.created_at)
                 .unwrap_or_default(),
@@ -2709,6 +2719,23 @@ pub async fn workspace_set_title(
     let (root, mut config) = load_workspace_config_for_id(state.inner(), &workspace_id)?;
     config.title = trimmed.to_string();
     config.updated_at = now_millis();
+    save_workspace_config_for_root(state.inner(), &root, &config)?;
+
+    Ok(())
+}
+
+/// Record that the user opened (is viewing) a workspace, clearing its
+/// "unread" indicator in the rail. Touches only `last_opened_at` — NOT
+/// `updated_at` — so looking at a workspace never reorders the
+/// recency-sorted list.
+#[tauri::command]
+pub async fn workspace_mark_opened(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let workspace_id = resolve_workspace_id(state.inner(), Some(workspace_id))?;
+    let (root, mut config) = load_workspace_config_for_id(state.inner(), &workspace_id)?;
+    config.last_opened_at = now_millis();
     save_workspace_config_for_root(state.inner(), &root, &config)?;
 
     Ok(())

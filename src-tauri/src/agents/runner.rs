@@ -334,11 +334,13 @@ async fn run_next_agent(
         }
     }
 
-    // Persist the new next-run wall-clock time so an app restart
-    // resumes the schedule instead of firing immediately. Best-effort:
-    // a write failure here only loses the restart-survival guarantee
+    // Persist the new next-run wall-clock time (so an app restart
+    // resumes the schedule instead of firing immediately) and the
+    // run-completion stamp (so the workspace rail can flag the result
+    // as unread until the user opens the workspace). Best-effort: a
+    // write failure here only loses the restart-survival guarantee
     // for this one workspace until the next successful tick.
-    if let Err(e) = persist_workspace_next_run_at(
+    if let Err(e) = persist_workspace_run_completion(
         state.inner(),
         &agent_config.workspace_id,
         next_run_at_unix_ms,
@@ -346,18 +348,21 @@ async fn run_next_agent(
         tracing::warn!(
             workspace_id = %agent_config.workspace_id,
             error = %e,
-            "Failed to persist next_run_at to workspace config"
+            "Failed to persist run completion to workspace config"
         );
     }
 
     Ok(())
 }
 
-/// Update a workspace's persisted `schedule.next_run_at_unix_ms` and
-/// refresh the in-memory workspace index so subsequent loads see it.
-/// `None` clears the anchor (used by `workspace_set_schedule` when
-/// disabling the schedule); a `Some(unix_ms)` overwrites.
-pub(crate) fn persist_workspace_next_run_at(
+/// Persist a run's completion to the workspace config: the new
+/// `schedule.next_run_at_unix_ms` anchor (`None` parks the schedule) and
+/// `last_run_completed_at`, which the workspace rail compares against
+/// `last_opened_at` to show the "unread" indicator. Refreshes the
+/// in-memory workspace index so subsequent loads see both. Failed runs
+/// stamp completion too — a failure the user hasn't seen is exactly the
+/// kind of activity the unread marker exists for.
+pub(crate) fn persist_workspace_run_completion(
     state: &AppState,
     workspace_id: &str,
     next_run_at_unix_ms: Option<i64>,
@@ -366,11 +371,10 @@ pub(crate) fn persist_workspace_next_run_at(
         .workspace_root(workspace_id)
         .ok_or_else(|| format!("Workspace not found: {}", workspace_id))?;
     let mut config = workspace_config::load(&root).map_err(|e| e.to_string())?;
-    if config.schedule.next_run_at_unix_ms == next_run_at_unix_ms {
-        return Ok(());
-    }
+    let now = chrono::Utc::now().timestamp_millis();
     config.schedule.next_run_at_unix_ms = next_run_at_unix_ms;
-    config.updated_at = chrono::Utc::now().timestamp_millis();
+    config.last_run_completed_at = now;
+    config.updated_at = now;
     workspace_config::save(&root, &config).map_err(|e| e.to_string())?;
     state
         .workspace_index

@@ -218,7 +218,13 @@ export type WorkspaceListEntry = { id: string, kind: string, title: string, agen
  * not scheduled. The Fleet card reads this to render the cadence
  * label (`every 5m` for Interval, `0 9 * * 1-5` for Cron).
  */
-scheduleKind: ScheduleKind | null, nextRunInSeconds: bigint | null, createdAt: bigint, updatedAt: bigint, };
+scheduleKind: ScheduleKind | null, nextRunInSeconds: bigint | null, 
+/**
+ * A run completed in this workspace after the user last opened it —
+ * the rail renders an "unread" dot until `workspace_mark_opened`
+ * clears it.
+ */
+unread: boolean, createdAt: bigint, updatedAt: bigint, };
 
 export type WorkspaceSessionBinding = { session: AssistantSession, providerConnectionId: string | null, };
 

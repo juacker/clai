@@ -178,6 +178,9 @@ const WorkspaceRail = ({
           const scheduleLabel = formatScheduleLabel(ws.scheduleKind);
           const isPaused = !!ws.schedulePaused;
           const attentionCount = pending + num(ws.failedTaskCount) + num(ws.blockedTaskCount);
+          // A run completed since the user last opened this workspace.
+          // Suppressed while selected — the open page is marking it seen.
+          const isUnread = !!ws.unread && !isSelected;
           const initial = (ws.title || '?').trim().charAt(0).toUpperCase() || '?';
           const rowClasses = [styles.row, isSelected ? styles.rowSelected : ''].join(' ');
 
@@ -201,7 +204,11 @@ const WorkspaceRail = ({
               {collapsed ? (
                 <>
                   <span className={styles.collapsedInitial}>{initial}</span>
-                  {attentionCount > 0 && <span className={styles.collapsedBadge} />}
+                  {attentionCount > 0 ? (
+                    <span className={styles.collapsedBadge} />
+                  ) : isUnread ? (
+                    <span className={styles.collapsedUnreadDot} title="New activity" />
+                  ) : null}
                 </>
               ) : (
                 <>
@@ -222,6 +229,14 @@ const WorkspaceRail = ({
                     <span className={styles.attentionBadge} title="Needs attention">
                       {attentionCount}
                     </span>
+                  )}
+
+                  {isUnread && attentionCount === 0 && (
+                    <span
+                      className={styles.unreadDot}
+                      title="New activity since you last opened this workspace"
+                      aria-label="Unread activity"
+                    />
                   )}
 
                   <span className={styles.rowActions}>

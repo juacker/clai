@@ -18,6 +18,7 @@ import {
   acknowledgeWorkspaceTask,
   getWorkspaceSnapshot,
   listWorkspaceDir,
+  markWorkspaceOpened,
   runWorkspaceNow,
   searchWorkspaceArtifacts,
   setWorkspaceSchedulePaused,
@@ -1552,6 +1553,18 @@ const Workspace = () => {
   const runError =
     lastRun?.status === 'failed' ? lastRun.error?.trim() || 'The run failed.' : null;
   const runErrorIsLimit = runError ? isUsageLimitError(runError) : false;
+  // Tell the backend this workspace is being viewed so the rail clears its
+  // "unread" indicator. Keyed on isStreaming too: a run that finishes while
+  // the user is watching re-stamps last_opened_at past the completion, and
+  // the cleanup stamps on leave so everything that was on screen at that
+  // point counts as seen (a run still in flight when they navigate away
+  // will complete *after* this stamp → unread). Best-effort fire-and-forget.
+  useEffect(() => {
+    markWorkspaceOpened(workspaceId).catch(() => {});
+    return () => {
+      markWorkspaceOpened(workspaceId).catch(() => {});
+    };
+  }, [workspaceId, isStreaming]);
   // Clear the "stopping…" lock once the cancelled run leaves the active
   // set. The cancel propagation is async (engine checkpoints), so we
   // can't clear on the cancel call returning.

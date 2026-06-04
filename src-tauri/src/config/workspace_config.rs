@@ -135,6 +135,16 @@ pub struct WorkspaceConfig {
     pub title: String,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Unix ms when the most recent run (scheduled or run-now) completed in
+    /// this workspace. Compared against `last_opened_at` to derive the
+    /// workspace rail's "unread" indicator. 0 = no completion recorded yet.
+    #[serde(default)]
+    pub last_run_completed_at: i64,
+    /// Unix ms when the user last opened (viewed) this workspace in the UI.
+    /// Deliberately separate from `updated_at`: bumping that on every open
+    /// would reorder the rail's recency sort just by looking at a workspace.
+    #[serde(default)]
+    pub last_opened_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_provider_connection_id: Option<String>,
     pub default_agent_id: String,
@@ -189,6 +199,8 @@ impl WorkspaceConfig {
             title,
             created_at: now,
             updated_at: now,
+            last_run_completed_at: 0,
+            last_opened_at: 0,
             preferred_provider_connection_id: None,
             default_agent_id: manager_id.clone(),
             schedule: WorkspaceSchedule::default(),

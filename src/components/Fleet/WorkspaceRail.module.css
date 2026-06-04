@@ -252,6 +252,26 @@
   background: var(--color-warning-dark);
 }
 
+/* Unread: a run completed since the user last opened the workspace.
+   Accent (not warning) so it reads as "news", not "problem". */
+.collapsedUnreadDot {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent-dark);
+}
+
+.unreadDot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent-dark);
+}
+
 /* Text block — vertically centered so a title-only (non-scheduled) row
    sits centered in the same height as a two-line scheduled row. */
 .rowBody {

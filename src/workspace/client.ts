@@ -181,3 +181,12 @@ export async function setWorkspaceSchedulePaused(
 export async function setWorkspaceTitle(workspaceId: string, title: string): Promise<void> {
   return invoke('workspace_set_title', { workspaceId, title });
 }
+
+/**
+ * Record that the user opened (is viewing) a workspace, clearing the rail's
+ * "unread" indicator. Does not bump `updatedAt`, so it never reorders the
+ * recency-sorted workspace list.
+ */
+export async function markWorkspaceOpened(workspaceId: string): Promise<void> {
+  return invoke('workspace_mark_opened', { workspaceId });
+}

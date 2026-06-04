@@ -13,6 +13,12 @@ pub struct WorkspaceLocator {
     pub root_path: PathBuf,
     pub title: String,
     pub updated_at: i64,
+    /// Mirrors `WorkspaceConfig::last_run_completed_at` / `last_opened_at`
+    /// so `workspace_list` can derive the rail's "unread" flag without
+    /// re-reading every config.json on each poll. Refreshed via
+    /// `insert_config`.
+    pub last_run_completed_at: i64,
+    pub last_opened_at: i64,
     pub default_agent_id: String,
     pub schedule_enabled: bool,
     pub schedule_paused: bool,
@@ -129,6 +135,8 @@ impl WorkspaceIndex {
                 root_path,
                 title: config.title.clone(),
                 updated_at: config.updated_at,
+                last_run_completed_at: config.last_run_completed_at,
+                last_opened_at: config.last_opened_at,
                 default_agent_id: config.default_agent_id.clone(),
                 schedule_enabled: config.schedule.enabled,
                 schedule_paused: config.schedule.paused,
