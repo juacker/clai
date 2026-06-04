@@ -148,7 +148,11 @@ export default function WorkspaceTaskTranscriptPanel({
         )}
         {sessionId && messages.length > 0 && (
           <div className={styles.transcript}>
+            {/* Keyed by session so switching between task transcripts resets
+                the scroll to the bottom instead of inheriting the previous
+                transcript's position. */}
             <ChatMessageList
+              key={sessionId}
               messages={messages}
               toolCalls={toolCalls}
               streamingText={streamingText}

@@ -120,6 +120,10 @@ interface VirtualizedListProps<T> {
   scrollToBottomSignal?: number | null;
   scrollToBottomBehavior?: ScrollBehavior;
   stickToBottom?: boolean;
+  // When this key changes to a new non-null value (e.g. the id of the user
+  // message that was just sent), scroll to the bottom unconditionally — even
+  // if the user had scrolled up — and resume following new content.
+  forceScrollToBottomKey?: string | number | null;
   onNearBottomChange?: (isNearBottom: boolean) => void;
 }
 
@@ -137,6 +141,7 @@ const VirtualizedListInner = <T,>({
   scrollToBottomSignal = null,
   scrollToBottomBehavior = 'auto',
   stickToBottom = false,
+  forceScrollToBottomKey = null,
   onNearBottomChange,
 }: VirtualizedListProps<T>) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -144,12 +149,17 @@ const VirtualizedListInner = <T,>({
   const rafRef = useRef<number | null>(null);
   const didInitialScrollRef = useRef(false);
   const prevLayoutRef = useRef<LayoutResult | null>(null);
-  // Synchronous mirror of "is the user at/near the bottom", updated on every
-  // scroll. The scrollToBottomSignal effect reads this to decide whether to
+  // Synchronous mirror of "should new content pull the view down", updated on
+  // every scroll. The scroll-to-bottom effects read this to decide whether to
   // follow new content — a new message appended below doesn't fire a scroll
   // or resize event, so this ref still reflects where the user was *before*
   // the update, which is exactly the signal we want.
   const nearBottomRef = useRef(true);
+  // Last seen scrollTop, to tell user "scrolled up" apart from "scrolled
+  // down"; and a flag marking the next scroll event as programmatic (our own
+  // pin/anchor adjustments), so it's never misread as user intent.
+  const lastScrollTopRef = useRef(0);
+  const programmaticScrollRef = useRef(false);
   const [measurementVersion, setMeasurementVersion] = useState(0);
   const [viewport, setViewport] = useState({ scrollTop: 0, height: 0 });
   const [footerHeight, setFooterHeight] = useState(footer ? footerEstimateSize : 0);
@@ -162,9 +172,46 @@ const VirtualizedListInner = <T,>({
       const current = scrollRef.current;
       if (!current) return;
       const top = Math.max(0, current.scrollHeight - current.clientHeight);
+      if (Math.abs(current.scrollTop - top) < 1) return;
+      programmaticScrollRef.current = true;
       current.scrollTo({ top, behavior });
     });
   }, []);
+
+  // Recompute the follow-the-bottom state. Runs synchronously from the scroll
+  // handler (NOT in a rAF) — deferring it a frame lets the stick-to-bottom
+  // effect read a stale "near bottom" and yank the view down right after the
+  // user scrolled up. A user-initiated upward scroll breaks following
+  // immediately, even inside the near-bottom threshold; otherwise fast
+  // streaming re-pins the view faster than the user can escape it. Scrolling
+  // back to within the threshold of the bottom re-engages following.
+  const updateFollowState = useCallback(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+
+    const { scrollTop } = node;
+    const distanceFromBottom = node.scrollHeight - scrollTop - node.clientHeight;
+    const scrolledUp = scrollTop < lastScrollTopRef.current - 1;
+    const scrolledDown = scrollTop > lastScrollTopRef.current + 1;
+    lastScrollTopRef.current = scrollTop;
+    const wasProgrammatic = programmaticScrollRef.current;
+    programmaticScrollRef.current = false;
+
+    let isNearBottom: boolean;
+    if (scrolledUp && !wasProgrammatic) {
+      isNearBottom = false;
+    } else if (scrolledDown || wasProgrammatic) {
+      isNearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
+    } else {
+      // Passive recompute (mount, resize, the rAF viewport resync) — the
+      // position didn't move, so the user's intent didn't change. Re-deriving
+      // from distance here would undo a within-threshold scroll-up one frame
+      // later.
+      isNearBottom = nearBottomRef.current;
+    }
+    nearBottomRef.current = isNearBottom;
+    onNearBottomChange?.(isNearBottom);
+  }, [onNearBottomChange]);
 
   const syncViewport = useCallback(() => {
     const node = scrollRef.current;
@@ -181,19 +228,33 @@ const VirtualizedListInner = <T,>({
         : next
     ));
 
-    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
-    const isNearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
-    nearBottomRef.current = isNearBottom;
-    onNearBottomChange?.(isNearBottom);
-  }, [onNearBottomChange]);
+    updateFollowState();
+  }, [updateFollowState]);
 
   const handleScroll = useCallback(() => {
+    updateFollowState();
     if (rafRef.current) return;
     rafRef.current = window.requestAnimationFrame(() => {
       rafRef.current = null;
       syncViewport();
     });
-  }, [syncViewport]);
+  }, [syncViewport, updateFollowState]);
+
+  // Wheel-up is the earliest possible "I want to read older content" signal —
+  // it fires before the scroll position even changes, so breaking the follow
+  // here closes the race where a streaming commit pins the view between the
+  // user's scroll and its scroll event. Guarded on scrollTop > 0: wheeling up
+  // while already at the top produces no scroll, and must not strand a
+  // fits-in-viewport conversation in the unfollowed state.
+  const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    if (event.deltaY >= 0) return;
+    const node = scrollRef.current;
+    if (!node || node.scrollTop <= 0) return;
+    if (nearBottomRef.current) {
+      nearBottomRef.current = false;
+      onNearBottomChange?.(false);
+    }
+  }, [onNearBottomChange]);
 
   useLayoutEffect(() => {
     syncViewport();
@@ -303,7 +364,11 @@ const VirtualizedListInner = <T,>({
     prevLayoutRef.current = layout;
 
     if (!node) return;
-    if (stickToBottom) return;
+    // Skip only while actively pinned to the bottom (the pin effect below owns
+    // the position there). stickToBottom alone isn't enough: it now stays true
+    // for the whole stream, and a reader who scrolled up mid-stream still
+    // needs their position anchored while items above re-measure.
+    if (stickToBottom && nearBottomRef.current) return;
     if (!prev || prev.positions.length === 0 || layout.positions.length === 0) return;
 
     const currentScrollTop = node.scrollTop;
@@ -328,15 +393,41 @@ const VirtualizedListInner = <T,>({
 
     const delta = newPos.top - anchor.top;
     if (Math.abs(delta) >= 1) {
+      programmaticScrollRef.current = true;
       node.scrollTop = currentScrollTop + delta;
     }
   }, [layout, stickToBottom]);
 
+  // Pin to the bottom while content grows (streaming). Gated on the
+  // synchronous follow ref — not a prop round-tripped through parent state,
+  // which lags a render behind and used to re-pin over the user's upward
+  // scroll. Applied synchronously (not via scrollToBottom's rAF) so a stale
+  // queued frame can never undo a scroll-up that happened in between.
   useLayoutEffect(() => {
-    if (stickToBottom) {
-      scrollToBottom('auto');
-    }
-  }, [layout.totalHeight, scrollToBottom, stickToBottom]);
+    if (!stickToBottom || !nearBottomRef.current) return;
+    const node = scrollRef.current;
+    if (!node) return;
+    const top = Math.max(0, node.scrollHeight - node.clientHeight);
+    if (node.scrollTop >= top - 1) return;
+    programmaticScrollRef.current = true;
+    node.scrollTop = top;
+  }, [layout.totalHeight, stickToBottom]);
+
+  // Unconditional jump to the bottom — the user just sent a message (or an
+  // equivalent "take me to the latest" event keyed by forceScrollToBottomKey).
+  // Also re-engages following so the upcoming response streams into view.
+  const lastForceKeyRef = useRef<string | number | null | undefined>(undefined);
+  useEffect(() => {
+    const prev = lastForceKeyRef.current;
+    lastForceKeyRef.current = forceScrollToBottomKey;
+    if (forceScrollToBottomKey == null) return;
+    // First render: initialScrollToBottom owns the initial position.
+    if (prev === undefined) return;
+    if (prev === forceScrollToBottomKey) return;
+    nearBottomRef.current = true;
+    onNearBottomChange?.(true);
+    scrollToBottom(scrollToBottomBehavior);
+  }, [forceScrollToBottomKey, onNearBottomChange, scrollToBottom, scrollToBottomBehavior]);
 
   const visibleItems: { item: T; index: number; position: Position }[] = [];
   for (let index = layout.start; index <= layout.end; index += 1) {
@@ -347,7 +438,7 @@ const VirtualizedListInner = <T,>({
   }
 
   return (
-    <div ref={scrollRef} className={className} onScroll={handleScroll}>
+    <div ref={scrollRef} className={className} onScroll={handleScroll} onWheel={handleWheel}>
       <div
         style={{
           position: 'relative',

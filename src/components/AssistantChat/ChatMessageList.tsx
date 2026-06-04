@@ -385,8 +385,6 @@ const ChatMessageList = ({
   runErrorIsLimit = false,
   runStartedAt = null,
 }: ChatMessageListProps) => {
-  const [isNearBottom, setIsNearBottom] = useState(true);
-
   // Build a Map of toolCalls keyed by id once per render, so every
   // tool_use part lookup is O(1) instead of an Array.find walk. Memoized
   // on the toolCalls reference so the Map is stable while toolCalls
@@ -398,6 +396,19 @@ const ChatMessageList = ({
   }, [toolCalls]);
 
   const grouped = useMemo(() => groupMessages(messages), [messages]);
+
+  // Id of the last visible message iff it's a user message. Writing a message
+  // is an explicit "show me the latest" — when a new user message lands at the
+  // tail of the conversation, the list jumps to the bottom even if the reader
+  // had scrolled up into history.
+  const lastUserMessageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const msg = messages[i]!;
+      if (isHiddenMessage(msg)) continue;
+      return msg.role === 'user' ? msg.id : null;
+    }
+    return null;
+  }, [messages]);
 
   // An item is an "assistant continuation" when it's an assistant turn
   // (text+tools MessageBlock or a tool-only MergedToolGroup) AND the
@@ -458,10 +469,6 @@ const ChatMessageList = ({
     </div>
   ) : null;
 
-  const handleNearBottomChange = useCallback((isNearBottom: boolean) => {
-    setIsNearBottom((current) => (current === isNearBottom ? current : isNearBottom));
-  }, []);
-
   return (
     <VirtualizedList
       items={grouped}
@@ -483,8 +490,11 @@ const ChatMessageList = ({
       initialScrollToBottom
       scrollToBottomSignal={messages.length}
       scrollToBottomBehavior="auto"
-      stickToBottom={isStreaming && isNearBottom}
-      onNearBottomChange={handleNearBottomChange}
+      // Near-bottom gating now lives inside VirtualizedList on a synchronous
+      // ref — round-tripping it through state here lagged a render behind and
+      // let fast streaming re-pin the view over the user's upward scroll.
+      stickToBottom={isStreaming}
+      forceScrollToBottomKey={lastUserMessageId}
     />
   );
 };

@@ -1146,7 +1146,12 @@ const ChatFirstLayout = ({
   <div className={styles.chatFirstContent}>
     {messages.length > 0 ? (
       <>
+        {/* Keyed by workspace: this component instance is reused across
+            workspace→workspace navigations, so without the key the list
+            carries over the previous workspace's scroll position (and its
+            measured-height cache) instead of opening at the bottom. */}
         <ChatMessageList
+          key={workspaceId}
           messages={messages}
           toolCalls={toolCalls}
           streamingText={streamingText}
