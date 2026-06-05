@@ -62,12 +62,25 @@ export function useAssistantSession(tabId: string) {
         const sessions = await client.listSessions(tabId);
         const matching = sessions.find((s) => sessionMatches(s));
         if (matching) {
-          const [messages, runs, toolCalls] = await Promise.all([
-            client.loadSessionMessages(matching.id),
+          const [messagePage, runs] = await Promise.all([
+            client.loadSessionMessagesPage({
+              sessionId: matching.id,
+              limit: 100,
+              includeAncestors: true,
+            }),
             client.listRuns(matching.id),
-            client.listToolCalls(matching.id),
           ]);
-          store.loadSessionData(matching.id, matching, messages, runs, toolCalls);
+          store.loadSessionData(
+            matching.id,
+            matching,
+            messagePage.messages,
+            runs,
+            messagePage.toolCalls,
+            undefined,
+            messagePage.nextCursor ?? null,
+            messagePage.hasMore,
+            messagePage.totalCount,
+          );
           store.setActiveSessionForTab(tabId, matching.id);
           return matching.id;
         }

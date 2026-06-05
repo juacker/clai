@@ -4,6 +4,7 @@ use tauri::AppHandle;
 use tauri::Manager;
 use thiserror::Error;
 
+use crate::assistant::compaction;
 use crate::assistant::events::{emit_event, AssistantUiEvent};
 use crate::assistant::providers;
 use crate::assistant::providers::types::ProviderError;
@@ -12,9 +13,9 @@ use crate::assistant::repository::{CreateMessageParams, CreateRunParams, CreateT
 use crate::assistant::runtime;
 use crate::assistant::tools::{self, ToolExecutionContext};
 use crate::assistant::types::{
-    AssistantMessage, CompletionRequest, ContentPart, MessageRole, ProviderEvent,
-    ProviderInputMessage, RunId, RunStatus, RunTrigger, RunUsage, SessionId, ToolCallStatus,
-    ToolInvocationDraft,
+    AssistantMessage, CompactionTrigger, CompletionRequest, ContentPart, MessageRole,
+    ProviderEvent, ProviderInputMessage, RunId, RunStatus, RunTrigger, RunUsage, SessionId,
+    ToolCallStatus, ToolInvocationDraft,
 };
 use crate::db::DbPool;
 use crate::AppState;
@@ -213,6 +214,7 @@ pub async fn run_session_turn(
     // Provider-side context-length limits will surface as errors and
     // exit via fail_run; this loop itself imposes no ceiling.
     let mut iteration: usize = 0;
+    let mut retried_after_context_compaction = false;
     loop {
         if input.cancel_token.is_cancelled() {
             cancel_run(deps, &session, &run_id, usage.as_ref(), None).await?;
@@ -225,7 +227,41 @@ pub async fn run_session_turn(
         // assistant turn, and merge consecutive same-role messages. The DB stays
         // the source of truth; this only shapes what the provider sees so a
         // mid-stream hangup or stacked user typing can't poison subsequent runs.
-        let messages = repository::list_messages(&deps.pool, &session.id).await?;
+        let mut messages = repository::list_messages(&deps.pool, &session.id).await?;
+        let current_provider_history =
+            compaction::provider_history_messages(&deps.pool, &session.id, &messages).await?;
+        if compaction::should_auto_compact(&current_provider_history, &tool_defs) {
+            match compaction::compact_session_history(
+                &deps.pool,
+                &session,
+                &connection,
+                CompactionTrigger::Automatic,
+                Some(&run_id),
+                false,
+            )
+            .await
+            {
+                Ok(Some(outcome)) => {
+                    let _ = emit_event(
+                        &deps.app,
+                        &session,
+                        Some(&run_id),
+                        AssistantUiEvent::SessionCompacted {
+                            compaction: outcome.compaction,
+                            summary_message: outcome.summary_message,
+                        },
+                    );
+                    messages = repository::list_messages(&deps.pool, &session.id).await?;
+                }
+                Ok(None) => {}
+                Err(error) => tracing::warn!(
+                    session_id = %session.id,
+                    run_id = %run_id,
+                    error = %error,
+                    "Automatic assistant history compaction failed"
+                ),
+            }
+        }
         let message_ids_in_snapshot: HashSet<&str> =
             messages.iter().map(|message| message.id.as_str()).collect();
         let queued_message_ids_in_request: Vec<String> =
@@ -234,7 +270,9 @@ pub async fn run_session_turn(
                 .into_iter()
                 .filter(|id| message_ids_in_snapshot.contains(id.as_str()))
                 .collect();
-        let normalized = normalize_history_for_provider(&messages);
+        let provider_history =
+            compaction::provider_history_messages(&deps.pool, &session.id, &messages).await?;
+        let normalized = normalize_history_for_provider(&provider_history);
 
         let mut provider_messages = vec![system_message.clone()];
         provider_messages.extend(normalized);
@@ -255,6 +293,45 @@ pub async fn run_session_turn(
         let mut stream = match stream_result {
             Ok(s) => s,
             Err(e) => {
+                if !retried_after_context_compaction
+                    && compaction::is_context_limit_error(&e.to_string())
+                {
+                    retried_after_context_compaction = true;
+                    match compaction::compact_session_history(
+                        &deps.pool,
+                        &session,
+                        &connection,
+                        CompactionTrigger::ErrorRecovery,
+                        Some(&run_id),
+                        true,
+                    )
+                    .await
+                    {
+                        Ok(Some(outcome)) => {
+                            let _ = emit_event(
+                                &deps.app,
+                                &session,
+                                Some(&run_id),
+                                AssistantUiEvent::SessionCompacted {
+                                    compaction: outcome.compaction,
+                                    summary_message: outcome.summary_message,
+                                },
+                            );
+                            continue;
+                        }
+                        Ok(None) => tracing::warn!(
+                            session_id = %session.id,
+                            run_id = %run_id,
+                            "Context-limit recovery found no compactable assistant history"
+                        ),
+                        Err(error) => tracing::warn!(
+                            session_id = %session.id,
+                            run_id = %run_id,
+                            error = %error,
+                            "Context-limit recovery compaction failed"
+                        ),
+                    }
+                }
                 fail_run(deps, &session, &run_id, usage.as_ref(), &e.to_string()).await?;
                 // First iteration: the provider rejected the request outright
                 // (connection/auth/limit), so the user's message never reached

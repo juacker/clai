@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
+use crate::assistant::compaction;
 use crate::assistant::engine::{self, AssistantDeps, RunTurnInput};
 use crate::assistant::events::{emit_event, AssistantUiEvent};
 use crate::assistant::repository;
@@ -8,8 +9,9 @@ use crate::assistant::repository::{CreateRunParams, CreateSessionParams};
 use crate::assistant::runtime;
 use crate::assistant::tools::ask_user::{self, AskUserAnswer};
 use crate::assistant::types::{
-    AssistantMessage, AssistantRun, AssistantSession, RunStatus, RunTrigger, SessionContext,
-    SessionKind, ToolInvocation,
+    AssistantCompaction, AssistantMessage, AssistantMessageCursor, AssistantMessagePage,
+    AssistantRun, AssistantSession, CompactionTrigger, ContentPart, RunStatus, RunTrigger,
+    SessionContext, SessionKind, ToolInvocation,
 };
 use crate::config::workspace_config;
 use crate::db::DbPool;
@@ -24,6 +26,8 @@ pub struct CreateAssistantSessionRequest {
     pub title: Option<String>,
     #[serde(default)]
     pub context: SessionContext,
+    #[serde(default)]
+    pub parent_session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -36,6 +40,15 @@ pub struct AssistantSendMessageResult {
     pub queued: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantCompactionResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compaction: Option<AssistantCompaction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary_message: Option<AssistantMessage>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListToolCallsRequest {
@@ -43,6 +56,21 @@ pub struct ListToolCallsRequest {
     #[serde(default)]
     pub run_id: Option<String>,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadSessionMessagesPageRequest {
+    pub session_id: String,
+    #[serde(default)]
+    pub before: Option<AssistantMessageCursor>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+    #[serde(default)]
+    pub include_ancestors: bool,
+}
+
+const DEFAULT_MESSAGE_PAGE_LIMIT: u32 = 100;
+const MAX_MESSAGE_PAGE_LIMIT: u32 = 500;
 
 async fn session_pool(
     state: &AppState,
@@ -139,6 +167,17 @@ pub async fn assistant_create_session(
     app: AppHandle,
 ) -> Result<AssistantSession, String> {
     let target_pool = pool_for_new_session(state.inner(), &request.context).await?;
+    if let Some(parent_session_id) = request.parent_session_id.as_deref() {
+        if repository::get_session(&target_pool, parent_session_id)
+            .await?
+            .is_none()
+        {
+            return Err(format!(
+                "Parent assistant session not found in this workspace: {}",
+                parent_session_id
+            ));
+        }
+    }
     let session = repository::create_session(
         &target_pool,
         CreateSessionParams {
@@ -148,6 +187,11 @@ pub async fn assistant_create_session(
         },
     )
     .await?;
+
+    if let Some(parent_session_id) = request.parent_session_id.as_deref() {
+        repository::create_session_rotation_link(&target_pool, &session.id, parent_session_id)
+            .await?;
+    }
 
     emit_event(
         &app,
@@ -207,6 +251,129 @@ pub async fn assistant_load_session_messages(
 ) -> Result<Vec<AssistantMessage>, String> {
     let (target_pool, _session) = session_pool(state.inner(), &session_id).await?;
     repository::list_messages(&target_pool, &session_id).await
+}
+
+#[tauri::command]
+pub async fn assistant_load_session_messages_page(
+    request: LoadSessionMessagesPageRequest,
+    state: State<'_, AppState>,
+) -> Result<AssistantMessagePage, String> {
+    let (target_pool, _session) = session_pool(state.inner(), &request.session_id).await?;
+    let limit = request
+        .limit
+        .unwrap_or(DEFAULT_MESSAGE_PAGE_LIMIT)
+        .clamp(1, MAX_MESSAGE_PAGE_LIMIT) as usize;
+    let mut remaining = limit;
+    let mut cursor = request.before;
+    let mut current_session_id = cursor
+        .as_ref()
+        .map(|cursor| cursor.session_id.clone())
+        .unwrap_or_else(|| request.session_id.clone());
+    let mut segments: Vec<Vec<AssistantMessage>> = Vec::new();
+    let mut next_cursor: Option<AssistantMessageCursor> = None;
+    let mut has_more = false;
+
+    while remaining > 0 {
+        let before = cursor
+            .as_ref()
+            .filter(|cursor| cursor.session_id == current_session_id)
+            .map(|cursor| (cursor.created_at, cursor.message_id.as_str()));
+        let mut newest_first = repository::list_messages_before(
+            &target_pool,
+            &current_session_id,
+            before,
+            remaining as i64 + 1,
+        )
+        .await?;
+
+        if newest_first.len() > remaining {
+            newest_first.truncate(remaining);
+            has_more = true;
+        }
+
+        let mut segment = newest_first;
+        segment.reverse();
+        if let Some(oldest) = segment.first() {
+            next_cursor = Some(AssistantMessageCursor {
+                session_id: oldest.session_id.clone(),
+                created_at: oldest.created_at,
+                message_id: oldest.id.clone(),
+            });
+        }
+        remaining = remaining.saturating_sub(segment.len());
+        if !segment.is_empty() {
+            segments.push(segment);
+        }
+
+        if has_more || !request.include_ancestors {
+            break;
+        }
+
+        if remaining == 0 {
+            if repository::parent_session_id(&target_pool, &current_session_id)
+                .await?
+                .is_some()
+            {
+                has_more = true;
+            }
+            break;
+        }
+
+        match repository::parent_session_id(&target_pool, &current_session_id).await? {
+            Some(parent_session_id) => {
+                current_session_id = parent_session_id;
+                cursor = None;
+            }
+            None => {
+                next_cursor = None;
+                break;
+            }
+        }
+    }
+
+    let mut messages = Vec::new();
+    for segment in segments.into_iter().rev() {
+        messages.extend(segment);
+    }
+    if messages.is_empty() || !has_more {
+        next_cursor = None;
+    }
+
+    let mut tool_call_ids: Vec<String> = Vec::new();
+    for message in &messages {
+        for part in &message.content {
+            let tool_call_id = match part {
+                ContentPart::ToolUse { tool_call_id, .. }
+                | ContentPart::ToolResult { tool_call_id, .. } => tool_call_id,
+                _ => continue,
+            };
+            if !tool_call_ids
+                .iter()
+                .any(|existing| existing == tool_call_id)
+            {
+                tool_call_ids.push(tool_call_id.clone());
+            }
+        }
+    }
+    let tool_calls = repository::list_tool_calls_by_ids(&target_pool, &tool_call_ids).await?;
+
+    // Counted from the *requested* session (not the cursor's), so the total
+    // always covers the full conversation regardless of how deep into the
+    // chain pagination has walked.
+    let total_count = repository::count_session_chain_messages(
+        &target_pool,
+        &request.session_id,
+        request.include_ancestors,
+    )
+    .await?;
+
+    Ok(AssistantMessagePage {
+        messages,
+        tool_calls,
+        next_cursor,
+        has_more,
+        total_count,
+    })
 }
 
 #[tauri::command]
@@ -348,6 +515,56 @@ pub async fn assistant_send_message(
         message: assistant_message,
         run: Some(run),
         queued: false,
+    })
+}
+
+#[tauri::command]
+pub async fn assistant_compact_session(
+    session_id: String,
+    connection_id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<AssistantCompactionResult, String> {
+    let (target_pool, mut session) = session_pool(state.inner(), &session_id).await?;
+    let connection = provider_connection(state.inner(), &connection_id)?;
+    if repository::session_has_active_run(&target_pool, &session.id).await? {
+        return Err("Wait for the current assistant run to finish before compacting.".to_string());
+    }
+
+    let outcome = compaction::compact_session_history(
+        &target_pool,
+        &session,
+        &connection,
+        CompactionTrigger::Manual,
+        None,
+        true,
+    )
+    .await?;
+
+    let Some(outcome) = outcome else {
+        return Ok(AssistantCompactionResult {
+            compaction: None,
+            summary_message: None,
+        });
+    };
+
+    if crate::assistant::providers::is_cli_provider(&connection.provider_id) {
+        compaction::reset_cli_session_for_rotation(&target_pool, &mut session).await?;
+    }
+
+    emit_event(
+        &app,
+        &session,
+        None,
+        AssistantUiEvent::SessionCompacted {
+            compaction: outcome.compaction.clone(),
+            summary_message: outcome.summary_message.clone(),
+        },
+    )?;
+
+    Ok(AssistantCompactionResult {
+        compaction: Some(outcome.compaction),
+        summary_message: Some(outcome.summary_message),
     })
 }
 

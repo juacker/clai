@@ -191,11 +191,93 @@ const TerminalEmulatorWrapper = () => {
     ]
   );
 
+  const handleAgentCommand = useCallback(
+    async (command: string): Promise<{ error?: string; message?: string }> => {
+      const [name] = command.trim().split(/\s+/, 1);
+      if (name !== 'compact') {
+        return { error: `Unknown assistant command: /${name || command}` };
+      }
+
+      if (isWorkspaceRoute) {
+        try {
+          const binding = await getOrCreateWorkspaceSession(currentWorkspaceId);
+          const connectionId = binding.providerConnectionId;
+          if (!connectionId) {
+            return {
+              error: 'Add an enabled assistant provider connection before compacting this workspace session.',
+            };
+          }
+          const store = useAssistantStore.getState();
+          store.initSession(binding.session);
+          store.setActiveSessionForTab(`workspace:${currentWorkspaceId}`, binding.session.id);
+          const result = await assistantClient.compactSession(binding.session.id, connectionId);
+          if (result.summaryMessage) {
+            store.addMessage(binding.session.id, result.summaryMessage);
+          }
+          return {
+            message: result.compaction
+              ? result.compaction.strategy === 'session_rotation_summary'
+                ? 'Conversation compacted. The CLI session will rotate on the next prompt.'
+                : 'Conversation compacted.'
+              : 'There is not enough history to compact yet.',
+          };
+        } catch (err) {
+          console.error('[TerminalEmulatorWrapper] Workspace compaction error:', err);
+          return {
+            error: errorMessage(err, 'Compaction failed.'),
+          };
+        }
+      }
+
+      if (!activeTab) {
+        return { error: 'No active tab available.' };
+      }
+
+      const connectionId = await resolveTabConnectionId(activeTab);
+      if (!connectionId) {
+        openChat();
+        return {
+          error: 'Add an enabled assistant provider connection in Settings before compacting.',
+        };
+      }
+
+      try {
+        const mcpServerIds = getEnabledMcpServerIds(activeTab);
+        const sessionId = await ensureSession({ mcpServerIds });
+        const result = await assistantClient.compactSession(sessionId, connectionId);
+        if (result.summaryMessage) {
+          useAssistantStore.getState().addMessage(sessionId, result.summaryMessage);
+        }
+        return {
+          message: result.compaction
+            ? result.compaction.strategy === 'session_rotation_summary'
+              ? 'Conversation compacted. The CLI session will rotate on the next prompt.'
+              : 'Conversation compacted.'
+            : 'There is not enough history to compact yet.',
+        };
+      } catch (err) {
+        console.error('[TerminalEmulatorWrapper] Assistant compaction error:', err);
+        return {
+          error: errorMessage(err, 'Compaction failed.'),
+        };
+      }
+    },
+    [
+      activeTab,
+      currentWorkspaceId,
+      ensureSession,
+      isWorkspaceRoute,
+      openChat,
+      resolveTabConnectionId,
+    ]
+  );
+
   // If no active tab, render terminal without context
   if (!activeTab) {
     return (
       <TerminalEmulator
         onSendToChat={handleSendToAgent}
+        onAgentCommand={handleAgentCommand}
         agentWorking={inputDisabled}
       />
     );
@@ -210,6 +292,7 @@ const TerminalEmulatorWrapper = () => {
     >
       <TerminalEmulator
         onSendToChat={handleSendToAgent}
+        onAgentCommand={handleAgentCommand}
         agentWorking={inputDisabled}
       />
     </TabContextProvider>

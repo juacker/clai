@@ -1,12 +1,13 @@
 use chrono::Utc;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use sqlx::Row;
+use sqlx::{QueryBuilder, Row, Sqlite};
 use uuid::Uuid;
 
 use crate::assistant::types::{
-    AssistantMessage, AssistantRun, AssistantSession, ContentPart, MessageRole, RunNotice,
-    RunStatus, RunTrigger, RunUsage, SessionContext, SessionKind, ToolCallStatus, ToolInvocation,
+    AssistantCompaction, AssistantMessage, AssistantRun, AssistantSession, CompactionStatus,
+    CompactionStrategy, CompactionTrigger, ContentPart, MessageRole, RunNotice, RunStatus,
+    RunTrigger, RunUsage, SessionContext, SessionKind, ToolCallStatus, ToolInvocation,
 };
 use crate::db::DbPool;
 
@@ -41,6 +42,18 @@ pub struct CreateToolCallParams {
     pub tool_name: String,
     pub params: serde_json::Value,
     pub status: ToolCallStatus,
+}
+
+pub struct CreateCompactionParams {
+    pub session_id: String,
+    pub trigger: CompactionTrigger,
+    pub strategy: CompactionStrategy,
+    pub source_from_message_id: Option<String>,
+    pub source_to_message_id: Option<String>,
+    pub created_run_id: Option<String>,
+    pub provider_id: String,
+    pub model_id: String,
+    pub input_message_count: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -121,6 +134,35 @@ fn map_run_row(row: &sqlx::sqlite::SqliteRow) -> Result<AssistantRun, String> {
         error: row.get("error"),
         notices: parse_optional_json::<Vec<RunNotice>>(row.get("notices_json"), "run notices")?
             .unwrap_or_default(),
+    })
+}
+
+fn map_compaction_row(row: &sqlx::sqlite::SqliteRow) -> Result<AssistantCompaction, String> {
+    Ok(AssistantCompaction {
+        id: row.get("id"),
+        session_id: row.get("session_id"),
+        trigger: parse_json::<CompactionTrigger>(
+            &row.get::<String, _>("trigger"),
+            "compaction trigger",
+        )?,
+        strategy: parse_json::<CompactionStrategy>(
+            &row.get::<String, _>("strategy"),
+            "compaction strategy",
+        )?,
+        status: parse_json::<CompactionStatus>(
+            &row.get::<String, _>("status"),
+            "compaction status",
+        )?,
+        source_from_message_id: row.get("source_from_message_id"),
+        source_to_message_id: row.get("source_to_message_id"),
+        summary_message_id: row.get("summary_message_id"),
+        created_run_id: row.get("created_run_id"),
+        provider_id: row.get("provider_id"),
+        model_id: row.get("model_id"),
+        input_message_count: row.get("input_message_count"),
+        created_at: row.get("created_at"),
+        completed_at: row.get("completed_at"),
+        error: row.get("error"),
     })
 }
 
@@ -243,6 +285,129 @@ pub async fn list_messages(
     .map_err(|e| format!("Failed to load assistant messages: {}", e))?;
 
     rows.iter().map(map_message_row).collect()
+}
+
+pub async fn list_messages_before(
+    pool: &DbPool,
+    session_id: &str,
+    before: Option<(i64, &str)>,
+    limit: i64,
+) -> Result<Vec<AssistantMessage>, String> {
+    let rows = if let Some((before_created_at, before_message_id)) = before {
+        sqlx::query(
+            r#"
+            SELECT id, session_id, role, content_json, provider_metadata_json, created_at
+            FROM assistant_messages
+            WHERE session_id = ?
+              AND (created_at < ? OR (created_at = ? AND id < ?))
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(session_id)
+        .bind(before_created_at)
+        .bind(before_created_at)
+        .bind(before_message_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to load assistant message page: {}", e))?
+    } else {
+        sqlx::query(
+            r#"
+            SELECT id, session_id, role, content_json, provider_metadata_json, created_at
+            FROM assistant_messages
+            WHERE session_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(session_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to load assistant message page: {}", e))?
+    };
+
+    rows.iter().map(map_message_row).collect()
+}
+
+pub async fn parent_session_id(
+    pool: &DbPool,
+    child_session_id: &str,
+) -> Result<Option<String>, String> {
+    sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT parent_session_id
+        FROM assistant_session_links
+        WHERE child_session_id = ?
+        "#,
+    )
+    .bind(child_session_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("Failed to load assistant session parent: {}", e))
+}
+
+/// Count every message in a session's conversation: the session itself plus —
+/// when `include_ancestors` is set — all ancestors reachable through rotation
+/// links (compaction/rotation chains). One recursive-CTE round trip; UNION
+/// (not UNION ALL) so a malformed link cycle terminates instead of recursing
+/// forever.
+pub async fn count_session_chain_messages(
+    pool: &DbPool,
+    session_id: &str,
+    include_ancestors: bool,
+) -> Result<u32, String> {
+    let count = if include_ancestors {
+        sqlx::query_scalar::<_, i64>(
+            r#"
+            WITH RECURSIVE chain(session_id) AS (
+                SELECT ?
+                UNION
+                SELECT l.parent_session_id
+                FROM assistant_session_links l
+                JOIN chain c ON l.child_session_id = c.session_id
+            )
+            SELECT COUNT(*)
+            FROM assistant_messages
+            WHERE session_id IN (SELECT session_id FROM chain)
+            "#,
+        )
+        .bind(session_id)
+        .fetch_one(pool)
+        .await
+    } else {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM assistant_messages WHERE session_id = ?")
+            .bind(session_id)
+            .fetch_one(pool)
+            .await
+    }
+    .map_err(|e| format!("Failed to count assistant messages: {}", e))?;
+
+    Ok(count.max(0) as u32)
+}
+
+pub async fn create_session_rotation_link(
+    pool: &DbPool,
+    child_session_id: &str,
+    parent_session_id: &str,
+) -> Result<(), String> {
+    sqlx::query(
+        r#"
+        INSERT INTO assistant_session_links
+            (child_session_id, parent_session_id, kind, created_at)
+        VALUES (?, ?, 'rotation', ?)
+        "#,
+    )
+    .bind(child_session_id)
+    .bind(parent_session_id)
+    .bind(now_ms())
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create assistant session rotation link: {}", e))?;
+
+    Ok(())
 }
 
 pub async fn get_message(
@@ -805,6 +970,136 @@ pub async fn update_message_content(
     map_message_row(&row)
 }
 
+pub async fn create_compaction(
+    pool: &DbPool,
+    params: CreateCompactionParams,
+) -> Result<AssistantCompaction, String> {
+    let now = now_ms();
+    let compaction = AssistantCompaction {
+        id: Uuid::new_v4().to_string(),
+        session_id: params.session_id,
+        trigger: params.trigger,
+        strategy: params.strategy,
+        status: CompactionStatus::Running,
+        source_from_message_id: params.source_from_message_id,
+        source_to_message_id: params.source_to_message_id,
+        summary_message_id: None,
+        created_run_id: params.created_run_id,
+        provider_id: params.provider_id,
+        model_id: params.model_id,
+        input_message_count: params.input_message_count,
+        created_at: now,
+        completed_at: None,
+        error: None,
+    };
+
+    sqlx::query(
+        r#"
+        INSERT INTO assistant_compactions
+            (id, session_id, trigger, strategy, status, source_from_message_id, source_to_message_id,
+             summary_message_id, created_run_id, provider_id, model_id, input_message_count,
+             created_at, completed_at, error)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(&compaction.id)
+    .bind(&compaction.session_id)
+    .bind(to_json_string(&compaction.trigger)?)
+    .bind(to_json_string(&compaction.strategy)?)
+    .bind(to_json_string(&compaction.status)?)
+    .bind(&compaction.source_from_message_id)
+    .bind(&compaction.source_to_message_id)
+    .bind(&compaction.summary_message_id)
+    .bind(&compaction.created_run_id)
+    .bind(&compaction.provider_id)
+    .bind(&compaction.model_id)
+    .bind(compaction.input_message_count)
+    .bind(compaction.created_at)
+    .bind(compaction.completed_at)
+    .bind(&compaction.error)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to create assistant compaction: {}", e))?;
+
+    touch_session(pool, &compaction.session_id).await?;
+    Ok(compaction)
+}
+
+pub async fn complete_compaction(
+    pool: &DbPool,
+    compaction_id: &str,
+    summary_message_id: &str,
+) -> Result<AssistantCompaction, String> {
+    let completed_at = now_ms();
+    sqlx::query(
+        r#"
+        UPDATE assistant_compactions
+        SET status = ?, summary_message_id = ?, completed_at = ?, error = NULL
+        WHERE id = ?
+        "#,
+    )
+    .bind(to_json_string(&CompactionStatus::Completed)?)
+    .bind(summary_message_id)
+    .bind(completed_at)
+    .bind(compaction_id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to complete assistant compaction: {}", e))?;
+
+    let compaction = get_compaction(pool, compaction_id)
+        .await?
+        .ok_or_else(|| format!("Assistant compaction not found: {}", compaction_id))?;
+    touch_session(pool, &compaction.session_id).await?;
+    Ok(compaction)
+}
+
+pub async fn get_compaction(
+    pool: &DbPool,
+    compaction_id: &str,
+) -> Result<Option<AssistantCompaction>, String> {
+    let row = sqlx::query(
+        r#"
+        SELECT id, session_id, trigger, strategy, status, source_from_message_id,
+               source_to_message_id, summary_message_id, created_run_id, provider_id,
+               model_id, input_message_count, created_at, completed_at, error
+        FROM assistant_compactions
+        WHERE id = ?
+        "#,
+    )
+    .bind(compaction_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("Failed to load assistant compaction: {}", e))?;
+
+    row.as_ref().map(map_compaction_row).transpose()
+}
+
+pub async fn latest_completed_compaction(
+    pool: &DbPool,
+    session_id: &str,
+) -> Result<Option<AssistantCompaction>, String> {
+    let row = sqlx::query(
+        r#"
+        SELECT id, session_id, trigger, strategy, status, source_from_message_id,
+               source_to_message_id, summary_message_id, created_run_id, provider_id,
+               model_id, input_message_count, created_at, completed_at, error
+        FROM assistant_compactions
+        WHERE session_id = ?
+          AND status = '"completed"'
+          AND summary_message_id IS NOT NULL
+          AND source_to_message_id IS NOT NULL
+        ORDER BY completed_at DESC, created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("Failed to load latest assistant compaction: {}", e))?;
+
+    row.as_ref().map(map_compaction_row).transpose()
+}
+
 fn map_tool_call_row(row: &sqlx::sqlite::SqliteRow) -> Result<ToolInvocation, String> {
     Ok(ToolInvocation {
         id: row.get("id"),
@@ -935,6 +1230,36 @@ pub async fn list_tool_calls(
         .await
         .map_err(|e| format!("Failed to list assistant tool calls: {}", e))?
     };
+
+    rows.iter().map(map_tool_call_row).collect()
+}
+
+pub async fn list_tool_calls_by_ids(
+    pool: &DbPool,
+    tool_call_ids: &[String],
+) -> Result<Vec<ToolInvocation>, String> {
+    if tool_call_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut query = QueryBuilder::<Sqlite>::new(
+        r#"
+        SELECT id, run_id, session_id, tool_name, params_json, status, result_json, error, started_at, completed_at
+        FROM assistant_tool_calls
+        WHERE id IN (
+        "#,
+    );
+    let mut separated = query.separated(", ");
+    for tool_call_id in tool_call_ids {
+        separated.push_bind(tool_call_id);
+    }
+    separated.push_unseparated(") ORDER BY started_at ASC");
+
+    let rows = query
+        .build()
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to list assistant tool calls by id: {}", e))?;
 
     rows.iter().map(map_tool_call_row).collect()
 }

@@ -5,6 +5,8 @@ export type AddSkillSourceRequest = { name: string, kind: string | null, path: s
 
 export type AskUserOption = { label: string, description: string | null, };
 
+export type AssistantCompaction = { id: string, sessionId: string, trigger: CompactionTrigger, strategy: CompactionStrategy, status: CompactionStatus, sourceFromMessageId: string | null, sourceToMessageId: string | null, summaryMessageId: string | null, createdRunId: string | null, providerId: string, modelId: string, inputMessageCount: bigint, createdAt: bigint, completedAt: bigint | null, error: string | null, };
+
 export type AssistantEventEnvelope = { sessionId: string, runId: string | null, 
 /**
  * The workspace this session belongs to. Lets the frontend map
@@ -15,15 +17,32 @@ workspaceId: string | null, timestamp: bigint, event: AssistantUiEvent, };
 
 export type AssistantMessage = { id: string, sessionId: string, role: MessageRole, content: Array<ContentPart>, createdAt: bigint, providerMetadata: JsonValue | null, };
 
+export type AssistantMessageCursor = { sessionId: string, createdAt: bigint, messageId: string, };
+
+export type AssistantMessagePage = { messages: Array<AssistantMessage>, toolCalls: Array<ToolInvocation>, nextCursor: AssistantMessageCursor | null, hasMore: boolean, 
+/**
+ * Total number of messages in the conversation (the requested session
+ * plus, when ancestors were included, its whole rotation chain) — not
+ * just this page. Lets the UI show a true conversation count while only
+ * a window of messages is loaded.
+ */
+totalCount: number, };
+
 export type AssistantRun = { id: string, sessionId: string, status: RunStatus, trigger: RunTrigger, connectionId: string, providerId: string, modelId: string, startedAt: bigint, completedAt: bigint | null, usage: RunUsage | null, error: string | null, notices?: Array<RunNotice>, };
 
 export type AssistantSession = { id: string, kind: SessionKind, title: string | null, context: SessionContext, createdAt: bigint, updatedAt: bigint, };
 
-export type AssistantUiEvent = { "type": "session_created", "payload": { session: AssistantSession, } } | { "type": "message_created", "payload": { message: AssistantMessage, } } | { "type": "message_deleted", "payload": { message_id: string, } } | { "type": "queued_messages_delivered", "payload": { message_ids: Array<string>, } } | { "type": "run_queued", "payload": { run: AssistantRun, } } | { "type": "run_started", "payload": { run: AssistantRun, } } | { "type": "assistant_delta", "payload": { message_id: string, text: string, } } | { "type": "assistant_thinking_delta", "payload": { message_id: string, text: string, } } | { "type": "assistant_message_completed", "payload": { message: AssistantMessage, } } | { "type": "assistant_message_updated", "payload": { message: AssistantMessage, } } | { "type": "tool_call_started", "payload": { tool_call: ToolInvocation, } } | { "type": "tool_call_completed", "payload": { tool_call: ToolInvocation, } } | { "type": "tool_call_failed", "payload": { tool_call: ToolInvocation, } } | { "type": "run_completed", "payload": { run: AssistantRun, } } | { "type": "run_failed", "payload": { run: AssistantRun, } } | { "type": "run_cancelled", "payload": { run: AssistantRun, } } | { "type": "ask_user_requested", "payload": { pending_id: string, question: string, options: Array<AskUserOption> | null, extra_context?: string | null, } } | { "type": "ask_user_resolved", "payload": { pending_id: string, } };
+export type AssistantUiEvent = { "type": "session_created", "payload": { session: AssistantSession, } } | { "type": "message_created", "payload": { message: AssistantMessage, } } | { "type": "message_deleted", "payload": { message_id: string, } } | { "type": "queued_messages_delivered", "payload": { message_ids: Array<string>, } } | { "type": "session_compacted", "payload": { compaction: AssistantCompaction, summary_message: AssistantMessage, } } | { "type": "run_queued", "payload": { run: AssistantRun, } } | { "type": "run_started", "payload": { run: AssistantRun, } } | { "type": "assistant_delta", "payload": { message_id: string, text: string, } } | { "type": "assistant_thinking_delta", "payload": { message_id: string, text: string, } } | { "type": "assistant_message_completed", "payload": { message: AssistantMessage, } } | { "type": "assistant_message_updated", "payload": { message: AssistantMessage, } } | { "type": "tool_call_started", "payload": { tool_call: ToolInvocation, } } | { "type": "tool_call_completed", "payload": { tool_call: ToolInvocation, } } | { "type": "tool_call_failed", "payload": { tool_call: ToolInvocation, } } | { "type": "run_completed", "payload": { run: AssistantRun, } } | { "type": "run_failed", "payload": { run: AssistantRun, } } | { "type": "run_cancelled", "payload": { run: AssistantRun, } } | { "type": "ask_user_requested", "payload": { pending_id: string, question: string, options: Array<AskUserOption> | null, extra_context?: string | null, } } | { "type": "ask_user_resolved", "payload": { pending_id: string, } };
 
 export type AttentionUpdate = { workspaceId: string | null, pendingCount: number, };
 
 export type AuthMode = "subscription_login" | "subscription_api_key" | "developer_api_key" | "workspace_token";
+
+export type CompactionStatus = "running" | "completed" | "failed";
+
+export type CompactionStrategy = "local_summary" | "session_rotation_summary";
+
+export type CompactionTrigger = "manual" | "automatic" | "error_recovery";
 
 export type ContentPart = { "type": "text", text: string, } | { "type": "thinking", text: string, signature?: string | null, } | { "type": "tool_use", tool_call_id: string, tool_name: string, arguments: JsonValue, } | { "type": "tool_result", tool_call_id: string, payload: JsonValue, started_at?: bigint | null, completed_at?: bigint | null, };
 

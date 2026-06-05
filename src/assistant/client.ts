@@ -9,7 +9,10 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type {
+  AssistantCompaction,
   AssistantMessage,
+  AssistantMessageCursor,
+  AssistantMessagePage,
   AssistantRun,
   AssistantSession,
   CreateProviderConnectionRequest,
@@ -21,7 +24,13 @@ import type {
   UpdateProviderConnectionRequest,
 } from '../generated/bindings';
 
-export async function createSession(params: unknown): Promise<AssistantSession> {
+export async function createSession(params: {
+  tabId?: string;
+  kind?: 'interactive' | 'background_job';
+  title?: string;
+  context?: Record<string, unknown>;
+  parentSessionId?: string | null;
+}): Promise<AssistantSession> {
   return invoke('assistant_create_session', { request: params });
 }
 
@@ -41,12 +50,35 @@ export async function loadSessionMessages(sessionId: string): Promise<AssistantM
   return invoke('assistant_load_session_messages', { sessionId });
 }
 
+export async function loadSessionMessagesPage(params: {
+  sessionId: string;
+  before?: AssistantMessageCursor | null;
+  limit?: number;
+  includeAncestors?: boolean;
+}): Promise<AssistantMessagePage> {
+  return invoke('assistant_load_session_messages_page', {
+    request: {
+      sessionId: params.sessionId,
+      before: params.before ?? null,
+      limit: params.limit ?? null,
+      includeAncestors: params.includeAncestors ?? true,
+    },
+  });
+}
+
 export async function sendMessage(
   sessionId: string,
   message: string,
   connectionId: string,
 ): Promise<{ session: AssistantSession; message: AssistantMessage; run?: AssistantRun | null; queued: boolean }> {
   return invoke('assistant_send_message', { sessionId, message, connectionId });
+}
+
+export async function compactSession(
+  sessionId: string,
+  connectionId: string,
+): Promise<{ compaction?: AssistantCompaction | null; summaryMessage?: AssistantMessage | null }> {
+  return invoke('assistant_compact_session', { sessionId, connectionId });
 }
 
 /**

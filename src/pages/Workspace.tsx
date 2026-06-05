@@ -37,6 +37,7 @@ import styles from './Workspace.module.css';
 
 const DEFAULT_WORKSPACE_ID = 'default';
 const REFRESH_INTERVAL_MS = 5000;
+const MESSAGE_PAGE_LIMIT = 100;
 // Periodic poll skips the session payload (messages/runs/toolCalls are
 // kept in sync via the assistant event stream) but still re-walks the
 // workspace filesystem so memories created by a running agent surface
@@ -818,7 +819,7 @@ const WorkspaceHeader = ({
   snapshot,
   workspaceId,
   isGenericWorkspace,
-  messages,
+  messageCount,
   memories,
   artifactCount,
   activePanel,
@@ -836,7 +837,9 @@ const WorkspaceHeader = ({
   snapshot: WorkspaceSnapshot | null;
   workspaceId: string;
   isGenericWorkspace: boolean;
-  messages: AssistantMessage[];
+  // Total messages in the conversation (including not-yet-loaded history
+  // and rotation ancestors), not just the loaded window.
+  messageCount: number;
   memories: WorkspaceFileEntry[];
   artifactCount: number;
   activePanel: ActivePanel;
@@ -1110,7 +1113,7 @@ const WorkspaceHeader = ({
             <span className={styles.metricSeparator}>{'\u00B7'}</span>
           </>
         )}
-        {renderCounter(null, messages.length, 'msgs', false)}
+        {renderCounter(null, messageCount, 'msgs', false)}
         <span className={styles.metricSeparator}>{'\u00B7'}</span>
         {renderCounter('agents', assignedAgentCount, 'agents')}
         <span className={styles.metricSeparator}>{'\u00B7'}</span>
@@ -1139,6 +1142,9 @@ interface ChatFirstLayoutProps {
   runStartedAt: number | null;
   queuedMessageIds: string[];
   onDeleteQueuedMessage: (messageId: string) => void;
+  hasOlderMessages: boolean;
+  isLoadingOlderMessages: boolean;
+  onLoadOlderMessages: () => void;
 }
 
 const ChatFirstLayout = ({
@@ -1153,6 +1159,9 @@ const ChatFirstLayout = ({
   runStartedAt,
   queuedMessageIds,
   onDeleteQueuedMessage,
+  hasOlderMessages,
+  isLoadingOlderMessages,
+  onLoadOlderMessages,
 }: ChatFirstLayoutProps) => (
   <div className={styles.chatFirstContent}>
     {messages.length > 0 ? (
@@ -1172,6 +1181,9 @@ const ChatFirstLayout = ({
           runStartedAt={runStartedAt}
           queuedMessageIds={queuedMessageIds}
           onDeleteQueuedMessage={onDeleteQueuedMessage}
+          hasOlderMessages={hasOlderMessages}
+          isLoadingOlderMessages={isLoadingOlderMessages}
+          onLoadOlderMessages={onLoadOlderMessages}
         />
         <AskUserPanel sessionId={sessionId} />
         <InlineApprovalCard workspaceId={workspaceId} />
@@ -1315,10 +1327,11 @@ const Workspace = () => {
         setIsLoading(true);
       }
 
-      const isLightweight = options !== null;
+      const effectiveOptions = options ?? LIGHTWEIGHT_SNAPSHOT_OPTIONS;
+      const isLightweight = effectiveOptions.includeSessionPayload === false;
 
       try {
-        const nextSnapshot = await getWorkspaceSnapshot(workspaceId, options);
+        const nextSnapshot = await getWorkspaceSnapshot(workspaceId, effectiveOptions);
         setSnapshot((current) => {
           if (!isLightweight || !current) {
             return nextSnapshot;
@@ -1348,33 +1361,28 @@ const Workspace = () => {
             nextSnapshot.session.updatedAt &&
             lastLoadedSessionUpdatedAtRef.current !== nextSnapshot.session.updatedAt;
           const shouldHydrateSession =
-            !isLightweight ||
-            needsInitialHydration ||
-            (hasUnloadedUpdate && !existingSession?.isStreaming);
+            needsInitialHydration || (hasUnloadedUpdate && !existingSession?.isStreaming);
 
           if (shouldHydrateSession) {
-            let messages: AssistantMessage[];
-            let runs: AssistantRun[];
-            let toolCalls: ToolInvocation[];
-            if (isLightweight) {
-              [messages, runs, toolCalls] = await Promise.all([
-                assistantClient.loadSessionMessages(nextSnapshot.session.id),
-                assistantClient.listRuns(nextSnapshot.session.id),
-                assistantClient.listToolCalls(nextSnapshot.session.id),
-              ]);
-            } else {
-              messages = nextSnapshot.messages || [];
-              runs = nextSnapshot.runs || [];
-              toolCalls = nextSnapshot.toolCalls || [];
-            }
+            const [messagePage, runs] = await Promise.all([
+              assistantClient.loadSessionMessagesPage({
+                sessionId: nextSnapshot.session.id,
+                limit: MESSAGE_PAGE_LIMIT,
+                includeAncestors: true,
+              }),
+              assistantClient.listRuns(nextSnapshot.session.id),
+            ]);
 
             store.loadSessionData(
               nextSnapshot.session.id,
               nextSnapshot.session,
-              messages,
+              messagePage.messages,
               runs,
-              toolCalls,
-              nextSnapshot.queuedMessageIds || []
+              messagePage.toolCalls,
+              nextSnapshot.queuedMessageIds || [],
+              messagePage.nextCursor ?? null,
+              messagePage.hasMore,
+              messagePage.totalCount
             );
             lastLoadedSessionUpdatedAtRef.current = nextSnapshot.session.updatedAt || null;
           }
@@ -1547,6 +1555,10 @@ const Workspace = () => {
     [artifacts, memories, patchWorkspaceUi]
   );
   const messages = sessionState?.messages || snapshot?.messages || [];
+  // Conversation total from the backend page responses (kept live by the
+  // store as messages stream in); before the first page load reports it,
+  // the loaded window is the best available answer.
+  const totalMessageCount = sessionState?.totalMessageCount ?? messages.length;
   const toolCalls = sessionState?.toolCalls || snapshot?.toolCalls || [];
   const streamingText = sessionState?.streamingTextByMessageId || {};
   const isStreaming = sessionState?.isStreaming || false;
@@ -1554,6 +1566,8 @@ const Workspace = () => {
   // Store is the live source once the session is hydrated; the snapshot
   // covers the first render before hydration.
   const queuedMessageIds = sessionState?.queuedMessageIds ?? snapshot?.queuedMessageIds ?? [];
+  const hasOlderMessages = !!sessionState?.hasOlderMessages;
+  const isLoadingOlderMessages = !!sessionState?.isLoadingOlderMessages;
   const handleDeleteQueuedMessage = useCallback(
     (messageId: string) => {
       if (!sessionId) return;
@@ -1566,6 +1580,39 @@ const Workspace = () => {
     },
     [sessionId]
   );
+  const handleLoadOlderMessages = useCallback(() => {
+    if (!sessionId) return;
+    const store = useAssistantStore.getState();
+    const current = store.sessions[sessionId];
+    if (!current?.hasOlderMessages || !current.olderMessageCursor || current.isLoadingOlderMessages) {
+      return;
+    }
+
+    store.setOlderMessagesLoading(sessionId, true);
+    assistantClient
+      .loadSessionMessagesPage({
+        sessionId,
+        before: current.olderMessageCursor,
+        limit: MESSAGE_PAGE_LIMIT,
+        includeAncestors: true,
+      })
+      .then((page) => {
+        useAssistantStore
+          .getState()
+          .prependMessagePage(
+            sessionId,
+            page.messages,
+            page.toolCalls,
+            page.nextCursor ?? null,
+            page.hasMore,
+            page.totalCount
+          );
+      })
+      .catch((err) => {
+        console.error('[Workspace] Failed to load older messages:', err);
+        useAssistantStore.getState().setOlderMessagesLoading(sessionId, false);
+      });
+  }, [sessionId]);
   const tasks = snapshot?.tasks || [];
   // The manager session's currently-in-flight run, if any. Drives the
   // header Stop button + hides Run-now while a run is mid-stream.
@@ -1611,7 +1658,7 @@ const Workspace = () => {
         snapshot={snapshot}
         workspaceId={workspaceId}
         isGenericWorkspace={isGenericWorkspace}
-        messages={messages}
+        messageCount={totalMessageCount}
         memories={memories}
         artifactCount={artifactCount}
         activePanel={activePanel}
@@ -1653,6 +1700,9 @@ const Workspace = () => {
             runStartedAt={runStartedAt}
             queuedMessageIds={queuedMessageIds}
             onDeleteQueuedMessage={handleDeleteQueuedMessage}
+            hasOlderMessages={hasOlderMessages}
+            isLoadingOlderMessages={isLoadingOlderMessages}
+            onLoadOlderMessages={handleLoadOlderMessages}
           />
         </div>
 

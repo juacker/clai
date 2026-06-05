@@ -15,6 +15,7 @@ const TASK_STATUS_LABEL: Record<string, string> = {
 const EMPTY_MESSAGES: AssistantMessage[] = [];
 const EMPTY_TOOL_CALLS: ToolInvocation[] = [];
 const EMPTY_STREAMING: Record<string, string> = {};
+const MESSAGE_PAGE_LIMIT = 100;
 
 interface WorkspaceTaskTranscriptPanelProps {
   task: WorkspaceTaskResponse | null;
@@ -54,11 +55,14 @@ export default function WorkspaceTaskTranscriptPanel({
 
     const load = async () => {
       try {
-        const [session, messages, runs, toolCalls] = await Promise.all([
+        const [session, messagePage, runs] = await Promise.all([
           assistantClient.getSession(sessionId),
-          assistantClient.loadSessionMessages(sessionId),
+          assistantClient.loadSessionMessagesPage({
+            sessionId,
+            limit: MESSAGE_PAGE_LIMIT,
+            includeAncestors: true,
+          }),
           assistantClient.listRuns(sessionId),
-          assistantClient.listToolCalls(sessionId, null),
         ]);
         if (cancelled) return;
         if (!session) {
@@ -67,7 +71,17 @@ export default function WorkspaceTaskTranscriptPanel({
         }
         useAssistantStore
           .getState()
-          .loadSessionData(sessionId, session, messages || [], runs || [], toolCalls || []);
+          .loadSessionData(
+            sessionId,
+            session,
+            messagePage.messages || [],
+            runs || [],
+            messagePage.toolCalls || [],
+            undefined,
+            messagePage.nextCursor ?? null,
+            messagePage.hasMore,
+            messagePage.totalCount,
+          );
       } catch (err) {
         if (cancelled) return;
         setBootstrapError(
@@ -92,6 +106,40 @@ export default function WorkspaceTaskTranscriptPanel({
   const toolCalls = sessionState?.toolCalls || EMPTY_TOOL_CALLS;
   const streamingText = sessionState?.streamingTextByMessageId || EMPTY_STREAMING;
   const isStreaming = !!sessionState?.isStreaming;
+  const hasOlderMessages = !!sessionState?.hasOlderMessages;
+  const isLoadingOlderMessages = !!sessionState?.isLoadingOlderMessages;
+  const handleLoadOlderMessages = () => {
+    if (!sessionId) return;
+    const store = useAssistantStore.getState();
+    const current = store.sessions[sessionId];
+    if (!current?.hasOlderMessages || !current.olderMessageCursor || current.isLoadingOlderMessages) {
+      return;
+    }
+    store.setOlderMessagesLoading(sessionId, true);
+    assistantClient
+      .loadSessionMessagesPage({
+        sessionId,
+        before: current.olderMessageCursor,
+        limit: MESSAGE_PAGE_LIMIT,
+        includeAncestors: true,
+      })
+      .then((page) => {
+        useAssistantStore
+          .getState()
+          .prependMessagePage(
+            sessionId,
+            page.messages,
+            page.toolCalls,
+            page.nextCursor ?? null,
+            page.hasMore,
+            page.totalCount
+          );
+      })
+      .catch((err) => {
+        console.error('[WorkspaceTaskTranscriptPanel] Failed to load older messages:', err);
+        useAssistantStore.getState().setOlderMessagesLoading(sessionId, false);
+      });
+  };
 
   return (
     <aside
@@ -159,6 +207,9 @@ export default function WorkspaceTaskTranscriptPanel({
               isStreaming={isStreaming}
               runStartedAt={sessionState?.runStartedAt ?? null}
               userLabel="Main agent"
+              hasOlderMessages={hasOlderMessages}
+              isLoadingOlderMessages={isLoadingOlderMessages}
+              onLoadOlderMessages={handleLoadOlderMessages}
             />
           </div>
         )}

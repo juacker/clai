@@ -54,6 +54,7 @@ type AssistantSegment =
   | { kind: 'tools'; toolUses: EnrichedToolUse[] };
 
 type RenderItem =
+  | { type: 'load-earlier' }
   | { type: 'message'; message: AssistantMessage }
   | {
       type: 'tool-group';
@@ -375,6 +376,9 @@ interface ChatMessageListProps {
   // Remove a still-queued message before any run picks it up. Omit to
   // hide the remove affordance (e.g. read-only transcript views).
   onDeleteQueuedMessage?: (messageId: string) => void;
+  hasOlderMessages?: boolean;
+  isLoadingOlderMessages?: boolean;
+  onLoadOlderMessages?: () => void;
 }
 
 const ChatMessageList = ({
@@ -392,6 +396,9 @@ const ChatMessageList = ({
   runStartedAt = null,
   queuedMessageIds,
   onDeleteQueuedMessage,
+  hasOlderMessages = false,
+  isLoadingOlderMessages = false,
+  onLoadOlderMessages,
 }: ChatMessageListProps) => {
   // Build a Map of toolCalls keyed by id once per render, so every
   // tool_use part lookup is O(1) instead of an Array.find walk. Memoized
@@ -403,7 +410,13 @@ const ChatMessageList = ({
     return map;
   }, [toolCalls]);
 
-  const grouped = useMemo(() => groupMessages(messages), [messages]);
+  const grouped = useMemo(() => {
+    const items = groupMessages(messages);
+    if (hasOlderMessages && onLoadOlderMessages) {
+      return [{ type: 'load-earlier' } as RenderItem, ...items];
+    }
+    return items;
+  }, [messages, hasOlderMessages, onLoadOlderMessages]);
 
   // Id of the last visible message iff it's a user message. Writing a message
   // is an explicit "show me the latest" — when a new user message lands at the
@@ -428,6 +441,7 @@ const ChatMessageList = ({
   const continuationFlags = useMemo(() => {
     const isAssistantItem = (it: RenderItem | undefined) => {
       if (!it) return false;
+      if (it.type === 'load-earlier') return false;
       if (it.type === 'tool-group') return true;
       return it.message?.role === 'assistant';
     };
@@ -438,7 +452,9 @@ const ChatMessageList = ({
   }, [grouped]);
 
   const itemKey = useCallback((item: RenderItem) => (
-    item.type === 'tool-group'
+    item.type === 'load-earlier'
+      ? 'load-earlier'
+      : item.type === 'tool-group'
       ? `tool-group:${item.id}`
       : `message:${item.message.id}`
   ), []);
@@ -451,7 +467,18 @@ const ChatMessageList = ({
   );
 
   const renderItem = useCallback((item: RenderItem, idx: number) => (
-    item.type === 'tool-group' ? (
+    item.type === 'load-earlier' ? (
+      <div className={styles.loadEarlierWrap}>
+        <button
+          type="button"
+          className={styles.loadEarlierButton}
+          onClick={onLoadOlderMessages}
+          disabled={isLoadingOlderMessages}
+        >
+          {isLoadingOlderMessages ? 'Loading…' : 'Load earlier'}
+        </button>
+      </div>
+    ) : item.type === 'tool-group' ? (
       <MergedToolGroup
         item={item}
         toolCallsById={toolCallsById}
@@ -468,7 +495,24 @@ const ChatMessageList = ({
         onDeleteQueued={onDeleteQueuedMessage}
       />
     )
-  ), [continuationFlags, streamingText, toolCallsById, userLabel, queuedIdSet, onDeleteQueuedMessage]);
+  ), [
+    continuationFlags,
+    streamingText,
+    toolCallsById,
+    userLabel,
+    queuedIdSet,
+    onDeleteQueuedMessage,
+    onLoadOlderMessages,
+    isLoadingOlderMessages,
+  ]);
+
+  // Auto-load older pages as the reader scrolls toward the top.
+  // VirtualizedList only fires this on user-initiated upward scrolls (never
+  // on its own prepend/pin corrections), and the parent's load handler gates
+  // re-entrancy on isLoadingOlderMessages — so repeated fires while a page
+  // is in flight are harmless no-ops. The "Load earlier" row stays as a
+  // visible affordance/fallback and doubles as the loading indicator.
+  const handleApproachTop = hasOlderMessages ? onLoadOlderMessages : undefined;
 
   // Footer rendered inside the scroll area, right after the last message.
   // While a run is in flight we show the activity indicator; once it ends we
@@ -512,6 +556,7 @@ const ChatMessageList = ({
       // let fast streaming re-pin the view over the user's upward scroll.
       stickToBottom={isStreaming}
       forceScrollToBottomKey={lastUserMessageId}
+      onApproachTop={handleApproachTop}
     />
   );
 };

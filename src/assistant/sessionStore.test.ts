@@ -141,6 +141,54 @@ describe('addMessage', () => {
   });
 });
 
+describe('totalMessageCount — conversation total, not the loaded window', () => {
+  it('is seeded by loadSessionData and survives a refresh that omits it', () => {
+    const store = useAssistantStore.getState();
+    store.loadSessionData(
+      SESSION.id, SESSION, [msg('m-1')], [], [], undefined, null, true, 250,
+    );
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.totalMessageCount).toBe(250);
+    store.loadSessionData(SESSION.id, SESSION, [msg('m-1')], [], []);
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.totalMessageCount).toBe(250);
+  });
+
+  it('increments on a genuinely new message, not on a duplicate', () => {
+    const store = useAssistantStore.getState();
+    store.loadSessionData(
+      SESSION.id, SESSION, [msg('m-1')], [], [], undefined, null, true, 250,
+    );
+    store.addMessage(SESSION.id, msg('m-2'));
+    store.addMessage(SESSION.id, msg('m-2'));
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.totalMessageCount).toBe(251);
+  });
+
+  it('decrements when a message is retracted, only if it existed', () => {
+    const store = useAssistantStore.getState();
+    store.loadSessionData(
+      SESSION.id, SESSION, [msg('m-1')], [], [], undefined, null, true, 250,
+    );
+    store.removeMessage(SESSION.id, 'm-1');
+    store.removeMessage(SESSION.id, 'not-loaded');
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.totalMessageCount).toBe(249);
+  });
+
+  it('adopts the fresh backend count from a prepended page', () => {
+    const store = useAssistantStore.getState();
+    store.loadSessionData(
+      SESSION.id, SESSION, [msg('m-2')], [], [], undefined, null, true, 250,
+    );
+    store.prependMessagePage(SESSION.id, [msg('m-1')], [], null, false, 252);
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.totalMessageCount).toBe(252);
+  });
+
+  it('stays null (unknown) when no page has reported it, even as messages arrive', () => {
+    const store = useAssistantStore.getState();
+    store.initSession(SESSION);
+    store.addMessage(SESSION.id, msg('m-1'));
+    expect(useAssistantStore.getState().sessions[SESSION.id]!.totalMessageCount).toBeNull();
+  });
+});
+
 describe('setRunStatus', () => {
   it('clears streaming state on terminal status', () => {
     const store = useAssistantStore.getState();

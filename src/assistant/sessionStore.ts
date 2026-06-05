@@ -11,6 +11,7 @@ import { immer } from 'zustand/middleware/immer';
 
 import type {
   AssistantMessage,
+  AssistantMessageCursor,
   AssistantRun,
   AssistantSession,
   ToolInvocation,
@@ -44,6 +45,15 @@ export interface SessionState {
    *  was active, not yet picked up). Rendered with a "Queued" chip; cleared
    *  by `queued_messages_delivered` / `message_deleted` events. */
   queuedMessageIds: string[];
+  /** Cursor for loading older messages. Can point at an ancestor session. */
+  olderMessageCursor: AssistantMessageCursor | null;
+  hasOlderMessages: boolean;
+  isLoadingOlderMessages: boolean;
+  /** Total messages in the whole conversation (session + rotation ancestors),
+   *  not just the loaded window. Seeded from the backend's page responses and
+   *  kept live by add/removeMessage; null until the first page load reports it
+   *  (fall back to messages.length). */
+  totalMessageCount: number | null;
 }
 
 export interface AssistantStoreState {
@@ -58,6 +68,15 @@ export interface AssistantStoreState {
   removeMessage: (sessionId: string, messageId: string) => void;
   markMessageQueued: (sessionId: string, messageId: string) => void;
   markQueuedMessagesDelivered: (sessionId: string, messageIds: string[]) => void;
+  prependMessagePage: (
+    sessionId: string,
+    messages: AssistantMessage[],
+    toolCalls: ToolInvocation[],
+    cursor: AssistantMessageCursor | null | undefined,
+    hasMore: boolean,
+    totalCount?: number,
+  ) => void;
+  setOlderMessagesLoading: (sessionId: string, loading: boolean) => void;
   appendDelta: (sessionId: string, messageId: string, text: string) => void;
   completeMessage: (sessionId: string, message: AssistantMessage) => void;
   updateMessageContent: (sessionId: string, message: AssistantMessage) => void;
@@ -72,6 +91,9 @@ export interface AssistantStoreState {
     runs?: AssistantRun[],
     toolCalls?: ToolInvocation[],
     queuedMessageIds?: string[],
+    olderMessageCursor?: AssistantMessageCursor | null,
+    hasOlderMessages?: boolean,
+    totalMessageCount?: number | null,
   ) => void;
   removeSession: (sessionId: string) => void;
 }
@@ -86,6 +108,10 @@ const createInitialSessionState = (session: AssistantSession): SessionState => (
   runStartedAt: null,
   pendingAskUser: null,
   queuedMessageIds: [],
+  olderMessageCursor: null,
+  hasOlderMessages: false,
+  isLoadingOlderMessages: false,
+  totalMessageCount: null,
 });
 
 const TERMINAL_STATUSES = ['completed', 'completed_with_warnings', 'failed', 'cancelled'] as const;
@@ -122,6 +148,11 @@ const useAssistantStore = create<AssistantStoreState>()(
           if (s) {
             if (!s.messages.find((m) => m.id === message.id)) {
               s.messages.push(message);
+              // A genuinely new message grows the conversation total; the
+              // dedup guard above keeps replays/races from double-counting.
+              if (s.totalMessageCount !== null) {
+                s.totalMessageCount += 1;
+              }
             }
           }
         }),
@@ -134,7 +165,11 @@ const useAssistantStore = create<AssistantStoreState>()(
         set((state) => {
           const s = state.sessions[sessionId];
           if (!s) return;
+          const before = s.messages.length;
           s.messages = s.messages.filter((m) => m.id !== messageId);
+          if (s.messages.length < before && s.totalMessageCount !== null) {
+            s.totalMessageCount = Math.max(0, s.totalMessageCount - 1);
+          }
           s.queuedMessageIds = s.queuedMessageIds.filter((id) => id !== messageId);
           delete s.streamingTextByMessageId[messageId];
         }),
@@ -154,6 +189,40 @@ const useAssistantStore = create<AssistantStoreState>()(
           if (!s) return;
           const delivered = new Set(messageIds);
           s.queuedMessageIds = s.queuedMessageIds.filter((id) => !delivered.has(id));
+        }),
+
+      prependMessagePage: (sessionId, messages, toolCalls, cursor, hasMore, totalCount) =>
+        set((state) => {
+          const s = state.sessions[sessionId];
+          if (!s) return;
+
+          const existingMessageIds = new Set(s.messages.map((message) => message.id));
+          const newMessages = messages.filter((message) => !existingMessageIds.has(message.id));
+          s.messages = [...newMessages, ...s.messages];
+
+          const existingToolCallIds = new Set(s.toolCalls.map((toolCall) => toolCall.id));
+          for (const toolCall of toolCalls) {
+            if (!existingToolCallIds.has(toolCall.id)) {
+              s.toolCalls.push(toolCall);
+              existingToolCallIds.add(toolCall.id);
+            }
+          }
+
+          s.olderMessageCursor = cursor ?? null;
+          s.hasOlderMessages = hasMore;
+          s.isLoadingOlderMessages = false;
+          // Each page response carries a fresh backend count — adopt it so
+          // any drift from missed events self-corrects on every page load.
+          if (totalCount !== undefined) {
+            s.totalMessageCount = totalCount;
+          }
+        }),
+
+      setOlderMessagesLoading: (sessionId, loading) =>
+        set((state) => {
+          const s = state.sessions[sessionId];
+          if (!s) return;
+          s.isLoadingOlderMessages = loading;
         }),
 
       appendDelta: (sessionId, messageId, text) =>
@@ -257,7 +326,17 @@ const useAssistantStore = create<AssistantStoreState>()(
           }
         }),
 
-      loadSessionData: (sessionId, session, messages, runs = [], toolCalls = [], queuedMessageIds) =>
+      loadSessionData: (
+        sessionId,
+        session,
+        messages,
+        runs = [],
+        toolCalls = [],
+        queuedMessageIds,
+        olderMessageCursor,
+        hasOlderMessages,
+        totalMessageCount,
+      ) =>
         set((state) => {
           const existing = state.sessions[sessionId];
           state.sessions[sessionId] = {
@@ -269,6 +348,19 @@ const useAssistantStore = create<AssistantStoreState>()(
             // event-driven set so a hydration that didn't fetch queue state
             // doesn't wipe the chips.
             queuedMessageIds: queuedMessageIds ?? existing?.queuedMessageIds ?? [],
+            olderMessageCursor:
+              olderMessageCursor !== undefined
+                ? olderMessageCursor
+                : existing?.olderMessageCursor ?? null,
+            hasOlderMessages:
+              hasOlderMessages !== undefined
+                ? hasOlderMessages
+                : existing?.hasOlderMessages ?? false,
+            isLoadingOlderMessages: false,
+            totalMessageCount:
+              totalMessageCount !== undefined
+                ? totalMessageCount
+                : existing?.totalMessageCount ?? null,
             // Preserve in-flight streaming state across snapshot refreshes.
             // The DB only persists assistant text at end-of-run, so a poll
             // tick that lands mid-stream would otherwise wipe the deltas the

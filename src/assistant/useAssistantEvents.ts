@@ -47,6 +47,10 @@ const handleEvent = (envelope: AssistantEventEnvelope): void => {
       store.markQueuedMessagesDelivered(sessionId, event.payload.message_ids);
       break;
 
+    case 'session_compacted':
+      store.addMessage(sessionId, event.payload.summary_message);
+      break;
+
     case 'run_queued':
     case 'run_started':
     case 'run_completed':

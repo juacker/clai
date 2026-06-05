@@ -22,14 +22,16 @@ interface OutputMessage {
 
 interface SendToChatResult {
   error?: string;
+  message?: string;
 }
 
 interface TerminalEmulatorProps {
   onSendToChat?: (text: string) => Promise<SendToChatResult | void>;
+  onAgentCommand?: (command: string) => Promise<SendToChatResult | void>;
   agentWorking?: boolean;
 }
 
-const TerminalEmulator = ({ onSendToChat, agentWorking = false }: TerminalEmulatorProps) => {
+const TerminalEmulator = ({ onSendToChat, onAgentCommand, agentWorking = false }: TerminalEmulatorProps) => {
   const { executeCommand, commandHistory } = useCommand();
   const { handleLayoutCommand, getActiveTab } = useTabManager();
   const { setActiveContext, openChat, isCurrentChatOpen } = useChatManager();
@@ -191,6 +193,20 @@ const TerminalEmulator = ({ onSendToChat, agentWorking = false }: TerminalEmulat
 
     // Strip the leading "/" and parse as command
     const commandInput = trimmed.slice(1);
+
+    if (commandInput === 'compact' || commandInput.startsWith('compact ')) {
+      if (!onAgentCommand) {
+        addOutputMessage('Assistant commands are not available here.', 'error');
+        return;
+      }
+      const result = await onAgentCommand(commandInput);
+      if (result?.error) {
+        addOutputMessage(result.error, 'error');
+      } else if (result?.message) {
+        addOutputMessage(result.message, 'success');
+      }
+      return;
+    }
 
     // Parse the command
     const command = parseCommand(commandInput);

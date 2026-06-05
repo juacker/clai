@@ -5,7 +5,8 @@ use ts_rs::TS;
 
 use crate::assistant::tools::ask_user::AskUserOption;
 use crate::assistant::types::{
-    AssistantMessage, AssistantRun, AssistantSession, MessageId, RunId, ToolInvocation,
+    AssistantCompaction, AssistantMessage, AssistantRun, AssistantSession, MessageId, RunId,
+    ToolInvocation,
 };
 
 pub const ASSISTANT_EVENT_NAME: &str = "assistant://event";
@@ -35,6 +36,10 @@ pub enum AssistantUiEvent {
     /// from here on they're ordinary conversation messages.
     QueuedMessagesDelivered {
         message_ids: Vec<MessageId>,
+    },
+    SessionCompacted {
+        compaction: AssistantCompaction,
+        summary_message: AssistantMessage,
     },
     RunQueued {
         run: AssistantRun,

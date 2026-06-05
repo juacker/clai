@@ -4,6 +4,7 @@
 //! abstraction, event protocol, and persistence foundations.
 
 pub mod auth;
+pub mod compaction;
 pub mod engine;
 pub mod events;
 pub mod local_agent;

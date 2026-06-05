@@ -246,6 +246,33 @@ pub struct AssistantMessage {
     pub provider_metadata: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
+pub struct AssistantMessageCursor {
+    pub session_id: SessionId,
+    pub created_at: i64,
+    pub message_id: MessageId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
+pub struct AssistantMessagePage {
+    pub messages: Vec<AssistantMessage>,
+    #[serde(default)]
+    pub tool_calls: Vec<ToolInvocation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<AssistantMessageCursor>,
+    pub has_more: bool,
+    /// Total number of messages in the conversation (the requested session
+    /// plus, when ancestors were included, its whole rotation chain) — not
+    /// just this page. Lets the UI show a true conversation count while only
+    /// a window of messages is loaded.
+    #[serde(default)]
+    pub total_count: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "bindings.ts")]
@@ -280,6 +307,59 @@ pub struct AssistantRun {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notices: Vec<RunNotice>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "bindings.ts")]
+pub enum CompactionTrigger {
+    Manual,
+    Automatic,
+    ErrorRecovery,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "bindings.ts")]
+pub enum CompactionStrategy {
+    LocalSummary,
+    SessionRotationSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "bindings.ts")]
+pub enum CompactionStatus {
+    Running,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "bindings.ts")]
+pub struct AssistantCompaction {
+    pub id: String,
+    pub session_id: SessionId,
+    pub trigger: CompactionTrigger,
+    pub strategy: CompactionStrategy,
+    pub status: CompactionStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_from_message_id: Option<MessageId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_to_message_id: Option<MessageId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary_message_id: Option<MessageId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_run_id: Option<RunId>,
+    pub provider_id: String,
+    pub model_id: String,
+    pub input_message_count: i64,
+    pub created_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]

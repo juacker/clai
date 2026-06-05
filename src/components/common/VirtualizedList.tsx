@@ -11,6 +11,10 @@ import React, {
 const DEFAULT_ESTIMATE_SIZE = 160;
 const DEFAULT_OVERSCAN = 900;
 const NEAR_BOTTOM_THRESHOLD = 180;
+// How close to the top (px) a user-initiated upward scroll must get before
+// onApproachTop fires. Generous on purpose: pages prepend while the reader
+// still has runway, so they never hit a hard top edge mid-read.
+const NEAR_TOP_THRESHOLD = 600;
 
 interface Position {
   top: number;
@@ -125,6 +129,14 @@ interface VirtualizedListProps<T> {
   // if the user had scrolled up — and resume following new content.
   forceScrollToBottomKey?: string | number | null;
   onNearBottomChange?: (isNearBottom: boolean) => void;
+  // Fired when a *user-initiated* upward scroll brings the viewport within
+  // NEAR_TOP_THRESHOLD of the top (and on wheel-up while already pinned at
+  // the top). Programmatic adjustments — stick-to-bottom pins, the prepend
+  // scroll-anchor correction — never fire it, so loading a page can't
+  // cascade into loading the next one by itself. May fire repeatedly while
+  // the user lingers near the top; callers are expected to gate re-entrancy
+  // (e.g. an isLoading flag).
+  onApproachTop?: () => void;
 }
 
 const VirtualizedListInner = <T,>({
@@ -143,6 +155,7 @@ const VirtualizedListInner = <T,>({
   stickToBottom = false,
   forceScrollToBottomKey = null,
   onNearBottomChange,
+  onApproachTop,
 }: VirtualizedListProps<T>) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const heightsRef = useRef<Map<string, number>>(new Map());
@@ -163,6 +176,12 @@ const VirtualizedListInner = <T,>({
   const [measurementVersion, setMeasurementVersion] = useState(0);
   const [viewport, setViewport] = useState({ scrollTop: 0, height: 0 });
   const [footerHeight, setFooterHeight] = useState(footer ? footerEstimateSize : 0);
+
+  // Latest onApproachTop behind a stable ref, so callers passing an inline
+  // callback don't churn the scroll-handler chain (updateFollowState →
+  // syncViewport → handleScroll + its ResizeObserver) on every render.
+  const onApproachTopRef = useRef(onApproachTop);
+  onApproachTopRef.current = onApproachTop;
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     const node = scrollRef.current;
@@ -200,6 +219,12 @@ const VirtualizedListInner = <T,>({
     let isNearBottom: boolean;
     if (scrolledUp && !wasProgrammatic) {
       isNearBottom = false;
+      // User is actively heading for older content and is close to the top —
+      // ask for more. Gated on user intent (not raw position) so the
+      // scroll-anchor delta applied after a prepend can never chain-load.
+      if (scrollTop < NEAR_TOP_THRESHOLD) {
+        onApproachTopRef.current?.();
+      }
     } else if (scrolledDown || wasProgrammatic) {
       isNearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
     } else {
@@ -249,7 +274,14 @@ const VirtualizedListInner = <T,>({
   const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     if (event.deltaY >= 0) return;
     const node = scrollRef.current;
-    if (!node || node.scrollTop <= 0) return;
+    if (!node) return;
+    if (node.scrollTop <= 0) {
+      // Already pinned at the top (or the content fits the viewport, so no
+      // scroll event will ever fire) — wheel-up is still an explicit "show
+      // me older content".
+      onApproachTopRef.current?.();
+      return;
+    }
     if (nearBottomRef.current) {
       nearBottomRef.current = false;
       onNearBottomChange?.(false);

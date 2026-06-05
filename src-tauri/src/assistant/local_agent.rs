@@ -12,6 +12,7 @@ use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use crate::assistant::compaction;
 use crate::assistant::engine::{
     build_system_prompt, build_trigger_message, AssistantDeps, AssistantEngineError, RunTurnInput,
 };
@@ -23,8 +24,8 @@ use crate::assistant::repository::{
 };
 use crate::assistant::tools::{strip_local_mcp_qualifier, LOCAL_MCP_SERVER_NAME};
 use crate::assistant::types::{
-    AssistantMessage, AssistantSession, ContentPart, MessageRole, ProviderConnection,
-    ProviderInputMessage, RunNotice, RunStatus, RunUsage, ToolCallStatus,
+    AssistantMessage, AssistantSession, CompactionTrigger, ContentPart, MessageRole,
+    ProviderConnection, ProviderInputMessage, RunNotice, RunStatus, RunUsage, ToolCallStatus,
 };
 use crate::AppState;
 
@@ -166,6 +167,42 @@ pub async fn run_session_turn(
         && session.context.cli_session_id.is_some()
     {
         clear_cli_session_id(deps, &mut session).await?;
+    }
+
+    let messages = repository::list_messages(&deps.pool, &session.id).await?;
+    let provider_history =
+        compaction::provider_history_messages(&deps.pool, &session.id, &messages).await?;
+    if compaction::should_auto_compact(&provider_history, &[]) {
+        match compaction::compact_session_history(
+            &deps.pool,
+            &session,
+            &connection,
+            CompactionTrigger::Automatic,
+            Some(&run_id),
+            false,
+        )
+        .await
+        {
+            Ok(Some(outcome)) => {
+                compaction::reset_cli_session_for_rotation(&deps.pool, &mut session).await?;
+                let _ = emit_event(
+                    &deps.app,
+                    &session,
+                    Some(&run_id),
+                    AssistantUiEvent::SessionCompacted {
+                        compaction: outcome.compaction,
+                        summary_message: outcome.summary_message,
+                    },
+                );
+            }
+            Ok(None) => {}
+            Err(error) => tracing::warn!(
+                session_id = %session.id,
+                run_id = %run_id,
+                error = %error,
+                "Automatic CLI session compaction failed"
+            ),
+        }
     }
 
     let mcp_runtime = local_mcp::ensure_started(&deps.app).await?;
@@ -555,6 +592,7 @@ async fn run_claude_turn(
         trigger,
         CliProviderRuntime::ClaudeCode.metadata_source(),
         CliProviderRuntime::ClaudeCode.display_name(),
+        is_new_session,
     )
     .await?;
     let system_prompt = system_prompt_text(&deps.app, session, trigger).await;
@@ -760,6 +798,7 @@ async fn run_codex_turn(
     trigger: &crate::assistant::types::RunTrigger,
     assistant_slot: &mut Option<AssistantMessage>,
 ) -> Result<Option<RunUsage>, LocalAgentRunError> {
+    let existing_thread_id = session.context.cli_session_id.clone();
     let prompt = prepare_prompt(
         deps,
         session,
@@ -767,11 +806,11 @@ async fn run_codex_turn(
         trigger,
         CliProviderRuntime::Codex.metadata_source(),
         CliProviderRuntime::Codex.display_name(),
+        existing_thread_id.is_none(),
     )
     .await?;
     let system_prompt = system_prompt_text(&deps.app, session, trigger).await;
     let prompt = codex_turn_prompt(&system_prompt, &prompt);
-    let existing_thread_id = session.context.cli_session_id.clone();
 
     let assistant_message = ensure_assistant_message_slot(
         deps,
@@ -1012,8 +1051,9 @@ async fn prepare_prompt(
     trigger: &crate::assistant::types::RunTrigger,
     metadata_source: &str,
     provider_display_name: &str,
+    include_compaction_summary: bool,
 ) -> Result<String, LocalAgentRunError> {
-    if let Some(trigger_content) = build_trigger_message(session, trigger) {
+    let prompt = if let Some(trigger_content) = build_trigger_message(session, trigger) {
         let boundary_msg = repository::create_message(
             &deps.pool,
             CreateMessageParams {
@@ -1034,32 +1074,57 @@ async fn prepare_prompt(
                 message: boundary_msg,
             },
         );
-        return Ok(provider_message_text(&trigger_content));
-    }
+        provider_message_text(&trigger_content)
+    } else {
+        let queued_messages =
+            repository::list_delivered_queued_messages_for_run(&deps.pool, &session.id, run_id)
+                .await?;
+        if !queued_messages.is_empty() {
+            let messages: Vec<AssistantMessage> = queued_messages
+                .into_iter()
+                .map(|queued| queued.message)
+                .collect();
+            queued_messages_prompt(&messages)
+        } else {
+            let messages = repository::list_messages(&deps.pool, &session.id).await?;
+            messages
+                .iter()
+                .rev()
+                .find(|message| message.role == MessageRole::User)
+                .map(message_text)
+                .filter(|text| !text.trim().is_empty())
+                .ok_or_else(|| {
+                    LocalAgentRunError::failed(format!(
+                        "No user message found for {} run",
+                        provider_display_name
+                    ))
+                })?
+        }
+    };
 
-    let queued_messages =
-        repository::list_delivered_queued_messages_for_run(&deps.pool, &session.id, run_id).await?;
-    if !queued_messages.is_empty() {
-        let messages: Vec<AssistantMessage> = queued_messages
-            .into_iter()
-            .map(|queued| queued.message)
-            .collect();
-        return Ok(queued_messages_prompt(&messages));
+    if include_compaction_summary {
+        with_compaction_summary_prompt(&deps.pool, session, prompt).await
+    } else {
+        Ok(prompt)
     }
+}
 
-    let messages = repository::list_messages(&deps.pool, &session.id).await?;
-    messages
-        .iter()
-        .rev()
-        .find(|message| message.role == MessageRole::User)
-        .map(message_text)
-        .filter(|text| !text.trim().is_empty())
-        .ok_or_else(|| {
-            LocalAgentRunError::failed(format!(
-                "No user message found for {} run",
-                provider_display_name
-            ))
-        })
+async fn with_compaction_summary_prompt(
+    pool: &crate::db::DbPool,
+    session: &AssistantSession,
+    prompt: String,
+) -> Result<String, LocalAgentRunError> {
+    let Some(summary) = compaction::latest_compaction_summary_text(pool, &session.id).await? else {
+        return Ok(prompt);
+    };
+    if summary.trim().is_empty() {
+        return Ok(prompt);
+    }
+    Ok(format!(
+        "Conversation summary from before this new CLI session:\n{}\n\nCurrent prompt:\n{}",
+        summary.trim(),
+        prompt
+    ))
 }
 
 fn queued_messages_prompt(messages: &[AssistantMessage]) -> String {
