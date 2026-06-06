@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useCommand } from '../../contexts/CommandContext';
 import { useTabManager } from '../../contexts/TabManagerContext';
 import { useChatManager } from '../../contexts/ChatManagerContext';
 import WorkspaceContextBar from '../../workspace/components/WorkspaceContextBar';
@@ -30,12 +29,10 @@ interface TerminalEmulatorProps {
 }
 
 const TerminalEmulator = ({ onSendToChat, onAgentCommand, agentWorking = false }: TerminalEmulatorProps) => {
-  const { commandHistory } = useCommand();
   const { getActiveTab } = useTabManager();
   const { setActiveContext, openChat, isCurrentChatOpen } = useChatManager();
   const location = useLocation();
   const [inputValue, setInputValue] = useState('');
-  const [historyIndex, setHistoryIndex] = useState(-1);
   const [outputMessages, setOutputMessages] = useState<OutputMessage[]>([]);
   const [isOutputVisible, setIsOutputVisible] = useState(true);
   const [isHoveringOutput, setIsHoveringOutput] = useState(false);
@@ -165,7 +162,6 @@ const TerminalEmulator = ({ onSendToChat, onAgentCommand, agentWorking = false }
 
     // Clear input immediately and reset textarea height
     setInputValue('');
-    setHistoryIndex(-1);
     resetTextareaHeight();
 
     // Check if input starts with "/" - it's a command
@@ -246,31 +242,6 @@ const TerminalEmulator = ({ onSendToChat, onAgentCommand, agentWorking = false }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleCommandExecution(inputValue);
-    }
-    // Ctrl+P: Navigate command history backwards (like bash)
-    else if (e.ctrlKey && e.key === 'p') {
-      e.preventDefault();
-      if (commandHistory.length > 0) {
-        const newIndex = historyIndex === -1
-          ? commandHistory.length - 1
-          : Math.max(0, historyIndex - 1);
-        setHistoryIndex(newIndex);
-        setInputValue(commandHistory[newIndex]?.raw || '');
-      }
-    }
-    // Ctrl+N: Navigate command history forwards (like bash)
-    else if (e.ctrlKey && e.key === 'n') {
-      e.preventDefault();
-      if (historyIndex !== -1) {
-        const newIndex = historyIndex + 1;
-        if (newIndex >= commandHistory.length) {
-          setHistoryIndex(-1);
-          setInputValue('');
-        } else {
-          setHistoryIndex(newIndex);
-          setInputValue(commandHistory[newIndex]?.raw || '');
-        }
-      }
     }
     // Escape: Clear output
     else if (e.key === 'Escape') {

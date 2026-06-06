@@ -39,7 +39,6 @@ const SHORTCUTS: { keys: string; description: string }[] = [
   { keys: 'Enter', description: 'Send message (queued if the agent is working)' },
   { keys: 'Shift+Enter', description: 'New line' },
   { keys: 'Ctrl/Cmd+L', description: 'Focus the input' },
-  { keys: '↑ / ↓', description: 'Browse input history' },
 ];
 
 interface CommandHelpModalProps {
