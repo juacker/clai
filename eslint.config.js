@@ -14,7 +14,6 @@ import prettier from 'eslint-config-prettier';
  *   - react-hooks/set-state-in-effect
  *   - react-hooks/exhaustive-deps
  *   - react-hooks/preserve-manual-memoization
- *   - react-hooks/refs
  *   - react-hooks/immutability
  *
  * `react-hooks/purity` was enabled as a warning on 2026-06-05 (clai#5).
@@ -27,6 +26,25 @@ import prettier from 'eslint-config-prettier';
  * function and a simple array-literal dep array. The next step for
  * this rule is also to promote it from `warn` to `error` in a
  * follow-up PR, after the `purity` promotion lands.
+ *
+ * `react-hooks/refs` was enabled as a warning on 2026-06-06 (clai#5).
+ * Unlike the previous two sub-rules, the current codebase is NOT
+ * clean for this rule — the rule surfaces 16 violations across
+ * 7 files, all of which follow the "latest-value ref" anti-pattern
+ * (syncing a prop or state into a ref directly during render, or
+ * reading a ref cache to derive a value during render). Examples:
+ *   - src/contexts/ChatManagerContext.tsx:54
+ *   - src/assistant/useAssistantSession.ts:30
+ *   - src/components/Chat/StreamingMarkdown.tsx:38,39
+ *   - src/components/common/VirtualizedList.tsx:184,351
+ *   - src/components/Settings/WorkspaceSettingsModal.tsx:620,1456,1457,1508
+ * These are well-known patterns that the React Compiler explicitly
+ * disallows because they bypass React's render model. The fix is
+ * to move the sync into `useEffect`/`useLayoutEffect` or to refactor
+ * to pass the value directly. That cleanup will land in focused
+ * follow-up PRs; this PR is the gate-establishment flip only.
+ * Once all 16 are resolved, this rule will be promoted from
+ * `warn` to `error` in a separate PR.
  */
 export default [
   js.configs.recommended,
@@ -57,7 +75,7 @@ export default [
       'react-hooks/set-state-in-effect': 'off',
       'react-hooks/exhaustive-deps': 'off',
       'react-hooks/preserve-manual-memoization': 'off',
-      'react-hooks/refs': 'off',
+      'react-hooks/refs': 'warn',
       'react-hooks/immutability': 'off',
       'react-hooks/use-memo': 'warn',
       'react-hooks/purity': 'warn',
@@ -96,7 +114,7 @@ export default [
       'react-hooks/set-state-in-effect': 'off',
       'react-hooks/exhaustive-deps': 'off',
       'react-hooks/preserve-manual-memoization': 'off',
-      'react-hooks/refs': 'off',
+      'react-hooks/refs': 'warn',
       'react-hooks/immutability': 'off',
       'react-hooks/use-memo': 'warn',
       'react-hooks/purity': 'warn',
