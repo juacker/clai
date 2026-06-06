@@ -915,7 +915,12 @@ const ToolRow = memo(({ toolName, params, status, result, error }: ToolRowProps)
   const isFailed = status === 'failed' || !!error;
   const icon = isFailed ? '✗' : isRunning ? '⚙' : '✓';
 
-  const formattedParams = formatParams(params);
+  // formatParams hides empty params — right for tools legitimately called
+  // with no args, but on a failed call "the model sent {}" is exactly what
+  // the user needs to see (e.g. a schema-validation reject for a missing
+  // required property), so fall back to the raw JSON there.
+  const formattedParams = formatParams(params)
+    ?? (isFailed && params != null ? JSON.stringify(params, null, 2) : null);
   const hasInput = !!formattedParams;
   const hasOutput = result != null || !!error || isRunning;
 
