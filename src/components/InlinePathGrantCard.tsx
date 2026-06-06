@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import {
   listPendingPathGrantRequests,
@@ -134,6 +134,13 @@ const InlinePathGrantCard = ({ workspaceId }: InlinePathGrantCardProps) => {
       });
 
     const unlistenPromise = listen<PathGrantRequest>(PATH_GRANT_REQUEST_EVENT, (event) => {
+      // The Tauri unlisten in the cleanup below is async — after a
+      // workspace switch this stale listener can still fire before it
+      // detaches, and its closure-captured workspaceId matches the OLD
+      // workspace, so the workspace filter would pass and leak workspace
+      // A's card into the (reused) component now showing workspace B.
+      // The cancelled flag is the synchronous guard.
+      if (cancelled) return;
       const req = event.payload;
       if (!req || !req.requestId || !req.requestedPath || !req.requestedAccess) return;
       if (req.workspaceId !== workspaceId) return;
@@ -149,6 +156,7 @@ const InlinePathGrantCard = ({ workspaceId }: InlinePathGrantCardProps) => {
     const unlistenResolvedPromise = listen<{ requestId?: string }>(
       PATH_GRANT_RESOLVED_EVENT,
       (event) => {
+        if (cancelled) return;
         const requestId = event.payload?.requestId;
         if (!requestId) return;
         setRequests((current) => current.filter((q) => q.requestId !== requestId));

@@ -105,6 +105,13 @@ const InlineApprovalCard = ({ workspaceId }: InlineApprovalCardProps) => {
       });
 
     const unlistenPromise = listen<PermissionRequest>(PERMISSION_REQUEST_EVENT, (event) => {
+      // The Tauri unlisten in the cleanup below is async — after a
+      // workspace switch this stale listener can still fire before it
+      // detaches, and its closure-captured workspaceId matches the OLD
+      // workspace, so the `req.workspaceId !== workspaceId` filter would
+      // pass and leak workspace A's card into the (reused) component now
+      // showing workspace B. The cancelled flag is the synchronous guard.
+      if (cancelled) return;
       const req = event.payload;
       if (!req || !req.requestId || !Array.isArray(req.segments)) return;
       if (req.workspaceId !== workspaceId) return;
@@ -120,6 +127,7 @@ const InlineApprovalCard = ({ workspaceId }: InlineApprovalCardProps) => {
     const unlistenResolvedPromise = listen<{ requestId?: string }>(
       PERMISSION_RESOLVED_EVENT,
       (event) => {
+        if (cancelled) return;
         const requestId = event.payload?.requestId;
         if (!requestId) return;
         setRequests((current) => current.filter((q) => q.requestId !== requestId));
