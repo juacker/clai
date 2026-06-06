@@ -93,7 +93,7 @@ pub fn clear_ai_provider(state: State<'_, AppState>) -> Result<(), String> {
 
 /// Gets all known AI providers with their availability status.
 ///
-/// This checks the system for installed CLI tools (claude, gemini, codex)
+/// This checks the system for installed CLI tools (opencode, claude, gemini, codex)
 /// and returns their availability status.
 #[tauri::command]
 pub fn get_available_ai_providers() -> Vec<AvailableProvider> {
@@ -111,7 +111,7 @@ pub fn validate_ai_provider(provider: AiProvider) -> Result<AvailableProvider, S
 
 /// Gets available models for a provider type.
 ///
-/// Provider type should be one of: "claude", "gemini", "codex"
+/// Provider type should be one of: "opencode", "claude", "gemini", "codex"
 #[tauri::command]
 pub fn get_provider_models(provider_type: String) -> Vec<ModelInfo> {
     get_models_for_provider(&provider_type)

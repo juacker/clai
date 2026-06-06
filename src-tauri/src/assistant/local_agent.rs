@@ -18,7 +18,9 @@ use crate::assistant::engine::{
 };
 use crate::assistant::events::{emit_event, AssistantUiEvent};
 use crate::assistant::local_mcp::{self, ToolBinding};
-use crate::assistant::providers::cli::{CLAUDE_CODE_PROVIDER_ID, CODEX_PROVIDER_ID};
+use crate::assistant::providers::cli::{
+    CLAUDE_CODE_PROVIDER_ID, CODEX_PROVIDER_ID, OPENCODE_PROVIDER_ID,
+};
 use crate::assistant::repository::{
     self, CreateMessageParams, CreateRunParams, CreateToolCallParams,
 };
@@ -33,7 +35,7 @@ const CLAUDE_DISABLED_TOOLS: &str = "Bash,Read,Edit,Write,Glob,Grep,WebFetch,Web
 const CODEX_MCP_TOKEN_ENV: &str = "CLAI_MCP_TOKEN";
 
 /// When `CLAI_LOG_CLI_STREAM` is set to a truthy value, every raw JSONL line
-/// received from a CLI provider (Claude Code / Codex) is logged verbatim at
+/// received from a CLI provider (Claude Code / Codex / OpenCode) is logged verbatim at
 /// `info!` (visible under the default `info` filter). This is a diagnostic
 /// hook for capturing the exact event envelope — e.g. to inspect what a
 /// usage/rate-limit failure actually looks like on the wire, including any
@@ -75,6 +77,7 @@ fn log_cli_stream_line(provider: &str, run_id: &str, line: &str) {
 enum CliProviderRuntime {
     ClaudeCode,
     Codex,
+    OpenCode,
 }
 
 impl CliProviderRuntime {
@@ -82,6 +85,7 @@ impl CliProviderRuntime {
         match provider_id {
             CLAUDE_CODE_PROVIDER_ID => Some(Self::ClaudeCode),
             CODEX_PROVIDER_ID => Some(Self::Codex),
+            OPENCODE_PROVIDER_ID => Some(Self::OpenCode),
             _ => None,
         }
     }
@@ -90,6 +94,7 @@ impl CliProviderRuntime {
         match self {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "Codex",
+            Self::OpenCode => "OpenCode",
         }
     }
 
@@ -97,6 +102,7 @@ impl CliProviderRuntime {
         match self {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
+            Self::OpenCode => "opencode",
         }
     }
 }
@@ -283,6 +289,20 @@ pub async fn run_session_turn(
                 )
                 .await
             }
+            CliProviderRuntime::OpenCode => {
+                run_opencode_turn(
+                    deps,
+                    &mut session,
+                    &connection,
+                    &run_id,
+                    mcp_runtime.url(),
+                    binding_guard.token(),
+                    &input.cancel_token,
+                    &input.trigger,
+                    &mut assistant_slot,
+                )
+                .await
+            }
         };
 
         // The CLI session id is provider-specific and can also be pruned/expired
@@ -416,6 +436,11 @@ fn is_session_lost_error(provider_runtime: CliProviderRuntime, message: &str) ->
                 // stale id left by another provider, or a pruned rollout).
                 || message.contains("no rollout found")
                 || message.contains("thread/resume failed")
+        }
+        CliProviderRuntime::OpenCode => {
+            message.contains("Session not found")
+                || message.contains("No session found")
+                || message.contains("session not found")
         }
     }
 }
@@ -962,6 +987,186 @@ fn codex_turn_prompt(system_prompt: &str, prompt: &str) -> String {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn run_opencode_turn(
+    deps: &AssistantDeps,
+    session: &mut AssistantSession,
+    connection: &ProviderConnection,
+    run_id: &str,
+    mcp_url: &str,
+    mcp_token: &str,
+    cancel_token: &CancellationToken,
+    trigger: &crate::assistant::types::RunTrigger,
+    assistant_slot: &mut Option<AssistantMessage>,
+) -> Result<Option<RunUsage>, LocalAgentRunError> {
+    let existing_session_id = session.context.cli_session_id.clone();
+    let prompt = prepare_prompt(
+        deps,
+        session,
+        run_id,
+        trigger,
+        CliProviderRuntime::OpenCode.metadata_source(),
+        CliProviderRuntime::OpenCode.display_name(),
+        existing_session_id.is_none(),
+    )
+    .await?;
+    let system_prompt = system_prompt_text(&deps.app, session, trigger).await;
+    let prompt = opencode_turn_prompt(&system_prompt, &prompt);
+
+    let assistant_message = ensure_assistant_message_slot(
+        deps,
+        session,
+        run_id,
+        CliProviderRuntime::OpenCode.metadata_source(),
+        assistant_slot,
+    )
+    .await?;
+
+    let binary = connection
+        .base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("opencode");
+    let workspace_root = workspace_root_for_session(deps, session);
+    let config_content = opencode_config_content(mcp_url, mcp_token)?;
+
+    let mut command = Command::new(binary);
+    command
+        .arg("--pure")
+        .arg("run")
+        .arg("--format")
+        .arg("json")
+        .env("OPENCODE_CONFIG_CONTENT", config_content)
+        .env("OPENCODE_DISABLE_AUTOUPDATE", "true")
+        .env("OPENCODE_DISABLE_PRUNE", "true")
+        .env("OPENCODE_DISABLE_CLAUDE_CODE", "true")
+        .env("OPENCODE_DISABLE_CLAUDE_CODE_PROMPT", "true")
+        .env("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS", "true")
+        .env("OPENCODE_DISABLE_DEFAULT_PLUGINS", "true")
+        .env("OPENCODE_DISABLE_LSP_DOWNLOAD", "true")
+        .env("MCP_TIMEOUT", "3600000")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(session_id) = existing_session_id.as_deref() {
+        command.arg("--session").arg(session_id);
+    }
+    let model = connection.model_id.trim();
+    if !model.is_empty() && model != "default" {
+        command.arg("--model").arg(model);
+    }
+    if let Some(root) = workspace_root.as_ref() {
+        command.arg("--dir").arg(root);
+        command.current_dir(root);
+    }
+
+    let mut child = command.spawn().map_err(|e| {
+        LocalAgentRunError::failed(format!(
+            "Failed to launch `{}`: {}. Is OpenCode installed and on PATH?",
+            binary, e
+        ))
+    })?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use tokio::io::AsyncWriteExt;
+        stdin
+            .write_all(prompt.as_bytes())
+            .await
+            .map_err(|e| LocalAgentRunError::failed(format!("Failed to write prompt: {}", e)))?;
+        drop(stdin);
+    }
+
+    let stderr_tail: Arc<Mutex<VecDeque<String>>> =
+        Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_TAIL_LINES)));
+    if let Some(stderr) = child.stderr.take() {
+        spawn_stderr_logger(
+            run_id.to_string(),
+            CliProviderRuntime::OpenCode.display_name(),
+            stderr,
+            stderr_tail.clone(),
+        );
+    }
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| LocalAgentRunError::failed("OpenCode stdout was not captured"))?;
+    let mut lines = BufReader::new(stdout).lines();
+    let mut state = OpenCodeStreamState::new();
+    let mut usage: Option<RunUsage> = None;
+    let mut result_error: Option<String> = None;
+
+    loop {
+        let line = tokio::select! {
+            _ = cancel_token.cancelled() => {
+                let _ = child.kill().await;
+                finalize_assistant_message_from_parts(
+                    deps,
+                    session,
+                    run_id,
+                    &assistant_message,
+                    &state.parts,
+                )
+                .await?;
+                return Err(LocalAgentRunError::Cancelled { usage });
+            }
+            next = lines.next_line() => next
+        }
+        .map_err(|e| LocalAgentRunError::failed(e.to_string()))?;
+
+        let Some(line) = line else {
+            break;
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
+        log_cli_stream_line("opencode", run_id, &line);
+        let value: Value = serde_json::from_str(&line).map_err(|e| {
+            LocalAgentRunError::failed(format!("Invalid OpenCode JSONL event: {}", e))
+        })?;
+        handle_opencode_event(
+            deps,
+            session,
+            run_id,
+            &assistant_message,
+            &value,
+            &mut state,
+            &mut usage,
+            &mut result_error,
+        )
+        .await?;
+    }
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| LocalAgentRunError::failed(e.to_string()))?;
+    finalize_assistant_message_from_parts(deps, session, run_id, &assistant_message, &state.parts)
+        .await?;
+
+    if let Some(message) = result_error {
+        let enriched = append_stderr_tail(&message, &stderr_tail);
+        return Err(LocalAgentRunError::Failed {
+            message: enriched,
+            usage,
+        });
+    }
+    if !status.success() {
+        let base = format!("OpenCode exited with status {}", status);
+        return Err(LocalAgentRunError::Failed {
+            message: append_stderr_tail(&base, &stderr_tail),
+            usage,
+        });
+    }
+    Ok(usage)
+}
+
+fn opencode_turn_prompt(system_prompt: &str, prompt: &str) -> String {
+    format!(
+        "System instructions for this CLAI run:\n{}\n\nUse only the connected `clai` MCP tools for workspace work, shell execution, file access, web access, and user interaction. OpenCode native tools are disabled for this run.\n\nUser/task prompt:\n{}",
+        system_prompt, prompt
+    )
+}
+
 fn workspace_root_for_session(deps: &AssistantDeps, session: &AssistantSession) -> Option<PathBuf> {
     session
         .context
@@ -1031,6 +1236,50 @@ fn add_codex_common_args(
 
 fn toml_string_value(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
+}
+
+fn opencode_config_content(mcp_url: &str, mcp_token: &str) -> Result<String, LocalAgentRunError> {
+    let config = serde_json::json!({
+        "$schema": "https://opencode.ai/config.json",
+        "autoupdate": false,
+        "share": "disabled",
+        "instructions": [],
+        "plugin": [],
+        "lsp": false,
+        "formatter": false,
+        "tools": {
+            "bash": false,
+            "edit": false,
+            "write": false,
+            "read": false,
+            "grep": false,
+            "glob": false,
+            "lsp": false,
+            "apply_patch": false,
+            "skill": false,
+            "todowrite": false,
+            "webfetch": false,
+            "websearch": false,
+            "question": false
+        },
+        "permission": {
+            "*": "deny",
+            "clai_*": "allow"
+        },
+        "mcp": {
+            "clai": {
+                "type": "remote",
+                "url": mcp_url,
+                "enabled": true,
+                "timeout": 3600000,
+                "oauth": false,
+                "headers": {
+                    "Authorization": format!("Bearer {}", mcp_token)
+                }
+            }
+        }
+    });
+    serde_json::to_string(&config).map_err(|e| LocalAgentRunError::failed(e.to_string()))
 }
 
 fn append_stderr_tail(message: &str, tail: &Arc<Mutex<VecDeque<String>>>) -> String {
@@ -1266,6 +1515,410 @@ impl CodexStreamState {
             last_update_emit_at: None,
         }
     }
+}
+
+struct OpenCodeStreamState {
+    parts: Vec<ContentPart>,
+    persisted_tool_part_ids: std::collections::HashSet<String>,
+    last_update_emit_at: Option<std::time::Instant>,
+}
+
+impl OpenCodeStreamState {
+    fn new() -> Self {
+        Self {
+            parts: Vec::new(),
+            persisted_tool_part_ids: std::collections::HashSet::new(),
+            last_update_emit_at: None,
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_opencode_event(
+    deps: &AssistantDeps,
+    session: &mut AssistantSession,
+    run_id: &str,
+    assistant_message: &AssistantMessage,
+    value: &Value,
+    state: &mut OpenCodeStreamState,
+    usage: &mut Option<RunUsage>,
+    result_error: &mut Option<String>,
+) -> Result<(), LocalAgentRunError> {
+    if let Some(session_id) = value.get("sessionID").and_then(Value::as_str) {
+        set_cli_session_id(deps, session, session_id.to_string(), OPENCODE_PROVIDER_ID).await?;
+    }
+
+    match value.get("type").and_then(Value::as_str) {
+        Some("text") => {
+            if let Some(text) = value
+                .get("part")
+                .and_then(|part| part.get("text"))
+                .and_then(Value::as_str)
+                .filter(|text| !text.is_empty())
+            {
+                push_opencode_text(state, text);
+                let _ = emit_event(
+                    &deps.app,
+                    session,
+                    Some(run_id),
+                    AssistantUiEvent::AssistantDelta {
+                        message_id: assistant_message.id.clone(),
+                        text: text.to_string(),
+                    },
+                );
+            }
+        }
+        Some("reasoning") => {
+            if let Some(text) = value
+                .get("part")
+                .and_then(|part| part.get("text"))
+                .and_then(Value::as_str)
+                .filter(|text| !text.is_empty())
+            {
+                state.parts.push(ContentPart::Thinking {
+                    text: text.to_string(),
+                    signature: None,
+                });
+                let _ = emit_event(
+                    &deps.app,
+                    session,
+                    Some(run_id),
+                    AssistantUiEvent::AssistantThinkingDelta {
+                        message_id: assistant_message.id.clone(),
+                        text: text.to_string(),
+                    },
+                );
+            }
+        }
+        Some("tool_use") => {
+            if let Some(part) = value.get("part") {
+                persist_opencode_tool_use_and_result(
+                    deps,
+                    session,
+                    run_id,
+                    assistant_message,
+                    state,
+                    part,
+                )
+                .await?;
+            }
+        }
+        Some("step_finish") => {
+            if let Some(parsed) = opencode_usage_from_part(value.get("part")) {
+                merge_run_usage(usage, parsed);
+            }
+        }
+        Some("error") => {
+            *result_error = Some(opencode_error_message(value));
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+fn push_opencode_text(state: &mut OpenCodeStreamState, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    if let Some(ContentPart::Text { text: existing }) = state.parts.last_mut() {
+        if !existing.is_empty() && !existing.ends_with('\n') {
+            existing.push_str("\n\n");
+        }
+        existing.push_str(text);
+    } else {
+        state.parts.push(ContentPart::Text {
+            text: text.to_string(),
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn persist_opencode_tool_use_and_result(
+    deps: &AssistantDeps,
+    session: &AssistantSession,
+    run_id: &str,
+    assistant_message: &AssistantMessage,
+    state: &mut OpenCodeStreamState,
+    part: &Value,
+) -> Result<(), LocalAgentRunError> {
+    let raw_part_id = part
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    if state.persisted_tool_part_ids.contains(&raw_part_id) {
+        return Ok(());
+    }
+
+    let tool_call_id = opencode_tool_call_id(run_id, &raw_part_id);
+    let tool_name = opencode_tool_name(part);
+    let params = opencode_tool_arguments(part);
+    let invocation = repository::create_tool_call(
+        &deps.pool,
+        CreateToolCallParams {
+            id: tool_call_id.clone(),
+            run_id: run_id.to_string(),
+            session_id: session.id.clone(),
+            tool_name: tool_name.clone(),
+            params: params.clone(),
+            status: ToolCallStatus::Running,
+        },
+    )
+    .await
+    .map_err(LocalAgentRunError::failed)?;
+
+    let _ = emit_event(
+        &deps.app,
+        session,
+        Some(run_id),
+        AssistantUiEvent::ToolCallStarted {
+            tool_call: invocation,
+        },
+    );
+
+    state.parts.push(ContentPart::ToolUse {
+        tool_call_id: tool_call_id.clone(),
+        tool_name,
+        arguments: params,
+    });
+    state.persisted_tool_part_ids.insert(raw_part_id);
+    flush_opencode_assistant_message_content(deps, session, run_id, assistant_message, state)
+        .await?;
+
+    apply_opencode_tool_result(deps, session, run_id, &tool_call_id, part).await
+}
+
+async fn apply_opencode_tool_result(
+    deps: &AssistantDeps,
+    session: &AssistantSession,
+    run_id: &str,
+    tool_call_id: &str,
+    part: &Value,
+) -> Result<(), LocalAgentRunError> {
+    let state = part.get("state").unwrap_or(&Value::Null);
+    let status_value = state.get("status").and_then(Value::as_str);
+    let error_text = state
+        .get("error")
+        .and_then(opencode_error_value_message)
+        .or_else(|| part.get("error").and_then(opencode_error_value_message));
+    let is_error = status_value == Some("error") || error_text.is_some();
+    let payload = if is_error {
+        serde_json::json!({
+            "error": error_text
+                .clone()
+                .unwrap_or_else(|| "OpenCode tool execution failed".to_string()),
+        })
+    } else {
+        opencode_tool_result_payload(part)
+    };
+
+    let updated = match repository::update_tool_call(
+        &deps.pool,
+        tool_call_id,
+        if is_error {
+            ToolCallStatus::Failed
+        } else {
+            ToolCallStatus::Completed
+        },
+        (!is_error).then_some(&payload),
+        error_text.as_deref(),
+    )
+    .await
+    {
+        Ok(tc) => tc,
+        Err(err) => {
+            tracing::warn!(
+                tool_call_id = %tool_call_id,
+                error = %err,
+                "OpenCode tool update failed even after tool_use was registered"
+            );
+            return Ok(());
+        }
+    };
+
+    let started_at = updated.started_at;
+    let completed_at = updated.completed_at;
+    let ui_event = if is_error {
+        AssistantUiEvent::ToolCallFailed { tool_call: updated }
+    } else {
+        AssistantUiEvent::ToolCallCompleted { tool_call: updated }
+    };
+    let _ = emit_event(&deps.app, session, Some(run_id), ui_event);
+
+    let result_message = repository::create_message(
+        &deps.pool,
+        CreateMessageParams {
+            session_id: session.id.clone(),
+            role: MessageRole::Tool,
+            content: vec![ContentPart::ToolResult {
+                tool_call_id: tool_call_id.to_string(),
+                payload,
+                started_at: Some(started_at),
+                completed_at,
+            }],
+            provider_metadata: Some(serde_json::json!({
+                "source": CliProviderRuntime::OpenCode.metadata_source(),
+            })),
+        },
+    )
+    .await?;
+
+    let _ = emit_event(
+        &deps.app,
+        session,
+        Some(run_id),
+        AssistantUiEvent::MessageCreated {
+            message: result_message,
+        },
+    );
+
+    Ok(())
+}
+
+fn opencode_tool_call_id(run_id: &str, raw_part_id: &str) -> String {
+    format!("opencode:{}:{}", run_id, raw_part_id)
+}
+
+fn opencode_tool_name(part: &Value) -> String {
+    let raw = part
+        .get("tool")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            part.get("state")
+                .and_then(|state| state.get("tool"))
+                .and_then(|tool| tool.get("name"))
+                .and_then(Value::as_str)
+        })
+        .unwrap_or("unknown");
+    raw.strip_prefix("clai_").unwrap_or(raw).to_string()
+}
+
+fn opencode_tool_arguments(part: &Value) -> Value {
+    part.get("state")
+        .and_then(|state| state.get("input"))
+        .or_else(|| part.get("state").and_then(|state| state.get("parameters")))
+        .or_else(|| part.get("input"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+fn opencode_tool_result_payload(part: &Value) -> Value {
+    let state = part.get("state").unwrap_or(&Value::Null);
+    state
+        .get("output")
+        .or_else(|| state.get("metadata"))
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+fn opencode_usage_from_part(part: Option<&Value>) -> Option<RunUsage> {
+    let tokens = part?.get("tokens")?;
+    let input_tokens = tokens
+        .get("input")
+        .and_then(Value::as_i64)
+        .and_then(|v| u64::try_from(v).ok());
+    let output_tokens = tokens
+        .get("output")
+        .and_then(Value::as_i64)
+        .and_then(|v| u64::try_from(v).ok());
+    let reasoning_tokens = tokens
+        .get("reasoning")
+        .and_then(Value::as_i64)
+        .and_then(|v| u64::try_from(v).ok());
+    let total_tokens = match (input_tokens, output_tokens, reasoning_tokens) {
+        (None, None, None) => None,
+        _ => Some(
+            input_tokens.unwrap_or(0) + output_tokens.unwrap_or(0) + reasoning_tokens.unwrap_or(0),
+        ),
+    };
+    Some(RunUsage {
+        input_tokens,
+        output_tokens,
+        reasoning_tokens,
+        total_tokens,
+    })
+}
+
+fn merge_run_usage(total: &mut Option<RunUsage>, next: RunUsage) {
+    let Some(existing) = total.as_mut() else {
+        *total = Some(next);
+        return;
+    };
+    existing.input_tokens = add_optional_u64(existing.input_tokens, next.input_tokens);
+    existing.output_tokens = add_optional_u64(existing.output_tokens, next.output_tokens);
+    existing.reasoning_tokens = add_optional_u64(existing.reasoning_tokens, next.reasoning_tokens);
+    existing.total_tokens = add_optional_u64(existing.total_tokens, next.total_tokens);
+}
+
+fn add_optional_u64(left: Option<u64>, right: Option<u64>) -> Option<u64> {
+    match (left, right) {
+        (None, None) => None,
+        _ => Some(left.unwrap_or(0) + right.unwrap_or(0)),
+    }
+}
+
+fn opencode_error_message(value: &Value) -> String {
+    value
+        .get("error")
+        .and_then(opencode_error_value_message)
+        .unwrap_or_else(|| "OpenCode stream error".to_string())
+}
+
+fn opencode_error_value_message(value: &Value) -> Option<String> {
+    if let Some(message) = value.as_str() {
+        return Some(message.to_string());
+    }
+    value
+        .get("data")
+        .and_then(|data| data.get("message"))
+        .and_then(Value::as_str)
+        .or_else(|| value.get("message").and_then(Value::as_str))
+        .or_else(|| value.get("name").and_then(Value::as_str))
+        .map(str::to_string)
+        .or_else(|| serde_json::to_string(value).ok())
+}
+
+async fn flush_opencode_assistant_message_content(
+    deps: &AssistantDeps,
+    session: &AssistantSession,
+    run_id: &str,
+    assistant_message: &AssistantMessage,
+    state: &mut OpenCodeStreamState,
+) -> Result<(), LocalAgentRunError> {
+    let content = non_empty_content_parts(&state.parts);
+    if content.is_empty() {
+        return Ok(());
+    }
+    let updated =
+        match repository::update_message_content(&deps.pool, &assistant_message.id, &content).await
+        {
+            Ok(m) => m,
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    message_id = %assistant_message.id,
+                    "Failed to flush OpenCode assistant message content mid-turn"
+                );
+                return Ok(());
+            }
+        };
+    let now = std::time::Instant::now();
+    let should_emit = match state.last_update_emit_at {
+        None => true,
+        Some(last) => now.duration_since(last).as_millis() >= ASSISTANT_UPDATE_EMIT_THROTTLE_MS,
+    };
+    if should_emit {
+        state.last_update_emit_at = Some(now);
+        let _ = emit_event(
+            &deps.app,
+            session,
+            Some(run_id),
+            AssistantUiEvent::AssistantMessageUpdated { message: updated },
+        );
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2665,6 +3318,14 @@ mod tests {
             CliProviderRuntime::ClaudeCode,
             "no rollout found for thread id abc"
         ));
+        assert!(is_session_lost_error(
+            CliProviderRuntime::OpenCode,
+            "Session not found"
+        ));
+        assert!(!is_session_lost_error(
+            CliProviderRuntime::OpenCode,
+            "You've hit your usage limit. Try again at 9:47 PM."
+        ));
     }
 
     #[test]
@@ -2695,5 +3356,92 @@ mod tests {
     #[test]
     fn codex_tool_call_ids_are_run_scoped() {
         assert_eq!(codex_tool_call_id("run-a", "item_0"), "codex:run-a:item_0");
+    }
+
+    #[test]
+    fn opencode_usage_maps_step_finish_tokens() {
+        let usage = opencode_usage_from_part(Some(&serde_json::json!({
+            "tokens": {
+                "input": 11,
+                "output": 5,
+                "reasoning": 2,
+                "cache": {"read": 100, "write": 0}
+            }
+        })))
+        .expect("usage");
+
+        assert_eq!(usage.input_tokens, Some(11));
+        assert_eq!(usage.output_tokens, Some(5));
+        assert_eq!(usage.reasoning_tokens, Some(2));
+        assert_eq!(usage.total_tokens, Some(18));
+    }
+
+    #[test]
+    fn opencode_usage_merges_multiple_steps() {
+        let mut usage = Some(RunUsage {
+            input_tokens: Some(10),
+            output_tokens: Some(2),
+            reasoning_tokens: None,
+            total_tokens: Some(12),
+        });
+        merge_run_usage(
+            &mut usage,
+            RunUsage {
+                input_tokens: Some(7),
+                output_tokens: Some(3),
+                reasoning_tokens: Some(1),
+                total_tokens: Some(11),
+            },
+        );
+
+        let usage = usage.expect("usage");
+        assert_eq!(usage.input_tokens, Some(17));
+        assert_eq!(usage.output_tokens, Some(5));
+        assert_eq!(usage.reasoning_tokens, Some(1));
+        assert_eq!(usage.total_tokens, Some(23));
+    }
+
+    #[test]
+    fn opencode_tool_names_strip_clai_prefix() {
+        assert_eq!(
+            opencode_tool_name(&serde_json::json!({"tool": "clai_bash_exec"})),
+            "bash_exec"
+        );
+        assert_eq!(
+            opencode_tool_name(&serde_json::json!({"tool": "other_search"})),
+            "other_search"
+        );
+    }
+
+    #[test]
+    fn opencode_error_prefers_data_message() {
+        assert_eq!(
+            opencode_error_message(&serde_json::json!({
+                "type": "error",
+                "error": {
+                    "name": "APIError",
+                    "data": {"message": "Rate limit exceeded"}
+                }
+            })),
+            "Rate limit exceeded"
+        );
+    }
+
+    #[test]
+    fn opencode_config_disables_native_tools_and_enables_clai_mcp() {
+        let raw = opencode_config_content("http://127.0.0.1:1234/mcp", "token")
+            .unwrap_or_else(|error| panic!("{}", error.message()));
+        let value: Value = serde_json::from_str(&raw).expect("json");
+
+        assert_eq!(value["tools"]["bash"], false);
+        assert_eq!(value["tools"]["edit"], false);
+        assert_eq!(value["permission"]["*"], "deny");
+        assert_eq!(value["permission"]["clai_*"], "allow");
+        assert_eq!(value["mcp"]["clai"]["type"], "remote");
+        assert_eq!(value["mcp"]["clai"]["url"], "http://127.0.0.1:1234/mcp");
+        assert_eq!(
+            value["mcp"]["clai"]["headers"]["Authorization"],
+            "Bearer token"
+        );
     }
 }

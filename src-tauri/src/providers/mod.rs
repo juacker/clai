@@ -234,6 +234,9 @@ pub fn detect_supported_cli_providers() -> Vec<&'static str> {
     if check_provider(&AiProvider::Codex { model: None }).available {
         found.push(crate::assistant::providers::cli::CODEX_PROVIDER_ID);
     }
+    if check_provider(&AiProvider::OpenCode { model: None }).available {
+        found.push(crate::assistant::providers::cli::OPENCODE_PROVIDER_ID);
+    }
     found
 }
 

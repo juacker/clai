@@ -94,7 +94,7 @@ export const validateAiProvider = async (provider: unknown): Promise<unknown> =>
 };
 
 /**
- * Get available models for a provider type ('claude', 'gemini', 'codex').
+ * Get available models for a provider type ('opencode', 'claude', 'gemini', 'codex').
  */
 export const getProviderModels = async (providerType: string): Promise<unknown> => {
   try {

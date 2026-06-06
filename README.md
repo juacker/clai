@@ -41,8 +41,8 @@ flagged, and selecting a card slides in a live chat preview.
   execution policy. The main agent calls them as tools, and you can read their
   full transcripts.
 - **Multiple providers** — API connections (OpenAI-compatible or
-  Anthropic-compatible) and local CLI agents such as Claude Code and OpenAI
-  Codex. Each agent picks its own.
+  Anthropic-compatible) and local CLI agents such as Claude Code, OpenAI
+  Codex, and OpenCode. Each agent picks its own.
 - **MCP-native tools** — Configure MCP servers once in Settings, then attach
   them per workspace or per agent. HTTP and stdio transports.
 - **Local execution sandbox** — Per-agent filesystem grants and three shell
@@ -80,8 +80,8 @@ Download the latest build for your platform from the
 ## Getting started
 
 1. **Add a provider** — In Settings, connect an API provider or point CLAI at
-   a local CLI agent. Claude Code is auto-detected and pre-wired into new
-   workspaces.
+   a local CLI agent. Supported CLI agents are auto-detected and pre-wired into
+   new workspaces.
 2. **Add MCP servers (optional)** — Register local or remote MCP servers for
    external tools.
 3. **Create a workspace** — From the Fleet view. Open its settings (gear icon
@@ -98,8 +98,8 @@ Download the latest build for your platform from the
   provider with an API key and optional custom base URL. Works with OpenAI,
   Anthropic, together.ai, Groq, and local endpoints (vLLM, llama.cpp, Ollama).
 - **CLI agents** — Drive a locally installed coding CLI directly, such as
-  **Claude Code** or **OpenAI Codex**. CLAI exposes its tools to them over MCP
-  and streams their output like any other run.
+  **Claude Code**, **OpenAI Codex**, or **OpenCode**. CLAI exposes its tools to
+  them over MCP and streams their output like any other run.
 
 Each agent chooses its own provider, so you can mix — for example a Claude
 Code main agent with an OpenAI-compatible reviewer.

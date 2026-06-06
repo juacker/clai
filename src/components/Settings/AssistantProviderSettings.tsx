@@ -452,7 +452,7 @@ const AssistantProviderSettings = () => {
           }}>
             This provider runs through your local <strong>{selectedAdapter?.displayName}</strong> CLI
             using its own authentication (typically a paid subscription). Make sure the binary is
-            installed and you have signed in (e.g. <code>claude /login</code> or <code>codex login</code>) in your terminal
+            installed and you have signed in (e.g. <code>claude /login</code>, <code>codex login</code>, or <code>opencode auth login</code>) in your terminal
             before testing this connection. No API key is stored.
           </div>
         )}

@@ -10,7 +10,7 @@ Release (`.github/workflows/flatpak.yml`). The job downloads the released
 clai is unusual for a Flatpak: it deliberately reaches the **host** for
 two things, both through `flatpak-spawn --host`:
 
-1. **AI provider CLIs** — `claude`, `codex`, etc. are the user's own
+1. **AI provider CLIs** — `claude`, `codex`, `opencode`, etc. are the user's own
    host-installed tools; clai shells out to them on the host
    (`src-tauri/src/providers/mod.rs`).
 2. **The `bash_exec` sandbox** — clai sandboxes agent shell commands with
