@@ -241,6 +241,15 @@ pub async fn assistant_delete_session(
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
     let (target_pool, _session) = session_pool(state.inner(), &session_id).await?;
+    // Hard clear: the schema cascades messages/runs/tool calls/compactions.
+    // Refuse while a run is in flight — the engine would keep writing rows
+    // for (and emitting events about) a session that no longer exists.
+    if repository::session_has_active_run(&target_pool, &session_id).await? {
+        return Err(
+            "Wait for the current assistant run to finish before clearing the conversation."
+                .to_string(),
+        );
+    }
     repository::delete_session(&target_pool, &session_id).await
 }
 

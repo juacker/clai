@@ -39,7 +39,11 @@ const TerminalEmulatorWrapper = () => {
   const location = useLocation();
   const { tabs, activeTabId, updateTabContext } = useTabManager();
   const { openChat } = useChatManager();
-  const { ensureSession, isStreaming: tabIsStreaming } = useAssistantSession(activeTabId || '');
+  const {
+    ensureSession,
+    isStreaming: tabIsStreaming,
+    clearSessions,
+  } = useAssistantSession(activeTabId || '');
   const workspaceRouteMatch = location.pathname.match(/^\/workspace(?:\/([^/]+))?\/?$/);
   const isWorkspaceRoute = Boolean(workspaceRouteMatch);
   const currentWorkspaceId = workspaceRouteMatch?.[1]
@@ -194,6 +198,39 @@ const TerminalEmulatorWrapper = () => {
   const handleAgentCommand = useCallback(
     async (command: string): Promise<{ error?: string; message?: string }> => {
       const [name] = command.trim().split(/\s+/, 1);
+
+      // /clear — HARD clear: deletes the session (DB cascades messages,
+      // runs, tool calls, compaction summaries; artifacts/memories/tasks
+      // are workspace-scoped and survive). The backend refuses while a
+      // run is active. A fresh empty session is bound immediately.
+      if (name === 'clear') {
+        if (isWorkspaceRoute) {
+          try {
+            const binding = await getOrCreateWorkspaceSession(currentWorkspaceId);
+            const store = useAssistantStore.getState();
+            await assistantClient.deleteSession(binding.session.id);
+            store.removeSession(binding.session.id);
+            const fresh = await getOrCreateWorkspaceSession(currentWorkspaceId);
+            store.initSession(fresh.session);
+            store.setActiveSessionForTab(`workspace:${currentWorkspaceId}`, fresh.session.id);
+            return { message: 'Conversation history cleared.' };
+          } catch (err) {
+            console.error('[TerminalEmulatorWrapper] Workspace clear error:', err);
+            return { error: errorMessage(err, 'Clear failed.') };
+          }
+        }
+        if (!activeTab) {
+          return { error: 'No active tab available.' };
+        }
+        try {
+          await clearSessions();
+          return { message: 'Conversation history cleared.' };
+        } catch (err) {
+          console.error('[TerminalEmulatorWrapper] Tab clear error:', err);
+          return { error: errorMessage(err, 'Clear failed.') };
+        }
+      }
+
       if (name !== 'compact') {
         return { error: `Unknown assistant command: /${name || command}` };
       }
@@ -264,6 +301,7 @@ const TerminalEmulatorWrapper = () => {
     },
     [
       activeTab,
+      clearSessions,
       currentWorkspaceId,
       ensureSession,
       isWorkspaceRoute,

@@ -194,7 +194,8 @@ const TerminalEmulator = ({ onSendToChat, onAgentCommand, agentWorking = false }
     // Strip the leading "/" and parse as command
     const commandInput = trimmed.slice(1);
 
-    if (commandInput === 'compact' || commandInput.startsWith('compact ')) {
+    const agentCommandName = commandInput.split(/\s+/, 1)[0];
+    if (agentCommandName === 'compact' || agentCommandName === 'clear') {
       if (!onAgentCommand) {
         addOutputMessage('Assistant commands are not available here.', 'error');
         return;
@@ -246,7 +247,7 @@ const TerminalEmulator = ({ onSendToChat, onAgentCommand, agentWorking = false }
     else {
       // Validate command type using registry - no hardcoded list needed!
       if (!isCommandSupported(command.type)) {
-        addOutputMessage(`Unknown command: /${command.type}. Available: /tab, /ctx, /reset-all.`, 'error');
+        addOutputMessage(`Unknown command: /${command.type}. Available: /compact, /clear, /tab, /ctx, /reset-all.`, 'error');
         return;
       }
 
