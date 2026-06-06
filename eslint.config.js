@@ -13,7 +13,6 @@ import prettier from 'eslint-config-prettier';
  * Re-enable them incrementally in follow-up PRs:
  *   - react-hooks/set-state-in-effect
  *   - react-hooks/exhaustive-deps
- *   - react-hooks/preserve-manual-memoization
  *
  * `react-hooks/purity` was enabled as a warning on 2026-06-05 (clai#5).
  * The current codebase is clean for this rule (0 violations), so the
@@ -62,6 +61,40 @@ import prettier from 'eslint-config-prettier';
  * effect (or move the function body inline into the effect); both
  * are mechanical, no behavior change. Cleanup will land in a focused
  * follow-up PR; this PR is the gate-establishment flip only.
+ *
+ * `react-hooks/preserve-manual-memoization` was enabled as a warning
+ * on 2026-06-07 (clai#5). The rule validates that any manual
+ * `useMemo`/`useCallback` is written in a way that React Compiler's
+ * dependency inference can preserve — i.e. the inferred deps match
+ * the manually specified deps array. When they don't match, the
+ * compiler refuses to compile the component because preserving the
+ * manual memoization could change render behavior (memo cache would
+ * invalidate at different times than the user expects). The current
+ * codebase is NOT clean — the rule surfaces 13 violations, all of
+ * which are concentrated in a single file. Two distinct violation
+ * shapes appear:
+ *   - "This dependency may be modified later" — manual deps include
+ *     a value (typically returned from a `useStore` selector or
+ *     `useMemo` higher in the component) that the React Compiler
+ *     flags as mutated after the memoization site. The compiler
+ *     cannot guarantee the memoized closure won't see a stale value.
+ *   - "This value was memoized in source but not in compilation
+ *     output" — the manual `useCallback` body has logic the compiler
+ *     can't model (e.g. function is conditionally not returned, or
+ *     the function body contains a state-setter call that mutates a
+ *     dep in an untracked scope), so the compiler drops the manual
+ *     memoization entirely and reports the value as unmemoized.
+ * All 13 affected lines live in:
+ *   - src/components/ContextPanel/ContextPanel.tsx (lines 109, 128,
+ *     141 [×4], 143 [×2], 152 [×4], 154, 168 [×4], with column
+ *     offsets on multi-element deps arrays).
+ * The fix is non-trivial: most call sites need to either pull the
+ * captured value out of the deps array (if it's truly stable, e.g.
+ * a setter or a non-mutated ref), or refactor the surrounding code
+ * so the closure body doesn't reach into an untracked scope.
+ * Cleanup will land in a focused follow-up PR; this PR is the
+ * gate-establishment flip only. Once all 13 are resolved, this
+ * rule will be promoted from `warn` to `error` in a separate PR.
  */
 export default [
   js.configs.recommended,
@@ -91,7 +124,7 @@ export default [
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       'react-hooks/set-state-in-effect': 'off',
       'react-hooks/exhaustive-deps': 'off',
-      'react-hooks/preserve-manual-memoization': 'off',
+      'react-hooks/preserve-manual-memoization': 'warn',
       'react-hooks/refs': 'warn',
       'react-hooks/immutability': 'warn',
       'react-hooks/use-memo': 'warn',
@@ -130,7 +163,7 @@ export default [
       // Disabled React 19 strict hooks rules (see top comment)
       'react-hooks/set-state-in-effect': 'off',
       'react-hooks/exhaustive-deps': 'off',
-      'react-hooks/preserve-manual-memoization': 'off',
+      'react-hooks/preserve-manual-memoization': 'warn',
       'react-hooks/refs': 'warn',
       'react-hooks/immutability': 'warn',
       'react-hooks/use-memo': 'warn',
