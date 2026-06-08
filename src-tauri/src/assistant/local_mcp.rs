@@ -328,6 +328,7 @@ async fn execute_bound_tool(
         // therefore loses that one link for Claude-CLI sessions; the
         // tool still executes correctly.
         tool_call_id: None,
+        cancel_token: binding.cancel_token.clone(),
         workspace_id: session.context.workspace_id.clone(),
         space_id: session.context.space_id.clone(),
         room_id: session.context.room_id.clone(),

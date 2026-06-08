@@ -45,9 +45,10 @@ pub const PERMISSION_ATTENTION_EVENT: &str = "permissions://attention";
 pub const PERMISSION_RESOLVED_EVENT: &str = "permissions://resolved";
 
 /// Maximum time the bash handler waits for a user response. Past this
-/// point we treat the request as fully denied (24h is generous enough
-/// that it never fires during interactive use; it's a hygiene bound for
-/// abandoned-pending state).
+/// point the awaiting tool treats the missing decision as abandoned and
+/// stops the run. Direct-provider runs use this generous 24h hygiene
+/// bound; CLI-backed runs apply a shorter timeout below the CLI MCP
+/// client's own timeout so cleanup happens inside CLAI.
 pub const APPROVAL_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]

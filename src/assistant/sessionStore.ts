@@ -289,6 +289,7 @@ const useAssistantStore = create<AssistantStoreState>()(
             s.isStreaming = false;
             s.streamingTextByMessageId = {};
             s.runStartedAt = null;
+            s.pendingAskUser = null;
           } else if ((ACTIVE_STATUSES as readonly string[]).includes(run.status)) {
             s.isStreaming = true;
             // Stamp the start the first time this run is seen running, so the

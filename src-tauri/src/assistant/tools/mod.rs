@@ -11,6 +11,9 @@ pub use router::execute_tool;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use tokio_util::sync::CancellationToken;
 
 use crate::assistant::types::{
     RunId, RunNotice, RunNoticeKind, SessionId, ToolCallId, WorkspaceAgentSummary,
@@ -25,6 +28,11 @@ pub const LOCAL_MCP_SERVER_NAME: &str = "clai";
 /// The `mcp__<server>__` qualifier Claude Code prepends to tools it
 /// discovered on our local MCP server (`mcp__clai__web_fetch`).
 pub const LOCAL_MCP_TOOL_PREFIX: &str = "mcp__clai__";
+
+/// CLI providers set their local-MCP client timeout to 60 minutes. Human
+/// waits time out just before that so CLAI owns cleanup/cancellation instead
+/// of letting the CLI report an ordinary tool timeout back to the model.
+pub const CLI_INTERACTIVE_WAIT_TIMEOUT: Duration = Duration::from_secs(55 * 60);
 
 /// Strips the CLI-side qualifier from a tool name that was recorded under
 /// (or mimicked from) a Claude Code run: `mcp__clai__web_fetch` →
@@ -43,6 +51,7 @@ pub struct ToolExecutionContext {
     pub session_id: SessionId,
     pub run_id: RunId,
     pub tool_call_id: Option<ToolCallId>,
+    pub cancel_token: CancellationToken,
     pub workspace_id: Option<String>,
     pub space_id: Option<String>,
     pub room_id: Option<String>,
@@ -85,6 +94,14 @@ pub struct ToolExecutionContext {
 }
 
 impl ToolExecutionContext {
+    pub fn interactive_wait_timeout(&self, default: Duration) -> Duration {
+        if self.tool_call_id.is_none() {
+            CLI_INTERACTIVE_WAIT_TIMEOUT
+        } else {
+            default
+        }
+    }
+
     /// Record a policy notice (e.g. command denied) on this run.
     pub fn add_notice(&self, kind: RunNoticeKind, message: String) {
         if let Ok(mut notices) = self.notices.lock() {

@@ -589,6 +589,7 @@ pub async fn run_session_turn(
                 session_id: session.id.clone(),
                 run_id: run_id.clone(),
                 tool_call_id: Some(tc.tool_call_id.clone()),
+                cancel_token: input.cancel_token.clone(),
                 workspace_id: session.context.workspace_id.clone(),
                 space_id: session.context.space_id.clone(),
                 room_id: session.context.room_id.clone(),
@@ -712,6 +713,7 @@ pub async fn run_session_turn(
         session_id: session.id.clone(),
         run_id: run_id.clone(),
         tool_call_id: None,
+        cancel_token: input.cancel_token.clone(),
         workspace_id: session.context.workspace_id.clone(),
         space_id: session.context.space_id.clone(),
         room_id: session.context.room_id.clone(),
@@ -2587,6 +2589,16 @@ async fn fail_run(
     usage: Option<&RunUsage>,
     error_msg: &str,
 ) -> Result<(), AssistantEngineError> {
+    for tool_call in
+        repository::fail_running_tool_calls_for_run(&deps.pool, run_id, error_msg).await?
+    {
+        let _ = emit_event(
+            &deps.app,
+            session,
+            Some(run_id),
+            AssistantUiEvent::ToolCallFailed { tool_call },
+        );
+    }
     let run = repository::complete_run(
         &deps.pool,
         run_id,
@@ -2612,6 +2624,16 @@ async fn cancel_run(
     usage: Option<&RunUsage>,
     _message_id: Option<&str>,
 ) -> Result<(), AssistantEngineError> {
+    for tool_call in
+        repository::fail_running_tool_calls_for_run(&deps.pool, run_id, "Run cancelled").await?
+    {
+        let _ = emit_event(
+            &deps.app,
+            session,
+            Some(run_id),
+            AssistantUiEvent::ToolCallFailed { tool_call },
+        );
+    }
     let run = repository::complete_run(&deps.pool, run_id, RunStatus::Cancelled, usage, None, &[])
         .await?;
     let _ = emit_event(

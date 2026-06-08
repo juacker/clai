@@ -1264,6 +1264,32 @@ pub async fn list_tool_calls_by_ids(
     rows.iter().map(map_tool_call_row).collect()
 }
 
+pub async fn fail_running_tool_calls_for_run(
+    pool: &DbPool,
+    run_id: &str,
+    error: &str,
+) -> Result<Vec<ToolInvocation>, String> {
+    let rows = sqlx::query(
+        r#"
+        SELECT id
+        FROM assistant_tool_calls
+        WHERE run_id = ? AND status IN ('"pending"', '"running"')
+        ORDER BY started_at ASC
+        "#,
+    )
+    .bind(run_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("Failed to list running tool calls: {}", e))?;
+
+    let mut updated = Vec::with_capacity(rows.len());
+    for row in rows {
+        let id: String = row.get("id");
+        updated.push(update_tool_call(pool, &id, ToolCallStatus::Failed, None, Some(error)).await?);
+    }
+    Ok(updated)
+}
+
 async fn touch_session(pool: &DbPool, session_id: &str) -> Result<(), String> {
     sqlx::query("UPDATE assistant_sessions SET updated_at = ? WHERE id = ?")
         .bind(now_ms())

@@ -3194,6 +3194,16 @@ async fn fail_run(
     usage: Option<&RunUsage>,
     error_msg: &str,
 ) -> Result<(), AssistantEngineError> {
+    for tool_call in
+        repository::fail_running_tool_calls_for_run(&deps.pool, run_id, error_msg).await?
+    {
+        let _ = emit_event(
+            &deps.app,
+            session,
+            Some(run_id),
+            AssistantUiEvent::ToolCallFailed { tool_call },
+        );
+    }
     let run = repository::complete_run(
         &deps.pool,
         run_id,
@@ -3218,6 +3228,16 @@ async fn cancel_run(
     run_id: &str,
     usage: Option<&RunUsage>,
 ) -> Result<(), AssistantEngineError> {
+    for tool_call in
+        repository::fail_running_tool_calls_for_run(&deps.pool, run_id, "Run cancelled").await?
+    {
+        let _ = emit_event(
+            &deps.app,
+            session,
+            Some(run_id),
+            AssistantUiEvent::ToolCallFailed { tool_call },
+        );
+    }
     let run = repository::complete_run(&deps.pool, run_id, RunStatus::Cancelled, usage, None, &[])
         .await?;
     let _ = emit_event(

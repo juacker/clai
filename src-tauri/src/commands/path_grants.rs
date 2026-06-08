@@ -22,9 +22,9 @@
 //!
 //! Sequencing rationale: persist before deliver so a crash between user
 //! click and tool resume still leaves the grant on disk. The next session
-//! reads it from extra_paths. The lost in-flight tool call surfaces as a
-//! failed tool result, which the agent can simply retry — and the retry
-//! will see the grant already in place and short-circuit.
+//! reads it from extra_paths. If the in-flight wait is abandoned before a
+//! user decision, the pending request is cleared and the run is stopped so
+//! the agent does not continue around a missing human grant.
 
 #![allow(dead_code)]
 
@@ -50,7 +50,8 @@ pub const PATH_GRANT_RESOLVED_EVENT: &str = "path-grants://resolved";
 
 /// Same bound as the command-approval flow: 24h is generous enough that
 /// it never fires under normal interactive use and acts as a hygiene cap
-/// for abandoned pending state.
+/// for abandoned pending state. CLI-backed runs apply a shorter timeout
+/// below the CLI MCP client's own timeout so cleanup happens inside CLAI.
 pub const PATH_GRANT_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]

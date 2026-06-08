@@ -1129,8 +1129,9 @@ fn is_pure_assignment_token(tok: &str) -> bool {
 /// is dropped without a user decision — the Claude Code CLI dropping the MCP
 /// transport mid-call (its "response for tool bash_exec was lost" message),
 /// or the run being cancelled. In either case the awaiting future below is
-/// dropped, so this guard runs: it removes the still-pending registry entry
-/// and tells the frontend to drop the now-useless approval card. Disarmed on
+/// dropped, so this guard runs: it removes the still-pending registry entry,
+/// tells the frontend to drop the now-useless approval card, and cancels the
+/// run so the model cannot continue without the missing decision. Disarmed on
 /// a normal decision, where the submit command already removed the entry.
 ///
 /// Cleanup is async (registry lock) so it's spawned onto the app runtime;
@@ -1138,6 +1139,7 @@ fn is_pure_assignment_token(tok: &str) -> bool {
 /// (e.g. a decision raced in), so the guard is safe even if it fires late.
 struct AbandonedApprovalGuard {
     app: tauri::AppHandle,
+    cancel_token: tokio_util::sync::CancellationToken,
     request_id: String,
     workspace_id: Option<String>,
     armed: bool,
@@ -1154,6 +1156,7 @@ impl Drop for AbandonedApprovalGuard {
         if !self.armed {
             return;
         }
+        self.cancel_token.cancel();
         use tauri::Manager;
         let app = self.app.clone();
         let request_id = std::mem::take(&mut self.request_id);
@@ -1172,8 +1175,10 @@ impl Drop for AbandonedApprovalGuard {
 /// user input. Registers the request in app state, emits the request
 /// and attention events, waits (with timeout) for the user's decisions,
 /// and resolves to `Ok(())` if every segment was allowed or `Err(_)` on
-/// any deny / timeout / channel close. Persistence of "always" grants
-/// is performed by [`crate::commands::permissions::submit_permission_decision`]
+/// any deny / timeout / channel close. A missing user decision also
+/// cancels the run via `AbandonedApprovalGuard`, so the model does not
+/// receive a generic tool timeout and continue. Persistence of "always"
+/// grants is performed by [`crate::commands::permissions::submit_permission_decision`]
 /// before the oneshot is fired, so the grant is durable across crashes
 /// between user click and command execution.
 async fn await_user_permission(
@@ -1217,12 +1222,14 @@ async fn await_user_permission(
     // normal decision; the timeout / channel-closed arms let it fire on drop.
     let mut abandon_guard = AbandonedApprovalGuard {
         app: deps.app.clone(),
+        cancel_token: context.cancel_token.clone(),
         request_id: request_id.clone(),
         workspace_id: workspace_id.clone(),
         armed: true,
     };
 
-    let decisions = match tokio::time::timeout(APPROVAL_TIMEOUT, rx).await {
+    let wait_timeout = context.interactive_wait_timeout(APPROVAL_TIMEOUT);
+    let decisions = match tokio::time::timeout(wait_timeout, rx).await {
         Ok(Ok(d)) => {
             // The submit command already removed the registry entry and the
             // frontend cleared the card optimistically.
@@ -1235,11 +1242,15 @@ async fn await_user_permission(
             return Err(msg.to_string());
         }
         Err(_) => {
-            // 24h hygiene timeout. `abandon_guard` clears the pending entry,
-            // emits attention, and drops the card when it goes out of scope.
-            let msg = "Permission approval timed out (24h)";
+            // Human-wait timeout. `abandon_guard` clears the pending entry,
+            // emits attention, drops the card, and cancels the run when it
+            // goes out of scope.
+            let msg = format!(
+                "Permission approval timed out after {} seconds",
+                wait_timeout.as_secs()
+            );
             context.add_notice(RunNoticeKind::CommandDenied, msg.to_string());
-            return Err(msg.to_string());
+            return Err(msg);
         }
     };
 
@@ -1437,10 +1448,12 @@ fn access_to_str(access: FilesystemPathAccess) -> &'static str {
 /// request type, the registry it talks to, and the single-decision
 /// return shape (path grants aren't per-segment).
 /// Path-grant analogue of [`AbandonedApprovalGuard`]: clears a pending
-/// filesystem path-grant request and drops its card when the approval-wait
-/// future is abandoned (CLI transport drop mid-call, or run cancellation).
+/// filesystem path-grant request, drops its card, and cancels the run when
+/// the approval-wait future is abandoned (CLI transport drop mid-call, or
+/// run cancellation).
 struct AbandonedPathGrantGuard {
     app: tauri::AppHandle,
+    cancel_token: tokio_util::sync::CancellationToken,
     request_id: String,
     workspace_id: Option<String>,
     armed: bool,
@@ -1457,6 +1470,7 @@ impl Drop for AbandonedPathGrantGuard {
         if !self.armed {
             return;
         }
+        self.cancel_token.cancel();
         use tauri::Manager;
         let app = self.app.clone();
         let request_id = std::mem::take(&mut self.request_id);
@@ -1500,12 +1514,14 @@ async fn await_path_grant_decision(
     // normal decision; the timeout / channel-closed arms let it fire on drop.
     let mut abandon_guard = AbandonedPathGrantGuard {
         app: deps.app.clone(),
+        cancel_token: context.cancel_token.clone(),
         request_id: request_id.clone(),
         workspace_id: workspace_id.clone(),
         armed: true,
     };
 
-    match tokio::time::timeout(PATH_GRANT_TIMEOUT, rx).await {
+    let wait_timeout = context.interactive_wait_timeout(PATH_GRANT_TIMEOUT);
+    match tokio::time::timeout(wait_timeout, rx).await {
         Ok(Ok(decision)) => {
             abandon_guard.disarm();
             Ok(decision)
@@ -1516,9 +1532,13 @@ async fn await_path_grant_decision(
             Err(msg)
         }
         Err(_) => {
-            // 24h hygiene timeout. `abandon_guard` clears the pending entry,
-            // emits attention, and drops the card when it goes out of scope.
-            let msg = "Path-grant approval timed out (24h)".to_string();
+            // Human-wait timeout. `abandon_guard` clears the pending entry,
+            // emits attention, drops the card, and cancels the run when it
+            // goes out of scope.
+            let msg = format!(
+                "Path-grant approval timed out after {} seconds",
+                wait_timeout.as_secs()
+            );
             context.add_notice(RunNoticeKind::PathGrantDenied, msg.clone());
             Err(msg)
         }

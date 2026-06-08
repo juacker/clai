@@ -28,10 +28,12 @@
 //! `assistant::local_mcp::execute_bound_tool` races our `rx.await` against
 //! the run's `cancel_token`. If the run is cancelled while we're blocked,
 //! our future is dropped — the `PendingGuard` removes the entry from the
-//! global map so the channel doesn't leak.
+//! global map, clears the inline panel, and cancels the run so the model
+//! cannot continue without the missing answer.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
@@ -41,6 +43,8 @@ use crate::assistant::engine::AssistantDeps;
 use crate::assistant::events::{emit_event, AssistantUiEvent};
 use crate::assistant::repository;
 use crate::assistant::tools::ToolExecutionContext;
+
+const ASK_USER_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
 
 // `deny_unknown_fields` keeps serde behavior aligned with the advertised
 // schema's `additionalProperties: false` (schemars derives the latter from
@@ -112,16 +116,46 @@ pub fn submit_answer(pending_id: &str, answer: AskUserAnswer) -> Result<(), Stri
 }
 
 /// RAII guard: removes the pending entry if the tool future is dropped
-/// before the channel resolves (e.g. on run cancellation).
+/// before the channel resolves (run cancellation, CLI MCP timeout, or
+/// abandoned transport). In that case the answer panel cannot resume the
+/// original tool call, so clear the UI and cancel the run rather than
+/// letting the model continue without the requested human answer.
 struct PendingGuard {
     id: String,
+    app: tauri::AppHandle,
+    session: crate::assistant::types::AssistantSession,
+    run_id: String,
+    cancel_token: tokio_util::sync::CancellationToken,
+    armed: bool,
+}
+
+impl PendingGuard {
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
 }
 
 impl Drop for PendingGuard {
     fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        self.cancel_token.cancel();
         if let Ok(mut map) = pending_map().lock() {
             map.remove(&self.id);
         }
+        let app = self.app.clone();
+        let session = self.session.clone();
+        let run_id = self.run_id.clone();
+        let pending_id = self.id.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = emit_event(
+                &app,
+                &session,
+                Some(run_id.as_str()),
+                AssistantUiEvent::AskUserResolved { pending_id },
+            );
+        });
     }
 }
 
@@ -138,6 +172,12 @@ pub async fn execute(
         return Err("ask_user: `question` is required.".to_string());
     }
 
+    // Load the session so the event envelope carries session_id +
+    // workspace_id consistently with the rest of the assistant events.
+    let session = repository::get_session(&deps.pool, &context.session_id)
+        .await?
+        .ok_or_else(|| format!("Session not found: {}", context.session_id))?;
+
     let pending_id = Uuid::new_v4().to_string();
     let (tx, rx) = oneshot::channel::<AskUserAnswer>();
     {
@@ -146,15 +186,14 @@ pub async fn execute(
             .map_err(|e| format!("ask_user pending map poisoned: {}", e))?;
         map.insert(pending_id.clone(), tx);
     }
-    let _guard = PendingGuard {
+    let mut guard = PendingGuard {
         id: pending_id.clone(),
+        app: deps.app.clone(),
+        session: session.clone(),
+        run_id: context.run_id.clone(),
+        cancel_token: context.cancel_token.clone(),
+        armed: true,
     };
-
-    // Load the session so the event envelope carries session_id +
-    // workspace_id consistently with the rest of the assistant events.
-    let session = repository::get_session(&deps.pool, &context.session_id)
-        .await?
-        .ok_or_else(|| format!("Session not found: {}", context.session_id))?;
 
     let _ = emit_event(
         &deps.app,
@@ -169,9 +208,18 @@ pub async fn execute(
         },
     );
 
-    let answer = rx
-        .await
-        .map_err(|_| "ask_user channel closed (sender dropped)".to_string())?;
+    let wait_timeout = context.interactive_wait_timeout(ASK_USER_TIMEOUT);
+    let answer = match tokio::time::timeout(wait_timeout, rx).await {
+        Ok(Ok(answer)) => answer,
+        Ok(Err(_)) => return Err("ask_user channel closed (sender dropped)".to_string()),
+        Err(_) => {
+            return Err(format!(
+                "ask_user timed out waiting for a user answer after {} seconds",
+                wait_timeout.as_secs()
+            ))
+        }
+    };
+    guard.disarm();
 
     let _ = emit_event(
         &deps.app,
