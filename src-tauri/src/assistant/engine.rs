@@ -986,11 +986,11 @@ pub(crate) fn build_system_prompt(
             crate::config::ShellAccessMode::Full => "full",
         };
         prompt.push_str(&format!("- Shell mode: {}\n", shell_mode));
+        let network_status = match context.execution.sandbox.network {
+            crate::config::SandboxNetworkConfig::Enabled => "network allowed",
+            crate::config::SandboxNetworkConfig::Disabled => "network disabled",
+        };
         let sandbox_status = if cfg!(target_os = "linux") {
-            let network_status = match context.execution.sandbox.network {
-                crate::config::SandboxNetworkConfig::Enabled => "network allowed",
-                crate::config::SandboxNetworkConfig::Disabled => "network disabled",
-            };
             let session_bus_status = match context.execution.sandbox.session_bus {
                 crate::config::SandboxSessionBusConfig::Allow => "session bus available",
                 crate::config::SandboxSessionBusConfig::Deny => "session bus blocked",
@@ -999,14 +999,21 @@ pub(crate) fn build_system_prompt(
                 "sandboxed shell on Linux through bubblewrap when `bash_exec` is available ({}, {})",
                 network_status, session_bus_status
             )
+        } else if cfg!(target_os = "macos") {
+            format!(
+                "sandboxed shell on macOS through Seatbelt/sandbox-exec when `bash_exec` is available ({})",
+                network_status
+            )
         } else {
             "host shell — sandbox not yet available on this platform".to_string()
         };
         prompt.push_str(&format!("- Shell sandbox: {}\n", sandbox_status));
-        if matches!(
-            context.execution.sandbox.session_bus,
-            crate::config::SandboxSessionBusConfig::Allow
-        ) {
+        if cfg!(target_os = "linux")
+            && matches!(
+                context.execution.sandbox.session_bus,
+                crate::config::SandboxSessionBusConfig::Allow
+            )
+        {
             prompt.push_str(
                 "- Session bus is available: tools that authenticate through libsecret (e.g. `gh`, `git-credential-libsecret`, `secret-tool`) can reach the host keyring directly. Use the host's existing auth instead of asking the user for tokens.\n",
             );
@@ -1038,7 +1045,7 @@ pub(crate) fn build_system_prompt(
 
         prompt.push_str(
             "\n## Filesystem boundary\n\
-             The path grants listed above are the ONLY locations you are authorized to read, write, or operate against. The `fs_*` tools enforce this in-process. On Linux, `bash_exec` also runs inside an OS sandbox that binds only the workspace and configured path grants; if the sandbox is unavailable, `bash_exec` fails closed. On platforms where the shell sandbox is not implemented yet, `bash_exec` is labeled as a host shell and this paragraph remains the authorization boundary.\n\
+             The path grants listed above are the ONLY locations you are authorized to read, write, or operate against. The `fs_*` tools enforce this in-process. On Linux and macOS, `bash_exec` also runs inside an OS sandbox that allows only the workspace, configured path grants, and required platform system files; if the sandbox is unavailable, `bash_exec` fails closed. On platforms where the shell sandbox is not implemented yet, `bash_exec` is labeled as a host shell and this paragraph remains the authorization boundary.\n\
              - Do not `cd`, redirect to, or pass paths outside the listed grants — not even via subshells, heredocs, scripts, or absolute paths.\n\
              - Do not invoke commands that touch paths outside the grants (no editing the user's other repos, no installing to global locations, no reading personal files like `~/.ssh`, etc.).\n\
              - If a task genuinely needs a path outside your current grants (e.g. `~/.ssh` for `git push`, `~/.config/gh` for the `gh` CLI), call `fs_request_grant({path, access, reason})` BEFORE attempting the work. The user can approve once (lasts this run), approve always (persists to agent settings), narrow the path, or deny. Request the narrowest path that satisfies the task — prefer `~/.config/gh` over `~/.config`, prefer a specific file over its parent directory. Prefer `read_only` unless writes are genuinely needed.\n\
@@ -1053,9 +1060,13 @@ pub(crate) fn build_system_prompt(
         // -F /dev/null workaround experimentally.
         prompt.push_str(
             "\n## Git and SSH conventions inside the sandbox\n\
-             - Never rewrite commit authorship. Do not run `git commit --amend --reset-author`, do not change `user.email` / `user.name` away from what the commit already has, and do not use the `--author=` flag to overwrite an existing author. If a push is rejected because of GitHub's email privacy (error `GH007`) or because the author's email is not allowed, STOP and escalate via `workspace_requestUserInput` with the exact failing email and the rejection reason. The user owns the choice of which email to publish.\n\
-             - The sandbox overlays an empty tmpfs at `/etc/ssh`, so OpenSSH only consults `~/.ssh/config` and its built-in defaults. You do not need `-F /dev/null` workarounds; if you see `Bad owner or permissions` from ssh, the cause is something else (likely an explicit `-F` pointing at an unreadable path).\n",
+             - Never rewrite commit authorship. Do not run `git commit --amend --reset-author`, do not change `user.email` / `user.name` away from what the commit already has, and do not use the `--author=` flag to overwrite an existing author. If a push is rejected because of GitHub's email privacy (error `GH007`) or because the author's email is not allowed, STOP and escalate via `workspace_requestUserInput` with the exact failing email and the rejection reason. The user owns the choice of which email to publish.\n",
         );
+        if cfg!(target_os = "linux") {
+            prompt.push_str(
+                "             - The Linux sandbox overlays an empty tmpfs at `/etc/ssh`, so OpenSSH only consults `~/.ssh/config` and its built-in defaults. You do not need `-F /dev/null` workarounds; if you see `Bad owner or permissions` from ssh, the cause is something else (likely an explicit `-F` pointing at an unreadable path).\n",
+            );
+        }
 
         prompt.push_str(
             "\n## Agent Memory\n\

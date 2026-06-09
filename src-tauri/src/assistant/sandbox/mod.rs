@@ -5,7 +5,9 @@ pub mod runner;
 
 #[cfg(target_os = "linux")]
 mod linux_bwrap;
-#[cfg(not(target_os = "linux"))]
+#[cfg(any(target_os = "macos", all(test, target_family = "unix")))]
+mod macos_seatbelt;
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 mod unsupported;
 
 pub use profile::{

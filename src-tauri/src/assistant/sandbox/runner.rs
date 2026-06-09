@@ -42,7 +42,12 @@ pub async fn run_command(command: SandboxCommand) -> Result<SandboxCommandOutput
         super::linux_bwrap::run(command).await
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        super::macos_seatbelt::run(command).await
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         super::unsupported::run(command).await
     }

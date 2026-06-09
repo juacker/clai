@@ -68,12 +68,12 @@ flagged, and selecting a card slides in a live chat preview.
 - **Run notices** — A run that hits a policy denial finishes in an amber
   "warnings" state and surfaces in the Fleet, instead of failing silently.
 
-> **Local execution is not sandboxed.** Shell commands run as your OS user
-> with full privileges. The allow/block lists control *which commands* an
-> agent can run, not *what those commands can access* — if you allow `cat`,
-> the agent can read any file you can. Path grants apply only to the built-in
-> `fs_read`/`fs_write` tools, not to shell commands. Prefer *Restricted* mode
-> with a minimal allow list, and review run notices for anything unexpected.
+> **Local execution sandboxing is platform-specific.** On Linux, shell commands
+> run through bubblewrap. On macOS, shell commands run through Seatbelt via
+> `sandbox-exec`. On platforms without a backend, shell execution is labeled as
+> a host shell. The allow/block lists still control *which commands* an agent can
+> run; filesystem grants control what sandboxed shell commands and built-in
+> `fs_*` tools can access.
 
 ## Install
 
