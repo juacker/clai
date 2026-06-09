@@ -757,6 +757,28 @@ fn resolve_allowed_path(
 ) -> Result<PathBuf, String> {
     let candidate = resolve_candidate_path(path, grants)?;
 
+    // Workspace isolation: an agent reaches its own workspace and HOME, but not
+    // sibling workspaces — even though they sit under the same HOME grant. The
+    // mask is the workspace container (`grants[0]` is always the agent's own
+    // workspace root; its parent holds all workspaces). A grant that's only a
+    // *broad ancestor* of that container (e.g. `$HOME`) does not authorize a
+    // path inside it; only a grant rooted at-or-below the container does (the
+    // own workspace, or another workspace the user explicitly granted). See
+    // `sandbox::profile::workspace_mask`.
+    let mask = grants.first().and_then(|ws| {
+        crate::assistant::sandbox::profile::workspace_mask(&ws.root, real_host_home().as_deref())
+    });
+
+    // Grants that actually authorize this candidate (broad ancestors of the
+    // masked container are dropped for paths inside it).
+    let effective: Vec<&ResolvedGrant> = grants
+        .iter()
+        .filter(|grant| {
+            candidate.starts_with(&grant.root)
+                && !grant_masked_for_candidate(&grant.root, &candidate, mask.as_deref())
+        })
+        .collect();
+
     // Resolve against the MOST SPECIFIC (deepest-rooted) grant that contains the
     // candidate, not merely the first one in iteration order. Grants nest: a
     // broad read-only `/home/me` can coexist with a narrower read-write
@@ -765,9 +787,8 @@ fn resolve_allowed_path(
     // mirroring the last-writer-wins bind ordering in `linux_bwrap`. A
     // first-match scan let a read-only ancestor shadow a read-write descendant
     // and rejected legitimate writes (and vice-versa for read-only carve-outs).
-    let deepest = grants
+    let deepest = effective
         .iter()
-        .filter(|grant| candidate.starts_with(&grant.root))
         .map(|grant| grant.root.components().count())
         .max();
 
@@ -782,11 +803,9 @@ fn resolve_allowed_path(
         // Among equally-specific grants (same root, conflicting access), the
         // read-write one wins: an explicit fresh grant must not be shadowed by
         // a coincidental read-only entry at the same root.
-        let writable = grants
+        let writable = effective
             .iter()
-            .filter(|grant| {
-                candidate.starts_with(&grant.root) && grant.root.components().count() == depth
-            })
+            .filter(|grant| grant.root.components().count() == depth)
             .any(|grant| grant.access == AccessKind::ReadWrite);
         if !writable {
             return Err(format!(
@@ -797,6 +816,20 @@ fn resolve_allowed_path(
     }
 
     Ok(candidate)
+}
+
+/// True when `grant_root` is only a broad *ancestor* of the masked workspace
+/// container and `candidate` lies inside that container — i.e. this grant must
+/// not authorize the path (it would otherwise expose sibling workspaces via a
+/// `$HOME`-style grant). A grant rooted at-or-below the container (the agent's
+/// own workspace, or an explicitly-granted sibling) is not blocked.
+fn grant_masked_for_candidate(grant_root: &Path, candidate: &Path, mask: Option<&Path>) -> bool {
+    match mask {
+        Some(mask) => {
+            candidate.starts_with(mask) && mask.starts_with(grant_root) && mask != grant_root
+        }
+        None => false,
+    }
 }
 
 fn resolve_candidate_path(path: &str, grants: &[ResolvedGrant]) -> Result<PathBuf, String> {
@@ -1447,9 +1480,20 @@ fn path_already_covered(
     path: &Path,
     required: FilesystemPathAccess,
 ) -> bool {
+    // Same workspace-isolation mask as `resolve_allowed_path`: a broad ancestor
+    // grant (e.g. `$HOME`) does NOT cover a path inside the masked workspace
+    // container. Without this, `fs_request_grant` would short-circuit a sibling
+    // workspace as "already-granted" even though it's isolated and unreachable —
+    // so the request must instead fall through to a real user prompt.
+    let mask = grants.first().and_then(|ws| {
+        crate::assistant::sandbox::profile::workspace_mask(&ws.root, real_host_home().as_deref())
+    });
     grants.iter().any(|grant| {
         let covers_path = path == grant.root || path.starts_with(&grant.root);
         if !covers_path {
+            return false;
+        }
+        if grant_masked_for_candidate(&grant.root, path, mask.as_deref()) {
             return false;
         }
         match (grant.access, required) {
@@ -1956,6 +2000,47 @@ mod tests {
     }
 
     #[test]
+    fn path_already_covered_excludes_masked_sibling_workspace() {
+        // Regression: fs_request_grant must NOT report a sibling workspace as
+        // "already-granted" just because $HOME contains it — the mask makes it
+        // unreachable, so the request has to fall through to a real prompt.
+        let Some(home) = real_host_home() else {
+            return; // no home (rare); nothing to assert
+        };
+        let own = home.join(".clai/workspaces/own");
+        let grants = vec![
+            ResolvedGrant {
+                root: own.clone(),
+                access: AccessKind::ReadWrite,
+            },
+            ResolvedGrant {
+                root: home.clone(),
+                access: AccessKind::ReadOnly,
+            },
+        ];
+
+        // A sibling workspace under $HOME is masked → not covered.
+        let sibling = home.join(".clai/workspaces/other/file.txt");
+        assert!(!path_already_covered(
+            &grants,
+            &sibling,
+            FilesystemPathAccess::ReadOnly
+        ));
+        // The agent's own workspace IS covered.
+        assert!(path_already_covered(
+            &grants,
+            &own.join("notes.md"),
+            FilesystemPathAccess::ReadWrite
+        ));
+        // A non-workspace home path is still covered by the $HOME grant.
+        assert!(path_already_covered(
+            &grants,
+            &home.join(".gitconfig"),
+            FilesystemPathAccess::ReadOnly
+        ));
+    }
+
+    #[test]
     fn path_already_covered_requires_rw_for_rw_request() {
         let grants = vec![ResolvedGrant {
             root: PathBuf::from("/a"),
@@ -2348,6 +2433,51 @@ mod tests {
 
     use crate::config::types::ShellCapabilityConfig;
     use crate::config::{ExecutionCapabilityConfig, ShellAccessMode};
+
+    // Workspace isolation: `grant_masked_for_candidate` is the core decision
+    // for whether a grant authorizes a path under the masked workspace
+    // container. mask = `~/u/.clai/workspaces`, own ws = `…/workspaces/own`.
+    #[test]
+    fn home_grant_does_not_authorize_a_sibling_workspace() {
+        let mask = Path::new("/home/u/.clai/workspaces");
+        let home = Path::new("/home/u");
+        let sibling = Path::new("/home/u/.clai/workspaces/other/secret.txt");
+        assert!(grant_masked_for_candidate(home, sibling, Some(mask)));
+    }
+
+    #[test]
+    fn own_workspace_grant_authorizes_its_own_files() {
+        let mask = Path::new("/home/u/.clai/workspaces");
+        let own = Path::new("/home/u/.clai/workspaces/own");
+        let file = Path::new("/home/u/.clai/workspaces/own/notes.md");
+        assert!(!grant_masked_for_candidate(own, file, Some(mask)));
+    }
+
+    #[test]
+    fn home_grant_still_authorizes_non_workspace_home_paths() {
+        let mask = Path::new("/home/u/.clai/workspaces");
+        let home = Path::new("/home/u");
+        let gitconfig = Path::new("/home/u/.gitconfig");
+        // Not under the container → mask doesn't block the HOME grant.
+        assert!(!grant_masked_for_candidate(home, gitconfig, Some(mask)));
+    }
+
+    #[test]
+    fn explicit_sibling_grant_authorizes_that_sibling() {
+        // The "unless the user grants it" escape hatch: a grant rooted at the
+        // sibling workspace is not blocked by the mask.
+        let mask = Path::new("/home/u/.clai/workspaces");
+        let other = Path::new("/home/u/.clai/workspaces/other");
+        let file = Path::new("/home/u/.clai/workspaces/other/shared.txt");
+        assert!(!grant_masked_for_candidate(other, file, Some(mask)));
+    }
+
+    #[test]
+    fn no_mask_blocks_nothing() {
+        let home = Path::new("/home/u");
+        let any = Path::new("/home/u/.clai/workspaces/other/x");
+        assert!(!grant_masked_for_candidate(home, any, None));
+    }
 
     fn restricted_execution_config(
         allowed: &[&str],

@@ -420,25 +420,50 @@ fn append_workspace_and_grants(args: &mut Vec<OsString>, command: &SandboxComman
     // The bool is `lenient`: false for the workspace root (a missing workspace
     // is fatal), true for grants (a missing/invisible grant is skipped via
     // *-bind-try rather than aborting the whole sandbox).
-    let mut binds: Vec<(PathBuf, SandboxPathAccess, bool)> =
-        Vec::with_capacity(command.profile.path_grants.len() + 1);
-    binds.push((
+    let mut ops: Vec<(PathBuf, MountOp)> =
+        Vec::with_capacity(command.profile.path_grants.len() + 2);
+    ops.push((
         command.profile.workspace_root.clone(),
-        SandboxPathAccess::ReadWrite,
-        false,
+        MountOp::Bind(SandboxPathAccess::ReadWrite, false),
     ));
     for grant in &command.profile.path_grants {
         if grant.host_path == command.profile.workspace_root {
             continue;
         }
-        binds.push((grant.host_path.clone(), grant.access, true));
+        ops.push((grant.host_path.clone(), MountOp::Bind(grant.access, true)));
     }
 
-    binds.sort_by_key(|(path, _, _)| path_depth(path));
-
-    for (path, access, lenient) in binds {
-        append_bind(args, access, &path, &path, lenient);
+    // Workspace isolation: overlay an empty tmpfs on the workspace *container*
+    // (e.g. `~/.clai/workspaces`) so a broad `$HOME` bind can't expose sibling
+    // workspaces. The container is shallower than the workspace root, so the
+    // depth-sort below emits the tmpfs first and the workspace bind (and any
+    // explicitly-granted sibling, which is also deeper) lands on top of it —
+    // re-exposing exactly what's allowed. See `profile::workspace_mask`.
+    let home = command.profile.env.home().map(Path::new);
+    if let Some(mask) =
+        crate::assistant::sandbox::profile::workspace_mask(&command.profile.workspace_root, home)
+    {
+        ops.push((mask, MountOp::Tmpfs));
     }
+
+    ops.sort_by_key(|(path, _)| path_depth(path));
+
+    for (path, op) in ops {
+        match op {
+            MountOp::Bind(access, lenient) => append_bind(args, access, &path, &path, lenient),
+            MountOp::Tmpfs => {
+                args.push(os("--tmpfs"));
+                args.push(path.into_os_string());
+            }
+        }
+    }
+}
+
+enum MountOp {
+    /// `--bind`/`--ro-bind` (or the `*-try` lenient variant).
+    Bind(SandboxPathAccess, bool),
+    /// `--tmpfs`: overlay an empty tmpfs to hide a subtree.
+    Tmpfs,
 }
 
 /// Emit a single bind. `lenient` selects bwrap's `*-bind-try` variant, which
@@ -646,6 +671,52 @@ mod tests {
         assert_eq!(rendered[0], "--host");
         assert_eq!(rendered[1], "bwrap");
         assert_eq!(&rendered[2..], &["--die-with-parent", "--", "/bin/sh"]);
+    }
+
+    #[test]
+    fn workspace_container_is_masked_with_tmpfs_before_workspace_bind() {
+        // A broad $HOME grant would otherwise expose every sibling workspace
+        // under ~/.clai/workspaces. The container gets a tmpfs overlay, and the
+        // depth-sort must place that tmpfs BEFORE the workspace bind so the
+        // agent's own workspace is re-exposed on top of the empty overlay.
+        let home = tempfile::tempdir().unwrap();
+        let container = home.path().join(".clai").join("workspaces");
+        let workspace = container.join("ws-abc");
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        let mut command = sample_command();
+        command.cwd = workspace.clone();
+        command.profile.workspace_root = workspace.clone();
+        command.profile.env = SandboxEnv::filtered_from_iter(
+            [("PATH", "/usr/bin:/bin")],
+            home.path(),
+            SandboxSessionBusMode::Deny,
+        );
+        command.profile.path_grants = vec![SandboxPathGrant {
+            host_path: home.path().to_path_buf(),
+            access: SandboxPathAccess::ReadOnly,
+        }];
+
+        let args = bwrap_args(&command).unwrap();
+        let rendered: Vec<String> = args
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+
+        let container_str = container.to_string_lossy().into_owned();
+        let workspace_str = workspace.to_string_lossy().into_owned();
+        let tmpfs_idx = rendered
+            .windows(2)
+            .position(|w| w[0] == "--tmpfs" && w[1] == container_str)
+            .unwrap_or_else(|| panic!("container should be masked with --tmpfs; got {rendered:?}"));
+        let ws_bind_idx = rendered
+            .windows(3)
+            .position(|w| w[0] == "--bind" && w[1] == workspace_str && w[2] == workspace_str)
+            .unwrap_or_else(|| panic!("workspace should be bound; got {rendered:?}"));
+        assert!(
+            tmpfs_idx < ws_bind_idx,
+            "tmpfs over the container must precede the workspace bind; got {rendered:?}"
+        );
     }
 
     #[test]

@@ -116,6 +116,35 @@ impl SandboxEnv {
             .iter()
             .map(|(key, value)| (key.as_str(), value.as_str()))
     }
+
+    pub fn home(&self) -> Option<&str> {
+        self.vars.get("HOME").map(String::as_str)
+    }
+}
+
+/// The directory that holds the agent's workspace — i.e. the workspace root's
+/// parent, which is the container for *all* workspaces (e.g.
+/// `~/.clai/workspaces`). We mask this container so an agent can't reach
+/// sibling workspaces through a broad grant (like `$HOME`), while its own
+/// workspace is re-exposed by the workspace bind/allow that runs after the
+/// mask. Both the bwrap and seatbelt backends — and the in-process `fs_*`
+/// path validator — derive the mask from here so the policy is identical.
+///
+/// Returns `None` (no masking) when:
+/// - the workspace root has no parent (pathological), or
+/// - `home` is unknown (fail open rather than over-restrict), or
+/// - the container is not a strict descendant of `home`. This last guard
+///   keeps the requirement "HOME access stays the same": if a workspace were
+///   configured directly at `$HOME`, masking its parent would hide all of
+///   home, so we decline to mask in that case.
+pub fn workspace_mask(workspace_root: &Path, home: Option<&Path>) -> Option<PathBuf> {
+    let parent = workspace_root.parent()?;
+    let home = home?;
+    if parent.starts_with(home) && parent != home {
+        Some(parent.to_path_buf())
+    } else {
+        None
+    }
 }
 
 fn is_allowed_env_key(key: &str) -> bool {
@@ -129,6 +158,38 @@ fn is_denied_env_key(key: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workspace_mask_is_the_container_when_under_home() {
+        let home = Path::new("/home/u");
+        let ws = Path::new("/home/u/.clai/workspaces/abc");
+        assert_eq!(
+            workspace_mask(ws, Some(home)),
+            Some(PathBuf::from("/home/u/.clai/workspaces"))
+        );
+    }
+
+    #[test]
+    fn workspace_mask_declines_when_container_is_home_itself() {
+        // Workspace configured directly at $HOME — masking its parent would
+        // hide all of home, violating "HOME access stays the same".
+        let home = Path::new("/home/u");
+        let ws = Path::new("/home/u/abc");
+        assert_eq!(workspace_mask(ws, Some(home)), None);
+    }
+
+    #[test]
+    fn workspace_mask_fails_open_when_home_unknown() {
+        let ws = Path::new("/home/u/.clai/workspaces/abc");
+        assert_eq!(workspace_mask(ws, None), None);
+    }
+
+    #[test]
+    fn workspace_mask_declines_outside_home() {
+        let home = Path::new("/home/u");
+        let ws = Path::new("/srv/workspaces/abc");
+        assert_eq!(workspace_mask(ws, Some(home)), None);
+    }
 
     #[test]
     fn env_filter_keeps_small_allowlist_and_sets_home() {

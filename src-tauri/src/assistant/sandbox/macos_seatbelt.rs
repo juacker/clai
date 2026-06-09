@@ -199,7 +199,69 @@ fn seatbelt_profile(command: &SandboxCommand, private_tmp: &Path) -> Result<Stri
     append_rule(&mut profile, "file-read-metadata", &metadata_filters);
     append_rule(&mut profile, "file-read*", &read_filters);
     append_rule(&mut profile, "file-write*", &write_filters);
+    append_workspace_mask(&mut profile, command)?;
     Ok(profile)
+}
+
+/// Workspace isolation: deny reading/writing the workspace *container* (e.g.
+/// `~/.clai/workspaces`) so a broad `$HOME` allow can't expose sibling
+/// workspaces, then re-expose the agent's own workspace (and any explicitly-
+/// granted sibling) AFTER the deny. Seatbelt is last-match-wins, so the
+/// re-expose rules must be emitted after the deny — hence this runs last.
+/// Metadata is intentionally left allowed so path traversal into the
+/// re-exposed workspace still works. See `profile::workspace_mask`.
+fn append_workspace_mask(profile: &mut String, command: &SandboxCommand) -> Result<(), String> {
+    let home = command.profile.env.home().map(Path::new);
+    let Some(mask) =
+        crate::assistant::sandbox::profile::workspace_mask(&command.profile.workspace_root, home)
+    else {
+        return Ok(());
+    };
+    // The container may not exist yet; if we can't canonicalize it there's
+    // nothing to hide.
+    let Ok(mask) = canonicalize_existing(&mask) else {
+        return Ok(());
+    };
+
+    profile.push_str("(deny file-read* file-write*\n  (subpath \"");
+    profile.push_str(&path_literal(&mask)?);
+    profile.push_str("\")\n)\n");
+
+    let mut read = Vec::new();
+    let mut write = Vec::new();
+    let workspace = canonicalize_existing(&command.profile.workspace_root)?;
+    read.push(path_literal(&workspace)?);
+    write.push(path_literal(&workspace)?);
+    for grant in &command.profile.path_grants {
+        let Ok(path) = canonicalize_existing(&grant.host_path) else {
+            continue;
+        };
+        if !path.starts_with(&mask) {
+            continue;
+        }
+        read.push(path_literal(&path)?);
+        if grant.access == SandboxPathAccess::ReadWrite {
+            write.push(path_literal(&path)?);
+        }
+    }
+    append_subpath_allow(profile, "file-read*", &read);
+    append_subpath_allow(profile, "file-write*", &write);
+    Ok(())
+}
+
+fn append_subpath_allow(profile: &mut String, operation: &str, paths: &[String]) {
+    if paths.is_empty() {
+        return;
+    }
+    profile.push_str("(allow ");
+    profile.push_str(operation);
+    profile.push('\n');
+    for path in paths {
+        profile.push_str("  (subpath \"");
+        profile.push_str(path);
+        profile.push_str("\")\n");
+    }
+    profile.push_str(")\n");
 }
 
 fn append_mach_lookup_rule(profile: &mut String, network: SandboxNetworkMode) {
@@ -446,6 +508,54 @@ mod tests {
         assert!(
             profile.contains("(allow file-write*"),
             "workspace should be writable; profile: {profile}"
+        );
+    }
+
+    #[test]
+    fn profile_masks_sibling_workspaces_but_reexposes_own() {
+        // A broad $HOME grant would expose sibling workspaces under
+        // ~/.clai/workspaces. The container is denied, then the agent's own
+        // workspace is re-allowed AFTER the deny (seatbelt is last-match-wins).
+        let home = tempfile::tempdir().unwrap();
+        let container = home.path().join(".clai").join("workspaces");
+        let workspace = container.join("ws-abc");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let private_tmp = tempfile::tempdir_in(&workspace).unwrap();
+
+        let mut command = sample_command(&workspace);
+        command.profile.workspace_root = workspace.clone();
+        command.cwd = workspace.clone();
+        command.profile.env = SandboxEnv::filtered_from_iter(
+            [("PATH", "/usr/bin:/bin")],
+            home.path(),
+            SandboxSessionBusMode::Deny,
+        );
+        command.profile.path_grants = vec![SandboxPathGrant {
+            host_path: home.path().to_path_buf(),
+            access: SandboxPathAccess::ReadOnly,
+        }];
+
+        let profile = seatbelt_profile(&command, private_tmp.path()).unwrap();
+
+        let container_c =
+            escape_sbpl_string(&fs::canonicalize(&container).unwrap().display().to_string());
+        let workspace_c =
+            escape_sbpl_string(&fs::canonicalize(&workspace).unwrap().display().to_string());
+
+        let deny = format!(
+            "(deny file-read* file-write*\n  (subpath \"{}\")",
+            container_c
+        );
+        let deny_idx = profile
+            .find(&deny)
+            .unwrap_or_else(|| panic!("container should be denied; profile:\n{profile}"));
+        // The own-workspace allow must appear AFTER the deny to win.
+        let reexpose_idx = profile
+            .rfind(&format!("(subpath \"{}\")", workspace_c))
+            .unwrap_or_else(|| panic!("workspace should be re-exposed; profile:\n{profile}"));
+        assert!(
+            reexpose_idx > deny_idx,
+            "workspace re-expose must come after the deny; profile:\n{profile}"
         );
     }
 
