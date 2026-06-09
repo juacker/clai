@@ -91,14 +91,13 @@ interface SettingsModalProps {
 }
 
 const SettingsModal = ({ isOpen, onClose, initialTab = TABS.PROVIDER }: SettingsModalProps) => {
+  // The modal returns null when closed (see early return below), so every
+  // open remounts the component and re-runs `useState(initialTab)`. The
+  // "reset on open" effect this file used to carry was a redundant
+  // re-set to the same value and has been removed; if a future caller
+  // needs to switch tabs while the modal stays open, pass
+  // `key={initialTab}` from the parent so React remounts for them.
   const [activeTab, setActiveTab] = useState<TabValue>(initialTab);
-
-  // Reset to initial tab when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setActiveTab(initialTab);
-    }
-  }, [isOpen, initialTab]);
 
   // Handle escape key
   useEffect(() => {
