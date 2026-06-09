@@ -15,7 +15,8 @@
         "title": "CLAI",
         "width": 1280,
         "height": 800,
-        "useHttpsScheme": false
+        "useHttpsScheme": false,
+        "backgroundColor": "#0A0E14"
       }
     ],
     "security": {
