@@ -127,7 +127,7 @@ fn workspace_list_agents_def() -> ToolDefinition {
 fn workspace_assign_task_def() -> ToolDefinition {
     tool::<AssignWorkspaceTaskParams>(
         "workspace_assignTask",
-        "Assign a bounded task to an agent assigned to this workspace. The task runs asynchronously and returns a task ID to poll with workspace_getTaskResult.",
+        "Assign a bounded task to an agent assigned to this workspace — including yourself, to run work in the background. The task runs asynchronously in its own session, in parallel with this one; multiple tasks may run at once, even for the same agent. Returns immediately with a task ID to poll via workspace_getTaskResult. The worker does not see this conversation, so instructions must be self-contained.",
     )
 }
 

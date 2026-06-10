@@ -825,26 +825,59 @@ pub(crate) fn build_system_prompt(
         .iter()
         .filter(|a| !a.is_default)
         .collect();
-    if is_manager_session && !member_agents.is_empty() {
-        prompt.push_str(
-            "## Your Role\n\
-             You are the **manager** of this workspace. The user talks to you; you decide how the work gets done. \
-             You have member agents available for delegation via `workspace_assignTask` — prefer delegating specialized work to them over doing it yourself, then poll `workspace_getTaskResult` for the outcome. \
-             The roster below is your team; you do not need to call `workspace_listAgents` to confirm it.\n\n\
-             Member agents you can delegate to:\n",
-        );
-        for agent in &member_agents {
-            let summary = agent
-                .description
-                .as_deref()
-                .filter(|d| !d.trim().is_empty())
-                .unwrap_or("(no description)");
-            prompt.push_str(&format!(
-                "- **{}** ({}): {}\n",
-                agent.display_name, agent.role, summary
-            ));
+    if is_manager_session {
+        if !member_agents.is_empty() {
+            prompt.push_str(
+                "## Your Role\n\
+                 You are the **manager** of this workspace. The user talks to you; you decide how the work gets done. \
+                 You have member agents available for delegation via `workspace_assignTask` — prefer delegating specialized work to them over doing it yourself, then poll `workspace_getTaskResult` for the outcome. \
+                 The roster below is your team; you do not need to call `workspace_listAgents` to confirm it.\n\n\
+                 Member agents you can delegate to:\n",
+            );
+            for agent in &member_agents {
+                let summary = agent
+                    .description
+                    .as_deref()
+                    .filter(|d| !d.trim().is_empty())
+                    .unwrap_or("(no description)");
+                prompt.push_str(&format!(
+                    "- **{}** ({}): {}\n",
+                    agent.display_name, agent.role, summary
+                ));
+            }
+            prompt.push('\n');
+        } else {
+            prompt.push_str(
+                "## Your Role\n\
+                 You are the **manager** (and only agent) of this workspace. The user talks to you; you decide how the work gets done. \
+                 There are no member agents to delegate to, but the task tools still work: you can assign a task to *yourself* — your own workspace agent id, visible via `workspace_listAgents` — to run another instance of you in the background.\n\n",
+            );
         }
-        prompt.push('\n');
+
+        // Delegation mechanics — skipped when this manager session *is* a
+        // task worker (a self-assigned task): the Task Worker Context block
+        // below carries the don't-spawn-chains guidance instead, and
+        // advertising fan-out there would invite recursive task spawning.
+        if !matches!(trigger, RunTrigger::WorkspaceTask) {
+            prompt.push_str(
+                "### How tasks run\n\
+                 - `workspace_assignTask` is asynchronous: it returns a task id immediately and the task runs in its own separate session, in parallel with you. Keep working or reply to the user while it runs; poll `workspace_getTaskResult` when you need the outcome.\n\
+                 - Tasks run concurrently with no per-agent limit. Fan out independent subtasks freely — several tasks for the *same* agent at once is fine.\n\
+                 - Assigning a task to yourself is the supported way to push long or background work out of this conversation while you stay responsive.\n\
+                 - A task worker does NOT see this conversation. Write self-contained instructions: include the goal, the relevant file paths, and any context it needs.\n\
+                 - All tasks share this workspace's directory. Partition parallel work so concurrent tasks don't write the same files.\n\
+                 - If you expect to collect a result in a later run (your run can end before the task finishes), record the task id in memory (e.g. `.clai/memory/state.md`) so a future run can poll it.\n\n",
+            );
+        }
+    }
+
+    if matches!(trigger, RunTrigger::WorkspaceTask) {
+        prompt.push_str(
+            "## Task Worker Context\n\
+             This session is a background task worker: you were spawned via `workspace_assignTask` to complete one bounded task, running in parallel with the agent that assigned it (possibly another instance of yourself). \
+             Your final assistant message is captured as the task's result summary — make it a concise, self-contained outcome. \
+             Do not assign further tasks from here unless your instructions explicitly require fan-out; never create task chains or loops.\n\n",
+        );
     }
 
     if !tool_names.is_empty() {
@@ -907,7 +940,7 @@ pub(crate) fn build_system_prompt(
         prompt.push_str(
             "This workspace has assigned agents. The default manager agent receives user messages and is responsible for routing work inside this workspace.\n\
              Use this roster as workspace-local context. Do not assume agents outside this list are available for collaboration.\n\
-             When task delegation tools are available, assign bounded tasks only to assigned workspace agents. Use `workspace.requestUserInput` when work is blocked on user feedback, approval, or missing information. If delegation tools are not available yet, explain which assigned agent should handle the work and what is blocked.\n\n",
+             When task delegation tools are available, assign bounded tasks only to assigned workspace agents. Tasks run asynchronously and in parallel, each in its own session. Use `ask_user` when work is blocked on user feedback, approval, or missing information. If delegation tools are not available in this session, explain which assigned agent should handle the work and what is blocked.\n\n",
         );
         prompt.push_str("Assigned workspace agents:\n");
         for agent in &context.workspace_agents {
@@ -1049,7 +1082,7 @@ pub(crate) fn build_system_prompt(
              - Do not `cd`, redirect to, or pass paths outside the listed grants — not even via subshells, heredocs, scripts, or absolute paths.\n\
              - Do not invoke commands that touch paths outside the grants (no editing the user's other repos, no installing to global locations, no reading personal files like `~/.ssh`, etc.).\n\
              - If a task genuinely needs a path outside your current grants (e.g. `~/.ssh` for `git push`, `~/.config/gh` for the `gh` CLI), call `fs_request_grant({path, access, reason})` BEFORE attempting the work. The user can approve once (lasts this run), approve always (persists to agent settings), narrow the path, or deny. Request the narrowest path that satisfies the task — prefer `~/.config/gh` over `~/.config`, prefer a specific file over its parent directory. Prefer `read_only` unless writes are genuinely needed.\n\
-             - If `fs_request_grant` is denied, do not retry the same path. Either request a narrower path, ask the user via `workspace_requestUserInput`, or stop and explain what was blocked.\n\
+             - If `fs_request_grant` is denied, do not retry the same path. Either request a narrower path, ask the user via `ask_user`, or stop and explain what was blocked.\n\
              - Do not silently extend your reach by other means. The grant flow is the only sanctioned escape valve.\n\
              - Default your writes to the workspace. Other grants (often `$HOME`) are commonly read_only, so writing there fails — check the access listed above first, and if you genuinely need to write to a read_only or ungranted path, `fs_request_grant` it rather than attempting the write and failing.\n\
              - Other CLAI workspaces exist on this machine but are intentionally isolated: you cannot see, list, or read them, and they will never appear in your grants. If the user asks you to work with a different workspace, ask them for its workspace id (the value they can read most easily in the CLAI app; you cannot enumerate workspaces). That workspace lives next to yours — same parent directory as your workspace, named with that id — so `fs_request_grant` that path (e.g. read_only first) to gain access.\n",
@@ -1062,7 +1095,7 @@ pub(crate) fn build_system_prompt(
         // -F /dev/null workaround experimentally.
         prompt.push_str(
             "\n## Git and SSH conventions inside the sandbox\n\
-             - Never rewrite commit authorship. Do not run `git commit --amend --reset-author`, do not change `user.email` / `user.name` away from what the commit already has, and do not use the `--author=` flag to overwrite an existing author. If a push is rejected because of GitHub's email privacy (error `GH007`) or because the author's email is not allowed, STOP and escalate via `workspace_requestUserInput` with the exact failing email and the rejection reason. The user owns the choice of which email to publish.\n",
+             - Never rewrite commit authorship. Do not run `git commit --amend --reset-author`, do not change `user.email` / `user.name` away from what the commit already has, and do not use the `--author=` flag to overwrite an existing author. If a push is rejected because of GitHub's email privacy (error `GH007`) or because the author's email is not allowed, STOP and escalate via `ask_user` with the exact failing email and the rejection reason. The user owns the choice of which email to publish.\n",
         );
         if cfg!(target_os = "linux") {
             prompt.push_str(
@@ -1471,6 +1504,114 @@ mod tests {
         assert!(text.contains("- Manager (manager)"));
         assert!(text.contains("- Code Reviewer (member)"));
         assert!(text.contains("Reviews source changes."));
+    }
+
+    fn manager_summary() -> WorkspaceAgentSummary {
+        WorkspaceAgentSummary {
+            id: "workspace-agent-manager".to_string(),
+            agent_definition_id: "workspace-agent-manager".to_string(),
+            display_name: "Manager".to_string(),
+            role: "manager".to_string(),
+            is_default: true,
+            description: Some("Coordinates workspace tasks.".to_string()),
+        }
+    }
+
+    fn member_summary() -> WorkspaceAgentSummary {
+        WorkspaceAgentSummary {
+            id: "workspace-agent-reviewer".to_string(),
+            agent_definition_id: "workspace-agent-reviewer".to_string(),
+            display_name: "Code Reviewer".to_string(),
+            role: "member".to_string(),
+            is_default: false,
+            description: Some("Reviews source changes.".to_string()),
+        }
+    }
+
+    #[test]
+    fn build_system_prompt_documents_parallel_task_mechanics_for_manager() {
+        let context = SessionContext {
+            automation_id: Some("workspace-agent-manager".to_string()),
+            workspace_agents: vec![manager_summary(), member_summary()],
+            ..Default::default()
+        };
+
+        let message = build_system_prompt(&context, None, &[], &RunTrigger::UserMessage);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        // Async + parallel semantics, fan-out, self-tasking, and the caveats
+        // (shared workspace dir, self-contained instructions, durable ids).
+        assert!(text.contains("### How tasks run"));
+        assert!(text.contains("no per-agent limit"));
+        assert!(text.contains("Assigning a task to yourself"));
+        assert!(text.contains("does NOT see this conversation"));
+        assert!(text.contains("Partition parallel work"));
+        assert!(text.contains("record the task id in memory"));
+    }
+
+    #[test]
+    fn build_system_prompt_offers_self_tasking_to_solo_manager() {
+        let context = SessionContext {
+            automation_id: Some("workspace-agent-manager".to_string()),
+            workspace_agents: vec![manager_summary()],
+            ..Default::default()
+        };
+
+        let message = build_system_prompt(&context, None, &[], &RunTrigger::UserMessage);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        // No members: the role callout still renders, framed around
+        // self-tasking as the background-work mechanism.
+        assert!(text.contains("(and only agent)"));
+        assert!(text.contains("assign a task to *yourself*"));
+        assert!(text.contains("### How tasks run"));
+    }
+
+    #[test]
+    fn build_system_prompt_marks_workspace_task_runs_as_workers() {
+        let context = SessionContext {
+            automation_id: Some("workspace-agent-manager".to_string()),
+            workspace_agents: vec![manager_summary()],
+            ..Default::default()
+        };
+
+        let message = build_system_prompt(&context, None, &[], &RunTrigger::WorkspaceTask);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        assert!(text.contains("## Task Worker Context"));
+        assert!(text.contains("result summary"));
+        assert!(text.contains("never create task chains"));
+        // A worker (even a self-tasked manager instance) must not be invited
+        // to fan out further tasks.
+        assert!(!text.contains("### How tasks run"));
+    }
+
+    #[test]
+    fn build_system_prompt_hides_task_mechanics_from_members() {
+        let context = SessionContext {
+            automation_id: Some("workspace-agent-reviewer".to_string()),
+            workspace_agents: vec![manager_summary(), member_summary()],
+            ..Default::default()
+        };
+
+        let message = build_system_prompt(&context, None, &[], &RunTrigger::UserMessage);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        assert!(!text.contains("## Your Role"));
+        assert!(!text.contains("### How tasks run"));
+        assert!(!text.contains("## Task Worker Context"));
     }
 
     #[test]
