@@ -67,6 +67,74 @@ fn cc_debug_logging_enabled() -> bool {
     })
 }
 
+/// Mid-run user input for Claude Code runs (Mechanism B: interrupt the
+/// in-flight turn, re-inject the queued message into the same process and
+/// session). On by default; set `CLAI_DISABLE_MIDRUN_INPUT` to a truthy value
+/// to revert to the legacy queue-until-run-ends behavior. The queue remains
+/// the fallback either way: any delivery failure leaves messages pending and
+/// the existing queued-followup run picks them up after this run finishes.
+fn claude_midrun_input_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("CLAI_DISABLE_MIDRUN_INPUT")
+            .map(|value| {
+                let value = value.trim();
+                value.is_empty() || value == "0" || value.eq_ignore_ascii_case("false")
+            })
+            .unwrap_or(true)
+    })
+}
+
+/// One NDJSON line carrying a user message in Claude Code's
+/// `--input-format stream-json` mode (trailing newline included).
+fn claude_stream_json_user_line(text: &str) -> String {
+    let mut line = serde_json::json!({
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": [{ "type": "text", "text": text }],
+        },
+    })
+    .to_string();
+    line.push('\n');
+    line
+}
+
+/// One NDJSON line carrying the stream-json interrupt control request
+/// (trailing newline included). Claude Code acknowledges it with a
+/// `control_response` and winds the in-flight turn down with a `result`
+/// of subtype `error_during_execution`; sent while no turn is active it
+/// is a harmless success no-op (verified against Claude Code 2.1.170).
+fn claude_interrupt_line(request_id: &str) -> String {
+    let mut line = serde_json::json!({
+        "type": "control_request",
+        "request_id": request_id,
+        "request": { "subtype": "interrupt" },
+    })
+    .to_string();
+    line.push('\n');
+    line
+}
+
+/// True when this `result` event is the wind-down of a turn we interrupted
+/// on purpose to deliver a mid-run message — it must not fail the run.
+///
+/// Claude Code 2.1.170 reports an interrupted turn as `is_error` with
+/// subtype `error_during_execution`, but that exact subtype is observed,
+/// not documented. Callers only consult this between sending an interrupt
+/// and the next `result`, so we deliberately accept ANY error result in
+/// that window rather than pin an undocumented string a future CLI version
+/// could rename. A genuine provider failure caught in this window isn't
+/// silently lost: the injected turn that follows will hit the same
+/// condition and fail the run visibly.
+fn is_interrupted_turn_result(value: &Value) -> bool {
+    value.get("type").and_then(Value::as_str) == Some("result")
+        && value
+            .get("is_error")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
 fn log_cli_stream_line(provider: &str, run_id: &str, line: &str) {
     if cli_stream_logging_enabled() {
         tracing::info!(target: "clai::cli_stream", provider, run_id, raw = %line, "CLI stream line");
@@ -597,6 +665,116 @@ async fn ensure_assistant_message_slot(
     Ok(assistant_message)
 }
 
+/// Outcome of one attempt to hand queued user messages to the live Claude
+/// process. `delivered == false` means nothing was written (no matching
+/// pending messages, the session is blocked on `ask_user`, or a failure) —
+/// in every such case the messages stay `pending` and the existing
+/// queued-followup run remains their guaranteed delivery path.
+struct MidRunDelivery {
+    delivered: usize,
+    interrupted: bool,
+}
+
+/// Best-effort delivery of pending queued messages into a live Claude Code
+/// process (Mechanism B). When a turn is in flight, an interrupt control
+/// request is written first so the agent winds down and re-plans with the
+/// new input immediately; the messages themselves follow as stream-json
+/// user lines and run as fresh turns in the same process and CLI session.
+///
+/// Ordering: stdin write happens BEFORE marking delivered. If the mark
+/// fails (rare DB error) the followup path may re-deliver the same text —
+/// a duplicate the model shrugs off. The reverse order could mark a message
+/// delivered that never reached the process, silently losing it.
+async fn try_deliver_queued_to_claude(
+    deps: &AssistantDeps,
+    session: &AssistantSession,
+    run_id: &str,
+    connection_id: &str,
+    stdin: &mut tokio::process::ChildStdin,
+    turn_active: bool,
+) -> MidRunDelivery {
+    const NONE: MidRunDelivery = MidRunDelivery {
+        delivered: 0,
+        interrupted: false,
+    };
+
+    // Interrupting while the user is being asked a question would tear the
+    // question down; leave messages queued until it resolves.
+    if crate::assistant::tools::ask_user::session_has_pending_ask(&session.id) {
+        return NONE;
+    }
+
+    let pending = match repository::list_pending_queued_messages(&deps.pool, &session.id).await {
+        Ok(pending) => pending,
+        Err(error) => {
+            tracing::warn!(run_id, %error, "Mid-run delivery: queue read failed");
+            return NONE;
+        }
+    };
+    // Only deliver messages aimed at this run's connection — a message the
+    // user sent after switching the provider picker belongs to a followup
+    // run on that provider, not to this process.
+    let matching: Vec<_> = pending
+        .into_iter()
+        .filter(|queued| queued.connection_id == connection_id)
+        .collect();
+    if matching.is_empty() {
+        return NONE;
+    }
+
+    let mut payload = String::new();
+    let interrupted = turn_active;
+    if turn_active {
+        payload.push_str(&claude_interrupt_line(&uuid::Uuid::new_v4().to_string()));
+    }
+    let mut message_ids = Vec::with_capacity(matching.len());
+    for queued in &matching {
+        let text = message_text(&queued.message);
+        if !text.trim().is_empty() {
+            payload.push_str(&claude_stream_json_user_line(&text));
+        }
+        // Empty messages are still marked delivered below — leaving them
+        // pending would retry forever on every poll tick.
+        message_ids.push(queued.message.id.clone());
+    }
+
+    use tokio::io::AsyncWriteExt;
+    if let Err(error) = stdin.write_all(payload.as_bytes()).await {
+        tracing::warn!(run_id, %error, "Mid-run delivery: stdin write failed; leaving messages queued");
+        return NONE;
+    }
+    let _ = stdin.flush().await;
+
+    if let Err(error) =
+        repository::mark_queued_messages_delivered(&deps.pool, &session.id, run_id, &message_ids)
+            .await
+    {
+        tracing::warn!(
+            run_id, %error,
+            "Mid-run delivery: messages reached the live process but marking delivered failed; the followup run may re-deliver them"
+        );
+    } else {
+        let _ = emit_event(
+            &deps.app,
+            session,
+            Some(run_id),
+            AssistantUiEvent::QueuedMessagesDelivered {
+                message_ids: message_ids.clone(),
+            },
+        );
+    }
+    tracing::info!(
+        run_id,
+        count = message_ids.len(),
+        interrupted,
+        "Delivered queued user message(s) to the live Claude run"
+    );
+    MidRunDelivery {
+        delivered: message_ids.len(),
+        interrupted,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_claude_turn(
     deps: &AssistantDeps,
@@ -621,7 +799,7 @@ async fn run_claude_turn(
     )
     .await?;
     let system_prompt = system_prompt_text(&deps.app, session, trigger).await;
-    let assistant_message = ensure_assistant_message_slot(
+    let mut assistant_message = ensure_assistant_message_slot(
         deps,
         session,
         run_id,
@@ -629,6 +807,7 @@ async fn run_claude_turn(
         assistant_slot,
     )
     .await?;
+    let midrun_input = claude_midrun_input_enabled();
 
     let configured_binary = connection
         .base_url
@@ -673,6 +852,12 @@ async fn run_claude_turn(
         .arg("stream-json")
         .arg("--include-partial-messages")
         .arg("--verbose");
+    if midrun_input {
+        // stream-json input keeps stdin usable for the lifetime of the run,
+        // so queued user messages can be interrupted-in mid-task (Mechanism
+        // B) instead of waiting for a followup run.
+        command.arg("--input-format").arg("stream-json");
+    }
     if is_new_session {
         command.arg("--session-id").arg(cli_session_id);
     } else {
@@ -720,13 +905,27 @@ async fn run_claude_turn(
             binary, e
         ))
     })?;
+    // With mid-run input the stdin handle stays open for the whole run —
+    // it is the channel queued user messages are delivered through. In
+    // legacy mode it is closed right after the prompt, as before.
+    let mut live_stdin: Option<tokio::process::ChildStdin> = None;
     if let Some(mut stdin) = child.stdin.take() {
         use tokio::io::AsyncWriteExt;
+        let initial = if midrun_input {
+            claude_stream_json_user_line(&prompt)
+        } else {
+            prompt
+        };
         stdin
-            .write_all(prompt.as_bytes())
+            .write_all(initial.as_bytes())
             .await
             .map_err(|e| LocalAgentRunError::failed(format!("Failed to write prompt: {}", e)))?;
-        drop(stdin);
+        if midrun_input {
+            let _ = stdin.flush().await;
+            live_stdin = Some(stdin);
+        } else {
+            drop(stdin);
+        }
     }
     let stderr_tail: Arc<Mutex<VecDeque<String>>> =
         Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_TAIL_LINES)));
@@ -746,6 +945,18 @@ async fn run_claude_turn(
     let mut state = ClaudeStreamState::new();
     let mut usage: Option<RunUsage> = None;
     let mut result_error: Option<String> = None;
+    // Mid-run input state (only meaningful while `live_stdin` is Some).
+    // `turn_active` tracks whether a turn is in flight (first streamed event
+    // → its `result`) so delivery knows whether an interrupt is needed.
+    // `awaiting_interrupt_result` marks that the next error_during_execution
+    // result is OUR interrupt winding the turn down, not a failure.
+    // `pending_injected_turns` counts delivered messages whose turns have
+    // not yet completed — stdin must stay open until it reaches zero.
+    let mut turn_active = false;
+    let mut awaiting_interrupt_result = false;
+    let mut pending_injected_turns: usize = 0;
+    let mut queue_poll = tokio::time::interval(std::time::Duration::from_millis(1200));
+    queue_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         let line = tokio::select! {
@@ -754,6 +965,30 @@ async fn run_claude_turn(
                 finalize_assistant_message(deps, session, run_id, &assistant_message, &state)
                     .await?;
                 return Err(LocalAgentRunError::Cancelled { usage });
+            }
+            _ = queue_poll.tick(), if live_stdin.is_some() => {
+                // Never interrupt while a tool call is executing — cutting a
+                // build, test run, or git operation half-way can corrupt
+                // work-in-progress. The message waits for the tool's result
+                // (the next clean cut point); the queue keeps it safe
+                // meanwhile, and the followup run remains the fallback if
+                // this run ends first.
+                if state.has_tool_call_in_flight() {
+                    continue;
+                }
+                if let Some(stdin) = live_stdin.as_mut() {
+                    let outcome = try_deliver_queued_to_claude(
+                        deps, session, run_id, &connection.id, stdin, turn_active,
+                    )
+                    .await;
+                    if outcome.delivered > 0 {
+                        pending_injected_turns += outcome.delivered;
+                        if outcome.interrupted {
+                            awaiting_interrupt_result = true;
+                        }
+                    }
+                }
+                continue;
             }
             next = lines.next_line() => next
         }
@@ -769,6 +1004,17 @@ async fn run_claude_turn(
         let value: Value = serde_json::from_str(&line).map_err(|e| {
             LocalAgentRunError::failed(format!("Invalid Claude stream-json event: {}", e))
         })?;
+
+        let event_type = value.get("type").and_then(Value::as_str);
+        match event_type {
+            Some("result") => turn_active = false,
+            Some("system") | Some("assistant") | Some("stream_event") | Some("user") => {
+                turn_active = true;
+            }
+            _ => {}
+        }
+        let suppress_interrupted = awaiting_interrupt_result && is_interrupted_turn_result(&value);
+
         handle_claude_event(
             deps,
             session,
@@ -780,6 +1026,68 @@ async fn run_claude_turn(
             &mut result_error,
         )
         .await?;
+
+        if suppress_interrupted && result_error.take().is_some() {
+            let subtype = value
+                .get("subtype")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            tracing::info!(
+                run_id,
+                subtype,
+                "Interrupted the in-flight turn to deliver a mid-run user message"
+            );
+        }
+
+        if event_type == Some("result") {
+            awaiting_interrupt_result = false;
+            if live_stdin.is_some() {
+                // The interrupted turn's wind-down doesn't consume an
+                // injected-turn slot; every other result completes a turn.
+                if !suppress_interrupted {
+                    pending_injected_turns = pending_injected_turns.saturating_sub(1);
+                }
+                // End-of-run race: a message may have been queued since the
+                // last poll tick. Fold it in as one more turn now instead of
+                // closing; if delivery declines, the followup run has it.
+                if pending_injected_turns == 0 {
+                    if let Some(stdin) = live_stdin.as_mut() {
+                        let outcome = try_deliver_queued_to_claude(
+                            deps,
+                            session,
+                            run_id,
+                            &connection.id,
+                            stdin,
+                            false,
+                        )
+                        .await;
+                        pending_injected_turns += outcome.delivered;
+                    }
+                }
+                if pending_injected_turns > 0 {
+                    // More turns are coming in this process. Close out the
+                    // current assistant bubble so the injected user message
+                    // and the upcoming reply render in conversation order.
+                    finalize_assistant_message(deps, session, run_id, &assistant_message, &state)
+                        .await?;
+                    *assistant_slot = None;
+                    assistant_message = ensure_assistant_message_slot(
+                        deps,
+                        session,
+                        run_id,
+                        CliProviderRuntime::ClaudeCode.metadata_source(),
+                        assistant_slot,
+                    )
+                    .await?;
+                    state = ClaudeStreamState::new();
+                } else {
+                    // Nothing pending: dropping stdin tells Claude no more
+                    // input is coming; it drains anything buffered and exits,
+                    // ending the loop at EOF exactly like the legacy path.
+                    live_stdin = None;
+                }
+            }
+        }
     }
 
     let status = child
@@ -1430,6 +1738,12 @@ async fn system_prompt_text(
 /// before their `tool_use` (rare, but possible when Claude Code emits
 /// tool_use only in the complete assistant message): we replay the
 /// buffer as soon as the matching tool_use is registered.
+/// `unresolved_tool_use_ids` is the subset of persisted tool_use ids whose
+/// `tool_result` has not arrived yet — i.e. tools executing *right now*.
+/// Mid-run input delivery consults it to defer the interrupt while a tool
+/// runs: cutting a build or git operation half-way can corrupt
+/// work-in-progress, so the message waits for the next clean point (the
+/// tool's result, when the model is back to streaming thought).
 /// `last_update_emit_at` throttles `AssistantMessageUpdated` emissions
 /// — without it a tool-heavy turn fires one full message-replacement
 /// event per tool_use and React re-renders the entire chat tree each
@@ -1438,6 +1752,7 @@ struct ClaudeStreamState {
     parts: Vec<ContentPart>,
     open_blocks: HashMap<u64, OpenBlock>,
     persisted_tool_use_ids: std::collections::HashSet<String>,
+    unresolved_tool_use_ids: std::collections::HashSet<String>,
     pending_tool_results: HashMap<String, Value>,
     last_update_emit_at: Option<std::time::Instant>,
 }
@@ -1474,9 +1789,17 @@ impl ClaudeStreamState {
             parts: Vec::new(),
             open_blocks: HashMap::new(),
             persisted_tool_use_ids: std::collections::HashSet::new(),
+            unresolved_tool_use_ids: std::collections::HashSet::new(),
             pending_tool_results: HashMap::new(),
             last_update_emit_at: None,
         }
+    }
+
+    /// True while at least one tool call is executing (tool_use seen, its
+    /// tool_result not yet). Mid-run input delivery defers the interrupt
+    /// while this holds so a long-running tool is never cut half-way.
+    fn has_tool_call_in_flight(&self) -> bool {
+        !self.unresolved_tool_use_ids.is_empty()
     }
 
     /// True iff the message accumulated any prose (non-empty Text part).
@@ -2428,7 +2751,9 @@ async fn handle_claude_event(
         }
         Some("result") => {
             if let Some(parsed) = usage_from_value(value.get("usage")) {
-                *usage = Some(parsed);
+                // Sum across turns: with mid-run input one process can run
+                // several turns, each reporting its own usage in its result.
+                merge_run_usage(usage, parsed);
             }
             if value
                 .get("is_error")
@@ -2732,6 +3057,10 @@ async fn handle_tool_result(
             .insert(tool_use_id, block.clone());
         return Ok(());
     }
+    // The tool finished executing — from here it is safe to interrupt the
+    // turn again. Cleared before applying so a persistence error can't
+    // leave the in-flight flag stuck and starve mid-run delivery.
+    state.unresolved_tool_use_ids.remove(&tool_use_id);
     apply_tool_result(deps, session, run_id, &tool_use_id, block).await
 }
 
@@ -2796,6 +3125,12 @@ async fn persist_tool_use(
     state
         .persisted_tool_use_ids
         .insert(tool_call_id.to_string());
+    // Executing from this moment until its tool_result lands (the
+    // pending-result replay below clears it immediately for the
+    // result-arrived-first ordering).
+    state
+        .unresolved_tool_use_ids
+        .insert(tool_call_id.to_string());
 
     // Flush the running parts vec into the assistant message so the
     // chat UI's tool_use renderer can pick it up immediately. The DB
@@ -2808,6 +3143,7 @@ async fn persist_tool_use(
     // tool_use only present in the complete assistant message), flush it
     // now.
     if let Some(pending) = state.pending_tool_results.remove(tool_call_id) {
+        state.unresolved_tool_use_ids.remove(tool_call_id);
         apply_tool_result(deps, session, run_id, tool_call_id, &pending).await?;
     }
 
@@ -3291,6 +3627,81 @@ impl From<String> for LocalAgentRunError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------
+    // Mid-run input wire format (verified against Claude Code 2.1.170)
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn claude_stream_json_user_line_matches_wire_format() {
+        let line = claude_stream_json_user_line("hello there");
+        assert!(line.ends_with('\n'), "must be one NDJSON line");
+        let value: Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(value["type"], "user");
+        assert_eq!(value["message"]["role"], "user");
+        assert_eq!(value["message"]["content"][0]["type"], "text");
+        assert_eq!(value["message"]["content"][0]["text"], "hello there");
+    }
+
+    #[test]
+    fn claude_interrupt_line_matches_wire_format() {
+        let line = claude_interrupt_line("req-42");
+        assert!(line.ends_with('\n'), "must be one NDJSON line");
+        let value: Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(value["type"], "control_request");
+        assert_eq!(value["request_id"], "req-42");
+        assert_eq!(value["request"]["subtype"], "interrupt");
+    }
+
+    #[test]
+    fn interrupted_turn_result_is_classified() {
+        // The wind-down of a turn we interrupted (observed shape).
+        let interrupted = serde_json::json!({
+            "type": "result", "subtype": "error_during_execution",
+            "is_error": true, "result": null,
+        });
+        assert!(is_interrupted_turn_result(&interrupted));
+
+        // A normal success result must not be suppressed.
+        let success = serde_json::json!({
+            "type": "result", "subtype": "success",
+            "is_error": false, "result": "done",
+        });
+        assert!(!is_interrupted_turn_result(&success));
+
+        // Any error subtype matches — the exact interrupted-turn subtype is
+        // undocumented, and callers only consult this in the brief window
+        // after sending an interrupt, where an error result is ours.
+        let other_subtype = serde_json::json!({
+            "type": "result", "subtype": "error_max_turns",
+            "is_error": true,
+        });
+        assert!(is_interrupted_turn_result(&other_subtype));
+
+        // Non-result events never match.
+        let other = serde_json::json!({ "type": "assistant" });
+        assert!(!is_interrupted_turn_result(&other));
+    }
+
+    #[test]
+    fn tool_in_flight_tracking_follows_tool_use_lifecycle() {
+        let mut state = ClaudeStreamState::new();
+        assert!(!state.has_tool_call_in_flight());
+
+        // tool_use persisted → executing.
+        state.persisted_tool_use_ids.insert("tc-1".to_string());
+        state.unresolved_tool_use_ids.insert("tc-1".to_string());
+        assert!(state.has_tool_call_in_flight());
+
+        // Two tools in flight: one finishing doesn't clear the flag.
+        state.persisted_tool_use_ids.insert("tc-2".to_string());
+        state.unresolved_tool_use_ids.insert("tc-2".to_string());
+        state.unresolved_tool_use_ids.remove("tc-1");
+        assert!(state.has_tool_call_in_flight());
+
+        state.unresolved_tool_use_ids.remove("tc-2");
+        assert!(!state.has_tool_call_in_flight());
+    }
 
     #[test]
     fn detects_real_usage_limit_messages() {

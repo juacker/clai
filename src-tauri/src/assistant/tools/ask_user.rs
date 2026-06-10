@@ -94,11 +94,24 @@ pub struct AskUserAnswer {
     pub selected_option_indexes: Option<Vec<usize>>,
 }
 
-type PendingMap = HashMap<String, oneshot::Sender<AskUserAnswer>>;
+// Keyed by pending id; the value carries the owning session id so callers
+// (mid-run input delivery) can check whether a session is currently blocked
+// on a human answer without threading new state through the tool router.
+type PendingMap = HashMap<String, (String, oneshot::Sender<AskUserAnswer>)>;
 static PENDING: OnceLock<Mutex<PendingMap>> = OnceLock::new();
 
 fn pending_map() -> &'static Mutex<PendingMap> {
     PENDING.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// True while this session has an `ask_user` question awaiting the human.
+/// Mid-run input delivery checks this before interrupting a live CLI turn:
+/// interrupting would tear down the question the user is being asked.
+pub fn session_has_pending_ask(session_id: &str) -> bool {
+    pending_map()
+        .lock()
+        .map(|map| map.values().any(|(owner, _)| owner == session_id))
+        .unwrap_or(false)
 }
 
 /// Deliver an answer to a waiting `ask_user` invocation. Called from the
@@ -108,7 +121,7 @@ pub fn submit_answer(pending_id: &str, answer: AskUserAnswer) -> Result<(), Stri
     let mut map = pending_map()
         .lock()
         .map_err(|e| format!("ask_user pending map poisoned: {}", e))?;
-    let tx = map
+    let (_, tx) = map
         .remove(pending_id)
         .ok_or_else(|| format!("No pending ask_user with id `{}`", pending_id))?;
     tx.send(answer)
@@ -184,7 +197,7 @@ pub async fn execute(
         let mut map = pending_map()
             .lock()
             .map_err(|e| format!("ask_user pending map poisoned: {}", e))?;
-        map.insert(pending_id.clone(), tx);
+        map.insert(pending_id.clone(), (session.id.clone(), tx));
     }
     let mut guard = PendingGuard {
         id: pending_id.clone(),
