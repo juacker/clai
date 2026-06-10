@@ -79,6 +79,7 @@ const InlineApprovalCard = ({ workspaceId }: InlineApprovalCardProps) => {
     // A's pending approval card leaks into workspace B's view (it lingers
     // until A's request happens to resolve). Clearing here keys the card's
     // per-workspace state to workspaceId.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- subscription+seed effect: clear stale per-workspace state on workspaceId change (component instance is reused across workspace navigation), then seed from pending list and subscribe to backend events. Effect is required for the listener registration + cleanup; the lint rule cannot model the seed/listen interaction.
     setRequests([]);
     setPerCardState({});
     setError(null);
@@ -143,6 +144,7 @@ const InlineApprovalCard = ({ workspaceId }: InlineApprovalCardProps) => {
 
   // Initialize per-segment editable state for each new card.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- derive per-card editable state from the requests list: add entries for new requests, drop entries for resolved ones, and no-op when nothing changed. The functional updater + 'return current' early-out is the canonical React 18 derivation pattern; the [requests] dep is correct.
     setPerCardState((current) => {
       const next = { ...current };
       let changed = false;

@@ -123,6 +123,7 @@ const AssistantProviderSettings = ({ initialAction = null }: AssistantProviderSe
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial-load + cross-tab event listener: the first mount fetches provider data once, and CONNECTIONS_CHANGED_EVENT triggers a reload when another view mutates connections. Effect is required for addEventListener/removeEventListener pairing; loadData is a stable useCallback([]).
     loadData();
     window.addEventListener(CONNECTIONS_CHANGED_EVENT, loadData);
     return () => window.removeEventListener(CONNECTIONS_CHANGED_EVENT, loadData);
@@ -130,6 +131,7 @@ const AssistantProviderSettings = ({ initialAction = null }: AssistantProviderSe
 
   useEffect(() => {
     if (!isCliAdapter) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- CLI adapter model fetch keyed on isCliAdapter/form.providerId: clears models when switching away from CLI, otherwise fetches descriptor models for the selected provider with a cancellation guard. Effect is required for the async fetch + cleanup; the rule cannot model the isCliAdapter branch.
       setDescriptorModels([]);
       return undefined;
     }
