@@ -30,7 +30,7 @@ interface TerminalEmulatorProps {
 
 const TerminalEmulator = ({ onSendToChat, onAgentCommand, agentWorking = false }: TerminalEmulatorProps) => {
   const { getActiveTab } = useTabManager();
-  const { setActiveContext, openChat, isCurrentChatOpen } = useChatManager();
+  const { setActiveTab, openChat, isCurrentChatOpen } = useChatManager();
   const location = useLocation();
   const [inputValue, setInputValue] = useState('');
   const [outputMessages, setOutputMessages] = useState<OutputMessage[]>([]);
@@ -151,9 +151,9 @@ const TerminalEmulator = ({ onSendToChat, onAgentCommand, agentWorking = false }
   useEffect(() => {
     const activeTab = getActiveTab();
     if (activeTab?.id) {
-      setActiveContext(activeTab.id, 'tab');
+      setActiveTab(activeTab.id);
     }
-  }, [getActiveTab, setActiveContext]);
+  }, [getActiveTab, setActiveTab]);
 
   // Handle command execution
   const handleCommandExecution = async (input: string) => {

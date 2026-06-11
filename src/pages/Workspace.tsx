@@ -1302,7 +1302,7 @@ const ChatFirstLayout = ({
 
 const Workspace = () => {
   const params = useParams();
-  const { toggleChat } = useChatManager() as { toggleChat: () => void };
+  const { toggleChat } = useChatManager();
   // Provided by FleetLayout's <Outlet>; lets us refresh the workspace rail
   // immediately after changes (e.g. a title rename) instead of waiting for
   // its 5s poll. Optional-chained so the page is resilient if ever rendered

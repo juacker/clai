@@ -59,6 +59,7 @@ interface RawMcpServers {
 interface RawTabContext {
   mcpServers?: RawMcpServers;
   customContext?: Record<string, unknown>;
+  /** Legacy Netdata-era field intentionally dropped during normalize. */
   spaceRoom?: unknown;
   [key: string]: unknown;
 }
