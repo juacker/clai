@@ -903,6 +903,30 @@ pub(crate) fn build_system_prompt(
          - Be concise and direct in your responses. Prefer concrete actions and evidence over vague summaries.\n",
     );
 
+    // Transport-drop recovery for grant/response-blocking tools. The local MCP
+    // transport can drop an in-flight call (surfaced to the model as
+    // "transport dropped mid-call; response for tool <name> was lost"). For a
+    // tool that blocks on a user grant or answer, the outcome is then unknown,
+    // so the model must re-ask rather than assume an answer or proceed. The
+    // backend treats the re-asked call as superseding the orphaned one (the
+    // stale approval/question card is replaced in place), so no UI caveats are
+    // needed here. Scoped to sessions that actually expose such a tool;
+    // ordinary read/write tools, which can be retried without side effects,
+    // need no special handling.
+    let has_interactive_tool = tool_names
+        .iter()
+        .any(|n| matches!(*n, "ask_user" | "bash_exec" | "fs_request_grant"));
+    if has_interactive_tool {
+        prompt.push_str(
+            "\n## Interactive Tool Reliability\n\
+             A tool call can occasionally fail with a transport error such as `MCP server \"clai\" transport dropped mid-call; response for tool <name> was lost`. This means CLAI lost the in-flight call before its result reached you, so the call's outcome is UNKNOWN — it may or may not have run.\n\
+             - This matters specifically for tools that block on a user grant or response — `ask_user`, and approval-gated `bash_exec` / `fs_request_grant`. When one of these drops mid-call, the user may never have answered, or they answered but the decision was lost.\n\
+             - When it happens, re-issue the SAME interactive call once. CLAI replaces the lost prompt with the fresh one in the app, so the user simply answers the new prompt. Do NOT assume the lost call was approved, denied, or answered, and do NOT proceed past it.\n\
+             - Apply this only to active CLAI human waits. If a user-input, command-approval, or filesystem-grant prompt expires or is denied, do not invent convoluted workarounds to bypass it. If the permission or answer is required, stop and explain what is blocked; retry only after a transport drop where the outcome is unknown.\n\
+             - For non-interactive tools (reads, searches, writes), a transport drop needs no special handling — just retry normally if you still need the result.\n",
+        );
+    }
+
     if context.space_id.is_some() || !context.mcp_server_ids.is_empty() {
         prompt.push_str(
             "- This tab already carries session-specific context and capabilities. \
@@ -1425,6 +1449,51 @@ mod tests {
             "Evaluate whether prior tool outputs are still fresh enough for the current decision."
         ));
         assert!(text.contains("re-run the relevant tools if freshness matters."));
+    }
+
+    #[test]
+    fn build_system_prompt_adds_interactive_reliability_guidance_when_blocking_tool_present() {
+        let context = SessionContext::default();
+        let tools = [crate::assistant::types::ToolDefinition {
+            name: "ask_user".to_string(),
+            description: "desc".to_string(),
+            input_schema: serde_json::json!({}),
+        }];
+
+        let message = build_system_prompt(&context, None, &tools, &RunTrigger::UserMessage);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        assert!(text.contains("## Interactive Tool Reliability"));
+        assert!(text.contains("transport dropped mid-call"));
+        assert!(text.contains("re-issue the SAME interactive call once"));
+        assert!(text.contains("Apply this only to active CLAI human waits"));
+        assert!(text.contains("do not invent convoluted workarounds"));
+        // The backend supersedes the orphaned request when the model
+        // re-asks, so the prompt must NOT push stale-card caveats (e.g.
+        // telling the user to dismiss duplicates) onto the model.
+        assert!(text.contains("replaces the lost prompt with the fresh one"));
+        assert!(!text.contains("dismiss"));
+    }
+
+    #[test]
+    fn build_system_prompt_omits_interactive_reliability_guidance_without_blocking_tool() {
+        let context = SessionContext::default();
+        let tools = [crate::assistant::types::ToolDefinition {
+            name: "fs_read".to_string(),
+            description: "desc".to_string(),
+            input_schema: serde_json::json!({}),
+        }];
+
+        let message = build_system_prompt(&context, None, &tools, &RunTrigger::UserMessage);
+        let text = match &message.content[0] {
+            ContentPart::Text { text } => text,
+            other => panic!("expected text content, got {:?}", other),
+        };
+
+        assert!(!text.contains("## Interactive Tool Reliability"));
     }
 
     #[test]

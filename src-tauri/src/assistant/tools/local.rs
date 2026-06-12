@@ -1194,13 +1194,15 @@ fn is_pure_assignment_token(tok: &str) -> bool {
 }
 
 /// Cleans up an abandoned permission request when the approval-wait future
-/// is dropped without a user decision — the Claude Code CLI dropping the MCP
-/// transport mid-call (its "response for tool bash_exec was lost" message),
-/// or the run being cancelled. In either case the awaiting future below is
-/// dropped, so this guard runs: it removes the still-pending registry entry,
-/// tells the frontend to drop the now-useless approval card, and cancels the
-/// run so the model cannot continue without the missing decision. Disarmed on
-/// a normal decision, where the submit command already removed the entry.
+/// is dropped without a user decision — the run being cancelled, or the
+/// run ending while this wait was orphaned by a CLI transport drop (the
+/// rmcp session worker keeps the future alive past the dropped
+/// connection; `BindingGuard` reaps it at run end, which drops this
+/// future). The guard then removes the still-pending registry entry,
+/// tells the frontend to drop the now-useless approval card, and cancels
+/// the run so the model cannot continue without the missing decision
+/// (a no-op when the run already ended). Disarmed on a normal decision or
+/// explicit supersede, where the caller already removed/replaced the entry.
 ///
 /// Cleanup is async (registry lock) so it's spawned onto the app runtime;
 /// `Drop` can't await. `take` is a no-op if the entry was already removed
@@ -1216,6 +1218,22 @@ struct AbandonedApprovalGuard {
 impl AbandonedApprovalGuard {
     fn disarm(&mut self) {
         self.armed = false;
+    }
+
+    async fn expire_and_stop<T>(&mut self) -> T {
+        use tauri::Manager;
+
+        let state = self.app.state::<crate::AppState>();
+        if let Some((_, remaining)) = state.pending_approvals.take(&self.request_id).await {
+            crate::commands::permissions::emit_permission_resolved(&self.app, &self.request_id);
+            crate::commands::permissions::emit_attention(
+                &self.app,
+                self.workspace_id.clone(),
+                remaining,
+            );
+        }
+        self.armed = false;
+        super::cancel_run_and_park(&self.cancel_token).await
     }
 }
 
@@ -1256,8 +1274,8 @@ async fn await_user_permission(
     segments: Vec<crate::commands::permissions::SegmentApproval>,
 ) -> Result<(), String> {
     use crate::commands::permissions::{
-        emit_attention, PermissionRequest, SegmentDecision, APPROVAL_TIMEOUT,
-        PERMISSION_REQUEST_EVENT,
+        emit_attention, PendingApprovalOutcome, PermissionRequest, SegmentDecision,
+        APPROVAL_TIMEOUT, PERMISSION_REQUEST_EVENT,
     };
     use tauri::{Emitter, Manager};
 
@@ -1277,7 +1295,26 @@ async fn await_user_permission(
     };
     let request_id = request.request_id.clone();
 
-    let (rx, count) = app_state.pending_approvals.register(request.clone()).await;
+    // Supersede: if a previous request for this exact run + command is
+    // still pending, it is an orphan — its CLI transport dropped mid-call
+    // and the model is now re-asking. Replace it (and its UI card) with
+    // the fresh request instead of stacking a duplicate the user can no
+    // longer meaningfully answer. The stale waiter receives an explicit
+    // supersede outcome (no run cancellation — this run is alive and
+    // waiting on the NEW request).
+    for stale in app_state
+        .pending_approvals
+        .take_superseded(&context.run_id, command)
+        .await
+    {
+        crate::commands::permissions::emit_permission_resolved(&deps.app, &stale.request_id);
+        emit_attention(&deps.app, stale.workspace_id.clone(), stale.remaining);
+    }
+
+    let (rx, count) = app_state
+        .pending_approvals
+        .register(request.clone(), context.run_id.clone())
+        .await;
 
     if let Err(e) = deps.app.emit(PERMISSION_REQUEST_EVENT, &request) {
         tracing::warn!("Failed to emit permission request event: {}", e);
@@ -1287,7 +1324,7 @@ async fn await_user_permission(
     // Cleans up if this future is abandoned before a decision (CLI transport
     // drop mid-call, or run cancellation): clears the pending entry and tells
     // the frontend to drop the now-useless approval card. Disarmed below on a
-    // normal decision; the timeout / channel-closed arms let it fire on drop.
+    // normal decision and explicit supersede.
     let mut abandon_guard = AbandonedApprovalGuard {
         app: deps.app.clone(),
         cancel_token: context.cancel_token.clone(),
@@ -1298,27 +1335,29 @@ async fn await_user_permission(
 
     let wait_timeout = context.interactive_wait_timeout(APPROVAL_TIMEOUT);
     let decisions = match tokio::time::timeout(wait_timeout, rx).await {
-        Ok(Ok(d)) => {
+        Ok(Ok(PendingApprovalOutcome::Decision(d))) => {
             // The submit command already removed the registry entry and the
             // frontend cleared the card optimistically.
             abandon_guard.disarm();
             d
         }
-        Ok(Err(_)) => {
-            let msg = "Permission approval channel closed before a decision was made";
-            context.add_notice(RunNoticeKind::CommandDenied, msg.to_string());
+        Ok(Ok(PendingApprovalOutcome::Superseded)) => {
+            // A fresh registration for the same run + command replaced
+            // this orphaned wait after a transport drop. This stale future
+            // is intentionally ignored: no notice, no warning, no cancel.
+            abandon_guard.disarm();
+            let msg = "Permission request was superseded by a newer request \
+                       for the same command before a decision was made";
             return Err(msg.to_string());
         }
+        Ok(Err(_)) if context.cancel_token.is_cancelled() => {
+            return super::cancel_run_and_park(&context.cancel_token).await;
+        }
+        Ok(Err(_)) => {
+            return abandon_guard.expire_and_stop().await;
+        }
         Err(_) => {
-            // Human-wait timeout. `abandon_guard` clears the pending entry,
-            // emits attention, drops the card, and cancels the run when it
-            // goes out of scope.
-            let msg = format!(
-                "Permission approval timed out after {} seconds",
-                wait_timeout.as_secs()
-            );
-            context.add_notice(RunNoticeKind::CommandDenied, msg.to_string());
-            return Err(msg);
+            return abandon_guard.expire_and_stop().await;
         }
     };
 
@@ -1528,8 +1567,8 @@ fn access_to_str(access: FilesystemPathAccess) -> &'static str {
 /// return shape (path grants aren't per-segment).
 /// Path-grant analogue of [`AbandonedApprovalGuard`]: clears a pending
 /// filesystem path-grant request, drops its card, and cancels the run when
-/// the approval-wait future is abandoned (CLI transport drop mid-call, or
-/// run cancellation).
+/// the approval-wait future is abandoned (run cancellation, or run-end
+/// reaping of a wait orphaned by a CLI transport drop).
 struct AbandonedPathGrantGuard {
     app: tauri::AppHandle,
     cancel_token: tokio_util::sync::CancellationToken,
@@ -1541,6 +1580,22 @@ struct AbandonedPathGrantGuard {
 impl AbandonedPathGrantGuard {
     fn disarm(&mut self) {
         self.armed = false;
+    }
+
+    async fn expire_and_stop<T>(&mut self) -> T {
+        use tauri::Manager;
+
+        let state = self.app.state::<crate::AppState>();
+        if let Some((_, remaining)) = state.pending_path_grants.take(&self.request_id).await {
+            crate::commands::path_grants::emit_path_grant_resolved(&self.app, &self.request_id);
+            crate::commands::path_grants::emit_attention(
+                &self.app,
+                self.workspace_id.clone(),
+                remaining,
+            );
+        }
+        self.armed = false;
+        super::cancel_run_and_park(&self.cancel_token).await
     }
 }
 
@@ -1570,7 +1625,7 @@ async fn await_path_grant_decision(
     request: crate::commands::path_grants::PathGrantRequest,
 ) -> Result<crate::commands::path_grants::PathGrantDecision, String> {
     use crate::commands::path_grants::{
-        emit_attention, PATH_GRANT_REQUEST_EVENT, PATH_GRANT_TIMEOUT,
+        emit_attention, PendingPathGrantOutcome, PATH_GRANT_REQUEST_EVENT, PATH_GRANT_TIMEOUT,
     };
     use tauri::{Emitter, Manager};
 
@@ -1578,9 +1633,25 @@ async fn await_path_grant_decision(
     let workspace_id = context.workspace_id.clone();
     let request_id = request.request_id.clone();
 
+    // Supersede a stale orphaned request for the same run + path + access
+    // (the model re-asked after a CLI transport drop). See the analogous
+    // block in `await_user_permission` for the full rationale.
+    for stale in app_state
+        .pending_path_grants
+        .take_superseded(
+            &context.run_id,
+            &request.requested_path,
+            request.requested_access,
+        )
+        .await
+    {
+        crate::commands::path_grants::emit_path_grant_resolved(&deps.app, &stale.request_id);
+        emit_attention(&deps.app, stale.workspace_id.clone(), stale.remaining);
+    }
+
     let (rx, count) = app_state
         .pending_path_grants
-        .register(request.clone())
+        .register(request.clone(), context.run_id.clone())
         .await;
 
     if let Err(e) = deps.app.emit(PATH_GRANT_REQUEST_EVENT, &request) {
@@ -1590,7 +1661,7 @@ async fn await_path_grant_decision(
 
     // See `AbandonedApprovalGuard`: clears the pending entry and drops the
     // card if this future is abandoned before a decision. Disarmed on a
-    // normal decision; the timeout / channel-closed arms let it fire on drop.
+    // normal decision and explicit supersede.
     let mut abandon_guard = AbandonedPathGrantGuard {
         app: deps.app.clone(),
         cancel_token: context.cancel_token.clone(),
@@ -1601,26 +1672,25 @@ async fn await_path_grant_decision(
 
     let wait_timeout = context.interactive_wait_timeout(PATH_GRANT_TIMEOUT);
     match tokio::time::timeout(wait_timeout, rx).await {
-        Ok(Ok(decision)) => {
+        Ok(Ok(PendingPathGrantOutcome::Decision(decision))) => {
             abandon_guard.disarm();
             Ok(decision)
         }
-        Ok(Err(_)) => {
-            let msg = "Path-grant approval channel closed before a decision was made".to_string();
-            context.add_notice(RunNoticeKind::PathGrantDenied, msg.clone());
+        Ok(Ok(PendingPathGrantOutcome::Superseded)) => {
+            // A fresh registration for the same run + path + access
+            // replaced this orphaned wait after a transport drop. This
+            // stale future is intentionally ignored.
+            abandon_guard.disarm();
+            let msg = "Path-grant request was superseded by a newer request \
+                       for the same path before a decision was made"
+                .to_string();
             Err(msg)
         }
-        Err(_) => {
-            // Human-wait timeout. `abandon_guard` clears the pending entry,
-            // emits attention, drops the card, and cancels the run when it
-            // goes out of scope.
-            let msg = format!(
-                "Path-grant approval timed out after {} seconds",
-                wait_timeout.as_secs()
-            );
-            context.add_notice(RunNoticeKind::PathGrantDenied, msg.clone());
-            Err(msg)
+        Ok(Err(_)) if context.cancel_token.is_cancelled() => {
+            super::cancel_run_and_park(&context.cancel_token).await
         }
+        Ok(Err(_)) => abandon_guard.expire_and_stop().await,
+        Err(_) => abandon_guard.expire_and_stop().await,
     }
 }
 

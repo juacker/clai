@@ -38,10 +38,11 @@ use crate::AppState;
 pub const PERMISSION_REQUEST_EVENT: &str = "permissions://request";
 pub const PERMISSION_ATTENTION_EVENT: &str = "permissions://attention";
 /// Emitted when a pending request is cleared *without* a user decision —
-/// the tool call was abandoned (CLI transport dropped mid-call, run
-/// cancelled) or it timed out. The inline approval card removes the now-
-/// useless card on this. Normal user submissions remove the card
-/// optimistically on the frontend, so they don't emit this.
+/// the run was cancelled or ended (reaping a wait orphaned by a CLI
+/// transport drop), the wait timed out, or a re-asked command superseded
+/// the stale request. The inline approval card removes the now-useless
+/// card on this. Normal user submissions remove the card optimistically
+/// on the frontend, so they don't emit this.
 pub const PERMISSION_RESOLVED_EVENT: &str = "permissions://resolved";
 
 /// Maximum time the bash handler waits for a user response. Past this
@@ -140,13 +141,30 @@ struct PendingInner {
     counts: HashMap<Option<String>, u32>,
 }
 
+#[derive(Debug)]
+pub enum PendingApprovalOutcome {
+    Decision(Vec<SegmentDecision>),
+    Superseded,
+}
+
 pub struct PendingEntry {
-    pub sender: oneshot::Sender<Vec<SegmentDecision>>,
+    pub sender: oneshot::Sender<PendingApprovalOutcome>,
     pub workspace_id: Option<String>,
+    /// The run that is awaiting this decision. Used by
+    /// [`PendingApprovals::take_superseded`] so a re-asked command (after
+    /// a CLI transport drop orphaned the original request) replaces the
+    /// stale entry instead of stacking a duplicate card.
+    pub run_id: String,
     /// The original request payload as emitted to the frontend. Stored
     /// so that components that mount after the event fired can still
     /// discover the request via [`list_pending_permission_requests`].
     pub request: PermissionRequest,
+}
+
+pub struct SupersededApproval {
+    pub request_id: String,
+    pub workspace_id: Option<String>,
+    pub remaining: u32,
 }
 
 impl PendingApprovals {
@@ -169,7 +187,8 @@ impl PendingApprovals {
     pub async fn register(
         &self,
         request: PermissionRequest,
-    ) -> (oneshot::Receiver<Vec<SegmentDecision>>, u32) {
+        run_id: String,
+    ) -> (oneshot::Receiver<PendingApprovalOutcome>, u32) {
         let (tx, rx) = oneshot::channel();
         let mut inner = self.inner.lock().await;
         let request_id = request.request_id.clone();
@@ -179,6 +198,7 @@ impl PendingApprovals {
             PendingEntry {
                 sender: tx,
                 workspace_id: workspace_id.clone(),
+                run_id,
                 request,
             },
         );
@@ -215,11 +235,18 @@ impl PendingApprovals {
     /// Drops every pending entry belonging to `workspace_id` and clears
     /// its count. Used by `workspace_delete` so requests scoped to a
     /// just-deleted workspace don't linger in memory until restart.
-    /// Dropping each entry's `sender` closes the oneshot channel, which
-    /// surfaces as a "channel closed" error on the bash-tool side that
-    /// was awaiting the decision — appropriate, since the workspace
-    /// (and therefore the in-flight call's context) is gone.
-    pub async fn purge_workspace(&self, workspace_id: &str) -> usize {
+    /// Cancels the runs awaiting those entries before dropping their
+    /// senders, then returns the cancelled run ids. Channel closure is
+    /// reserved for cancellation/teardown; supersede is delivered as an
+    /// explicit [`PendingApprovalOutcome::Superseded`].
+    pub async fn purge_workspace_canceling_runs<F>(
+        &self,
+        workspace_id: &str,
+        mut cancel_run: F,
+    ) -> Vec<String>
+    where
+        F: FnMut(&str),
+    {
         let mut inner = self.inner.lock().await;
         let to_remove: Vec<String> = inner
             .entries
@@ -227,12 +254,22 @@ impl PendingApprovals {
             .filter(|(_, entry)| entry.workspace_id.as_deref() == Some(workspace_id))
             .map(|(id, _)| id.clone())
             .collect();
-        let count = to_remove.len();
+        let mut run_ids = Vec::with_capacity(to_remove.len());
+        for id in &to_remove {
+            if let Some(entry) = inner.entries.get(id) {
+                run_ids.push(entry.run_id.clone());
+            }
+        }
+        run_ids.sort();
+        run_ids.dedup();
+        for run_id in &run_ids {
+            cancel_run(run_id);
+        }
         for id in to_remove {
             inner.entries.remove(&id);
         }
         inner.counts.remove(&Some(workspace_id.to_string()));
-        count
+        run_ids
     }
 
     /// Removes the pending entry and decrements its workspace count.
@@ -253,6 +290,50 @@ impl PendingApprovals {
             _ => 0,
         };
         Some((entry, count))
+    }
+
+    /// Removes every pending entry for the same run + command and returns
+    /// each with the post-removal workspace count. Called by the bash
+    /// approval flow right before registering a fresh request: when a CLI
+    /// transport drop orphans an in-flight approval and the model re-asks
+    /// the same command, the stale entry (and its UI card) is replaced by
+    /// the fresh one instead of lingering next to it. The stale waiter is
+    /// woken with an explicit supersede outcome, not by dropping its
+    /// channel, so unrelated teardown cannot masquerade as supersede.
+    pub async fn take_superseded(&self, run_id: &str, command: &str) -> Vec<SupersededApproval> {
+        let mut inner = self.inner.lock().await;
+        let ids: Vec<String> = inner
+            .entries
+            .iter()
+            .filter(|(_, entry)| entry.run_id == run_id && entry.request.command == command)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let mut taken = Vec::with_capacity(ids.len());
+        for id in ids {
+            let Some(entry) = inner.entries.remove(&id) else {
+                continue;
+            };
+            let request_id = entry.request.request_id.clone();
+            let workspace_id = entry.workspace_id.clone();
+            let count = match inner.counts.get_mut(&entry.workspace_id) {
+                Some(n) if *n > 0 => {
+                    *n -= 1;
+                    let v = *n;
+                    if v == 0 {
+                        inner.counts.remove(&entry.workspace_id);
+                    }
+                    v
+                }
+                _ => 0,
+            };
+            let _ = entry.sender.send(PendingApprovalOutcome::Superseded);
+            taken.push(SupersededApproval {
+                request_id,
+                workspace_id,
+                remaining: count,
+            });
+        }
+        taken
     }
 }
 
@@ -318,7 +399,9 @@ pub async fn submit_permission_decision(
     ) {
         persist_decisions_to_agent(state.inner(), workspace_id, agent_id, &decisions)?;
     }
-    let _ = entry.sender.send(decisions);
+    let _ = entry
+        .sender
+        .send(PendingApprovalOutcome::Decision(decisions));
     emit_attention(&app, entry.workspace_id, remaining);
     Ok(())
 }
@@ -457,7 +540,7 @@ mod tests {
         let pending = PendingApprovals::new();
         let req = fake_request(Some("ws-1"));
         let id = req.request_id.clone();
-        let (_rx, count) = pending.register(req).await;
+        let (_rx, count) = pending.register(req, "run-1".to_string()).await;
         assert_eq!(count, 1);
         let taken = pending.take(&id).await;
         assert!(taken.is_some());
@@ -472,8 +555,8 @@ mod tests {
         let req2 = fake_request(Some("ws-1"));
         let id1 = req1.request_id.clone();
         let id2 = req2.request_id.clone();
-        let (_rx1, c1) = pending.register(req1).await;
-        let (_rx2, c2) = pending.register(req2).await;
+        let (_rx1, c1) = pending.register(req1, "run-1".to_string()).await;
+        let (_rx2, c2) = pending.register(req2, "run-1".to_string()).await;
         assert_eq!(c1, 1);
         assert_eq!(c2, 2);
         let (_, remaining) = pending.take(&id1).await.unwrap();
@@ -487,8 +570,8 @@ mod tests {
         let pending = PendingApprovals::new();
         let req_a = fake_request(Some("ws-A"));
         let req_b = fake_request(Some("ws-B"));
-        let _ = pending.register(req_a.clone()).await;
-        let _ = pending.register(req_b).await;
+        let _ = pending.register(req_a.clone(), "run-1".to_string()).await;
+        let _ = pending.register(req_b, "run-1".to_string()).await;
         let list = pending.list_for_workspace("ws-A").await;
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].request_id, req_a.request_id);
@@ -497,14 +580,92 @@ mod tests {
     #[tokio::test]
     async fn counts_snapshot_aggregates_by_workspace_and_drops_anon() {
         let pending = PendingApprovals::new();
-        let _ = pending.register(fake_request(Some("ws-A"))).await;
-        let _ = pending.register(fake_request(Some("ws-A"))).await;
-        let _ = pending.register(fake_request(Some("ws-B"))).await;
-        let _ = pending.register(fake_request(None)).await;
+        let _ = pending
+            .register(fake_request(Some("ws-A")), "run-1".to_string())
+            .await;
+        let _ = pending
+            .register(fake_request(Some("ws-A")), "run-1".to_string())
+            .await;
+        let _ = pending
+            .register(fake_request(Some("ws-B")), "run-1".to_string())
+            .await;
+        let _ = pending
+            .register(fake_request(None), "run-1".to_string())
+            .await;
 
         let snapshot = pending.counts_snapshot().await;
         assert_eq!(snapshot.get("ws-A"), Some(&2));
         assert_eq!(snapshot.get("ws-B"), Some(&1));
         assert_eq!(snapshot.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn take_superseded_removes_only_same_run_and_command() {
+        let pending = PendingApprovals::new();
+        let stale = fake_request(Some("ws-1")); // command "cmd"
+        let stale_id = stale.request_id.clone();
+        let mut other_cmd = fake_request(Some("ws-1"));
+        other_cmd.command = "different".to_string();
+        let other_cmd_id = other_cmd.request_id.clone();
+        let other_run = fake_request(Some("ws-1")); // command "cmd", run-2
+        let other_run_id = other_run.request_id.clone();
+        let (stale_rx, _) = pending.register(stale, "run-1".to_string()).await;
+        let _rx2 = pending.register(other_cmd, "run-1".to_string()).await;
+        let _rx3 = pending.register(other_run, "run-2".to_string()).await;
+
+        let taken = pending.take_superseded("run-1", "cmd").await;
+        assert_eq!(taken.len(), 1);
+        assert_eq!(taken[0].request_id, stale_id);
+        assert_eq!(
+            taken[0].remaining, 2,
+            "two unrelated entries must remain counted"
+        );
+
+        // Supersede is explicit; closed channels remain cancellation/teardown.
+        assert!(matches!(
+            stale_rx.await,
+            Ok(PendingApprovalOutcome::Superseded)
+        ));
+
+        // Unrelated entries are untouched.
+        assert!(pending.take(&other_cmd_id).await.is_some());
+        assert!(pending.take(&other_run_id).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn take_superseded_returns_empty_when_nothing_matches() {
+        let pending = PendingApprovals::new();
+        let req = fake_request(Some("ws-1"));
+        let id = req.request_id.clone();
+        let _rx = pending.register(req, "run-1".to_string()).await;
+
+        assert!(pending.take_superseded("run-9", "cmd").await.is_empty());
+        assert!(pending.take_superseded("run-1", "other").await.is_empty());
+        assert!(pending.take(&id).await.is_some(), "entry must survive");
+    }
+
+    #[tokio::test]
+    async fn purge_workspace_cancels_run_before_dropping_sender() {
+        let pending = PendingApprovals::new();
+        let mut rx = pending
+            .register(fake_request(Some("ws-1")), "run-1".to_string())
+            .await
+            .0;
+
+        let run_ids = pending
+            .purge_workspace_canceling_runs("ws-1", |run_id| {
+                assert_eq!(run_id, "run-1");
+                assert!(matches!(
+                    rx.try_recv(),
+                    Err(oneshot::error::TryRecvError::Empty)
+                ));
+            })
+            .await;
+
+        assert_eq!(run_ids, vec!["run-1".to_string()]);
+        assert!(
+            rx.await.is_err(),
+            "purge drops the sender after cancellation"
+        );
     }
 }

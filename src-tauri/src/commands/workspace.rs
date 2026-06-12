@@ -2486,21 +2486,35 @@ pub async fn workspace_delete(
         })?;
     }
 
-    // Drain in-memory queues for this workspace. Pending bash-tool /
-    // path-grant approvals get their oneshot channels dropped, which
-    // surfaces as a closed-channel error on the awaiting side — correct,
-    // since the workspace they were scoped to no longer exists.
-    let purged_approvals = state.pending_approvals.purge_workspace(&workspace_id).await;
+    // Drain in-memory queues for this workspace. The purge helpers cancel
+    // runs before dropping pending senders, so workspace deletion cannot be
+    // mistaken for an interactive-request supersede.
+    let purged_approvals = state
+        .pending_approvals
+        .purge_workspace_canceling_runs(&workspace_id, |run_id| {
+            let _ = crate::assistant::runtime::cancel_run(run_id);
+        })
+        .await;
     let purged_path_grants = state
         .pending_path_grants
-        .purge_workspace(&workspace_id)
+        .purge_workspace_canceling_runs(&workspace_id, |run_id| {
+            let _ = crate::assistant::runtime::cancel_run(run_id);
+        })
         .await;
+    let mut purged_run_ids: Vec<String> = purged_approvals
+        .iter()
+        .chain(purged_path_grants.iter())
+        .cloned()
+        .collect();
+    purged_run_ids.sort();
+    purged_run_ids.dedup();
 
     tracing::info!(
         workspace_id = %workspace_id,
         agents_cleared = agent_ids.len(),
-        approvals_purged = purged_approvals,
-        path_grants_purged = purged_path_grants,
+        approvals_purged = purged_approvals.len(),
+        path_grants_purged = purged_path_grants.len(),
+        runs_cancelled = purged_run_ids.len(),
         "Deleted general workspace"
     );
 
