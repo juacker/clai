@@ -1153,10 +1153,14 @@ pub(crate) fn build_system_prompt(
              ---\n\
              updated_at: YYYY-MM-DDTHH:MM:SS\n\
              summary: one-line description of this file's purpose\n\
+             tags: [subsystem, topic]   # optional, cross-cutting labels for retrieval\n\
              ---\n\
              ```\n\
              - Keep each file under ~200 lines. When a file grows past this, prune stale entries or split into focused files.\n\
-             - Replace outdated sections rather than appending indefinitely (except in `journal/`).\n\n",
+             - Replace outdated sections rather than appending indefinitely (except in `journal/`).\n\
+             - Cross-link related memory with relative markdown links inside `.clai/memory/`, e.g. from `knowledge.md`: `[transport-drop fix](journal/2026-06-12.md)` or `[migration plan](checkpoints/db-migration.md)`. Link a knowledge entry to the evidence behind it (a journal day, a checkpoint, a PR url) so memory forms a navigable graph instead of disconnected notes.\n\
+             - Use `tags` to group cross-cutting entries (e.g. `[mcp, concurrency]`) so related heuristics are easy to retrieve as `knowledge.md` grows.\n\
+             - Tolerate broken links: a link whose target was pruned or not yet written is not an error — leave it or tidy it on your next pass, never let it block you.\n\n",
         );
 
         match trigger {
@@ -1260,6 +1264,12 @@ mod tests {
         // Schema convention
         assert!(text.contains("updated_at:"));
         assert!(text.contains("summary:"));
+        // Cross-cutting tags + cross-linking conventions (OKF-inspired). These
+        // are additive: the three-layer model and confidence tags above stay
+        // authoritative; links/tags just make memory navigable and retrievable.
+        assert!(text.contains("tags: [subsystem, topic]"));
+        assert!(text.contains("Cross-link related memory"));
+        assert!(text.contains("Tolerate broken links"));
         // Size hint
         assert!(text.contains("~200 lines"));
         // Hierarchy of truth
