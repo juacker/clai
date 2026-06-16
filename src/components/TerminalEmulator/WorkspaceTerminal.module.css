@@ -1,0 +1,92 @@
+/* Integrated terminal panel — rendered inside the composer card while
+   terminal mode is active. The card is bottom-anchored and grows upward, so a
+   fixed-height panel here produces the "bottom-up" reveal (design decision #2).
+   The conversation reflows above it via the card's published --terminal-height. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  /* ~1/3 of the viewport (decision #2), with a usable floor. The composer
+     card caps at 50vh, so this stays within it including the header. */
+  height: 33vh;
+  min-height: 200px;
+  border-radius: var(--radius-xl, 12px);
+  overflow: hidden;
+  background: #0b0e14;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #10141d;
+  border-bottom: 1px solid #1f2530;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #cbd5e1;
+  user-select: none;
+}
+
+.prompt {
+  color: #7ee787;
+  font-weight: 700;
+}
+
+.title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f0b429; /* starting */
+}
+.dot[data-status='connected'] {
+  background: #7ee787;
+}
+.dot[data-status='exited'] {
+  background: #6b7280;
+}
+.dot[data-status='error'] {
+  background: #ef4444;
+}
+
+.hint {
+  color: #6b7280;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.exitBtn {
+  appearance: none;
+  cursor: pointer;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #0b0e14;
+  color: #cbd5e1;
+  font: inherit;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+.exitBtn:hover {
+  background: #1f2530;
+  color: #fff;
+}
+
+.term {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px;
+}
+
+/* xterm fills the area; let its own viewport scroll. */
+.term :global(.xterm) {
+  height: 100%;
+}
