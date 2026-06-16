@@ -49,6 +49,15 @@ const TerminalEmulator = ({
   const autoCollapseTimerRef = useRef<number | null>(null);
   // CHANGED: Ref for the wrapper element instead of display to handle scrolling
   const inputWrapperRef = useRef<HTMLDivElement>(null);
+  // Consume-once holder for a `!cmd` command: set when the user submits a `!`
+  // line, read+cleared by WorkspaceTerminal when its shell is ready, so the
+  // command runs exactly once and never replays on a later terminal toggle.
+  const pendingCommandRef = useRef<string | null>(null);
+  const consumeInitialCommand = useCallback(() => {
+    const cmd = pendingCommandRef.current;
+    pendingCommandRef.current = null;
+    return cmd;
+  }, []);
 
   const isWorkspaceRoute =
     location.pathname === '/workspace' || location.pathname.startsWith('/workspace/');
@@ -214,6 +223,19 @@ const TerminalEmulator = ({
     setInputValue('');
     resetTextareaHeight();
 
+    // "!cmd" runs a command in the integrated terminal and switches to
+    // terminal mode; a bare "!" just opens the terminal. Only on workspace
+    // routes (where a shell can open).
+    if (trimmed.startsWith('!')) {
+      if (!terminalAvailable) {
+        addOutputMessage('Open a workspace to run terminal commands.', 'error');
+        return;
+      }
+      pendingCommandRef.current = trimmed.slice(1).trim() || null;
+      setTerminalMode(true);
+      return;
+    }
+
     // Check if input starts with "/" - it's a command
     const isSlashCommand = trimmed.startsWith('/');
 
@@ -351,6 +373,7 @@ const TerminalEmulator = ({
         <WorkspaceTerminal
           key={currentWorkspaceId!}
           workspaceId={currentWorkspaceId!}
+          consumeInitialCommand={consumeInitialCommand}
           onExit={() => setTerminalMode(false)}
         />
       ) : (
@@ -396,7 +419,7 @@ const TerminalEmulator = ({
                   agentWorking
                     ? 'Agent is working — Enter queues a follow-up message...'
                     : isWorkspaceRoute
-                      ? 'Message this workspace...'
+                      ? 'Message this workspace…  (!cmd runs a terminal command)'
                       : 'Open a workspace to chat, or run a /command (/help)...'
                 }
                 spellCheck={false}

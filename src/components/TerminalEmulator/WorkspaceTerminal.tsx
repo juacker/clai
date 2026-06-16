@@ -35,9 +35,19 @@ interface WorkspaceTerminalProps {
   workspaceId: string;
   /** Called to leave terminal mode (exit button or when the shell exits). */
   onExit: () => void;
+  /**
+   * Consume-once getter for a command to run as soon as the shell is ready
+   * (the `!cmd` chat fast-path). Returns the command and clears it, so it runs
+   * exactly once at mount and never replays on a later toggle. Optional.
+   */
+  consumeInitialCommand?: () => string | null;
 }
 
-const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({ workspaceId, onExit }) => {
+const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({
+  workspaceId,
+  onExit,
+  consumeInitialCommand,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<string | null>(null);
   // Keep the latest onExit without re-running the setup effect (which would
@@ -153,6 +163,13 @@ const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({ workspaceId, onEx
         term.onResize(({ cols, rows }) => {
           void invoke('terminal_resize', { sessionId: id, cols, rows });
         });
+        // `!cmd` fast-path: run the requested command once the shell is ready.
+        // `\r` is the Enter key over a PTY; the shell echoes + runs it, output
+        // streams back through the channel like any typed command.
+        const initial = consumeInitialCommand?.();
+        if (initial) {
+          void invoke('terminal_write', { sessionId: id, data: `${initial}\r` });
+        }
       } catch (err) {
         term.write(`\r\n\x1b[31m[failed to open terminal: ${String(err)}]\x1b[0m\r\n`);
       }
@@ -181,7 +198,7 @@ const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({ workspaceId, onEx
       }
       term.dispose();
     };
-  }, [workspaceId]);
+  }, [workspaceId, consumeInitialCommand]);
 
   return (
     <div className={styles.panel}>
