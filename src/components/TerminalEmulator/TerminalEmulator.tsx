@@ -3,7 +3,10 @@ import { useLocation } from 'react-router-dom';
 import WorkspaceContextBar from '../../workspace/components/WorkspaceContextBar';
 import CommandHelpModal from './CommandHelpModal';
 import WorkspaceTerminal from './WorkspaceTerminal';
-import { dispatchWorkspaceUiCommand } from '../../utils/workspaceUiEvents';
+import {
+  dispatchScrollChatToBottom,
+  dispatchWorkspaceUiCommand,
+} from '../../utils/workspaceUiEvents';
 import styles from './TerminalEmulator.module.css';
 
 type OutputType = 'info' | 'success' | 'error' | 'warning';
@@ -165,12 +168,15 @@ const TerminalEmulator = ({
     }
   }
 
-  // Ctrl+` (or Cmd+`) toggles terminal mode. Capture phase so it still fires
-  // when the xterm grid has keyboard focus (otherwise xterm would consume the
-  // backtick before us). VS Code uses the same chord.
+  // Ctrl+\ (or Cmd+\) toggles terminal mode. Matches the backslash key
+  // (the 'Backslash' code or the '\\' character) and also the physical key
+  // in the US-backtick position ('Backquote'): on a Spanish/ISO layout that
+  // key is the one users reach for as backslash, and a bare backtick is
+  // awkward. Capture phase so it fires even when the xterm grid has focus.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.code === 'Backquote' && !e.altKey) {
+      const isToggleKey = e.code === 'Backslash' || e.code === 'Backquote' || e.key === '\\';
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && isToggleKey) {
         if (!terminalAvailable) return;
         e.preventDefault();
         e.stopPropagation();
@@ -180,6 +186,24 @@ const TerminalEmulator = ({
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
   }, [terminalAvailable]);
+
+  // Entering terminal mode shrinks the conversation viewport — nudge it back
+  // to the bottom (after the reflow settles) so the latest messages stay in
+  // view. Leaving terminal mode returns keyboard focus to the chat input so
+  // the user can type immediately without clicking.
+  const prevShowTerminalRef = useRef(showTerminal);
+  useEffect(() => {
+    const wasShowing = prevShowTerminalRef.current;
+    prevShowTerminalRef.current = showTerminal;
+    if (!wasShowing && showTerminal) {
+      const timer = window.setTimeout(() => dispatchScrollChatToBottom(), 120);
+      return () => window.clearTimeout(timer);
+    }
+    if (wasShowing && !showTerminal) {
+      inputRef.current?.focus();
+    }
+    return undefined;
+  }, [showTerminal]);
 
   // Handle command execution
   const handleCommandExecution = async (input: string) => {
@@ -350,15 +374,12 @@ const TerminalEmulator = ({
                   e.stopPropagation();
                   setTerminalMode(true);
                 }}
-                title="Terminal mode (Ctrl+`)"
+                title="Terminal mode (Ctrl+\)"
                 aria-label="Switch to terminal mode"
               >
                 {'>_'}
               </button>
             )}
-
-            {/* Terminal Prompt Symbol */}
-            <span className={styles.terminalPrompt}>%</span>
 
             {/* Terminal Input - Auto-growing textarea */}
             <div className={styles.terminalInputWrapper} ref={inputWrapperRef}>

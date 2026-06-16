@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -47,8 +47,6 @@ const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({ workspaceId, onEx
     onExitRef.current = onExit;
   }, [onExit]);
 
-  const [status, setStatus] = useState<'starting' | 'connected' | 'exited' | 'error'>('starting');
-
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
@@ -94,7 +92,6 @@ const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({ workspaceId, onEx
         term.write(
           `\r\n\x1b[33m[process exited${code != null ? ` (code ${code})` : ''}]\x1b[0m\r\n`
         );
-        setStatus('exited');
         // The shell is gone (e.g. the user typed `exit`); leave terminal mode,
         // unless this instance was already torn down.
         window.setTimeout(() => {
@@ -117,7 +114,6 @@ const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({ workspaceId, onEx
           return;
         }
         sessionRef.current = id;
-        setStatus('connected');
         term.focus();
         term.onData((d) => {
           void invoke('terminal_write', { sessionId: id, data: d });
@@ -126,7 +122,6 @@ const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({ workspaceId, onEx
           void invoke('terminal_resize', { sessionId: id, cols, rows });
         });
       } catch (err) {
-        setStatus('error');
         term.write(`\r\n\x1b[31m[failed to open terminal: ${String(err)}]\x1b[0m\r\n`);
       }
     })();
@@ -158,21 +153,15 @@ const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({ workspaceId, onEx
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>
-        <span className={styles.prompt}>{'>_'}</span>
-        <span className={styles.title}>Terminal</span>
-        <span className={styles.dot} data-status={status} />
-        <span className={styles.hint}>workspace shell</span>
-        <span className={styles.spacer} />
-        <button
-          type="button"
-          className={styles.exitBtn}
-          onClick={onExit}
-          title="Back to chat (Ctrl+`)"
-        >
-          Chat ⌄
-        </button>
-      </div>
+      <button
+        type="button"
+        className={styles.exitFloat}
+        onClick={onExit}
+        title="Back to chat (Ctrl+\)"
+        aria-label="Back to chat"
+      >
+        Chat ⌄
+      </button>
       <div ref={containerRef} className={styles.term} />
     </div>
   );
