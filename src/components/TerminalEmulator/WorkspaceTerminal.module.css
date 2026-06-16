@@ -20,6 +20,13 @@
   flex: 1;
   min-height: 0;
   padding: 8px 10px;
+  /* Establish a stacking context BELOW the exit button (z-index 2). xterm's
+     internal layers (.xterm-helpers z-index 5, decorations 6/7/8/10) are
+     position:absolute; without this they resolve in a far-up ancestor stacking
+     context and paint above the button, swallowing its clicks. Trapping them
+     inside .term (z-index 1) keeps the button reliably clickable. */
+  position: relative;
+  z-index: 1;
 }
 
 /* xterm fills the area; let its own viewport scroll. */
