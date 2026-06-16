@@ -5,7 +5,6 @@ import FleetLayout from './layouts/FleetLayout';
 import NotFound from './pages/NotFound';
 import FleetIndex from './pages/FleetIndex';
 import Workspace from './pages/Workspace';
-import TerminalSpike from './components/TerminalSpike/TerminalSpike';
 
 // The legacy `/` Home page (a tabs/tiles UI from before the workspace model)
 // has been deleted; the root path goes straight to Fleet now.
@@ -17,9 +16,6 @@ import TerminalSpike from './components/TerminalSpike/TerminalSpike';
 // the rail stays mounted across navigations.
 const AppRoutes = () => (
   <Routes>
-    {/* Isolated dev route for the integrated-terminal perf spike (Phase 1).
-        Not linked from the UI; reach it by navigating to /_terminal-spike. */}
-    <Route path="/_terminal-spike" element={<TerminalSpike />} />
     <Route element={<MainLayout />}>
       <Route path="/" element={<Navigate to="/fleet" replace />} />
       <Route element={<FleetLayout />}>

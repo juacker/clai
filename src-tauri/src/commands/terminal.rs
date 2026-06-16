@@ -1,9 +1,8 @@
-//! Integrated terminal — Phase 1 perf spike.
+//! Integrated terminal backend.
 //!
-//! A PTY-backed shell session streamed to the frontend (xterm.js). This is the
-//! GO/NO-GO perf spike for the integrated-terminal feature: the renderer-side
-//! cost in WebKitGTK (Tauri's Linux webview) is the existential risk, so the
-//! backend is built for throughput from the start.
+//! A PTY-backed shell session streamed to the frontend (xterm.js). The
+//! renderer-side cost in WebKitGTK (Tauri's Linux webview) is the throughput
+//! risk, so the backend is built for throughput from the start.
 //!
 //! Design notes that matter for perf and correctness:
 //!
@@ -22,8 +21,8 @@
 //!   via `flatpak-spawn --host` and pass the working directory as
 //!   `--directory=<dir>` (NOT `CommandBuilder::cwd`, which would only move the
 //!   flatpak-spawn wrapper, not the host shell — the exact lesson from PR #60).
-//!   Whether a PTY's tty semantics survive the flatpak-spawn portal hop is the
-//!   open question this spike must answer on a real Flatpak build.
+//!   Whether a PTY's tty semantics survive the flatpak-spawn portal hop still
+//!   needs validation on a real Flatpak build.
 //! - **Lifecycle.** The child is reaped by the reader thread on EOF; an
 //!   explicit `terminal_close` kills the child (which unblocks the reader).
 
@@ -90,15 +89,25 @@ impl TerminalRegistry {
     }
 
     fn insert(&self, id: String, handle: Arc<TerminalHandle>) {
-        self.inner.lock().expect("terminal registry poisoned").insert(id, handle);
+        self.inner
+            .lock()
+            .expect("terminal registry poisoned")
+            .insert(id, handle);
     }
 
     fn get(&self, id: &str) -> Option<Arc<TerminalHandle>> {
-        self.inner.lock().expect("terminal registry poisoned").get(id).cloned()
+        self.inner
+            .lock()
+            .expect("terminal registry poisoned")
+            .get(id)
+            .cloned()
     }
 
     fn remove(&self, id: &str) -> Option<Arc<TerminalHandle>> {
-        self.inner.lock().expect("terminal registry poisoned").remove(id)
+        self.inner
+            .lock()
+            .expect("terminal registry poisoned")
+            .remove(id)
     }
 }
 
@@ -216,7 +225,9 @@ fn spawn_io_threads(
                 };
                 if let Some(bytes) = chunk {
                     if channel
-                        .send(TerminalEvent::Output { data_b64: BASE64.encode(&bytes) })
+                        .send(TerminalEvent::Output {
+                            data_b64: BASE64.encode(&bytes),
+                        })
                         .is_err()
                     {
                         break; // frontend went away
@@ -229,8 +240,9 @@ fn spawn_io_threads(
                         std::mem::take(&mut *guard)
                     };
                     if !tail.is_empty() {
-                        let _ = channel
-                            .send(TerminalEvent::Output { data_b64: BASE64.encode(&tail) });
+                        let _ = channel.send(TerminalEvent::Output {
+                            data_b64: BASE64.encode(&tail),
+                        });
                     }
                     let code = *exit_code.lock().expect("terminal exit code poisoned");
                     let _ = channel.send(TerminalEvent::Exit { code });
@@ -311,7 +323,10 @@ pub async fn terminal_write(
         .terminals
         .get(&session_id)
         .ok_or("No such terminal session")?;
-    let mut writer = handle.writer.lock().map_err(|_| "terminal writer poisoned")?;
+    let mut writer = handle
+        .writer
+        .lock()
+        .map_err(|_| "terminal writer poisoned")?;
     writer
         .write_all(data.as_bytes())
         .map_err(|e| format!("Failed to write to terminal: {e}"))?;
@@ -381,7 +396,10 @@ mod tests {
         assert_eq!(argv.last().unwrap(), "bash");
         // The --directory flag must precede `--host bash` (flatpak-spawn opts
         // before the host command).
-        let dir_idx = argv.iter().position(|a| a.starts_with("--directory=")).unwrap();
+        let dir_idx = argv
+            .iter()
+            .position(|a| a.starts_with("--directory="))
+            .unwrap();
         let host_idx = argv.iter().position(|a| a == "--host").unwrap();
         let bash_idx = argv.iter().position(|a| a == "bash").unwrap();
         assert!(dir_idx < bash_idx && host_idx < bash_idx);
