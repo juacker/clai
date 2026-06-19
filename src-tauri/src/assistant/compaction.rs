@@ -343,6 +343,7 @@ async fn summarize_window(
         tools: Vec::new(),
         temperature: None,
         max_output_tokens: Some(SUMMARY_MAX_OUTPUT_TOKENS),
+        images: Default::default(),
     };
 
     let mut stream = adapter

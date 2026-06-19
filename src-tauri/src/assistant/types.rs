@@ -493,6 +493,23 @@ pub struct CompletionRequest {
     pub temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_output_tokens: Option<u32>,
+    /// Inline image bytes for this request, keyed by `ContentPart::Image.id`.
+    /// Resolved from disk by the engine only for connections that accept images
+    /// (otherwise empty). Never persisted or sent to the frontend — it carries
+    /// megabytes of base64 that belong only on the outbound provider request.
+    #[serde(skip, default)]
+    pub images: std::collections::HashMap<String, ResolvedImage>,
+}
+
+/// An image resolved to inline base64 for a single outbound provider request.
+/// Built by the engine from a `ContentPart::Image`'s on-disk file; the content
+/// model itself only stores a lightweight file reference (see `image_store`).
+#[derive(Debug, Clone)]
+pub struct ResolvedImage {
+    /// Canonical MIME type (e.g. `image/png`).
+    pub media_type: String,
+    /// Standard-base64-encoded file bytes.
+    pub data_base64: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

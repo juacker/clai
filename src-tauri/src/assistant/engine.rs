@@ -273,21 +273,30 @@ pub async fn run_session_turn(
         let provider_history =
             compaction::provider_history_messages(&deps.pool, &session.id, &messages).await?;
         let normalized = normalize_history_for_provider(&provider_history);
+        let supports_images =
+            providers::connection_supports_images(&connection.provider_id, &connection.model_id);
         // Drop image parts from history when the active connection can't accept
         // them (e.g. user switched to a non-vision provider mid-conversation).
         // The gate stops *new* image attachments; this keeps replayed history
         // valid for the current provider. CLI providers already render images as
         // a text placeholder upstream, so this only bites the HTTP path.
-        let normalized =
-            if providers::connection_supports_images(&connection.provider_id, &connection.model_id)
-            {
-                normalized
-            } else {
-                strip_unsupported_images(normalized)
-            };
+        let normalized = if supports_images {
+            normalized
+        } else {
+            strip_unsupported_images(normalized)
+        };
 
         let mut provider_messages = vec![system_message.clone()];
         provider_messages.extend(normalized);
+
+        // Resolve image files to inline base64 for image-capable API providers.
+        // CLI providers ingest images via their own mechanism (file paths in the
+        // CLI invocation), not this HTTP request, so they don't need inlining.
+        let images = if supports_images && !providers::is_cli_provider(&connection.provider_id) {
+            resolve_request_images(deps, &session, &provider_messages).await
+        } else {
+            std::collections::HashMap::new()
+        };
 
         let request = CompletionRequest {
             run_id: run_id.clone(),
@@ -297,6 +306,7 @@ pub async fn run_session_turn(
             tools: tool_defs.clone(),
             temperature: None,
             max_output_tokens: None,
+            images,
         };
 
         // Call the provider
@@ -2605,6 +2615,64 @@ fn normalized_assistant_parts(parts: &[ContentPart]) -> Vec<ContentPart> {
 /// Replace `ContentPart::Image` parts with a short text placeholder so a
 /// non-vision provider still receives coherent (if lossy) history. Used only
 /// when `connection_supports_images` is false for the active connection.
+/// Read each `ContentPart::Image` in `messages` from disk and return its bytes
+/// base64-encoded, keyed by image id. Best-effort: a missing/unreadable file is
+/// logged and skipped (the adapter then omits that image block but still sends
+/// the surrounding text). Only called for image-capable API connections.
+async fn resolve_request_images(
+    deps: &AssistantDeps,
+    session: &crate::assistant::types::AssistantSession,
+    messages: &[ProviderInputMessage],
+) -> std::collections::HashMap<String, crate::assistant::types::ResolvedImage> {
+    use base64::Engine as _;
+    let mut out: std::collections::HashMap<String, crate::assistant::types::ResolvedImage> =
+        std::collections::HashMap::new();
+    let root = match session
+        .context
+        .workspace_id
+        .as_deref()
+        .and_then(|id| deps.app.state::<AppState>().workspace_root(id))
+    {
+        Some(root) => root,
+        None => return out,
+    };
+    for message in messages {
+        for part in &message.content {
+            if let ContentPart::Image {
+                id,
+                path,
+                media_type,
+                ..
+            } = part
+            {
+                if out.contains_key(id) {
+                    continue;
+                }
+                let full = root.join(path);
+                match tokio::fs::read(&full).await {
+                    Ok(bytes) => {
+                        let data_base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                        out.insert(
+                            id.clone(),
+                            crate::assistant::types::ResolvedImage {
+                                media_type: media_type.clone(),
+                                data_base64,
+                            },
+                        );
+                    }
+                    Err(error) => tracing::warn!(
+                        image_id = %id,
+                        path = %full.display(),
+                        %error,
+                        "Failed to read image file for provider request; skipping"
+                    ),
+                }
+            }
+        }
+    }
+    out
+}
+
 fn strip_unsupported_images(messages: Vec<ProviderInputMessage>) -> Vec<ProviderInputMessage> {
     messages
         .into_iter()
