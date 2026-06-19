@@ -1281,12 +1281,15 @@ async fn find_workspace_session(
         return Ok(None);
     };
 
-    // Load only Interactive sessions: the canonical conversation is always
-    // Interactive, while delegated tasks each create a BackgroundJob row
-    // (unbounded as the workspace ages). Filtering in SQL keeps resolution
-    // independent of task volume — those rows are never fetched or parsed.
+    // Candidate conversations = all of this manager's sessions EXCEPT task
+    // delegations. Task sessions (workspace_tasks.session_id) are excluded in
+    // SQL, so resolution stays independent of task volume and a self-assigned
+    // task can't hijack the view. The canonical conversation is then the
+    // most-recently-updated remaining session: the interactive chat in the
+    // common case, or a non-task BackgroundJob session for workspaces whose
+    // scheduled-run conversation was forked into its own row.
     Ok(select_workspace_session(
-        repository::list_sessions_by_kind(pool, &SessionKind::Interactive).await?,
+        repository::list_non_task_sessions(pool).await?,
         &manager_id,
         &descriptor.workspace_id,
         descriptor.agent_id.as_deref(),
@@ -1296,21 +1299,19 @@ async fn find_workspace_session(
 /// Pure selection logic behind [`find_workspace_session`], split out so it
 /// is unit-testable without a database or `AppState`.
 ///
-/// Picks the single canonical conversation for `(workspace, manager)`. Two
-/// filters guard it:
+/// Picks the single canonical conversation for `(workspace, manager)` as the
+/// most-recently-updated session that:
+/// - belongs to this workspace's manager (`automation_id == manager`), and
+/// - belongs to this workspace (by workspace / agent id).
 ///
-/// - `kind == Interactive`: sub-agent task delegations run in separate
-///   `BackgroundJob` sessions. Those are normally owned by the *assignee*
-///   (a different `automation_id`), but when the manager assigns a task to
-///   *itself* the task session carries the manager's own `automation_id`,
-///   so the `automation_id` filter alone does NOT exclude it. Without the
-///   kind filter a freshly-active self-task session out-ranks the real
-///   conversation under `max_by_key(updated_at)` and hijacks the view — the
-///   user ends up seeing, and typing into, the task session.
-/// - `automation_id == manager`: pins the session to this workspace's
-///   manager and excludes sessions owned by unrelated automations.
-///
-/// If (defensively) more than one matches, the most recently updated wins.
+/// Callers pass only NON-task sessions (see
+/// [`repository::list_non_task_sessions`]). Sub-agent task delegations run in
+/// separate `BackgroundJob` sessions recorded in `workspace_tasks`, and a
+/// self-assigned task even carries the manager's own `automation_id`, so they
+/// are excluded *upstream* rather than by kind here. Selecting by recency (not
+/// by kind) is deliberate: a workspace whose scheduled-run conversation lives
+/// in its own non-task `BackgroundJob` session still resolves to that live
+/// conversation instead of an abandoned interactive stub.
 fn select_workspace_session(
     sessions: Vec<AssistantSession>,
     manager_id: &str,
@@ -1329,7 +1330,6 @@ fn select_workspace_session(
 
     sessions
         .into_iter()
-        .filter(|session| session.kind == SessionKind::Interactive)
         .filter(|session| session.context.automation_id.as_deref() == Some(manager_id))
         .filter(belongs_to_workspace)
         .max_by_key(|session| session.updated_at)
@@ -2804,7 +2804,7 @@ async fn count_session_messages(pool: &DbPool, state: &AppState, workspace_id: &
         return 0;
     };
 
-    let sessions = repository::list_sessions_by_kind(pool, &SessionKind::Interactive)
+    let sessions = repository::list_non_task_sessions(pool)
         .await
         .unwrap_or_default();
     let Some(session) = select_workspace_session(
@@ -2852,17 +2852,17 @@ mod tests {
         }
     }
 
-    // Regression: a self-assigned task runs in a BackgroundJob session that
-    // carries the manager's own automation_id and is updated *after* the real
-    // conversation. The canonical session must stay the Interactive one, not
-    // the newer task session (which previously hijacked the workspace view and
-    // received user messages meant for the main conversation).
+    // A workspace whose scheduled-run conversation was forked into its own
+    // (non-task) BackgroundJob session must resolve to that live session, not
+    // an older abandoned interactive stub. Selection is kind-agnostic: task
+    // sessions are excluded upstream (list_non_task_sessions), so by the time
+    // selection runs a newer background session here is a real conversation.
     #[test]
-    fn self_task_background_session_does_not_hijack_interactive() {
-        let interactive = session("main", SessionKind::Interactive, MGR, WS, 100);
-        let self_task = session("task", SessionKind::BackgroundJob, MGR, WS, 999);
-        let chosen = select_workspace_session(vec![self_task, interactive], MGR, WS, None);
-        assert_eq!(chosen.map(|s| s.id), Some("main".to_string()));
+    fn picks_most_recent_non_task_session_regardless_of_kind() {
+        let interactive_stub = session("stub", SessionKind::Interactive, MGR, WS, 100);
+        let scheduled = session("scheduled", SessionKind::BackgroundJob, MGR, WS, 999);
+        let chosen = select_workspace_session(vec![interactive_stub, scheduled], MGR, WS, None);
+        assert_eq!(chosen.map(|s| s.id), Some("scheduled".to_string()));
     }
 
     #[test]
