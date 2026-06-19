@@ -1889,18 +1889,19 @@ async fn prepare_prompt(
             queued_messages_prompt(&messages)
         } else {
             let messages = repository::list_messages(&deps.pool, &session.id).await?;
-            messages
+            let latest_user = messages
                 .iter()
                 .rev()
                 .find(|message| message.role == MessageRole::User)
-                .map(message_text)
-                .filter(|text| !text.trim().is_empty())
                 .ok_or_else(|| {
                     LocalAgentRunError::failed(format!(
                         "No user message found for {} run",
                         provider_display_name
                     ))
-                })?
+                })?;
+            // Text may be empty for an image-only turn; the image attaches
+            // separately, so don't treat empty text as "no message".
+            message_text(latest_user)
         }
     };
 
@@ -3841,7 +3842,10 @@ fn content_part_text(part: &ContentPart) -> Option<String> {
             ..
         } => Some(format!("Tool use `{}`: {}", tool_name, arguments)),
         ContentPart::ToolResult { payload, .. } => Some(format!("Tool result: {}", payload)),
-        ContentPart::Image { .. } => Some("[image]".to_string()),
+        // Images on the current turn ride as real content (stream-json blocks /
+        // codex `--image` / API image blocks), so they contribute no prompt
+        // text — a `[image]` placeholder here would just be a redundant echo.
+        ContentPart::Image { .. } => None,
     }
 }
 
