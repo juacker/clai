@@ -93,12 +93,31 @@ fn claude_midrun_input_enabled() -> bool {
 /// One NDJSON line carrying a user message in Claude Code's
 /// `--input-format stream-json` mode (trailing newline included).
 fn claude_stream_json_user_line(text: &str) -> String {
+    claude_stream_json_user_message(text, &[])
+}
+
+/// Like [`claude_stream_json_user_line`] but also attaches image content
+/// blocks. `images` are `(media_type, base64_data)` pairs already read from
+/// disk. Mirrors the Anthropic Messages API content-block shape, which Claude
+/// Code's `--input-format stream-json` accepts verbatim.
+fn claude_stream_json_user_message(text: &str, images: &[(String, String)]) -> String {
+    let mut content: Vec<Value> = Vec::new();
+    if !text.is_empty() {
+        content.push(serde_json::json!({ "type": "text", "text": text }));
+    }
+    for (media_type, data) in images {
+        content.push(serde_json::json!({
+            "type": "image",
+            "source": { "type": "base64", "media_type": media_type, "data": data },
+        }));
+    }
+    // A user turn must never be empty; fall back to the (possibly empty) text.
+    if content.is_empty() {
+        content.push(serde_json::json!({ "type": "text", "text": text }));
+    }
     let mut line = serde_json::json!({
         "type": "user",
-        "message": {
-            "role": "user",
-            "content": [{ "type": "text", "text": text }],
-        },
+        "message": { "role": "user", "content": content },
     })
     .to_string();
     line.push('\n');
@@ -967,7 +986,11 @@ async fn run_claude_turn(
     if let Some(mut stdin) = child.stdin.take() {
         use tokio::io::AsyncWriteExt;
         let initial = if midrun_input {
-            claude_stream_json_user_line(&prompt)
+            // stream-json carries image content blocks on the user turn; the
+            // legacy `-p` text path can't, so images only ride the modern
+            // (default-on) mid-run input mode.
+            let images = resolve_cli_user_images(deps, session).await;
+            claude_stream_json_user_message(&prompt, &images)
         } else {
             prompt
         };
@@ -1548,6 +1571,63 @@ fn workspace_root_for_session(deps: &AssistantDeps, session: &AssistantSession) 
                 .state::<crate::AppState>()
                 .workspace_root(workspace_id)
         })
+}
+
+/// `(media_type, base64_data)` for each image on the most recent user message,
+/// read from the workspace image store. Empty when the latest user turn had no
+/// images, the session has no workspace root, or a file can't be read (each
+/// failure is logged and skipped — a missing image never fails the turn, the
+/// surrounding text is still sent).
+async fn resolve_cli_user_images(
+    deps: &AssistantDeps,
+    session: &AssistantSession,
+) -> Vec<(String, String)> {
+    use base64::Engine as _;
+    let messages = match repository::list_messages(&deps.pool, &session.id).await {
+        Ok(messages) => messages,
+        Err(error) => {
+            tracing::warn!(%error, "CLI image: message read failed; sending text only");
+            return Vec::new();
+        }
+    };
+    let parts: Vec<(String, String)> = messages
+        .iter()
+        .rev()
+        .find(|message| message.role == MessageRole::User)
+        .map(|message| {
+            message
+                .content
+                .iter()
+                .filter_map(|part| match part {
+                    ContentPart::Image {
+                        path, media_type, ..
+                    } => Some((path.clone(), media_type.clone())),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if parts.is_empty() {
+        return Vec::new();
+    }
+    let Some(root) = workspace_root_for_session(deps, session) else {
+        tracing::warn!("CLI image: no workspace root for session; sending text only");
+        return Vec::new();
+    };
+    let mut resolved = Vec::with_capacity(parts.len());
+    for (rel_path, media_type) in parts {
+        let abs = root.join(&rel_path);
+        match tokio::fs::read(&abs).await {
+            Ok(bytes) => {
+                let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                resolved.push((media_type, data));
+            }
+            Err(error) => {
+                tracing::warn!(%error, path = %abs.display(), "CLI image: read failed; skipping");
+            }
+        }
+    }
+    resolved
 }
 
 fn add_codex_common_args(
@@ -3869,6 +3949,34 @@ mod tests {
         assert_eq!(value["message"]["role"], "user");
         assert_eq!(value["message"]["content"][0]["type"], "text");
         assert_eq!(value["message"]["content"][0]["text"], "hello there");
+    }
+
+    #[test]
+    fn claude_stream_json_user_message_attaches_image_blocks() {
+        let line = claude_stream_json_user_message(
+            "look at this",
+            &[("image/png".to_string(), "QUJD".to_string())],
+        );
+        let value: Value = serde_json::from_str(line.trim()).unwrap();
+        let content = value["message"]["content"].as_array().unwrap();
+        assert_eq!(content.len(), 2, "text + one image block");
+        assert_eq!(content[0]["type"], "text");
+        assert_eq!(content[0]["text"], "look at this");
+        assert_eq!(content[1]["type"], "image");
+        assert_eq!(content[1]["source"]["type"], "base64");
+        assert_eq!(content[1]["source"]["media_type"], "image/png");
+        assert_eq!(content[1]["source"]["data"], "QUJD");
+    }
+
+    #[test]
+    fn claude_stream_json_user_message_image_only_keeps_message_nonempty() {
+        let line =
+            claude_stream_json_user_message("", &[("image/jpeg".to_string(), "Zm9v".to_string())]);
+        let value: Value = serde_json::from_str(line.trim()).unwrap();
+        let content = value["message"]["content"].as_array().unwrap();
+        // No empty text block when text is empty: just the image.
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0]["type"], "image");
     }
 
     #[test]
