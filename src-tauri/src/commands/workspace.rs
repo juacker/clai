@@ -2795,10 +2795,10 @@ async fn workspace_task_attention_summary(
 /// the card-click path loads via [`find_workspace_session`]. Both now route
 /// through [`select_workspace_session`], so the card number and the
 /// conversation length reference the same session by construction and can
-/// never drift. (Previously this duplicated the selection inline and omitted
-/// the `kind == Interactive` filter, so a self-task `BackgroundJob` session
-/// could inflate the card count while the chat view showed the real
-/// Interactive conversation.)
+/// never drift. (Previously this duplicated the selection inline, so a
+/// self-task `BackgroundJob` session could inflate the card count while the
+/// chat view showed the real conversation; both now exclude task sessions
+/// via the shared selector.)
 async fn count_session_messages(pool: &DbPool, state: &AppState, workspace_id: &str) -> i64 {
     let Ok(descriptor) = resolve_workspace_descriptor(state, Some(workspace_id.to_string())) else {
         return 0;
