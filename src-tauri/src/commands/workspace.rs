@@ -5,8 +5,8 @@
 
 use crate::assistant::repository;
 use crate::assistant::types::{
-    AssistantMessage, AssistantRun, AssistantSession, SessionContext, SessionKind, ToolInvocation,
-    WorkspaceAgentSummary,
+    AssistantMessage, AssistantRun, AssistantSession, ContentPart, SessionContext, SessionKind,
+    ToolInvocation, WorkspaceAgentSummary,
 };
 use crate::config::{
     workspace_config, AgentConfig, AppConfig, ExecutionCapabilityConfig, WorkspaceAgent,
@@ -1935,6 +1935,60 @@ pub async fn workspace_write_file(
         .map_err(|error| format!("Failed to write {}: {}", target.display(), error))?;
 
     Ok(request.path)
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceStoreImageRequest {
+    pub workspace_id: String,
+    /// Base64-encoded image bytes (no `data:` URL prefix).
+    pub data_base64: String,
+    /// Source MIME type (e.g. `image/png`); normalized server-side.
+    pub media_type: String,
+    #[serde(default)]
+    pub filename: Option<String>,
+}
+
+/// Persist a pasted/attached image under the workspace's image store and
+/// return a ready-to-attach [`ContentPart::Image`] reference.
+///
+/// The bytes live on disk (see [`crate::assistant::image_store`]); the returned
+/// part only carries a relative path, so it stays small in `content_json` and
+/// gives CLI transports a real file to read at send time.
+#[tauri::command]
+pub async fn workspace_store_image(
+    request: WorkspaceStoreImageRequest,
+    state: State<'_, AppState>,
+) -> Result<ContentPart, String> {
+    use base64::Engine as _;
+
+    let descriptor =
+        resolve_workspace_descriptor(state.inner(), Some(request.workspace_id.clone()))?;
+    let root_path = descriptor
+        .root_path
+        .as_ref()
+        .ok_or_else(|| "This workspace does not expose a filesystem root".to_string())?;
+    ensure_agent_workspace_root(root_path)?;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(request.data_base64.trim())
+        .map_err(|error| format!("Invalid base64 image data: {}", error))?;
+
+    let stored = crate::assistant::image_store::store_image(
+        root_path,
+        &bytes,
+        &request.media_type,
+        request.filename,
+    )?;
+
+    Ok(ContentPart::Image {
+        id: stored.id,
+        path: stored.path,
+        media_type: stored.media_type,
+        filename: stored.filename,
+        width: None,
+        height: None,
+    })
 }
 
 #[derive(Debug, Clone, Deserialize)]
