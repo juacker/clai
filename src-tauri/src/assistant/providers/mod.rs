@@ -35,12 +35,12 @@ pub fn connection_supports_images(provider_id: &str, model_id: &str) -> bool {
         return models.iter().all(|m| m.supports_images);
     }
     // API providers: best-effort per-provider constant (mirrors the blanket
-    // value their adapters stamp onto every dynamically-fetched model).
-    match provider_id {
-        anthropic::ANTHROPIC_PROVIDER_ID => true,
-        openai::OPENAI_PROVIDER_ID => false,
-        _ => false,
-    }
+    // value their adapters stamp onto every dynamically-fetched model). The
+    // common Anthropic and OpenAI chat models are vision-capable.
+    matches!(
+        provider_id,
+        anthropic::ANTHROPIC_PROVIDER_ID | openai::OPENAI_PROVIDER_ID
+    )
 }
 
 /// Parse a tool call's accumulated raw `arguments` text into params.
@@ -93,9 +93,10 @@ mod tests {
             "gpt-9-future"
         ));
 
-        // API providers: best-effort per-provider constant.
+        // API providers: best-effort per-provider constant. Anthropic and
+        // OpenAI chat models are vision-capable; their adapters send images.
         assert!(connection_supports_images("anthropic", ""));
-        assert!(!connection_supports_images("openai", ""));
+        assert!(connection_supports_images("openai", ""));
         // Unknown provider → conservative false.
         assert!(!connection_supports_images("acme", ""));
     }
