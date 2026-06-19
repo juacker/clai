@@ -1262,14 +1262,16 @@ async fn resolve_workspace_manager_agent(
 /// Find the canonical session for a workspace's manager agent.
 ///
 /// There is exactly one such session per (workspace, manager) — both
-/// user-typed chats and scheduled ticks read/write the same row. It is
-/// always `Interactive`-kind (the user can type into it).
+/// user-typed chats and scheduled ticks read/write the same row. Selection
+/// is now kind-agnostic: the resolver excludes task-linked sessions via an
+/// SQL anti-join on `workspace_tasks.session_id` (see
+/// `list_non_task_sessions` in `assistant::repository`), so neither the
+/// interactive chat nor a non-task `BackgroundJob` session is missed and a
+/// task's own `BackgroundJob` row never hijacks the conversation view.
 ///
 /// The actual selection lives in [`select_workspace_session`] so it can be
 /// unit-tested without a database; see the regression tests there for why
-/// the `Interactive` filter is load-bearing (a self-assigned task's
-/// `BackgroundJob` session carries the manager's own `automation_id` and
-/// would otherwise hijack the conversation view).
+/// excluding task sessions — not filtering by `kind` — is load-bearing.
 async fn find_workspace_session(
     pool: &DbPool,
     state: &AppState,

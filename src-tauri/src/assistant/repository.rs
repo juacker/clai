@@ -303,15 +303,6 @@ pub async fn list_sessions(pool: &DbPool) -> Result<Vec<AssistantSession>, Strin
     rows.iter().map(map_session_row).collect()
 }
 
-/// List sessions of a single `kind`, newest-first.
-///
-/// Workspace conversation resolution needs only the `Interactive` session, so
-/// this lets callers skip loading the `BackgroundJob` rows — of which there is
-/// one per delegated task, an unbounded set as a workspace ages. Pushing the
-/// `kind` filter into SQL means those rows are never fetched or JSON-parsed.
-/// The `kind` column stores the JSON-serialized enum (e.g. `"interactive"`),
-/// so the predicate is derived from the enum via `to_json_string` rather than
-/// a hardcoded literal that could drift from the serialization.
 /// Sessions that are NOT task delegations.
 ///
 /// `workspace_assignTask` runs each delegated task in its own `BackgroundJob`

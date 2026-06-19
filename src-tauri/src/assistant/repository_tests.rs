@@ -1097,13 +1097,12 @@ async fn test_create_session_and_link_task_links_atomically() {
 
     // The task row must now point at the session — the anti-join will exclude
     // it, so a concurrent resolver cannot hijack the conversation view.
-    let linked: Option<String> = sqlx::query_scalar(
-        "SELECT session_id FROM workspace_tasks WHERE id = ?",
-    )
-    .bind("task-1")
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let linked: Option<String> =
+        sqlx::query_scalar("SELECT session_id FROM workspace_tasks WHERE id = ?")
+            .bind("task-1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(linked.as_deref(), Some(session.id.as_str()));
 
     // The session must exist as a normal row (no caller-facing change).
