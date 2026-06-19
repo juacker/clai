@@ -500,33 +500,7 @@ const TerminalEmulator = ({
 
           {/* Input Line - Now at the top for better UX */}
           <div className={styles.terminalContent}>
-            {/* Composer input box */}
-            <div className={styles.terminalInputWrapper} ref={inputWrapperRef}>
-              <textarea
-                ref={inputRef}
-                rows={1}
-                className={styles.terminalInput}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-                onClick={(e) => e.stopPropagation()}
-                aria-busy={agentWorking || undefined}
-                placeholder={
-                  agentWorking
-                    ? 'Agent is working — Enter queues a follow-up message...'
-                    : isWorkspaceRoute
-                      ? 'Message this workspace…  (!cmd runs a terminal command)'
-                      : 'Open a workspace to chat, or run a /command (/help)...'
-                }
-                spellCheck={false}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-              />
-            </div>
-
-            {/* Pasted/attached image thumbnails, below the input */}
+            {/* Pasted/attached image thumbnails, above the input */}
             {(attachments.length > 0 || isAttaching) && (
               <div className={styles.attachmentTray} aria-label="Image attachments">
                 {attachments.map((att, index) => (
@@ -567,6 +541,32 @@ const TerminalEmulator = ({
                 {isAttaching && <span className={styles.attachmentSpinner}>Attaching…</span>}
               </div>
             )}
+
+            {/* Composer input box */}
+            <div className={styles.terminalInputWrapper} ref={inputWrapperRef}>
+              <textarea
+                ref={inputRef}
+                rows={1}
+                className={styles.terminalInput}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                onClick={(e) => e.stopPropagation()}
+                aria-busy={agentWorking || undefined}
+                placeholder={
+                  agentWorking
+                    ? 'Agent is working — Enter queues a follow-up message...'
+                    : isWorkspaceRoute
+                      ? 'Message this workspace…  (!cmd runs a terminal command)'
+                      : 'Open a workspace to chat, or run a /command (/help)...'
+                }
+                spellCheck={false}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+              />
+            </div>
 
             {/* Action toolbar: attach + terminal-mode, below the input */}
             {((onPickImage && isWorkspaceRoute) || terminalAvailable) && (
