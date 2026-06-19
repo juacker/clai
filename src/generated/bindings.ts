@@ -48,7 +48,19 @@ export type CompactionStrategy = "local_summary" | "session_rotation_summary";
 
 export type CompactionTrigger = "manual" | "automatic" | "error_recovery";
 
-export type ContentPart = { "type": "text", text: string, } | { "type": "thinking", text: string, signature?: string | null, } | { "type": "tool_use", tool_call_id: string, tool_name: string, arguments: JsonValue, } | { "type": "tool_result", tool_call_id: string, payload: JsonValue, started_at?: bigint | null, completed_at?: bigint | null, };
+export type ContentPart = { "type": "text", text: string, } | { "type": "thinking", text: string, signature?: string | null, } | { "type": "tool_use", tool_call_id: string, tool_name: string, arguments: JsonValue, } | { "type": "tool_result", tool_call_id: string, payload: JsonValue, started_at?: bigint | null, completed_at?: bigint | null, } | { "type": "image", 
+/**
+ * Stable id for this image part (also the on-disk file stem).
+ */
+id: string, 
+/**
+ * Path to the stored file, relative to the image-store root.
+ */
+path: string, 
+/**
+ * MIME type, e.g. `image/png`.
+ */
+media_type: string, filename?: string | null, width?: number | null, height?: number | null, };
 
 export type CreateMcpServerRequest = { name: string, enabled: boolean, transport: McpServerTransport, auth: McpServerAuthRequest, };
 

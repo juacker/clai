@@ -1874,6 +1874,7 @@ fn cli_context_part_text(part: &ContentPart) -> Option<String> {
             "[tool result: {}]",
             truncate_cli_context_json(payload)
         )),
+        ContentPart::Image { .. } => Some("[image]".to_string()),
     }
 }
 
@@ -3658,6 +3659,7 @@ fn content_part_text(part: &ContentPart) -> Option<String> {
             ..
         } => Some(format!("Tool use `{}`: {}", tool_name, arguments)),
         ContentPart::ToolResult { payload, .. } => Some(format!("Tool result: {}", payload)),
+        ContentPart::Image { .. } => Some("[image]".to_string()),
     }
 }
 

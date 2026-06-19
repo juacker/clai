@@ -2758,6 +2758,8 @@ fn assistant_content_is_empty(content: &[ContentPart]) -> bool {
         // there's no answer or action to take.
         ContentPart::Thinking { text, .. } => text.is_empty(),
         ContentPart::ToolUse { .. } | ContentPart::ToolResult { .. } => false,
+        // An image is real content, not an empty turn.
+        ContentPart::Image { .. } => false,
     })
 }
 

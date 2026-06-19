@@ -550,6 +550,10 @@ fn render_content_parts(
                 "[tool result: {}]",
                 truncate_json(payload, tool_result_max)
             )),
+            // The summariser doesn't need pixels — a placeholder keeps the
+            // turn structure without shipping image bytes (and the summary
+            // model may lack vision).
+            ContentPart::Image { .. } => Some("[image]".to_string()),
         })
         .collect::<Vec<_>>()
         .join("\n")

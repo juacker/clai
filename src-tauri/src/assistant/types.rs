@@ -231,6 +231,27 @@ pub enum ContentPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         completed_at: Option<i64>,
     },
+    /// A user-attached image. Bytes live on disk (see `assistant::images`);
+    /// this part only carries a lightweight reference so `content_json` and
+    /// the DB stay small and history replay does not re-embed megabytes of
+    /// base64. CLI transports pass `path` directly (codex `--image`, claude
+    /// image block); HTTP API transports read the file and base64-encode at
+    /// send time. Gated by `connection_supports_images` — never constructed
+    /// for a connection whose active model lacks vision.
+    Image {
+        /// Stable id for this image part (also the on-disk file stem).
+        id: String,
+        /// Path to the stored file, relative to the image-store root.
+        path: String,
+        /// MIME type, e.g. `image/png`.
+        media_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filename: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        width: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        height: Option<u32>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -520,4 +541,44 @@ pub enum ProviderEvent {
     ProviderError {
         message: String,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn image_content_part_round_trips_with_type_tag() {
+        let part = ContentPart::Image {
+            id: "img-1".to_string(),
+            path: "imgs/img-1.png".to_string(),
+            media_type: "image/png".to_string(),
+            filename: Some("paste.png".to_string()),
+            width: Some(640),
+            height: None,
+        };
+        let json = serde_json::to_value(&part).unwrap();
+        // Internally tagged + snake_case: variant serializes as {"type":"image",...}.
+        assert_eq!(json["type"], "image");
+        assert_eq!(json["media_type"], "image/png");
+        // None fields are skipped, present fields survive.
+        assert_eq!(json["filename"], "paste.png");
+        assert_eq!(json["width"], 640);
+        assert!(json.get("height").is_none());
+
+        let back: ContentPart = serde_json::from_value(json).unwrap();
+        match back {
+            ContentPart::Image {
+                id,
+                media_type,
+                height,
+                ..
+            } => {
+                assert_eq!(id, "img-1");
+                assert_eq!(media_type, "image/png");
+                assert_eq!(height, None);
+            }
+            other => panic!("expected Image, got {other:?}"),
+        }
+    }
 }
