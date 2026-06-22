@@ -9,13 +9,17 @@ import styles from './WorkspaceTerminal.module.css';
 /**
  * Integrated terminal panel (Phase 2 of the integrated-terminal feature — see
  * terminal-feature-design.md). A real PTY-backed shell at the workspace's
- * directory, rendered with xterm.js. Mounting opens a fresh shell; unmounting
- * kills it (decision #4: spawn-on-enter / kill-on-exit, no state recovery).
+ * directory, rendered with xterm.js. The PTY backend + 16ms output coalescing
+ * live in `src-tauri/src/commands/terminal.rs`.
  *
- * The PTY backend + 16ms output coalescing live in
- * `src-tauri/src/commands/terminal.rs`.
- * This component is the production surface that replaces the chat composer
- * while terminal mode is active.
+ * **Lifecycle (keep-alive).** A shell is spawned once, on first mount, and then
+ * kept alive for the whole app session: navigating to chat or another workspace
+ * does NOT tear it down — the parent keeps this component mounted and merely
+ * toggles `visible`, so the PTY *and* the rendered screen (a running vim, a
+ * build log, scrollback) survive untouched and are exactly where you left them
+ * on return. The shell is only torn down when it actually exits (the user types
+ * `exit` / Ctrl-D, firing `onShellExit`) or the app quits (backend `close_all`).
+ * Hiding is pure CSS (`display:none`); we never `dispose()` on hide.
  */
 
 type TerminalEvent = { type: 'output'; dataB64: string } | { type: 'exit'; code: number | null };
@@ -33,29 +37,53 @@ function base64ToBytes(b64: string): Uint8Array {
 interface WorkspaceTerminalProps {
   /** Workspace whose root directory the shell opens in. */
   workspaceId: string;
-  /** Called to leave terminal mode (exit button or when the shell exits). */
-  onExit: () => void;
   /**
-   * Consume-once getter for a command to run as soon as the shell is ready
-   * (the `!cmd` chat fast-path). Returns the command and clears it, so it runs
-   * exactly once at mount and never replays on a later toggle. Optional.
+   * Whether this terminal is the one currently on screen. Kept-alive terminals
+   * for other workspaces (or while you're in chat) stay mounted with
+   * `visible={false}` so their PTY and screen persist; only the visible one
+   * renders and takes keyboard focus.
+   */
+  visible: boolean;
+  /** Leave terminal mode but KEEP the shell alive (Chat button / Ctrl+\). */
+  onBackToChat: () => void;
+  /** The shell process exited (`exit` / Ctrl-D); the session is gone for good. */
+  onShellExit: () => void;
+  /**
+   * Consume-once getter for a command to run when the terminal is shown (the
+   * `!cmd` chat fast-path). Returns the command and clears it, so it runs
+   * exactly once. Delivered either by the first-prompt path on a fresh mount or
+   * by the show effect on an already-running kept-alive shell — never both.
    */
   consumeInitialCommand?: () => string | null;
 }
 
 const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({
   workspaceId,
-  onExit,
+  visible,
+  onBackToChat,
+  onShellExit,
   consumeInitialCommand,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<string | null>(null);
-  // Keep the latest onExit without re-running the setup effect (which would
-  // tear down and respawn the shell on every parent render).
-  const onExitRef = useRef(onExit);
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const shellReadyRef = useRef(false);
+  // Keep the latest callbacks/getter without re-running the setup effect (which
+  // would tear down and respawn the shell — the opposite of keep-alive).
+  const onShellExitRef = useRef(onShellExit);
+  const onBackToChatRef = useRef(onBackToChat);
+  const consumeRef = useRef(consumeInitialCommand);
   useEffect(() => {
-    onExitRef.current = onExit;
-  }, [onExit]);
+    onShellExitRef.current = onShellExit;
+    onBackToChatRef.current = onBackToChat;
+    consumeRef.current = consumeInitialCommand;
+  }, [onShellExit, onBackToChat, consumeInitialCommand]);
+
+  const writeToShell = (cmd: string) => {
+    const id = sessionRef.current;
+    if (id) void invoke('terminal_write', { sessionId: id, data: `${cmd}\r` });
+  };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -73,9 +101,14 @@ const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(container);
+    termRef.current = term;
+    fitRef.current = fit;
 
     // Prefer the WebGL renderer (fastest); fall back to the DOM renderer if
-    // the WebKit webview can't provide a GL context.
+    // the WebKit webview can't provide a GL context. If the GL context is later
+    // lost (e.g. while the terminal is hidden), the addon disposes itself and
+    // xterm reverts to the DOM renderer — the text buffer is renderer-agnostic,
+    // so the screen content (vim, scrollback) survives a hide/show cycle.
     try {
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => webgl.dispose());
@@ -127,24 +160,19 @@ const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({
     // (first output). Writing it before the prompt races shell startup: the
     // kernel tty echoes the raw input, then the shell's readline redraws it at
     // the prompt, so the command appears twice.
-    let shellReady = false;
     let pendingInitial: string | null = null;
-    const sendInitial = (cmd: string) => {
-      const id = sessionRef.current;
-      if (id) void invoke('terminal_write', { sessionId: id, data: `${cmd}\r` });
-    };
 
     const channel = new Channel<TerminalEvent>();
     channel.onmessage = (event) => {
       if (disposed) return;
       if (event.type === 'output') {
         term.write(base64ToBytes(event.dataB64));
-        if (!shellReady) {
-          shellReady = true;
+        if (!shellReadyRef.current) {
+          shellReadyRef.current = true;
           if (pendingInitial) {
             const cmd = pendingInitial;
             pendingInitial = null;
-            sendInitial(cmd);
+            writeToShell(cmd);
           }
         }
       } else if (event.type === 'exit') {
@@ -152,10 +180,11 @@ const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({
         term.write(
           `\r\n\x1b[33m[process exited${code != null ? ` (code ${code})` : ''}]\x1b[0m\r\n`
         );
-        // The shell is gone (e.g. the user typed `exit`); leave terminal mode,
+        // The shell is gone (e.g. the user typed `exit`); tell the parent so it
+        // drops this session from the kept-alive set and leaves terminal mode,
         // unless this instance was already torn down.
         window.setTimeout(() => {
-          if (!disposed) onExitRef.current();
+          if (!disposed) onShellExitRef.current();
         }, 600);
       }
     };
@@ -181,11 +210,12 @@ const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({
         term.onResize(({ cols, rows }) => {
           void invoke('terminal_resize', { sessionId: id, cols, rows });
         });
-        // `!cmd` fast-path: queue the command and run it once the shell is
-        // ready (first prompt). If the prompt already arrived, send now.
-        const initial = consumeInitialCommand?.();
+        // `!cmd` fast-path on a fresh shell: queue the command and run it once
+        // the shell is ready (first prompt). If the prompt already arrived, send
+        // now. (An already-running kept-alive shell is fed by the show effect.)
+        const initial = consumeRef.current?.();
         if (initial) {
-          if (shellReady) sendInitial(initial);
+          if (shellReadyRef.current) writeToShell(initial);
           else pendingInitial = initial;
         }
       } catch (err) {
@@ -210,20 +240,47 @@ const WorkspaceTerminal: React.FC<WorkspaceTerminalProps> = ({
       disposed = true;
       window.removeEventListener('resize', refit);
       resizeObserver.disconnect();
+      termRef.current = null;
+      fitRef.current = null;
       const id = sessionRef.current;
+      // We only unmount on a real teardown (shell exited, or the app is
+      // closing) — never on hide — so closing the backend session here is
+      // correct: it drops the (already-dead) session from the registry.
       if (id) {
         void invoke('terminal_close', { sessionId: id });
       }
       term.dispose();
     };
-  }, [workspaceId, consumeInitialCommand]);
+  }, [workspaceId]);
+
+  // When this terminal becomes visible again, its xterm may have been laid out
+  // at zero size while hidden — refit and refocus once layout settles. Also
+  // deliver any queued `!cmd` to an ALREADY-RUNNING shell here (a fresh mount
+  // uses the first-prompt path above instead; gating on shellReady keeps the
+  // two from double-sending).
+  useEffect(() => {
+    if (!visible) return undefined;
+    const raf = requestAnimationFrame(() => {
+      try {
+        fitRef.current?.fit();
+      } catch {
+        /* container detached */
+      }
+      termRef.current?.focus();
+      if (shellReadyRef.current && sessionRef.current) {
+        const cmd = consumeRef.current?.();
+        if (cmd) writeToShell(cmd);
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [visible]);
 
   return (
-    <div className={styles.panel}>
+    <div className={styles.panel} style={visible ? undefined : { display: 'none' }}>
       <button
         type="button"
         className={styles.exitFloat}
-        onClick={onExit}
+        onClick={() => onBackToChatRef.current()}
         title="Back to chat (Ctrl+\)"
         aria-label="Back to chat"
       >
