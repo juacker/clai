@@ -19,7 +19,11 @@ beforeAll(() => {
 // The real PTY terminal is exercised elsewhere; here we only care that the
 // composer shows it (terminal mode) for the right workspace.
 vi.mock('./WorkspaceTerminal', () => ({
-  default: () => <div data-testid="workspace-terminal" />,
+  // Surface `visible` + `workspaceId` so tests can assert keep-alive: a hidden
+  // terminal stays mounted (in the DOM) but `data-visible="false"`.
+  default: ({ visible, workspaceId }: { visible: boolean; workspaceId: string }) => (
+    <div data-testid="workspace-terminal" data-workspace={workspaceId} data-visible={String(visible)} />
+  ),
 }));
 vi.mock('../../workspace/components/WorkspaceContextBar', () => ({
   default: () => <div data-testid="context-bar" />,
@@ -73,37 +77,50 @@ describe('TerminalEmulator per-workspace composer state', () => {
     expect(input().value).toBe('draft for B');
   });
 
-  it('keeps terminal mode per workspace across switches', async () => {
+  // The terminal is now kept alive for the whole app session (approach A): a
+  // hidden terminal stays MOUNTED (so its PTY + screen survive) with
+  // data-visible="false"; only the active workspace's terminal is visible.
+  const visibleWorkspaces = () =>
+    screen
+      .queryAllByTestId('workspace-terminal')
+      .filter((el) => el.getAttribute('data-visible') === 'true')
+      .map((el) => el.getAttribute('data-workspace'));
+
+  it('keeps a workspace terminal alive (hidden) across switches', async () => {
     const user = userEvent.setup();
     renderComposer();
 
-    // Enable terminal mode in A.
+    // Enable terminal mode in A — A's terminal is the visible one.
     await user.click(screen.getByRole('button', { name: /terminal mode/i }));
-    expect(screen.getByTestId('workspace-terminal')).toBeInTheDocument();
+    expect(visibleWorkspaces()).toEqual(['A']);
 
-    // Switch to B — terminal must NOT carry over (B was never in terminal mode).
+    // Switch to B (never opened a terminal): A's terminal stays MOUNTED but
+    // hidden (PTY kept alive), and nothing is visible.
     await user.click(screen.getByText('go-B'));
-    expect(screen.queryByTestId('workspace-terminal')).not.toBeInTheDocument();
+    expect(screen.getByTestId('workspace-terminal').getAttribute('data-workspace')).toBe('A');
+    expect(visibleWorkspaces()).toEqual([]);
 
-    // Back to A — terminal mode is restored.
+    // Back to A — the SAME kept-alive terminal is shown again.
     await user.click(screen.getByText('go-A'));
-    expect(screen.getByTestId('workspace-terminal')).toBeInTheDocument();
+    expect(visibleWorkspaces()).toEqual(['A']);
   });
 
-  it('closes the terminal when navigating off a workspace route', async () => {
+  it('keeps the terminal alive (hidden) when navigating off a workspace route', async () => {
     const user = userEvent.setup();
     renderComposer();
 
     // Terminal on in A, then navigate to a non-workspace route.
     await user.click(screen.getByRole('button', { name: /terminal mode/i }));
-    expect(screen.getByTestId('workspace-terminal')).toBeInTheDocument();
+    expect(visibleWorkspaces()).toEqual(['A']);
 
     await user.click(screen.getByText('go-fleet'));
-    expect(screen.queryByTestId('workspace-terminal')).not.toBeInTheDocument();
+    // Still mounted (PTY survives), just not visible anywhere.
+    expect(screen.queryAllByTestId('workspace-terminal')).toHaveLength(1);
+    expect(visibleWorkspaces()).toEqual([]);
 
-    // Returning to A restores its terminal mode (stored per workspace).
+    // Returning to A shows it again (terminal mode stored per workspace).
     await user.click(screen.getByText('go-A'));
-    expect(screen.getByTestId('workspace-terminal')).toBeInTheDocument();
+    expect(visibleWorkspaces()).toEqual(['A']);
   });
 });
 

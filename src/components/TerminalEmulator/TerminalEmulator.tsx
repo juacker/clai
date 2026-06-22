@@ -60,6 +60,17 @@ const TerminalEmulator = ({
   // Terminal mode: when on, the composer is replaced by a real PTY-backed
   // shell (WorkspaceTerminal). Only meaningful on workspace routes.
   const [terminalMode, setTerminalMode] = useState(false);
+  // Workspaces that currently have a live (kept-alive) terminal. Each is
+  // rendered mounted-but-hidden until its workspace is active, so its PTY and
+  // screen persist across navigation for the whole app session. Entries are
+  // removed only when the shell exits (see onShellExit in the render).
+  const [openedTerminals, setOpenedTerminals] = useState<string[]>([]);
+  // Mirror of terminalMode for event handlers that must read the latest value
+  // without re-subscribing (the Ctrl+\\ listener).
+  const terminalModeRef = useRef(false);
+  useEffect(() => {
+    terminalModeRef.current = terminalMode;
+  }, [terminalMode]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -83,7 +94,30 @@ const TerminalEmulator = ({
     ? decodeURIComponent(workspaceRouteMatch[1]!)
     : null;
   const terminalAvailable = isWorkspaceRoute && Boolean(currentWorkspaceId);
-  const showTerminal = terminalMode && terminalAvailable;
+  // Show the terminal only when the active workspace actually has a live
+  // (kept-alive) terminal. This also recovers gracefully if a workspace's shell
+  // exited while it was in the background: its saved terminalMode may still be
+  // true, but with no live terminal we fall back to the composer instead of
+  // rendering a blank pane. enterTerminalMode registers + enables together, so
+  // normal entry still shows immediately.
+  const showTerminal =
+    terminalMode &&
+    terminalAvailable &&
+    !!currentWorkspaceId &&
+    openedTerminals.includes(currentWorkspaceId);
+
+  // Enter terminal mode for the current workspace AND register it in the
+  // kept-alive set so its shell persists for the rest of the app session. The
+  // single entry point for every "open the terminal" affordance (>_ button,
+  // Ctrl+\\, and the !cmd fast-path), so registration can never mis-fire on a
+  // workspace-switch render where terminalMode is mid-update.
+  const enterTerminalMode = useCallback(() => {
+    if (!terminalAvailable || !currentWorkspaceId) return;
+    setOpenedTerminals((prev) =>
+      prev.includes(currentWorkspaceId) ? prev : [...prev, currentWorkspaceId]
+    );
+    setTerminalMode(true);
+  }, [terminalAvailable, currentWorkspaceId]);
 
   // Maximum number of messages to keep
   const MAX_MESSAGES = 5;
@@ -235,12 +269,13 @@ const TerminalEmulator = ({
         if (!terminalAvailable) return;
         e.preventDefault();
         e.stopPropagation();
-        setTerminalMode((on) => !on);
+        if (terminalModeRef.current) setTerminalMode(false);
+        else enterTerminalMode();
       }
     };
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [terminalAvailable]);
+  }, [terminalAvailable, enterTerminalMode]);
 
   // Entering terminal mode shrinks the conversation viewport — nudge it back
   // to the bottom (after the reflow settles) so the latest messages stay in
@@ -352,7 +387,7 @@ const TerminalEmulator = ({
         return;
       }
       pendingCommandRef.current = trimmed.slice(1).trim() || null;
-      setTerminalMode(true);
+      enterTerminalMode();
       return;
     }
 
@@ -493,15 +528,29 @@ const TerminalEmulator = ({
 
   return (
     <div ref={terminalRef} className={styles.terminal} onClick={handleTerminalClick}>
-      {showTerminal ? (
+      {/* Kept-alive terminals: one per workspace that has opened a terminal.
+          They stay mounted for the whole app session so the PTY *and* the
+          rendered screen (vim, build logs, scrollback) survive navigation;
+          only the active workspace's terminal is visible. */}
+      {openedTerminals.map((wsId) => (
         <WorkspaceTerminal
-          key={currentWorkspaceId!}
-          workspaceId={currentWorkspaceId!}
+          key={wsId}
+          workspaceId={wsId}
+          visible={showTerminal && wsId === currentWorkspaceId}
           consumeInitialCommand={consumeInitialCommand}
-          onExit={() => setTerminalMode(false)}
+          onBackToChat={() => setTerminalMode(false)}
+          onShellExit={() => {
+            setOpenedTerminals((prev) => prev.filter((id) => id !== wsId));
+            if (wsId === currentWorkspaceId) setTerminalMode(false);
+          }}
         />
-      ) : (
-        <>
+      ))}
+
+      {/* Composer: shown when not in terminal mode. `display: contents` keeps
+          its children laid out as direct flex items of `.terminal` (no extra
+          box); it is hidden — not unmounted — while the terminal is on screen,
+          so composer state is preserved too. */}
+      <div style={{ display: showTerminal ? 'none' : 'contents' }}>
           {/* Workspace context bar — MCP badges inside the terminal on workspace routes */}
           {isWorkspaceRoute && currentWorkspaceId && (
             <div className={styles.workspaceContextWrapper}>
@@ -615,7 +664,7 @@ const TerminalEmulator = ({
                     className={styles.modeToggle}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setTerminalMode(true);
+                      enterTerminalMode();
                     }}
                     title="Terminal mode (Ctrl+\)"
                     aria-label="Switch to terminal mode"
@@ -645,8 +694,7 @@ const TerminalEmulator = ({
               ))}
             </div>
           )}
-        </>
-      )}
+      </div>
 
       {showHelp && <CommandHelpModal onClose={() => setShowHelp(false)} />}
     </div>
