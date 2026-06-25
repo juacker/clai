@@ -77,6 +77,9 @@ struct TerminalHandle {
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     /// Set once the session is torn down, so the flusher thread can stop.
     closed: Arc<AtomicBool>,
+    /// Flatpak only: unique marker in the host `script`'s argv, used to nudge it
+    /// with SIGWINCH on resize (see `build_shell_command`). `None` natively.
+    winch_marker: Option<String>,
 }
 
 /// Registry of live terminal sessions, keyed by session id. Stored on
@@ -207,7 +210,12 @@ fn parse_login_shell(passwd_line: &str) -> Option<String> {
 /// Separated from `spawn_pty` and parameterized on `in_flatpak` so the argv
 /// construction is unit-testable without a real sandbox (mirrors the approach
 /// taken for the git host-hop in PR #60).
-fn build_shell_command(in_flatpak: bool, dir: &Path, shell: &str) -> CommandBuilder {
+fn build_shell_command(
+    in_flatpak: bool,
+    dir: &Path,
+    shell: &str,
+    winch_marker: &str,
+) -> CommandBuilder {
     if in_flatpak {
         // Working dir MUST go through `--directory=`; `CommandBuilder::cwd`
         // would only move the flatpak-spawn wrapper, not the host shell.
@@ -223,12 +231,21 @@ fn build_shell_command(in_flatpak: bool, dir: &Path, shell: &str) -> CommandBuil
         // host shell — so the host bash's tcsetpgrp() fails ("cannot set
         // terminal process group / no job control"). `script` creates a fresh
         // PTY on the host and makes the host shell its session leader, which
-        // restores job control and silences that startup banner. It sets its
-        // own stdin (the forwarded PTY) raw and forwards SIGWINCH, so echo and
-        // resize stay single-layered. (Same trick as `ssh -t` / `docker -t`.)
+        // restores job control and silences that startup banner.
+        //
+        // Resize caveat: when the sandbox PTY is resized, the kernel sends
+        // SIGWINCH to *its* foreground group — the sandbox-side flatpak-spawn,
+        // in a different PID namespace — never to the host `script`. So `script`
+        // never re-copies the new winsize to the host PTY and full-screen TUIs
+        // (vim/htop) keep drawing at the stale size. We bridge that by tagging
+        // this `script` with a unique marker (an inert shell comment that lands
+        // in its argv) so `terminal_resize` can re-trigger it with
+        // `flatpak-spawn --host pkill -WINCH -f <marker>`. `exec` keeps the
+        // shell single-layered (the comment is dropped by exec, so only
+        // `script`'s own argv carries the marker).
         cmd.arg("script");
         cmd.arg("-qec");
-        cmd.arg(shell);
+        cmd.arg(format!("exec {shell} # {winch_marker}"));
         cmd.arg("/dev/null");
         cmd
     } else {
@@ -380,7 +397,10 @@ pub async fn terminal_open(
         })
         .map_err(|e| format!("Failed to open pty: {e}"))?;
 
-    let cmd = build_shell_command(in_flatpak, &dir, &shell);
+    // Unique per-session marker so `terminal_resize` can target this exact
+    // host `script` with SIGWINCH (Flatpak resize bridge; see build_shell_command).
+    let winch_marker = format!("clai-pty-{}", uuid::Uuid::new_v4());
+    let cmd = build_shell_command(in_flatpak, &dir, &shell, &winch_marker);
     let child = pair
         .slave
         .spawn_command(cmd)
@@ -405,6 +425,7 @@ pub async fn terminal_open(
         writer: Mutex::new(writer),
         killer: Mutex::new(killer),
         closed: Arc::clone(&closed),
+        winch_marker: if in_flatpak { Some(winch_marker) } else { None },
     });
 
     spawn_io_threads(reader, child, on_event, closed);
@@ -459,7 +480,25 @@ pub async fn terminal_resize(
             pixel_height: 0,
         })
         .map_err(|e| format!("Failed to resize terminal: {e}"))?;
+    // Flatpak: the resize above never reaches the host `script` (SIGWINCH goes
+    // to the sandbox-side flatpak-spawn), so explicitly nudge it to re-copy the
+    // new winsize to the host PTY. Fire-and-forget; native sessions skip this.
+    if let Some(marker) = handle.winch_marker.as_deref() {
+        send_host_winch(marker);
+    }
     Ok(())
+}
+
+/// Flatpak-only: tell the host-side `script` to re-read the (just-resized) PTY
+/// winsize by sending it SIGWINCH via the host. Spawned on a detached thread
+/// that reaps the child so it can neither zombie nor block the resize call.
+fn send_host_winch(marker: &str) {
+    let marker = marker.to_string();
+    std::thread::spawn(move || {
+        let _ = std::process::Command::new("flatpak-spawn")
+            .args(["--host", "pkill", "-WINCH", "-f", &marker])
+            .output();
+    });
 }
 
 /// Close a terminal session: kill the child (which unblocks the reader thread)
@@ -489,7 +528,7 @@ mod tests {
     #[test]
     fn flatpak_command_host_hops_with_directory_flag() {
         let dir = Path::new("/home/u/.clai/workspaces/abc");
-        let cmd = build_shell_command(true, dir, "bash");
+        let cmd = build_shell_command(true, dir, "bash", "clai-pty-test");
         let argv = argv(&cmd);
         // Program + args; cwd goes via --directory=, not CommandBuilder::cwd.
         assert_eq!(argv[0], "flatpak-spawn");
@@ -499,7 +538,11 @@ mod tests {
         // (restores job control across the flatpak-spawn portal hop).
         assert!(argv.contains(&"script".to_string()));
         assert!(argv.contains(&"-qec".to_string()));
-        assert!(argv.contains(&"bash".to_string()));
+        // The shell is exec'd via script's -c arg, tagged with a unique marker
+        // (an inert comment) so terminal_resize can pkill -WINCH it.
+        assert!(argv
+            .iter()
+            .any(|a| a.contains("exec bash") && a.contains("clai-pty-test")));
         assert_eq!(argv.last().unwrap(), "/dev/null");
         // The --directory flag must precede `--host` + the host command
         // before the host command).
@@ -514,7 +557,7 @@ mod tests {
 
     #[test]
     fn native_command_uses_a_real_shell_not_flatpak_spawn() {
-        let cmd = build_shell_command(false, Path::new("/tmp"), "/bin/zsh");
+        let cmd = build_shell_command(false, Path::new("/tmp"), "/bin/zsh", "");
         let argv = argv(&cmd);
         assert_eq!(argv[0], "/bin/zsh");
         assert_ne!(argv[0], "flatpak-spawn");
