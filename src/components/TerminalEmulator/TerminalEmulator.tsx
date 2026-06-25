@@ -9,6 +9,7 @@ import {
 } from '../../utils/workspaceUiEvents';
 import type { ContentPart } from '../../generated/bindings';
 import styles from './TerminalEmulator.module.css';
+import { restoreFailedPrompt } from '../../utils/composerRestore';
 import { computeTextareaSize } from '../../utils/composerTextarea';
 
 type OutputType = 'info' | 'success' | 'error' | 'warning';
@@ -432,6 +433,10 @@ const TerminalEmulator = ({
         const result = await onSendToChat(trimmed, pendingImages);
         if (result?.error) {
           addOutputMessage(result.error, 'error');
+          // Restore the prompt so the user can retry without retyping (the
+          // composer was cleared optimistically on submit). Don't clobber a
+          // new message they may have typed while the send was in flight.
+          setInputValue((current) => restoreFailedPrompt(current, input));
         } else {
           // Clear only on success — a failed turn keeps the image attached so
           // the user can retry without re-picking it.
